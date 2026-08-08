@@ -7,6 +7,7 @@ import { Sidebar } from './components/Sidebar.jsx';
 import { ChangePassword } from './pages/ChangePassword.jsx';
 import { MainBudget } from './pages/MainBudget.jsx';
 import { Settings } from './pages/Settings.jsx';
+import { Transactions } from './pages/Transactions.jsx';
 import { SignIn } from './pages/SignIn.jsx';
 
 /**
@@ -83,10 +84,7 @@ export function App(): ReactNode {
       <Route element={<RequireSession />}>
         <Route element={<AppShell appName={appName} />}>
           <Route index element={<MainBudget />} />
-          <Route
-            path="transactions"
-            element={<Placeholder title="Transactions" note="The full journal. Built next." />}
-          />
+          <Route path="transactions" element={<Transactions />} />
           <Route
             path="utilities"
             element={<Placeholder title="Utilities" note="Phase 2: needs categorized history." />}

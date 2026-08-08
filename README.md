@@ -40,10 +40,13 @@ Phase 1 (MVP) in progress. Landed so far:
 - Auto-categorization rules, including the apply-to-existing bulk action
 - The API behind the Transactions page and the Main Budget page, including
   Delegate with undo, Transfer, manual adjustment and Reconcile to Actual
-- 282 tests, including integration tests asserting the identity behaves correctly
-  after every mutating operation
+- The interface: app shell, authentication, the Main Budget page, the
+  Transactions page, and SimpleFIN connection in Settings
+- 289 tests plus 19 end-to-end tests in a real browser, including integration
+  tests asserting the identity behaves correctly after every mutating operation
 
-Not yet built: the UI, and the Docker deployment with nightly backups.
+Not yet built: the per-row menu on the Main Budget, and the Docker deployment
+with nightly backups.
 
 ## Requirements
 
