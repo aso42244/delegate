@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { prisma } from '../src/db/client.js';
 import { categorizeTransaction } from '../src/domain/allocations.js';
 import { guessAccountType, runSync } from '../src/domain/sync.js';
+import { createRule } from '../src/domain/rules.js';
 import { parseFeedAmount } from '../src/simplefin/protocol.js';
 import {
   delegationBalance,
@@ -537,6 +538,64 @@ describe('pending transactions', () => {
 
     const fromEvents = await ledgerBalances();
     expect(await delegationBalance(grocery.id)).toBe(fromEvents.get(grocery.id) ?? 0n);
+  });
+});
+
+describe('auto-categorization on import', () => {
+  it('categorizes newly imported transactions', async () => {
+    const grocery = await makeDelegation({ name: 'Grocery' });
+    await createRule(prisma, {
+      matchMode: 'contains',
+      matchValue: 'whole foods',
+      delegationId: grocery.id,
+    });
+
+    const client = new ScriptedSimpleFinClient([
+      accountSet([
+        {
+          id: 'acct-1',
+          name: 'Everyday Checking',
+          balance: '2500.00',
+          transactions: [
+            { id: 'txn-1', amount: '-42.10', description: 'Whole Foods Market' },
+            { id: 'txn-2', amount: '-8.75', description: 'Unmatched coffee' },
+          ],
+        },
+      ]),
+    ]);
+
+    const summary = await sync(client);
+
+    expect(summary.transactionsCategorized).toBe(1);
+    expect(await delegationBalance(grocery.id)).toBe(-4210n);
+  });
+
+  it('does not re-run rules over transactions imported by an earlier sync', async () => {
+    const grocery = await makeDelegation({ name: 'Grocery' });
+    const payload = accountSet([
+      {
+        id: 'acct-1',
+        name: 'Everyday Checking',
+        balance: '2500.00',
+        transactions: [{ id: 'txn-1', amount: '-42.10', description: 'Whole Foods Market' }],
+      },
+    ]);
+    const client = new ScriptedSimpleFinClient([payload, payload]);
+
+    await sync(client);
+
+    // The rule arrives after the transaction did. Applying it here would make an
+    // unrelated sync silently recategorize history; that belongs to the explicit
+    // "apply to existing" action.
+    await createRule(prisma, {
+      matchMode: 'contains',
+      matchValue: 'whole foods',
+      delegationId: grocery.id,
+    });
+    const second = await sync(client, new Date(NOW.getTime() + 60_000));
+
+    expect(second.transactionsCategorized).toBe(0);
+    expect(await delegationBalance(grocery.id)).toBe(0n);
   });
 });
 

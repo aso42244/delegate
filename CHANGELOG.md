@@ -53,6 +53,16 @@ phase (`v0.1.0-phase1`, and so on).
   visible reason.
 - 34 further tests covering idempotency, the pending lifecycle, the request
   window, and the guarantee that the access URL never leaves the server.
+- Auto-categorization rules: matching on description (contains, starts-with,
+  regular expression), amount range, account and direction; priority ordering
+  with first match winning; applied automatically to transactions a sync
+  imports; reorder, enable, archive, and "always categorize like this" from a
+  transaction.
+- Apply-to-existing bulk action with a read-only preview, which is what makes
+  categorizing months of backlog before go-live reconciliation tractable.
+- 28 further tests covering ordering, the refusal to overwrite a categorization
+  made by hand, regular-expression safety, and cache-versus-ledger agreement
+  after a bulk apply.
 
 ### Fixed
 

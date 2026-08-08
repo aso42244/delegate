@@ -4,6 +4,7 @@ import type { FeedAccount, FeedTransaction } from '../simplefin/protocol.js';
 import type { SimpleFinClient } from '../simplefin/client.js';
 import { fetchAccountsInWindows } from '../simplefin/backfill.js';
 import { ConflictError } from './errors.js';
+import { applyRules } from './rules.js';
 import { markEventsReversed } from './ledger.js';
 import {
   carryPendingCategorizationToPosted,
@@ -63,6 +64,8 @@ export interface SyncRunSummary {
   readonly transactionsAdded: number;
   readonly transactionsUpdated: number;
   readonly transactionsReversed: number;
+  /** How many of the newly imported rows a rule categorized automatically. */
+  readonly transactionsCategorized: number;
   readonly errors: readonly string[];
 }
 
@@ -179,6 +182,10 @@ export async function runSync(db: Db, options: RunSyncOptions): Promise<SyncRunS
   let transactionsAdded = 0;
   let transactionsUpdated = 0;
   let transactionsReversed = 0;
+  let transactionsCategorized = 0;
+  // Collected across accounts so rules run once at the end rather than per
+  // account, which keeps first-match-wins evaluation over one consistent set.
+  const importedTransactionIds: string[] = [];
 
   try {
     // Windowed, because the bridge silently caps a long range rather than
@@ -217,6 +224,7 @@ export async function runSync(db: Db, options: RunSyncOptions): Promise<SyncRunS
       );
       transactionsAdded += counts.added;
       transactionsUpdated += counts.updated;
+      importedTransactionIds.push(...counts.importedIds);
 
       const reconciled = await reconcilePending(db, {
         accountId,
@@ -229,6 +237,25 @@ export async function runSync(db: Db, options: RunSyncOptions): Promise<SyncRunS
       });
       transactionsUpdated += reconciled.settled;
       transactionsReversed += reconciled.reversed;
+    }
+
+    // Rules run after every account is ingested and reconciled, so evaluation
+    // sees one settled set of rows. Restricted to what this run imported: a rule
+    // added since the last sync must be applied deliberately through
+    // "apply to existing", not as a side effect of an unrelated sync.
+    if (importedTransactionIds.length > 0) {
+      const applied = await applyRules(db, {
+        transactionIds: importedTransactionIds,
+        actorId: options.actorId ?? null,
+      });
+      transactionsCategorized = applied.categorized;
+
+      if (applied.categorized > 0) {
+        logger.info(
+          { correlationId, categorized: applied.categorized, examined: applied.examined },
+          'auto-categorization applied',
+        );
+      }
     }
 
     await db.syncRun.update({
@@ -266,6 +293,7 @@ export async function runSync(db: Db, options: RunSyncOptions): Promise<SyncRunS
       transactionsAdded,
       transactionsUpdated,
       transactionsReversed,
+      transactionsCategorized,
       errors,
     };
   } catch (error) {
@@ -351,9 +379,10 @@ async function ingestTransactions(
   now: Date,
   logger: SyncLogger,
   correlationId: string,
-): Promise<{ added: number; updated: number }> {
+): Promise<{ added: number; updated: number; importedIds: string[] }> {
   let added = 0;
   let updated = 0;
+  const importedIds: string[] = [];
 
   for (const feedTransaction of feedTransactions) {
     const existing = await db.transaction.findUnique({
@@ -372,7 +401,7 @@ async function ingestTransactions(
     });
 
     if (!existing) {
-      await db.transaction.create({
+      const created = await db.transaction.create({
         data: {
           accountId,
           externalId: feedTransaction.externalId,
@@ -383,8 +412,10 @@ async function ingestTransactions(
           descriptionRaw: feedTransaction.description,
           pending: feedTransaction.pending,
         },
+        select: { id: true },
       });
       added += 1;
+      importedIds.push(created.id);
       continue;
     }
 
@@ -429,7 +460,7 @@ async function ingestTransactions(
     updated += 1;
   }
 
-  return { added, updated };
+  return { added, updated, importedIds };
 }
 
 interface ReconcilePendingOptions {

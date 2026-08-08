@@ -34,13 +34,13 @@ Phase 1 (MVP) in progress. Landed so far:
 - `recompute-balances`, which rebuilds cached balances from the ledger
 - Authentication: argon2id, sessions in PostgreSQL, first-run Super Admin, three
   roles, and Admin-only user management
-- SimpleFIN sync: hourly, 12-month backfill, idempotent re-runs, the full pending
+- SimpleFIN sync: hourly, windowed backfill, idempotent re-runs, the full pending
   lifecycle, and run history surfaced to the UI
-- 193 tests, including integration tests asserting the identity behaves correctly
+- Auto-categorization rules, including the apply-to-existing bulk action
+- 239 tests, including integration tests asserting the identity behaves correctly
   after every mutating operation
 
-Not yet built: auto-categorization rules, the transactions and budget API
-surfaces, and the entire UI.
+Not yet built: the transactions and budget API surfaces, and the entire UI.
 
 ## Requirements
 
