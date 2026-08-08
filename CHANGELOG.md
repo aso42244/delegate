@@ -56,6 +56,20 @@ phase (`v0.1.0-phase1`, and so on).
 
 ### Fixed
 
+- Backfill requests are split into 45-day windows. The bridge silently caps a
+  longer range and reports it as a note rather than an error, so a twelve-month
+  request returned three months while appearing to succeed — measured against
+  real accounts, 275 transactions instead of 423.
+- Account type is guessed from the institution and account name together. A real
+  feed returns institution "Discover Credit Card" with account name "A Person
+  (7169)", and reading the account name alone classified a credit card as an
+  asset, which adds to the budget identity instead of subtracting from it.
+- The Prisma CLI could not find the repository-root `.env`, so `npm run db:deploy`
+  failed on a clean machine.
+- `npm run simplefin:claim` failed with `ERR_MODULE_NOT_FOUND` and could never
+  have run.
+- The SimpleFIN response schema defaulted `accounts` to an empty array, so
+  unrelated JSON parsed as zero accounts and recorded a successful sync.
 - Integration test files ran concurrently against one database despite
   `fileParallelism: false`, which is a root-level Vitest option and is ignored
   inside a project. Replaced with a single fork for that project.

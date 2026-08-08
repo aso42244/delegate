@@ -115,6 +115,22 @@ describe('discovering accounts', () => {
     expect(after.balanceCents).toBe(-10000n);
   });
 
+  it('reads the institution name too when guessing the type', async () => {
+    // Shape taken from a real feed: the institution carries "Credit Card" and the
+    // account name is just the holder. Guessing from the account name alone read
+    // this as an asset, which adds to the identity instead of subtracting.
+    const client = new ScriptedSimpleFinClient([
+      accountSet([{ id: 'acct-card', name: 'A Person (7169)', balance: '120.00' }], {
+        institution: 'Discover Credit Card',
+      }),
+    ]);
+
+    await sync(client);
+
+    const account = await prisma.account.findFirstOrThrow({ where: { externalId: 'acct-card' } });
+    expect(account.type).toBe('debt');
+  });
+
   it('skips a non-USD account and reports why', async () => {
     const client = new ScriptedSimpleFinClient([
       accountSet([{ id: 'acct-eur', name: 'Euro Account', balance: '10.00', currency: 'EUR' }]),
@@ -214,9 +230,10 @@ describe('backfill window', () => {
     const later = new Date(NOW.getTime() + 60 * 60 * 1000);
     await sync(client, later);
 
-    // Enough overlap to catch a late-posting transaction, not a second backfill.
-    const [, second] = client.calls;
-    const daysBack = (later.getTime() - second!.startDate!.getTime()) / (24 * 60 * 60 * 1000);
+    // The last call is the incremental sync: the first run is a backfill and is
+    // split into several windowed requests ahead of it.
+    const incremental = client.calls.at(-1);
+    const daysBack = (later.getTime() - incremental!.startDate!.getTime()) / (24 * 60 * 60 * 1000);
     expect(daysBack).toBeGreaterThan(6);
     expect(daysBack).toBeLessThan(9);
   });

@@ -15,7 +15,8 @@ import type { FeedResult } from '../src/simplefin/protocol.js';
  */
 
 export class ScriptedSimpleFinClient implements SimpleFinClient {
-  private responses: unknown[];
+  private readonly responses: unknown[];
+  private index = 0;
   readonly calls: FetchAccountsOptions[] = [];
 
   constructor(responses: unknown[]) {
@@ -27,16 +28,27 @@ export class ScriptedSimpleFinClient implements SimpleFinClient {
     this.responses.push(response);
   }
 
+  /**
+   * One payload per *sync*, not per request.
+   *
+   * A backfill is split into several windowed requests, so a sync calls this
+   * more than once. The same payload answers every window of a run — the merge
+   * de-duplicates by transaction id, so the result is the payload itself — and
+   * the queue only advances on the final window, which is the one that asks for
+   * pending transactions.
+   */
   fetchAccounts(options: FetchAccountsOptions = {}): Promise<FeedResult> {
     this.calls.push(options);
 
-    const next = this.responses.shift();
-    if (next === undefined) throw new Error('ScriptedSimpleFinClient ran out of responses');
+    const current = this.responses[this.index];
+    if (current === undefined) throw new Error('ScriptedSimpleFinClient ran out of responses');
+
+    if (options.includePending) this.index += 1;
 
     // Parsed through the real schema, so a fixture that drifts from the wire
     // format fails the test rather than quietly exercising a shape SimpleFIN
     // would never send.
-    return Promise.resolve(normalizeAccountSet(accountSetSchema.parse(next), new Date()));
+    return Promise.resolve(normalizeAccountSet(accountSetSchema.parse(current), new Date()));
   }
 }
 
@@ -76,14 +88,14 @@ interface FixtureAccount {
 /** Builds a v2-shaped payload (`errlist` + `connections`). */
 export function accountSet(
   accounts: readonly FixtureAccount[],
-  options: { readonly errors?: readonly string[] } = {},
+  options: { readonly errors?: readonly string[]; readonly institution?: string } = {},
 ): unknown {
   return {
     errlist: options.errors ?? [],
     connections: [
       {
         conn_id: 'conn-1',
-        name: 'Test Bank',
+        name: options.institution ?? 'Test Bank',
         org_url: 'https://example.test',
         sfin_url: 'https://example.test',
       },
