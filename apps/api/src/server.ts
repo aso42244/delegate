@@ -1,6 +1,7 @@
 import { buildApp } from './app.js';
 import { getConfig } from './config.js';
 import { prisma } from './db/client.js';
+import { startScheduler } from './scheduler.js';
 
 /**
  * Process entrypoint: build the app, listen, and shut down cleanly.
@@ -17,6 +18,10 @@ const app = await buildApp(config);
 // makes the app unreachable from the host no matter how ports are published.
 await app.listen({ port: config.PORT, host: '0.0.0.0' });
 
+// Started after the listener is up, so a slow first sync cannot delay the app
+// becoming reachable and failing its container health check.
+const scheduler = startScheduler(config, app.log);
+
 let shuttingDown = false;
 
 async function shutdown(signal: NodeJS.Signals): Promise<void> {
@@ -25,8 +30,9 @@ async function shutdown(signal: NodeJS.Signals): Promise<void> {
 
   app.log.info({ signal }, 'shutting down');
   try {
-    // Order matters: stop accepting requests, let in-flight ones finish, then
-    // release the connection pool.
+    // Order matters: stop scheduling new work, stop accepting requests, let
+    // in-flight ones finish, then release the connection pool.
+    scheduler.stop();
     await app.close();
     await prisma.$disconnect();
     process.exit(0);

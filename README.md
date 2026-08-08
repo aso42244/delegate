@@ -32,10 +32,15 @@ Phase 1 (MVP) in progress. Landed so far:
   manual adjustment, categorization and splits, pending reconciliation and
   reversal, archiving rules, go-live reconciliation
 - `recompute-balances`, which rebuilds cached balances from the ledger
-- 116 tests, including integration tests asserting the identity behaves correctly
+- Authentication: argon2id, sessions in PostgreSQL, first-run Super Admin, three
+  roles, and Admin-only user management
+- SimpleFIN sync: hourly, 12-month backfill, idempotent re-runs, the full pending
+  lifecycle, and run history surfaced to the UI
+- 193 tests, including integration tests asserting the identity behaves correctly
   after every mutating operation
 
-Not yet built: the HTTP API, authentication, SimpleFIN sync, and the UI.
+Not yet built: auto-categorization rules, the transactions and budget API
+surfaces, and the entire UI.
 
 ## Requirements
 
@@ -83,9 +88,35 @@ details appear anywhere in this repository.
 | `npm run db:migrate`       | Create and apply a new migration in development       |
 | `npm run db:deploy`        | Apply existing migrations (used in CI and production) |
 | `npm run db:reset`         | Drop, re-migrate and re-seed the development database |
+| `npm run simplefin:claim`  | Exchange a SimpleFIN setup token for an access URL    |
 
 Integration tests **truncate every table** in `TEST_DATABASE_URL`, and refuse to
 run unless the database name ends in `_test`.
+
+### Connecting SimpleFIN
+
+SimpleFIN issues a one-time **setup token**, which is exchanged once for a
+long-lived **access URL**. Get a token from
+[bridge.simplefin.org](https://bridge.simplefin.org/) after connecting your
+institutions, then:
+
+```bash
+npm run simplefin:claim -- <setup-token>
+```
+
+That prints a `SIMPLEFIN_ACCESS_URL=...` line to paste into `.env`. Two things
+worth knowing:
+
+- **A setup token can only be claimed once.** A second attempt returns 403 and
+  you need a fresh token.
+- **The access URL is a bearer credential** — it embeds Basic Auth and anyone
+  holding it can read your account data. It lives only in `.env`, which is
+  git-ignored, and no API route ever returns it.
+
+Sync then runs hourly, backfilling twelve months on its first run. Without the
+variable set the application still runs; sync simply reports itself as
+unconfigured. River and Strike are not SimpleFIN-supported and are manual
+accounts.
 
 ### Rebuilding cached balances
 

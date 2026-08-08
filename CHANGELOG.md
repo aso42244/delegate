@@ -40,6 +40,19 @@ phase (`v0.1.0-phase1`, and so on).
 - 43 further integration tests covering session fixation, user enumeration, the
   temporary-password lockout, Super Admin immunity, and session revocation on
   archive and password reset.
+- SimpleFIN sync: hourly `node-cron` job and a manual sync endpoint, 12-month
+  backfill on first run, idempotent re-runs keyed on the feed's transaction id,
+  automatic discovery of new accounts flagged for review, and the full pending
+  lifecycle — settling under the same or a new id, and reversal when a pending
+  transaction vanishes.
+- `simplefin:claim` CLI, exchanging a one-time setup token for the access URL.
+- Sync run history with counts and errors, exposed at `/api/sync/status` to drive
+  a persistent failure banner.
+- Protocol parsing that accepts both SimpleFIN protocol versions, rejects
+  sub-cent precision rather than rounding it, and refuses non-USD accounts with a
+  visible reason.
+- 34 further tests covering idempotency, the pending lifecycle, the request
+  window, and the guarantee that the access URL never leaves the server.
 
 ### Fixed
 

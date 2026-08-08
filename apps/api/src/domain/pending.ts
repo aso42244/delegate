@@ -37,13 +37,28 @@ export interface PendingMatchCandidate {
  */
 export async function findPostedMatchesForPending(
   db: Db,
-  options: { readonly windowDays?: number } = {},
+  options: {
+    readonly windowDays?: number;
+    /**
+     * Restricts matching to specific pending rows. Sync passes the ones that
+     * disappeared from the feed: a row the bank still reports as pending must
+     * not be retired just because a same-amount posted row happens to sit
+     * nearby.
+     */
+    readonly pendingTransactionIds?: readonly string[];
+  } = {},
 ): Promise<PendingMatchCandidate[]> {
   const windowDays = options.windowDays ?? PENDING_MATCH_WINDOW_DAYS;
   const windowMs = windowDays * 24 * 60 * 60 * 1000;
 
+  if (options.pendingTransactionIds?.length === 0) return [];
+
   const pendingRows = await db.transaction.findMany({
-    where: { pending: true, archivedAt: null },
+    where: {
+      pending: true,
+      archivedAt: null,
+      ...(options.pendingTransactionIds ? { id: { in: [...options.pendingTransactionIds] } } : {}),
+    },
     select: { id: true, accountId: true, amountCents: true, postedAt: true },
     orderBy: { postedAt: 'asc' },
   });

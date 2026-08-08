@@ -33,6 +33,13 @@ const environmentSchema = z.object({
   // over plain http, so flipping this early makes login fail silently rather
   // than loudly.
   SESSION_COOKIE_SECURE: booleanFromString.default(false),
+
+  // A bearer credential for the household's bank data: it embeds Basic Auth and
+  // anyone holding it can read every transaction. Empty is valid — the app runs
+  // without it and reports sync as unconfigured.
+  SIMPLEFIN_ACCESS_URL: z.string().default(''),
+  SIMPLEFIN_SYNC_CRON: z.string().default('0 * * * *'),
+  SIMPLEFIN_BACKFILL_MONTHS: z.coerce.number().int().positive().max(24).default(12),
 });
 
 export type AppConfig = Readonly<z.infer<typeof environmentSchema>> & {

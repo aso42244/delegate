@@ -13,7 +13,8 @@
     "db:deploy": "prisma migrate deploy",
     "db:reset": "prisma migrate reset --force",
     "db:seed": "node --experimental-strip-types prisma/seed.ts",
-    "recompute-balances": "node dist/cli/recompute-balances.js"
+    "recompute-balances": "node dist/cli/recompute-balances.js",
+    "simplefin:claim": "node --experimental-strip-types src/cli/claim-simplefin-token.ts"
   },
   "prisma": {
     "seed": "node --experimental-strip-types prisma/seed.ts"
@@ -27,9 +28,11 @@
     "dotenv": "^16.6.1",
     "fastify": "^5.11.3",
     "fastify-plugin": "^6.0.0",
+    "node-cron": "^4.6.0",
     "zod": "^4.4.3"
   },
   "devDependencies": {
+    "@types/node-cron": "^3.0.11",
     "prisma": "^6.19.1"
   }
 }
