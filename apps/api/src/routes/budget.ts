@@ -31,6 +31,7 @@ import {
   updateDelegation,
   updateGrouping,
 } from '../domain/delegations.js';
+import { getBudgetSettings } from '../domain/settings.js';
 import { transferBetweenDelegations } from '../domain/transfer.js';
 import { centsIn, centsOut, dateOut } from '../http/serialize.js';
 import { AUTHENTICATED } from '../plugins/auth.js';
@@ -353,9 +354,19 @@ export const budgetRoutes: FastifyPluginCallback = (fastify, _options, done) => 
       .parse(request.body);
     const actorId = request.currentUser?.id ?? null;
 
-    const result = await prisma.$transaction(async (tx) =>
-      reconcileToActual(tx, body.lines, { actorId }),
-    );
+    const result = await prisma.$transaction(async (tx) => {
+      // The first reconcile *is* go-live: it is the commit that turns a
+      // backfilled twelve months into day-one balances. Stamping it here means
+      // later views can tell backfill from live activity without inspecting
+      // individual events, and it asks the owner nothing on the day.
+      //
+      // A later reconcile is ordinary maintenance and must not move that date,
+      // so it is only ever written when it is unset.
+      const settings = await getBudgetSettings(tx);
+      const options = { actorId, ...(settings.goLiveAt === null ? { goLiveAt: new Date() } : {}) };
+
+      return reconcileToActual(tx, body.lines, options);
+    });
 
     request.log.info(
       { adjusted: result.adjustedCount, unchanged: result.unchangedCount, actorId },

@@ -8,6 +8,7 @@ import { spa } from './plugins/spa.js';
 import { authRoutes } from './routes/auth.js';
 import { healthRoutes } from './routes/health.js';
 import { ruleRoutes } from './routes/rules.js';
+import { settingsRoutes } from './routes/settings.js';
 import { syncRoutes } from './routes/sync.js';
 import { accountRoutes } from './routes/accounts.js';
 import { appInfoRoutes } from './routes/app-info.js';
@@ -59,6 +60,7 @@ export async function buildApp(config: AppConfig = getConfig()): Promise<Fastify
   await app.register(userRoutes);
   await app.register(syncRoutes);
   await app.register(ruleRoutes);
+  await app.register(settingsRoutes);
   await app.register(accountRoutes);
   await app.register(transactionRoutes);
   await app.register(budgetRoutes);

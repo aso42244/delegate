@@ -6,7 +6,10 @@ import { useSession } from './auth/SessionProvider.jsx';
 import { Sidebar } from './components/Sidebar.jsx';
 import { ChangePassword } from './pages/ChangePassword.jsx';
 import { MainBudget } from './pages/MainBudget.jsx';
-import { Settings } from './pages/Settings.jsx';
+import { BudgetSection } from './pages/settings/Budget.jsx';
+import { ReconcileSection } from './pages/settings/Reconcile.jsx';
+import { SettingsLayout } from './pages/settings/SettingsLayout.jsx';
+import { SyncSection } from './pages/settings/Sync.jsx';
 import { Transactions } from './pages/Transactions.jsx';
 import { SignIn } from './pages/SignIn.jsx';
 
@@ -93,7 +96,14 @@ export function App(): ReactNode {
             path="insights"
             element={<Placeholder title="Insights" note="Phase 2: needs categorized history." />}
           />
-          <Route path="settings" element={<Settings />} />
+          <Route path="settings" element={<SettingsLayout />}>
+            {/* Sync is the landing section: it is the one that has to work
+                before anything else on this page means anything. */}
+            <Route index element={<Navigate to="sync" replace />} />
+            <Route path="sync" element={<SyncSection />} />
+            <Route path="budget" element={<BudgetSection />} />
+            <Route path="reconcile" element={<ReconcileSection />} />
+          </Route>
         </Route>
       </Route>
 
