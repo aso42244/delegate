@@ -3,6 +3,7 @@ import type { FastifyBaseLogger } from 'fastify';
 import type { AppConfig } from './config.js';
 import { prisma } from './db/client.js';
 import { ConflictError } from './domain/errors.js';
+import { runBackup } from './domain/backup.js';
 import { resolveConnection } from './domain/simplefin-config.js';
 import { runSync } from './domain/sync.js';
 import { HttpSimpleFinClient } from './simplefin/client.js';
@@ -40,11 +41,43 @@ export function startScheduler(config: AppConfig, logger: FastifyBaseLogger): Sc
 
   logger.info({ cron: config.SIMPLEFIN_SYNC_CRON }, 'scheduled sync enabled');
 
+  if (!cron.validate(config.BACKUP_CRON)) {
+    throw new Error(`BACKUP_CRON is not a valid cron expression: "${config.BACKUP_CRON}"`);
+  }
+
+  tasks.push(
+    cron.schedule(config.BACKUP_CRON, () => {
+      void runScheduledBackup(config, logger);
+    }),
+  );
+
+  logger.info({ cron: config.BACKUP_CRON, directory: config.BACKUP_DIR }, 'nightly backup enabled');
+
   return {
     stop: () => {
       for (const task of tasks) void task.stop();
     },
   };
+}
+
+/**
+ * A failed backup is logged at error level rather than thrown, for the same
+ * reason as sync: an unhandled rejection in a cron callback takes the process
+ * down, and losing the application because a dump failed would be worse than the
+ * failed dump.
+ */
+async function runScheduledBackup(config: AppConfig, logger: FastifyBaseLogger): Promise<void> {
+  try {
+    const result = await runBackup({
+      ...process.env,
+      DATABASE_URL: config.DATABASE_URL,
+      BACKUP_DIR: config.BACKUP_DIR,
+      BACKUP_RETENTION_DAYS: String(config.BACKUP_RETENTION_DAYS),
+    });
+    logger.info({ path: result.path, bytes: result.bytes }, 'backup written');
+  } catch (error) {
+    logger.error({ err: error }, 'backup failed');
+  }
 }
 
 /**

@@ -1,0 +1,69 @@
+# Delegate on a Synology DS220+.
+#
+# Two services and two named volumes. The app publishes on HOST_PORT, which
+# defaults to 8088 so it does not collide with anything already running — the
+# container's own port 3000 is private to the compose network and cannot clash
+# with another container using 3000.
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      POSTGRES_DB: ${POSTGRES_DB:-delegate}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-delegate}']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    # Postgres 16 defaults assume far more memory than a 6 GB NAS that is also
+    # running DSM and another container. These are deliberate, not tuning for
+    # performance: they stop Postgres reserving memory the machine does not have.
+    command:
+      - postgres
+      - -c
+      - shared_buffers=256MB
+      - -c
+      - work_mem=8MB
+      - -c
+      - maintenance_work_mem=64MB
+      - -c
+      - max_connections=40
+
+  app:
+    image: ${APP_IMAGE:-ghcr.io/aso42244/delegate:latest}
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      APP_NAME: ${APP_NAME:-Delegate}
+      NODE_ENV: production
+      PORT: 3000
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-delegate}
+      SESSION_SECRET: ${SESSION_SECRET:?SESSION_SECRET is required}
+      SESSION_TTL_SECONDS: ${SESSION_TTL_SECONDS:-604800}
+      # Stays false until TLS lands in Phase 3: a browser never sends a Secure
+      # cookie over plain http, so enabling it early breaks login silently.
+      SESSION_COOKIE_SECURE: ${SESSION_COOKIE_SECURE:-false}
+      SIMPLEFIN_ACCESS_URL: ${SIMPLEFIN_ACCESS_URL:-}
+      SIMPLEFIN_SYNC_CRON: ${SIMPLEFIN_SYNC_CRON:-0 * * * *}
+      SIMPLEFIN_BACKFILL_MONTHS: ${SIMPLEFIN_BACKFILL_MONTHS:-12}
+      BACKUP_DIR: /backups
+      BACKUP_CRON: ${BACKUP_CRON:-30 2 * * *}
+      BACKUP_RETENTION_DAYS: ${BACKUP_RETENTION_DAYS:-30}
+    ports:
+      - '${HOST_PORT:-8088}:3000'
+    volumes:
+      # A host directory, not a named volume: the dumps have to be reachable from
+      # DSM so they can be included in whatever off-device backup already exists.
+      # A dump on the same disk as the database is not a backup.
+      - ${BACKUP_DIR:-./backups}:/backups
+
+volumes:
+  postgres-data:
