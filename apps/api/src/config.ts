@@ -19,10 +19,10 @@ const booleanFromString = z
 const environmentSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
 
-  // The name shown in the sidebar. Configurable because the owner's preferred
-  // title is a family name, and personal data must not live in a repository that
-  // may go public. See docs/design.md, conflict 6.
-  APP_NAME: z.string().min(1).max(60).default('Household Budget'),
+  // The name shown in the sidebar. Configurable so a household can title it
+  // whatever it likes — including a family name, which must never reach a
+  // repository that may go public. See docs/design.md, decision 6.
+  APP_NAME: z.string().min(1).max(60).default('Delegate'),
   PORT: z.coerce.number().int().positive().max(65535).default(3000),
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace']).default('info'),
   DATABASE_URL: z.string().min(1, 'DATABASE_URL is required'),
