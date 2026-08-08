@@ -1,0 +1,100 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: Typecheck, lint, test
+    runs-on: ubuntu-latest
+
+    services:
+      # Integration tests run against a real PostgreSQL 16, matching production.
+      # The money math and the budget identity are only meaningfully verified
+      # against real BIGINT columns and real transactions.
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: household_budget_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/household_budget_test?schema=public
+      TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/household_budget_test?schema=public
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Generate Prisma client
+        run: npm run db:generate
+
+      - name: Apply migrations
+        run: npm run db:deploy
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Check formatting
+        run: npm run format:check
+
+      - name: Unit tests
+        run: npm run test
+
+      - name: Integration tests
+        run: npm run test:integration
+
+      # The cached balances must agree with the event ledger on a freshly seeded
+      # database. If they ever disagree, the cache maintenance is broken.
+      - name: Seed and verify cached balances match the ledger
+        run: |
+          npm run db:seed
+          npm run build --workspace @budget/api
+          npm run recompute-balances --workspace @budget/api -- --check
+
+  forbidden-terms:
+    name: Forbidden terminology
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      # A hard constraint of this project: the asset is called Bitcoin, and the
+      # generic term for the asset class appears nowhere. Enforced in CI rather
+      # than by memory, because it has to hold in code, comments, column names,
+      # commit messages and UI copy alike.
+      - name: Reject the forbidden term
+        run: |
+          if git grep -rniE 'crypto(currency|graphic|graphy)?' -- \
+              ':!package-lock.json' ':!.github/workflows/ci.yml' > /tmp/hits; then
+            # Cryptographic / cryptography are legitimate security words; the
+            # banned term is the asset-class one. Filter the allowed forms out.
+            if grep -viE 'cryptograph(ic|y)' /tmp/hits | grep -q .; then
+              echo 'Forbidden terminology found. The only term for this asset is Bitcoin (or BTC):'
+              grep -viE 'cryptograph(ic|y)' /tmp/hits
+              exit 1
+            fi
+          fi
+          echo 'No forbidden terminology.'

@@ -1,0 +1,177 @@
+# Household Budget
+
+A self-hosted envelope budgeting application for a single household. It replaces a
+hand-maintained spreadsheet and a self-hosted Sure instance.
+
+Money sits in real accounts and every dollar is _delegated_ to a named envelope.
+The health of the budget is one subtraction, shown at the bottom of the Main Budget
+page and recomputed on every view:
+
+```
+SUM(in-budget assets) − SUM(in-budget debts) − SUM(delegation balances)
+```
+
+A positive reading is money that has landed and not been distributed yet — the
+"available to delegate" figure. Near zero is `Balanced`. Negative is
+over-delegated. See [docs/architecture.md](docs/architecture.md) for the domain
+model.
+
+> **LAN only.** This application has no internet exposure and must not be given
+> any until the Phase 3 security work ships in full. See
+> [docs/architecture.md](docs/architecture.md) and the phase plan below.
+
+## Status
+
+Phase 1 (MVP) in progress. Landed so far:
+
+- Money primitives, the budget identity, and the domain vocabulary shared between
+  API and UI
+- The full PostgreSQL schema with integrity constraints the database enforces
+  itself
+- The delegation event ledger: Delegate with 12-hour undo, envelope transfers,
+  manual adjustment, categorization and splits, pending reconciliation and
+  reversal, archiving rules, go-live reconciliation
+- `recompute-balances`, which rebuilds cached balances from the ledger
+- 116 tests, including integration tests asserting the identity behaves correctly
+  after every mutating operation
+
+Not yet built: the HTTP API, authentication, SimpleFIN sync, and the UI.
+
+## Requirements
+
+- Node.js 22 LTS
+- PostgreSQL 16
+- Docker and Docker Compose, for deployment only — not needed to develop
+
+## Local development
+
+```bash
+npm install
+cp .env.example .env
+```
+
+Edit `.env` and set at least `DATABASE_URL`, `TEST_DATABASE_URL` and
+`SESSION_SECRET`. Generate the secret with:
+
+```bash
+openssl rand -base64 48
+```
+
+`.env` is git-ignored and must never be committed. Create the two databases,
+apply migrations, and seed:
+
+```bash
+createdb household_budget_dev && createdb household_budget_test
+npm run db:deploy
+npm run db:seed
+```
+
+The seed data is entirely invented — no real balances, institutions or personal
+details appear anywhere in this repository.
+
+### Commands
+
+| Command                    | What it does                                          |
+| -------------------------- | ----------------------------------------------------- |
+| `npm run dev`              | Run the API in watch mode                             |
+| `npm run typecheck`        | Typecheck every workspace, tests included             |
+| `npm run lint`             | ESLint, type-aware                                    |
+| `npm run format`           | Prettier, write                                       |
+| `npm test`                 | Unit tests only — no database needed                  |
+| `npm run test:integration` | Integration tests against `TEST_DATABASE_URL`         |
+| `npm run test:all`         | Both projects                                         |
+| `npm run db:migrate`       | Create and apply a new migration in development       |
+| `npm run db:deploy`        | Apply existing migrations (used in CI and production) |
+| `npm run db:reset`         | Drop, re-migrate and re-seed the development database |
+
+Integration tests **truncate every table** in `TEST_DATABASE_URL`, and refuse to
+run unless the database name ends in `_test`.
+
+### Rebuilding cached balances
+
+`delegations.balance_cents` is a cache; `delegation_events` is the truth.
+
+```bash
+npm run build --workspace @budget/api
+npm run recompute-balances --workspace @budget/api
+```
+
+It prints every balance it had to change and exits non-zero if there were any — a
+disagreement is a defect worth investigating, not routine maintenance. Add
+`-- --check` to report without writing, which is what CI does.
+
+## Deployment on a Synology NAS
+
+> Written so that someone who is not the owner could follow it.
+
+Container images are built by CI on x86_64 runners rather than locally, because a
+Mac would produce an arm64 image the NAS cannot run. See
+[ADR 005](docs/decisions/005-container-images-built-on-x86-64-ci.md).
+
+1. **Enable SSH** on the NAS: Control Panel → Terminal & SNMP → Enable SSH service.
+2. **Install Container Manager** from Package Center if it is not present.
+3. **Create a folder** for the project, for example `/volume1/docker/household-budget`,
+   and a folder for database dumps, for example `/volume1/backups/household-budget`.
+4. **Copy `docker-compose.yml` and `.env`** into the project folder. Set in `.env`:
+   - `POSTGRES_PASSWORD` — a long random value
+   - `SESSION_SECRET` — `openssl rand -base64 48`
+   - `HOST_PORT` — a port not already in use. It defaults to `8088` specifically to
+     avoid colliding with the existing Sure container, which runs alongside this
+     one during the transition.
+   - `SIMPLEFIN_ACCESS_URL` — the SimpleFIN access URL
+   - `BACKUP_DIR` — the dump folder from step 3
+5. **Start it:**
+   ```bash
+   sudo docker compose up -d
+   ```
+6. **Check health:** `curl http://<nas-address>:8088/health`
+7. **Create the first account** by opening the app in a browser. The first account
+   created becomes Super Admin.
+
+Nightly `pg_dump` output lands in `BACKUP_DIR` with the configured retention.
+**Confirm that folder is included in whatever off-device backup already exists** —
+a dump on the same disk as the database is not a backup.
+
+## Go-live order of operations
+
+The sequence matters, because balances derived from a categorized backlog are
+deliberately wrong until the last step:
+
+1. **Sync** — pulls accounts and backfills 12 months of transactions.
+2. **Build rules** — create auto-categorization rules, fastest from a transaction
+   via "always categorize like this".
+3. **Bulk-apply rules** to the existing backlog.
+4. **Categorize the remainder** by hand on the Transactions page.
+5. **Reconcile** — Settings → Reconcile. Enter each envelope's true balance. One
+   commit corrects every line.
+
+Steps 1–4 will drive delegation balances deeply negative — Grocery may read
+−$9,000 when its true balance is $725. That is expected and deliberate: it buys
+full history and accurate day-one numbers. Step 5 corrects all of it at once.
+
+## Phases
+
+| Phase | Scope                                                                                                                                                                |
+| ----- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1     | MVP: auth, accounts, SimpleFIN sync, transactions, rules, delegations, the ledger, Delegate/Transfer/Adjust, Reconcile, Settings, nightly backups, Docker deployment |
+| 2     | Utilities, Insights, Bitcoin, property value and equity, transaction pairing, grouping colours, notification banners                                                 |
+| 3     | Security hardening: LAN TLS, mandatory TOTP, passkeys, rate limiting, CSRF, Cloudflare Tunnel behind Cloudflare Access, dependency audit, tested restore             |
+| 4     | UI polish: mobile, keyboard coverage, empty/loading/error states, accessibility                                                                                      |
+
+**No internet exposure happens until every part of Phase 3 ships.** TLS is
+sequenced first within it, because WebAuthn requires a secure context and passkeys
+cannot be built at all over plain HTTP.
+
+## Repository conventions
+
+- `main` is protected and always deployable. Work happens on `feat/`, `fix/`,
+  `chore/`, `docs/` or `refactor/` branches and lands by squash-merge.
+- Conventional Commits.
+- CI must pass before merge: typecheck, lint, formatting, unit and integration
+  tests, and a check that cached balances agree with the ledger.
+- One PR per coherent unit of work. Schema + API + UI for one feature is one PR.
+- Architectural decisions are recorded in `docs/decisions/`.
+
+## Licence
+
+MIT. See [LICENSE](LICENSE).

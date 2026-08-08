@@ -1,0 +1,43 @@
+{
+  "name": "household-budget",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Self-hosted single-household envelope budgeting application",
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "build": "npm run build --workspaces --if-present",
+    "dev": "npm run dev --workspace @budget/api",
+    "typecheck": "tsc --build --force && tsc -p apps/api/tsconfig.test.json && tsc -p apps/api/prisma/tsconfig.json",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "test": "vitest run --project unit",
+    "test:integration": "vitest run --project integration",
+    "test:all": "vitest run",
+    "test:watch": "vitest",
+    "db:migrate": "npm run db:migrate --workspace @budget/api",
+    "db:deploy": "npm run db:deploy --workspace @budget/api",
+    "db:reset": "npm run db:reset --workspace @budget/api",
+    "db:seed": "npm run db:seed --workspace @budget/api",
+    "db:generate": "npm run db:generate --workspace @budget/api"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.1",
+    "@types/node": "^22.20.0",
+    "eslint": "^9.39.1",
+    "eslint-config-prettier": "^10.1.8",
+    "prettier": "^3.6.2",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.46.4",
+    "vitest": "^3.2.4"
+  }
+}

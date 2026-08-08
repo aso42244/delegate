@@ -1,0 +1,36 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+build/
+*.tsbuildinfo
+
+# Environment — never commit real values. Only .env.example is tracked.
+.env
+.env.*
+!.env.example
+
+# Test / tooling artefacts
+coverage/
+.vitest/
+*.timestamp-*.mjs
+playwright-report/
+test-results/
+
+# Local database dumps and backups. Never commit real financial data.
+backups/
+*.dump
+*.sql.gz
+
+# Editor / OS
+.DS_Store
+.idea/
+.vscode/*
+!.vscode/extensions.json
+*.swp
+
+# Logs
+logs/
+*.log
+npm-debug.log*
