@@ -2,6 +2,7 @@ import type { AccountType } from '@prisma/client';
 import type { Db } from '../db/client.js';
 import type { FeedAccount, FeedTransaction } from '../simplefin/protocol.js';
 import type { SimpleFinClient } from '../simplefin/client.js';
+import { fetchAccountsInWindows } from '../simplefin/backfill.js';
 import { ConflictError } from './errors.js';
 import { markEventsReversed } from './ledger.js';
 import {
@@ -180,7 +181,13 @@ export async function runSync(db: Db, options: RunSyncOptions): Promise<SyncRunS
   let transactionsReversed = 0;
 
   try {
-    const feed = await options.client.fetchAccounts({ startDate, includePending: true });
+    // Windowed, because the bridge silently caps a long range rather than
+    // failing — see simplefin/backfill.ts.
+    const feed = await fetchAccountsInWindows(options.client, {
+      startDate,
+      endDate: now,
+      includePending: true,
+    });
     errors.push(...feed.errors);
 
     for (const feedAccount of feed.accounts) {
@@ -308,12 +315,19 @@ async function upsertAccount(
     return { accountId: existing.id, discovered: false };
   }
 
-  const type = guessAccountType(feedAccount.name, feedAccount.balanceCents);
+  // The institution name carries the signal as often as the account name does:
+  // a real feed returns institution "Discover Credit Card" with account name
+  // "Andy Anderson (7169)", and guessing from the account name alone reads a
+  // credit card as an asset — which then adds to the identity instead of
+  // subtracting from it.
+  const displayName = feedAccount.institution
+    ? `${feedAccount.institution} ${feedAccount.name}`.trim()
+    : feedAccount.name;
+
+  const type = guessAccountType(displayName, feedAccount.balanceCents);
   const created = await db.account.create({
     data: {
-      name: feedAccount.institution
-        ? `${feedAccount.institution} ${feedAccount.name}`.trim()
-        : feedAccount.name,
+      name: displayName,
       type,
       source: 'simplefin',
       externalId: feedAccount.externalId,

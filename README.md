@@ -173,7 +173,11 @@ a dump on the same disk as the database is not a backup.
 The sequence matters, because balances derived from a categorized backlog are
 deliberately wrong until the last step:
 
-1. **Sync** — pulls accounts and backfills 12 months of transactions.
+1. **Sync** — pulls accounts and backfills as much history as the feed holds. The
+   target is 12 months, but the institutions decide: against real accounts the
+   bridge returned roughly **six months**. Requests are split into 45-day windows,
+   because a single long request is silently capped rather than refused. See
+   [ADR 009](docs/decisions/009-simplefin-sync-cadence-and-window.md).
 2. **Build rules** — create auto-categorization rules, fastest from a transaction
    via "always categorize like this".
 3. **Bulk-apply rules** to the existing backlog.

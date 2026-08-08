@@ -33,6 +33,26 @@ The first sync requests twelve months. Later syncs request from the last
 successful run minus a **seven-day overlap**, so a transaction that posts late is
 still inside the window.
 
+**A long range must be split into windows of 45 days.** This was found by running
+against the real bridge, and it could not have been found any other way. Asking
+for twelve months in one request returns `200 OK` with a plausible-looking set of
+transactions and a note buried in `errlist`:
+
+> Requested date range exceeds limit of 90 days and was capped.
+
+Measured against the household's own accounts, that silent cap was the difference
+between **275 transactions over 88 days** and **423 over 193 days** — a request
+that looked entirely successful was returning 65% of the available history.
+
+The bridge separately recommends 45 days per request and warns that the 90-day
+limit may tighten in future, so windows are 45 days rather than 90. It costs a
+few more requests on the one-off backfill and nothing afterwards.
+
+This matters more than it first appears: go-live reconciliation corrects
+delegation balances against a categorized backlog, so a backlog quietly missing
+half its history produces balances that are wrong with nothing on screen to
+explain why.
+
 **The window is then widened to cover the oldest outstanding pending
 transaction.** This is the part that is easy to get wrong. Absence from the feed
 is how a vanished pending transaction is detected, and that inference is only
@@ -57,3 +77,9 @@ speaks the other one; accepting both costs a handful of optional fields.
   and permanent inaccuracy.
 - If SimpleFIN later publishes rate limits, this decision should be revisited
   rather than assumed still valid.
+- **Twelve months of history may simply not exist.** Against the household's real
+  accounts the feed returns roughly six months, no matter how the request is
+  windowed — that is what the institutions hold, not a limit we can engineer
+  around. §7 anticipated this ("or as far back as SimpleFIN permits if less"), but
+  it changes what go-live reconciliation is reconciling against, so it is stated
+  here rather than discovered on the day.
