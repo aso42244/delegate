@@ -2,9 +2,12 @@
 
 The owner's design specification. **Visual only** — it describes nothing about
 behaviour. Where a design specification and a functional requirement disagree,
-**functionality wins and the design bends around it.** The conflicts found so far
-are listed at the bottom of this document; they are not editorial quibbles, they
-are places where following the design literally would break a hard constraint.
+**functionality wins and the design bends around it.**
+
+Six such disagreements were found on first reading. All are settled and **this
+document now states the resolved design** — read it as written rather than
+cross-referencing anything. The reasoning behind each change is recorded at the
+bottom, so nobody re-derives the original wording from the build prompt later.
 
 This is a starting point, written before the UI exists, and is expected to change
 once real data is on screen.
@@ -74,17 +77,22 @@ on the left, primary actions on the right.
 ### Balance banner
 
 A full-width 8px-radius bar with a status dot and one line stating the identity.
-Four states driven by the unassigned sum:
 
-| Condition        | State    | Look                             |
-| ---------------- | -------- | -------------------------------- |
-| Within ±$4.99    | Balanced | Green                            |
-| +$5.00 or more   | Warning  | Yellow; suggests distributing it |
-| −$5.00 to −$9.99 | Warning  | Yellow; shows the shortfall      |
-| −$10.00 or more  | Danger   | Red; shows the shortfall         |
+Thresholds derive from the **configured tolerance** — set in Settings, default
+$5.00 — rather than being fixed. `T` below is that value.
 
-See conflict 3 below: the thresholds must read from the configurable tolerance,
-and a positive reading is the normal payday state rather than a warning.
+| Condition  | State       | Look                                      | Label                    |
+| ---------- | ----------- | ----------------------------------------- | ------------------------ |
+| ≥ +T       | To delegate | Accent blue on accent-soft; dot `#2783DE` | `$4,890.00 to delegate`  |
+| Within ±T  | Balanced    | Green                                     | `Balanced`               |
+| −T to −2T  | Warning     | Yellow; shows the shortfall               | `$7.40 over-delegated`   |
+| Beyond −2T | Danger      | Red; shows the shortfall                  | `$212.00 over-delegated` |
+
+**A positive reading is not a warning.** It is the ordinary state on payday:
+money has landed and has not been distributed yet, and that figure _is_ the
+amount available to delegate. Colouring the most common healthy state yellow
+would teach the owner to ignore the one banner that has to be read. Yellow and
+red are reserved for over-delegation — the direction that is genuinely wrong.
 
 ### Tables
 
@@ -120,14 +128,32 @@ Triggered by a `⋯` button at the right edge, visible on hover **and reachable 
 keyboard focus**. White card, 250px, 10px radius, 1px border,
 `0 4px 16px rgba(0,0,0,.10)`.
 
-Contents: delegation name (13px/650); a "Note to self" panel on soft surface in
-italic secondary text, rendered only when a note exists; Rename; Utility with a
-right-aligned toggle; Move to grouping `▸`; divider; then the destructive action.
+Contents, top to bottom:
+
+1. Delegation name, 13px/650.
+2. A "Note to self" panel on soft surface in italic secondary text, rendered only
+   when a note exists.
+3. **Rename**
+4. **Utility**, with a right-aligned toggle.
+5. **Manually adjust this line** — writes a delta, never an absolute.
+6. **History for this line** — the per-delegation event history. This is the only
+   route to it, because adjustments deliberately never appear on the Transactions
+   page.
+7. **Move to grouping** `▸`
+8. Divider.
+9. **Archive**, in danger red.
+
 Items are 13px, 7px vertical padding, 6px hover radius. Dismisses on outside
 click.
 
-See conflicts 1 and 2: the destructive action is **Archive**, not Delete, and the
-menu is missing two required items.
+**Archive, not Delete.** Nothing in this system is ever hard-deleted: archived
+rows keep resolving, so an eight-month-old transaction still renders
+`Grocery (archived)` rather than a dangling id. A menu item labelled Delete would
+name behaviour that does not exist.
+
+Archiving a delegation is **blocked unless its balance is exactly $0**. The
+blocked state offers Transfer and Adjust inline, so the line can be zeroed
+without leaving the menu.
 
 ## 6. Other pages
 
@@ -171,78 +197,74 @@ to understand the interface.
 
 ---
 
-## Conflicts with the build prompt
+## Decisions where the design met the functional requirements
 
-Recorded rather than silently resolved. Numbered so they can be settled
-individually.
+The design specification is visual; the build prompt is functional. Where they
+disagreed, functionality won and the design above was rewritten to match — this
+section records what changed and why, so nobody re-litigates it from the original
+specification later.
 
-### 1. "Delete" must be "Archive" — hard constraint
+All six are **settled**. The design above is now the authority; this is history.
 
-The row menu specifies **Delete in red**. Hard constraint 3 is that nothing is
-ever hard-deleted; delegations, groupings, accounts and transactions are archived
-with a timestamp and stay resolvable so an eight-month-old transaction still
-renders `Grocery (archived)`.
+### 1. Archive, not Delete — settled
 
-A menu item labelled Delete would therefore describe something the system does
-not and must not do. **Resolved as: the item reads Archive.** It may still be the
-destructive-red item at the bottom of the menu.
+The design specified **Delete in red** in the row menu. Hard constraint 3 is that
+nothing is ever hard-deleted: delegations, groupings, accounts and transactions
+are archived with a timestamp and stay resolvable so an eight-month-old
+transaction still renders `Grocery (archived)`.
 
-Archiving a delegation is also blocked unless its balance is exactly $0, so the
-item needs a blocked state offering Transfer and Adjust inline (§6.9).
+A menu item labelled Delete would name behaviour the system does not and must not
+have. **The item reads Archive**, still the destructive-red item at the bottom.
+Confirmed by the owner.
 
-### 2. The row menu is missing two required items
+### 2. The row menu was missing two required items — settled
 
-The design lists Rename, Utility, Move to grouping, Delete. §9.1 requires the
-menu to also offer **"Manually adjust this line"** and **"History for this
-line"** — the only route to the per-delegation event history, since adjustments
-deliberately never appear on the Transactions page.
+The design listed Rename, Utility, Move to grouping, Delete. §9.1 also requires
+**"Manually adjust this line"** and **"History for this line"** — the latter being
+the only route to per-delegation history, since adjustments deliberately never
+appear on the Transactions page.
 
-**Resolved as: both are added**, above the divider.
+**Both added.** Confirmed by the owner, who asked that the specification be
+updated to match the functionality rather than carry the discrepancy.
 
-### 3. The banner thresholds are hardcoded, and treat payday as a fault
+### 3. A positive reading is informational, not a warning — settled
 
-Two problems.
+The design coloured a **positive** unassigned sum yellow. But per §6.6 a positive
+number is the ordinary, healthy state on payday: money has landed and has not been
+distributed yet, and that figure _is_ the "available to delegate" amount.
 
-The tolerance is **configurable in Settings**, defaulting to $5.00 (§6.6, §9.5).
-The design hardcodes ±$4.99, −$9.99 and −$10.00. **Resolved as: thresholds derive
-from the configured tolerance**, with the danger threshold at twice it.
+Colouring the most common good state as a fault trains the owner to ignore the
+banner, which is the one thing it must not do. **Positive is now informational**
+— accent blue, labelled `$4,890.00 to delegate`. Yellow and red are reserved for
+over-delegation. Confirmed by the owner.
 
-More substantially: a **positive** reading is shown as a _warning_. But per §6.6 a
-positive number is the ordinary, healthy state on payday — money has landed and
-has not been distributed yet, and that figure _is_ the "available to delegate"
-amount. Colouring the most common good state yellow trains the owner to ignore
-the banner, which is the one thing it must not do.
+Separately, the thresholds were fixed at ±$4.99 / −$10.00 while the tolerance is
+configurable in Settings. **Thresholds now derive from the configured tolerance**,
+with danger at twice it.
 
-**Proposed: positive is informational, not a warning** — accent blue or neutral,
-labelled `$4,890.00 to delegate`. Yellow and red stay for the genuinely wrong
-direction, over-delegation. Flagged for the owner; not yet settled.
+### 4. Grouping colour as a row tint — settled
 
-### 4. Grouping colour as a row tint contradicts the original restraint
-
-§11 says grouping colour "must not be in your face", specifies a 3px left rail or
-a small dot, and says **"never a filled row background."** The design specifies a
-soft tint on the grouping row and a fainter tint on its children.
+§11 said grouping colour "must not be in your face", specified a 3px left rail or
+a small dot, and said **"never a filled row background."** The design specifies
+soft tints on the grouping row and its children.
 
 The newer design is the owner's own and supersedes it, and soft tints are a fair
-reading of restraint. **Resolved as: follow the design**, with the tints kept
-faint enough that the near-black text keeps its 4.5:1 contrast, and re-judged
-against real data as §12 anticipated.
+reading of restraint. **The design is followed**, with tints kept faint enough
+that near-black text holds 4.5:1 contrast, and re-judged against real data as §12
+anticipated.
 
-### 5. "Metrics" versus "Insights"
+### 5. "Insights", not "Metrics" — settled
 
-The design calls the page **Metrics**. §9.4 and decision 1 in §15 name it
-**Insights**, deliberately. **Resolved as: Insights**, since it is a flagged
-decision the owner can still overturn, and this document uses that name
-throughout.
+The design called the page **Metrics**; §9.4 and decision 1 of §15 deliberately
+name it **Insights**. **Insights** is used throughout. Still the owner's to
+overturn — it is a naming preference, not a constraint.
 
-### 6. The app name is personal data
+### 6. The app name is personal data — settled
 
-The design titles the application **"Ott Family Budget"**. Hard constraint 4
-forbids personal data in the repository, and §5 requires that going public be a
-README and a LICENCE rather than a refactor. A family name baked into committed
-UI copy is exactly what that rule is about.
+The design titled the application with a family name. Hard constraint 4 forbids
+personal data in the repository, and §5 requires that going public be a README and
+a LICENCE rather than a refactor.
 
-**Resolved as: the displayed name comes from configuration** — an `APP_NAME`
-environment variable defaulting to `Household Budget`. The owner sets it to
-whatever he likes in `.env`, which is git-ignored, and the repository stays free
-of it.
+**The displayed name comes from the `APP_NAME` environment variable**, defaulting
+to `Household Budget`. The owner sets his own in `.env`, which is git-ignored, so
+the repository stays free of it. Confirmed by the owner.
