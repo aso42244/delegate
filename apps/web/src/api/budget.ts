@@ -16,6 +16,9 @@ export interface BudgetRowDto {
   readonly isUtility: boolean;
   readonly notes: string | null;
   readonly source: string | null;
+  /** Accounts only; a delegation is neither. */
+  readonly inBudget: boolean;
+  readonly inNetWorth: boolean;
   readonly needsReview: boolean;
   readonly balanceAsOf: string | null;
   readonly stalenessIntervalDays: number | null;

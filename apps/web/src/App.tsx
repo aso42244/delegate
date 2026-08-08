@@ -6,6 +6,7 @@ import { useSession } from './auth/SessionProvider.jsx';
 import { Sidebar } from './components/Sidebar.jsx';
 import { ChangePassword } from './pages/ChangePassword.jsx';
 import { MainBudget } from './pages/MainBudget.jsx';
+import { AccountsSection } from './pages/settings/Accounts.jsx';
 import { BudgetSection } from './pages/settings/Budget.jsx';
 import { ReconcileSection } from './pages/settings/Reconcile.jsx';
 import { SettingsLayout } from './pages/settings/SettingsLayout.jsx';
@@ -101,6 +102,7 @@ export function App(): ReactNode {
                 before anything else on this page means anything. */}
             <Route index element={<Navigate to="sync" replace />} />
             <Route path="sync" element={<SyncSection />} />
+            <Route path="accounts" element={<AccountsSection />} />
             <Route path="budget" element={<BudgetSection />} />
             <Route path="reconcile" element={<ReconcileSection />} />
           </Route>

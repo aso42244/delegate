@@ -93,17 +93,26 @@ export async function makeDelegation(
   return body.delegation.id;
 }
 
-/** Creates an in-budget asset directly, since accounts have no create route yet. */
+/**
+ * Creates an in-budget account directly.
+ *
+ * `source` matters to more than provenance: a SimpleFIN balance is the
+ * institution's to state, so the application refuses to let one be typed. Seeded
+ * here rather than through the API because only a sync creates a feed-owned
+ * account.
+ */
 export async function makeAccount(
   name: string,
   type: 'asset' | 'debt',
   balanceCents: bigint,
+  source: 'manual' | 'simplefin' = 'manual',
 ): Promise<string> {
   const account = await prisma.account.create({
     data: {
       name,
       type,
-      source: 'manual',
+      source,
+      ...(source === 'simplefin' ? { externalId: `e2e-${name}` } : {}),
       balanceCents,
       inBudget: true,
       inNetWorth: true,

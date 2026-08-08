@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState, type ReactNode } from 'react';
 import { budgetApi } from '../api/budget.js';
 import { ApiError } from '../api/client.js';
+import { AccountRowMenu } from '../components/AccountRowMenu.jsx';
 import { BalanceBanner } from '../components/BalanceBanner.jsx';
 import { BudgetSection } from '../components/BudgetSection.jsx';
 import { DelegationRowMenu } from '../components/DelegationRowMenu.jsx';
@@ -278,10 +279,11 @@ export function MainBudget(): ReactNode {
     ...view.data.delegations.ungrouped,
   ].map((row) => ({ id: row.id, name: row.name }));
 
-  const groupingOptions = view.data.delegations.groupings.map((grouping) => ({
-    id: grouping.id,
-    name: grouping.name,
-  }));
+  const groupingOptionsFor = (section: {
+    groupings: readonly { id: string; name: string }[];
+  }): { id: string; name: string }[] =>
+    section.groupings.map((grouping) => ({ id: grouping.id, name: grouping.name }));
+  const groupingOptions = groupingOptionsFor(view.data.delegations);
 
   return (
     <div>
@@ -319,6 +321,9 @@ export function MainBudget(): ReactNode {
         showAmountToDelegate={false}
         redNegatives={false}
         onToggleGrouping={(id, collapsed) => toggleGrouping.mutate({ id, collapsed })}
+        rowMenu={(row) => (
+          <AccountRowMenu row={row} groupings={groupingOptionsFor(view.data.assets)} />
+        )}
       />
 
       {/* Debts render in normal text, never red, despite being liabilities. */}
@@ -328,6 +333,9 @@ export function MainBudget(): ReactNode {
         showAmountToDelegate={false}
         redNegatives={false}
         onToggleGrouping={(id, collapsed) => toggleGrouping.mutate({ id, collapsed })}
+        rowMenu={(row) => (
+          <AccountRowMenu row={row} groupings={groupingOptionsFor(view.data.debts)} />
+        )}
       />
 
       <BudgetSection

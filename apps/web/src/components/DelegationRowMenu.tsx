@@ -1,9 +1,10 @@
 import { formatCents, tryParseMoney } from '@budget/shared';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
+import { useState, type FormEvent, type ReactNode } from 'react';
 import { budgetApi, type BudgetRowDto } from '../api/budget.js';
 import { ApiError } from '../api/client.js';
 import { DelegationHistory } from './DelegationHistory.jsx';
+import { ITEM_CLASS, RowMenuShell, type GroupingOption } from './RowMenuShell.jsx';
 import { Alert, Button, Modal, TextArea, TextField, Toggle } from './ui.jsx';
 
 /**
@@ -18,11 +19,6 @@ import { Alert, Button, Modal, TextArea, TextField, Toggle } from './ui.jsx';
  * "Grocery (archived)" — and a menu item labelled Delete would name behaviour
  * that does not exist.
  */
-
-export interface GroupingOption {
-  readonly id: string;
-  readonly name: string;
-}
 
 type Dialog = 'none' | 'rename' | 'note' | 'adjust' | 'history';
 
@@ -256,38 +252,10 @@ export function DelegationRowMenu({
   readonly onTransferFrom: (delegationId: string) => void;
 }): ReactNode {
   const queryClient = useQueryClient();
-  const containerRef = useRef<HTMLDivElement>(null);
-
-  const [open, setOpen] = useState(false);
-  const [panel, setPanel] = useState<'root' | 'grouping'>('root');
   const [dialog, setDialog] = useState<Dialog>('none');
   const [blocked, setBlocked] = useState<string | null>(null);
 
   const balance = BigInt(row.balanceCents);
-
-  function close(): void {
-    setOpen(false);
-    setPanel('root');
-    setBlocked(null);
-  }
-
-  useEffect(() => {
-    if (!open) return;
-
-    function onPointerDown(event: MouseEvent): void {
-      if (!containerRef.current?.contains(event.target as Node)) close();
-    }
-    function onKeyDown(event: KeyboardEvent): void {
-      if (event.key === 'Escape') close();
-    }
-
-    document.addEventListener('mousedown', onPointerDown);
-    document.addEventListener('keydown', onKeyDown);
-    return () => {
-      document.removeEventListener('mousedown', onPointerDown);
-      document.removeEventListener('keydown', onKeyDown);
-    };
-  }, [open]);
 
   const refresh = async (): Promise<void> => {
     await queryClient.invalidateQueries({ queryKey: ['budget'] });
@@ -300,18 +268,12 @@ export function DelegationRowMenu({
 
   const moveToGrouping = useMutation({
     mutationFn: (groupingId: string | null) => budgetApi.updateDelegation(row.id, { groupingId }),
-    onSuccess: async () => {
-      await refresh();
-      close();
-    },
+    onSuccess: refresh,
   });
 
   const archive = useMutation({
     mutationFn: () => budgetApi.archiveDelegation(row.id),
-    onSuccess: async () => {
-      await refresh();
-      close();
-    },
+    onSuccess: refresh,
     onError: (error: unknown) => {
       // Archiving is blocked unless the balance is exactly zero, because
       // archiving money would break the identity by that amount with nothing on
@@ -320,215 +282,155 @@ export function DelegationRowMenu({
     },
   });
 
-  const itemClass =
-    'flex w-full items-center justify-between gap-3 rounded-md px-2 py-1.5 text-left text-quiet text-ink hover:bg-surface-2';
-
   return (
-    <div ref={containerRef} className="relative flex justify-end">
-      {/* Revealed on hover, and always reachable by keyboard: a control that
-          exists only under a mouse pointer is a control some people never get. */}
-      <button
-        type="button"
-        onClick={() => (open ? close() : setOpen(true))}
-        aria-label={`Options for ${row.name}`}
-        aria-expanded={open}
-        aria-haspopup="menu"
-        className="rounded px-2 py-0.5 text-muted opacity-0 group-hover:opacity-100 focus:opacity-100 focus-visible:opacity-100 aria-expanded:opacity-100"
-      >
-        ⋯
-      </button>
-
-      {open && (
-        <div
-          role="menu"
-          aria-label={`Options for ${row.name}`}
-          className="absolute top-full right-0 z-20 w-[250px] rounded-[10px] border border-line bg-canvas p-2 shadow-[0_4px_16px_rgba(0,0,0,.10)]"
-        >
-          {panel === 'root' ? (
-            <>
-              <p className="px-2 py-1 text-quiet font-semibold text-ink">{row.name}</p>
-
-              {row.notes && (
-                <p className="mx-1 my-1 rounded-md bg-surface px-2 py-1.5 text-quiet text-muted italic">
-                  {row.notes}
-                </p>
-              )}
-
-              {blocked ? (
-                <div className="flex flex-col gap-2 p-1">
-                  <Alert>{blocked}</Alert>
-                  {/* Both ways to zero it, offered here rather than sending the
-                      owner off to find them. */}
-                  <Button
-                    onClick={() => {
-                      setDialog('adjust');
-                      setOpen(false);
-                    }}
-                  >
-                    Adjust to zero
-                  </Button>
-                  <Button
-                    onClick={() => {
-                      onTransferFrom(row.id);
-                      close();
-                    }}
-                  >
-                    Transfer it out
-                  </Button>
-                  <Button variant="ghost" onClick={() => setBlocked(null)}>
-                    Back
-                  </Button>
-                </div>
-              ) : (
-                <>
-                  <button
-                    type="button"
-                    role="menuitem"
-                    className={itemClass}
-                    onClick={() => {
-                      setDialog('rename');
-                      setOpen(false);
-                    }}
-                  >
-                    Rename
-                  </button>
-
-                  <div className={itemClass}>
-                    <span>Utility</span>
-                    <Toggle
-                      checked={row.isUtility}
-                      onChange={(next) => setUtility.mutate(next)}
-                      label={`${row.name} is a utility`}
-                    />
-                  </div>
-
-                  <button
-                    type="button"
-                    role="menuitem"
-                    className={itemClass}
-                    onClick={() => {
-                      setDialog('note');
-                      setOpen(false);
-                    }}
-                  >
-                    {row.notes ? 'Edit note' : 'Add a note'}
-                  </button>
-
-                  <button
-                    type="button"
-                    role="menuitem"
-                    className={itemClass}
-                    onClick={() => {
-                      setDialog('adjust');
-                      setOpen(false);
-                    }}
-                  >
-                    Manually adjust this line
-                  </button>
-
-                  <button
-                    type="button"
-                    role="menuitem"
-                    className={itemClass}
-                    onClick={() => {
-                      setDialog('history');
-                      setOpen(false);
-                    }}
-                  >
-                    History for this line
-                  </button>
-
-                  <button
-                    type="button"
-                    role="menuitem"
-                    className={itemClass}
-                    onClick={() => setPanel('grouping')}
-                  >
-                    <span>Move to grouping</span>
-                    <span aria-hidden>▸</span>
-                  </button>
-
-                  <div className="my-1 border-t border-line" />
-
-                  <button
-                    type="button"
-                    role="menuitem"
-                    className={`${itemClass} text-danger`}
-                    onClick={() => archive.mutate()}
-                    disabled={archive.isPending}
-                  >
-                    Archive
-                  </button>
-                </>
-              )}
-            </>
-          ) : (
-            <>
-              <button
-                type="button"
-                className={itemClass}
-                onClick={() => setPanel('root')}
-                aria-label="Back to the menu"
-              >
-                <span aria-hidden>◂</span>
-                <span className="flex-1">Move to grouping</span>
-              </button>
-              <div className="my-1 border-t border-line" />
-
-              <button
-                type="button"
-                role="menuitem"
-                className={itemClass}
-                onClick={() => moveToGrouping.mutate(null)}
-                disabled={row.groupingId === null}
-              >
-                No grouping
-              </button>
-
-              {groupings.map((grouping) => (
-                <button
-                  key={grouping.id}
-                  type="button"
-                  role="menuitem"
-                  className={itemClass}
-                  onClick={() => moveToGrouping.mutate(grouping.id)}
-                  disabled={row.groupingId === grouping.id}
-                >
-                  {grouping.name}
-                </button>
-              ))}
-
-              {groupings.length === 0 && (
-                <p className="px-2 py-1.5 text-quiet text-muted">
-                  No groupings yet. Add one above the Delegations table.
-                </p>
-              )}
-            </>
+    <RowMenuShell
+      name={row.name}
+      groupings={groupings}
+      currentGroupingId={row.groupingId}
+      onMoveToGrouping={(groupingId) => moveToGrouping.mutate(groupingId)}
+      header={
+        row.notes ? (
+          <p className="mx-1 my-1 rounded-md bg-surface px-2 py-1.5 text-quiet text-muted italic">
+            {row.notes}
+          </p>
+        ) : null
+      }
+      overlay={
+        <>
+          {dialog === 'rename' && <RenameDialog row={row} onClose={() => setDialog('none')} />}
+          {dialog === 'note' && <NoteDialog row={row} onClose={() => setDialog('none')} />}
+          {dialog === 'adjust' && (
+            <AdjustDialog
+              row={row}
+              // Offered from a blocked archive, the movement that zeroes the line
+              // is the one the owner wants; anywhere else it starts empty.
+              {...(blocked !== null && balance !== 0n ? { suggestedDeltaCents: -balance } : {})}
+              onClose={() => {
+                setDialog('none');
+                setBlocked(null);
+              }}
+            />
           )}
-        </div>
-      )}
+          {dialog === 'history' && (
+            <DelegationHistory
+              delegationId={row.id}
+              delegationName={row.name}
+              onClose={() => setDialog('none')}
+            />
+          )}
+        </>
+      }
+    >
+      {(controls) =>
+        blocked ? (
+          <div className="flex flex-col gap-2 p-1">
+            <Alert>{blocked}</Alert>
+            {/* Both ways to zero it, offered here rather than sending the owner
+                off to find them. */}
+            <Button
+              onClick={() => {
+                setDialog('adjust');
+                controls.close();
+              }}
+            >
+              Adjust to zero
+            </Button>
+            <Button
+              onClick={() => {
+                onTransferFrom(row.id);
+                setBlocked(null);
+                controls.close();
+              }}
+            >
+              Transfer it out
+            </Button>
+            <Button variant="ghost" onClick={() => setBlocked(null)}>
+              Back
+            </Button>
+          </div>
+        ) : (
+          <>
+            <button
+              type="button"
+              role="menuitem"
+              className={ITEM_CLASS}
+              onClick={() => {
+                setDialog('rename');
+                controls.close();
+              }}
+            >
+              Rename
+            </button>
 
-      {dialog === 'rename' && <RenameDialog row={row} onClose={() => setDialog('none')} />}
-      {dialog === 'note' && <NoteDialog row={row} onClose={() => setDialog('none')} />}
-      {dialog === 'adjust' && (
-        <AdjustDialog
-          row={row}
-          // Offered from a blocked archive, the movement that zeroes the line is
-          // the one the owner wants; anywhere else it starts empty.
-          {...(blocked !== null && balance !== 0n ? { suggestedDeltaCents: -balance } : {})}
-          onClose={() => {
-            setDialog('none');
-            setBlocked(null);
-          }}
-        />
-      )}
-      {dialog === 'history' && (
-        <DelegationHistory
-          delegationId={row.id}
-          delegationName={row.name}
-          onClose={() => setDialog('none')}
-        />
-      )}
-    </div>
+            <div className={ITEM_CLASS}>
+              <span>Utility</span>
+              <Toggle
+                checked={row.isUtility}
+                onChange={(next) => setUtility.mutate(next)}
+                label={`${row.name} is a utility`}
+              />
+            </div>
+
+            <button
+              type="button"
+              role="menuitem"
+              className={ITEM_CLASS}
+              onClick={() => {
+                setDialog('note');
+                controls.close();
+              }}
+            >
+              {row.notes ? 'Edit note' : 'Add a note'}
+            </button>
+
+            <button
+              type="button"
+              role="menuitem"
+              className={ITEM_CLASS}
+              onClick={() => {
+                setDialog('adjust');
+                controls.close();
+              }}
+            >
+              Manually adjust this line
+            </button>
+
+            <button
+              type="button"
+              role="menuitem"
+              className={ITEM_CLASS}
+              onClick={() => {
+                setDialog('history');
+                controls.close();
+              }}
+            >
+              History for this line
+            </button>
+
+            <button
+              type="button"
+              role="menuitem"
+              className={ITEM_CLASS}
+              onClick={controls.openGroupingPanel}
+            >
+              <span>Move to grouping</span>
+              <span aria-hidden>▸</span>
+            </button>
+
+            <div className="my-1 border-t border-line" />
+
+            <button
+              type="button"
+              role="menuitem"
+              className={`${ITEM_CLASS} text-danger`}
+              onClick={() => archive.mutate()}
+              disabled={archive.isPending}
+            >
+              Archive
+            </button>
+          </>
+        )
+      }
+    </RowMenuShell>
   );
 }

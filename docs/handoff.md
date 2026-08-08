@@ -74,8 +74,8 @@ These are non-negotiable. Violating one is a build failure.
 
 ## Where things stand
 
-**Phase 1 is essentially complete.** 24 PRs merged. 302 unit and integration
-tests, 48 end-to-end tests in a real browser, all green.
+**Phase 1 is essentially complete.** 25 PRs merged. 311 unit and integration
+tests, 56 end-to-end tests in a real browser, all green.
 
 Built and working:
 
@@ -94,20 +94,17 @@ Built and working:
   Adjust/Reconcile
 - The UI: app shell with collapsible sidebar, auth screens, the Main Budget page
   with the per-row menu and inline grouping creation, the Transactions page
-  including manual entry and the split editor, and Settings → Sync, Budget and
-  Reconcile to Actual
+  including manual entry and the split editor, and Settings → Sync, Accounts,
+  Budget and Reconcile to Actual
 - Docker image, Compose for the NAS, nightly `pg_dump`, and a restore path proven
   by destroying data and recovering it
 
 ### What is left in Phase 1
 
-1. **The remaining Settings sections** — accounts, delegations, groupings, rules,
-   users and archived. Sync, Budget and Reconcile to Actual are done.
-   Accounts brings the write routes with it (`PATCH /api/accounts/:id`, archive),
-   and the **asset and debt row menu on Main Budget** belongs with them — the
-   delegation row menu ships without it deliberately, rather than being built
-   twice against routes that do not exist yet. Archived needs a listing route;
-   restore already exists for delegations and groupings.
+1. **The remaining Settings sections** — delegations, groupings, rules, users and
+   archived. Sync, Accounts, Budget and Reconcile to Actual are done, and both
+   row menus on the Main Budget are in place. Archived needs a listing route;
+   restore already exists for accounts, delegations and groupings.
 2. **Deploy to the NAS.** The image has never run on the DS220+. That is the one
    remaining unknown; CI proves it boots on x86_64 Linux against real Postgres.
 
@@ -202,6 +199,12 @@ does.
   first run after a cold server start, which is exactly the run that looks like a
   real bug. Wait for a UI signal that the write landed (the row leaving the
   queue, the dialog closing) before navigating.
+- **`npm run typecheck` did not cover the web app.** The root `tsconfig.json`
+  referenced only `packages/shared` and `apps/api`, so type errors in
+  `apps/web` surfaced only at `npm run build` — the same shape of hole as the
+  two boot crashes above. `apps/web` is now in the references, and a real error
+  (`row.inBudget` on a type that did not have it) was sitting there when it was
+  added.
 - **Playwright found two genuine accessibility defects on first run**: hint text
   inside a `<label>` polluting the accessible name, and a combobox and its
   listbox sharing one `aria-label`.
