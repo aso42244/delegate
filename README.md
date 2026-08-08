@@ -234,7 +234,9 @@ deliberately wrong until the last step:
 3. **Bulk-apply rules** to the existing backlog.
 4. **Categorize the remainder** by hand on the Transactions page.
 5. **Reconcile** — Settings → Reconcile. Enter each envelope's true balance. One
-   commit corrects every line.
+   commit corrects every line. **A line left blank is not touched**, so this can
+   be done in several sittings. The first commit is also recorded as the go-live
+   date; later ones are ordinary maintenance and do not move it.
 
 Steps 1–4 will drive delegation balances deeply negative — Grocery may read
 −$9,000 when its true balance is $725. That is expected and deliberate: it buys

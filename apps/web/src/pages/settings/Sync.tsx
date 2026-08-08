@@ -1,32 +1,10 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState, type FormEvent, type ReactNode } from 'react';
-import { ApiError, syncApi, type SyncStatus } from '../api/client.js';
-import { Alert, Button, TextField } from '../components/ui.jsx';
+import { ApiError, syncApi, type SyncStatus } from '../../api/client.js';
+import { Alert, Button, TextField } from '../../components/ui.jsx';
+import { SettingsCard as Card } from './SettingsCard.jsx';
 
-/**
- * Settings.
- *
- * Only the Sync section so far. The rest — accounts, delegations, rules, users,
- * archived entities, reconcile — follows.
- */
-
-function Card({
-  title,
-  description,
-  children,
-}: {
-  title: string;
-  description: string;
-  children: ReactNode;
-}): ReactNode {
-  return (
-    <section className="rounded-lg border border-line bg-canvas p-4">
-      <h2 className="text-base font-semibold text-ink">{title}</h2>
-      <p className="mb-4 text-quiet text-muted">{description}</p>
-      {children}
-    </section>
-  );
-}
+/** Settings → Sync: the SimpleFIN connection, its history, and a manual run. */
 
 function connectionSummary(status: SyncStatus): { tone: 'positive' | 'warning'; text: string } {
   if (status.credentialProblem) return { tone: 'warning', text: status.credentialProblem };
@@ -165,17 +143,6 @@ function SyncSettings(): ReactNode {
   );
 }
 
-export function Settings(): ReactNode {
-  return (
-    <div>
-      <h1 className="text-page font-bold text-ink">Settings</h1>
-      <p className="mt-1 mb-6 text-quiet text-muted">
-        Connections, accounts and how the budget behaves.
-      </p>
-
-      <div className="flex flex-col gap-4">
-        <SyncSettings />
-      </div>
-    </div>
-  );
+export function SyncSection(): ReactNode {
+  return <SyncSettings />;
 }
