@@ -173,29 +173,50 @@ sharing that hardware with DSM itself and the existing Sure container. Postgres
 memory settings are pinned explicitly in the Compose file rather than left at
 defaults, which assume a much larger machine.
 
-1. **Enable SSH** on the NAS: Control Panel → Terminal & SNMP → Enable SSH service.
-2. **Install Container Manager** from Package Center if it is not present.
-3. **Create a folder** for the project, for example `/volume1/docker/household-budget`,
-   and a folder for database dumps, for example `/volume1/backups/household-budget`.
-4. **Copy `docker-compose.yml` and `.env`** into the project folder. Set in `.env`:
+1. **Install Container Manager** from Package Center if it is not present.
+2. **Create two folders**, for example `/volume1/docker/delegate` for the project
+   and `/volume1/backups/delegate` for database dumps.
+3. **Copy `docker-compose.yml` and a `.env`** into the project folder. Set:
    - `POSTGRES_PASSWORD` — a long random value
-   - `SESSION_SECRET` — `openssl rand -base64 48`
-   - `HOST_PORT` — a port not already in use. It defaults to `8088` specifically to
-     avoid colliding with the existing Sure container, which runs alongside this
-     one during the transition.
-   - `SIMPLEFIN_ACCESS_URL` — the SimpleFIN access URL
-   - `BACKUP_DIR` — the dump folder from step 3
-5. **Start it:**
+   - `SESSION_SECRET` — `openssl rand -base64 48`. It also encrypts the stored
+     SimpleFIN credential, so changing it later means reconnecting SimpleFIN.
+   - `HOST_PORT` — defaults to `8088`. The container's own port is 3000 but that
+     is private to the compose network, so it cannot collide with another
+     container using 3000.
+   - `BACKUP_DIR` — the dump folder from step 2
+   - `APP_NAME` — whatever you want in the sidebar
+4. **Start it:**
    ```bash
    sudo docker compose up -d
    ```
-6. **Check health:** `curl http://<nas-address>:8088/health`
-7. **Create the first account** by opening the app in a browser. The first account
-   created becomes Super Admin.
+   Migrations are applied automatically on start.
+5. **Check health:** `curl http://<nas-address>:8088/health`
+6. **Open it** at `http://<nas-address>:8088` and create the first account, which
+   becomes Super Admin.
+7. **Connect SimpleFIN** in Settings → Sync by pasting a setup token.
 
-Nightly `pg_dump` output lands in `BACKUP_DIR` with the configured retention.
-**Confirm that folder is included in whatever off-device backup already exists** —
-a dump on the same disk as the database is not a backup.
+### Backups, and restoring from one
+
+A dump is written nightly to `BACKUP_DIR` and older ones are pruned after
+`BACKUP_RETENTION_DAYS`. Retention is applied only after a dump succeeds, so a
+run of failures never deletes the last good copy.
+
+**Confirm that folder is inside whatever off-device backup already exists.** A
+dump on the same disk as the database is not a backup.
+
+To restore:
+
+```bash
+sudo docker compose exec app sh -c \
+  'RESTORE_CONFIRM=yes ./scripts/restore.sh /backups/delegate-YYYYMMDD-HHMMSS.dump'
+```
+
+It refuses to run without `RESTORE_CONFIRM=yes`, because it replaces the contents
+of the database it is pointed at.
+
+**This path is tested rather than assumed.** `./scripts/verify-restore.sh` seeds a
+database, dumps it, destroys the contents, restores, and fails unless the row
+counts and balances match exactly either side. CI runs it on every change.
 
 ## Go-live order of operations
 

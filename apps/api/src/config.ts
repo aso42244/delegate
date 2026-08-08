@@ -45,6 +45,12 @@ const environmentSchema = z.object({
   SIMPLEFIN_ACCESS_URL: z.string().default(''),
   SIMPLEFIN_SYNC_CRON: z.string().default('0 * * * *'),
   SIMPLEFIN_BACKFILL_MONTHS: z.coerce.number().int().positive().max(24).default(12),
+
+  // Nightly pg_dump. §14 puts this in Phase 1 rather than Phase 3, because data
+  // loss during the move off the spreadsheet would be unrecoverable.
+  BACKUP_DIR: z.string().default('./backups'),
+  BACKUP_CRON: z.string().default('30 2 * * *'),
+  BACKUP_RETENTION_DAYS: z.coerce.number().int().positive().max(3650).default(30),
 });
 
 export type AppConfig = Readonly<z.infer<typeof environmentSchema>> & {

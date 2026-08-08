@@ -75,6 +75,12 @@ jobs:
           npm run build --workspace @budget/api
           npm run recompute-balances --workspace @budget/api -- --check
 
+      # An untested backup is not a backup (§14). This seeds a database, dumps
+      # it, destroys the contents, restores, and compares counts and balances
+      # either side — a real exercise rather than an inspection.
+      - name: Verify the backup can be restored
+        run: ./scripts/verify-restore.sh
+
       # The UI is typechecked by `npm run typecheck`, but only a real build catches
       # a broken import path or a Tailwind token that does not resolve.
       - name: Build the web application
@@ -153,3 +159,60 @@ jobs:
             fi
           fi
           echo 'No forbidden terminology.'
+
+  image:
+    name: Container image
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: docker/setup-buildx-action@v3
+
+      # ubuntu-latest is x86_64, which is what the DS220+ runs. Building here
+      # rather than on a developer's Mac is the whole point: a Mac produces an
+      # arm64 image the NAS cannot start. See ADR 005.
+      - name: Build the image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64
+          push: false
+          load: true
+          tags: delegate:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # Proves the image starts, applies migrations and answers its health check
+      # against a real database — the failure mode a build alone cannot catch.
+      - name: Start it against PostgreSQL and check its health
+        run: |
+          docker network create delegate-ci
+          docker run -d --name pg --network delegate-ci \
+            -e POSTGRES_PASSWORD=ci-password -e POSTGRES_DB=delegate \
+            postgres:16-alpine
+          for i in $(seq 1 30); do
+            docker exec pg pg_isready -U postgres -d delegate && break
+            sleep 2
+          done
+
+          docker run -d --name app --network delegate-ci -p 8088:3000 \
+            -e DATABASE_URL=postgresql://postgres:ci-password@pg:5432/delegate \
+            -e SESSION_SECRET=ci-session-secret-at-least-32-characters \
+            delegate:ci
+
+          for i in $(seq 1 45); do
+            if curl -fsS http://localhost:8088/health > /dev/null; then
+              echo 'The image is serving.'
+              break
+            fi
+            if [ "$i" = "45" ]; then
+              echo 'The container never became healthy. Logs:'
+              docker logs app
+              exit 1
+            fi
+            sleep 2
+          done
+
+          # The UI must be served too, not just the API: they ship in one image.
+          curl -fsS http://localhost:8088/ | grep -q '<title>Delegate</title>'
+          echo 'The interface is served by the same container.'
