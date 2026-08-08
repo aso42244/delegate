@@ -2,7 +2,7 @@
   "name": "household-budget",
   "version": "0.0.0",
   "private": true,
-  "description": "Delegate — a self-hosted envelope budgeting application for a single household",
+  "description": "Delegate \u2014 a self-hosted envelope budgeting application for a single household",
   "license": "MIT",
   "type": "module",
   "engines": {
@@ -29,10 +29,13 @@
     "db:reset": "npm run db:reset --workspace @budget/api",
     "db:seed": "npm run db:seed --workspace @budget/api",
     "db:generate": "npm run db:generate --workspace @budget/api",
-    "simplefin:claim": "npm run --silent simplefin:claim --workspace @budget/api --"
+    "simplefin:claim": "npm run --silent simplefin:claim --workspace @budget/api --",
+    "test:e2e": "playwright test",
+    "test:e2e:ui": "playwright test --ui"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.1",
+    "@playwright/test": "^1.62.1",
     "@types/node": "^22.20.0",
     "eslint": "^9.39.1",
     "eslint-config-prettier": "^10.1.8",

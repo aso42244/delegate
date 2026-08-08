@@ -1,4 +1,4 @@
-import type { ButtonHTMLAttributes, InputHTMLAttributes, ReactNode } from 'react';
+import { useId, type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode } from 'react';
 
 /**
  * The small shared pieces, built to the tokens in docs/design.md.
@@ -32,21 +32,43 @@ export function Button({
   );
 }
 
+/**
+ * The label and the hint are wired up separately, rather than both sitting
+ * inside a wrapping `<label>`.
+ *
+ * Nesting them makes the hint part of the input's *accessible name*, so a field
+ * labelled "Password" announces as "Password At least 12 characters. A
+ * passphrase is ideal." to a screen reader, and cannot be found by its own
+ * label. `aria-describedby` is what a hint is for: read after the name, not as
+ * part of it.
+ */
 export function TextField({
   label,
   hint,
   className = '',
   ...props
 }: InputHTMLAttributes<HTMLInputElement> & { label: string; hint?: string }): ReactNode {
+  const generatedId = useId();
+  const id = props.id ?? generatedId;
+  const hintId = `${id}-hint`;
+
   return (
-    <label className="block">
-      <span className="mb-1 block text-quiet font-medium text-ink">{label}</span>
+    <div className="block">
+      <label htmlFor={id} className="mb-1 block text-quiet font-medium text-ink">
+        {label}
+      </label>
       <input
+        id={id}
+        {...(hint ? { 'aria-describedby': hintId } : {})}
         className={`w-full rounded-lg border border-line bg-canvas px-3 py-2 text-base text-ink placeholder:text-faint ${className}`}
         {...props}
       />
-      {hint ? <span className="mt-1 block text-quiet text-muted">{hint}</span> : null}
-    </label>
+      {hint ? (
+        <p id={hintId} className="mt-1 block text-quiet text-muted">
+          {hint}
+        </p>
+      ) : null}
+    </div>
   );
 }
 

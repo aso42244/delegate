@@ -80,6 +80,25 @@ jobs:
       - name: Build the web application
         run: npm run build --workspace @budget/web
 
+      # Only a browser driving the built server catches what unit and integration
+      # tests structurally cannot: the application failing to boot, a component
+      # that renders wrong, or a control nobody can actually reach.
+      - name: Install the browser for end-to-end tests
+        run: npx playwright install --with-deps chromium
+
+      - name: End-to-end tests
+        run: npm run test:e2e
+
+      - name: Upload the end-to-end trace on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 7
+
       # A CLI entrypoint can be broken by module resolution alone and still pass
       # every unit test, because nothing else ever executes the entrypoint. This
       # runs each one with input that fails validation before any network call,

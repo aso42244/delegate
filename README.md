@@ -88,13 +88,27 @@ details appear anywhere in this repository.
 | `npm test`                 | Unit tests only — no database needed                  |
 | `npm run test:integration` | Integration tests against `TEST_DATABASE_URL`         |
 | `npm run test:all`         | Both projects                                         |
+| `npm run test:e2e`         | End-to-end tests in a real browser                    |
 | `npm run db:migrate`       | Create and apply a new migration in development       |
 | `npm run db:deploy`        | Apply existing migrations (used in CI and production) |
 | `npm run db:reset`         | Drop, re-migrate and re-seed the development database |
 | `npm run simplefin:claim`  | Exchange a SimpleFIN setup token for an access URL    |
 
 Integration tests **truncate every table** in `TEST_DATABASE_URL`, and refuse to
-run unless the database name ends in `_test`.
+run unless the database name ends in `_test`. The end-to-end tests use the same
+database, so do not run both at once.
+
+End-to-end tests drive a real browser against the **built** server serving the
+**built** UI — the same artefact the NAS runs. They exist because typechecking
+and a full green suite both said nothing when the server once failed to boot:
+nothing had started the process with a UI build present. They need the browser
+once:
+
+```bash
+npx playwright install chromium
+npm run build
+npm run test:e2e
+```
 
 ### Connecting SimpleFIN
 
