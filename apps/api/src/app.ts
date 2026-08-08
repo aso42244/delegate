@@ -1,12 +1,14 @@
 import Fastify, { type FastifyInstance } from 'fastify';
 import { getConfig, type AppConfig } from './config.js';
-import { errorHandler, notFoundHandler } from './http/errors.js';
+import { errorHandler } from './http/errors.js';
 import { auth } from './plugins/auth.js';
 import { configPlugin } from './plugins/config.js';
+import { spa } from './plugins/spa.js';
 import { authRoutes } from './routes/auth.js';
 import { healthRoutes } from './routes/health.js';
 import { ruleRoutes } from './routes/rules.js';
 import { syncRoutes } from './routes/sync.js';
+import { appInfoRoutes } from './routes/app-info.js';
 import { budgetRoutes } from './routes/budget.js';
 import { transactionRoutes } from './routes/transactions.js';
 import { userRoutes } from './routes/users.js';
@@ -60,17 +62,23 @@ export async function buildApp(config: AppConfig = getConfig()): Promise<Fastify
   });
 
   app.setErrorHandler(errorHandler);
-  app.setNotFoundHandler(notFoundHandler);
+  // The not-found handler is set by the spa plugin, which owns the decision
+  // between a JSON 404 and the client-side routing fallback.
 
   await app.register(configPlugin, { config });
   await app.register(auth, { config });
   await app.register(healthRoutes);
+  await app.register(appInfoRoutes);
   await app.register(authRoutes);
   await app.register(userRoutes);
   await app.register(syncRoutes);
   await app.register(ruleRoutes);
   await app.register(transactionRoutes);
   await app.register(budgetRoutes);
+
+  // Registered last: its not-found handler is the SPA fallback, so it must see
+  // every API route already declared.
+  await app.register(spa);
 
   return app;
 }

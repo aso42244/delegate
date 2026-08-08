@@ -34,3 +34,6 @@ backups/
 logs/
 *.log
 npm-debug.log*
+
+# Emitted declarations from the web build
+dist-types/

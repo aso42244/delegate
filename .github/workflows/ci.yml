@@ -75,6 +75,11 @@ jobs:
           npm run build --workspace @budget/api
           npm run recompute-balances --workspace @budget/api -- --check
 
+      # The UI is typechecked by `npm run typecheck`, but only a real build catches
+      # a broken import path or a Tailwind token that does not resolve.
+      - name: Build the web application
+        run: npm run build --workspace @budget/web
+
       # A CLI entrypoint can be broken by module resolution alone and still pass
       # every unit test, because nothing else ever executes the entrypoint. This
       # runs each one with input that fails validation before any network call,
