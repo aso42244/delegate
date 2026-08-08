@@ -107,15 +107,29 @@ jobs:
       # generic term for the asset class appears nowhere. Enforced in CI rather
       # than by memory, because it has to hold in code, comments, column names,
       # commit messages and UI copy alike.
+      #
+      # The ban is on the *asset class*, not the word's other senses.
+      # Cryptography is an ordinary engineering word and Node's `node:crypto` is
+      # a standard library module; forbidding those bought nothing and pushed the
+      # code towards worse alternatives, so both are allowed.
       - name: Reject the forbidden term
         run: |
-          if git grep -rniE 'crypto(currency|graphic|graphy)?' -- \
+          # The asset-class word itself is never permitted, in any form.
+          if git grep -rniE 'cryptocurrenc(y|ies)' -- \
+              ':!package-lock.json' ':!.github/workflows/ci.yml' > /tmp/currency; then
+            echo 'Forbidden terminology found. The only term for this asset is Bitcoin (or BTC):'
+            cat /tmp/currency
+            exit 1
+          fi
+
+          # A bare "crypto" is the asset-class abbreviation unless it is one of
+          # the recognised cryptography or Node-module forms.
+          allowed='cryptograph(ic|y|ically)|node:crypto|crypto\.[a-zA-Z]|webcrypto|@types/node'
+          if git grep -rniE 'crypto' -- \
               ':!package-lock.json' ':!.github/workflows/ci.yml' > /tmp/hits; then
-            # Cryptographic / cryptography are legitimate security words; the
-            # banned term is the asset-class one. Filter the allowed forms out.
-            if grep -viE 'cryptograph(ic|y)' /tmp/hits | grep -q .; then
+            if grep -viE "$allowed" /tmp/hits | grep -q .; then
               echo 'Forbidden terminology found. The only term for this asset is Bitcoin (or BTC):'
-              grep -viE 'cryptograph(ic|y)' /tmp/hits
+              grep -viE "$allowed" /tmp/hits
               exit 1
             fi
           fi
