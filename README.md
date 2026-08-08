@@ -37,10 +37,12 @@ Phase 1 (MVP) in progress. Landed so far:
 - SimpleFIN sync: hourly, windowed backfill, idempotent re-runs, the full pending
   lifecycle, and run history surfaced to the UI
 - Auto-categorization rules, including the apply-to-existing bulk action
-- 239 tests, including integration tests asserting the identity behaves correctly
+- The API behind the Transactions page and the Main Budget page, including
+  Delegate with undo, Transfer, manual adjustment and Reconcile to Actual
+- 282 tests, including integration tests asserting the identity behaves correctly
   after every mutating operation
 
-Not yet built: the transactions and budget API surfaces, and the entire UI.
+Not yet built: the UI, and the Docker deployment with nightly backups.
 
 ## Requirements
 
