@@ -14,7 +14,7 @@ SUM(in-budget assets) − SUM(in-budget debts) − SUM(delegation balances)
 A positive reading is money that has landed and not been distributed yet — the
 "available to delegate" figure. Near zero is `Balanced`. Negative is
 over-delegated. See [docs/architecture.md](docs/architecture.md) for the domain
-model.
+model and [docs/design.md](docs/design.md) for the visual language.
 
 > **LAN only.** This application has no internet exposure and must not be given
 > any until the Phase 3 security work ships in full. See
