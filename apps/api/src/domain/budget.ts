@@ -24,6 +24,8 @@ export interface BudgetRow {
   readonly notes: string | null;
   /** Assets and debts only. */
   readonly source: string | null;
+  readonly inBudget: boolean;
+  readonly inNetWorth: boolean;
   readonly needsReview: boolean;
   readonly balanceAsOf: Date | null;
   readonly stalenessIntervalDays: number | null;
@@ -129,6 +131,8 @@ export async function buildBudgetView(db: Db): Promise<BudgetView> {
         needsReview: true,
         balanceAsOf: true,
         stalenessIntervalDays: true,
+        inBudget: true,
+        inNetWorth: true,
       },
     }),
     db.delegation.findMany({
@@ -165,6 +169,8 @@ export async function buildBudgetView(db: Db): Promise<BudgetView> {
     isUtility: false,
     notes: null,
     source: account.source,
+    inBudget: account.inBudget,
+    inNetWorth: account.inNetWorth,
     needsReview: account.needsReview,
     balanceAsOf: account.balanceAsOf,
     stalenessIntervalDays: account.stalenessIntervalDays,
@@ -179,6 +185,9 @@ export async function buildBudgetView(db: Db): Promise<BudgetView> {
     isUtility: delegation.isUtility,
     notes: delegation.notes,
     source: null,
+    // Delegations are not accounts; these two are an account's business.
+    inBudget: false,
+    inNetWorth: false,
     needsReview: false,
     balanceAsOf: null,
     stalenessIntervalDays: null,

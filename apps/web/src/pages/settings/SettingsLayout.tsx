@@ -11,6 +11,7 @@ import { NavLink, Outlet } from 'react-router-dom';
 
 const SECTIONS = [
   { to: 'sync', label: 'Sync' },
+  { to: 'accounts', label: 'Accounts' },
   { to: 'budget', label: 'Budget' },
   { to: 'reconcile', label: 'Reconcile' },
 ] as const;

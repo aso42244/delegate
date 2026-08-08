@@ -88,6 +88,8 @@ function presentRow(row: BudgetRow): Record<string, unknown> {
     isUtility: row.isUtility,
     notes: row.notes,
     source: row.source,
+    inBudget: row.inBudget,
+    inNetWorth: row.inNetWorth,
     needsReview: row.needsReview,
     balanceAsOf: dateOut(row.balanceAsOf),
     stalenessIntervalDays: row.stalenessIntervalDays,

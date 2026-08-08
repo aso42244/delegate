@@ -53,7 +53,7 @@ export function NewTransactionDialog({
   const [delegationName, setDelegationName] = useState<string | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
 
-  const accounts = useQuery({ queryKey: ['accounts'], queryFn: accountsApi.list });
+  const accounts = useQuery({ queryKey: ['accounts'], queryFn: () => accountsApi.list() });
   const liveAccounts = accounts.data?.accounts ?? [];
 
   const save = useMutation({

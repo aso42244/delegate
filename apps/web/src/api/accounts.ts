@@ -17,6 +17,36 @@ export interface AccountDto {
   readonly archivedAt: string | null;
 }
 
+export interface UpdateAccountInput {
+  readonly name?: string;
+  readonly type?: 'asset' | 'debt';
+  readonly inBudget?: boolean;
+  readonly inNetWorth?: boolean;
+  readonly stalenessIntervalDays?: number | null;
+  readonly groupingId?: string | null;
+  readonly needsReview?: boolean;
+  /** Manual accounts only — a SimpleFIN balance is the institution's to state. */
+  readonly balanceCents?: string;
+}
+
 export const accountsApi = {
-  list: () => api.get<{ accounts: readonly AccountDto[] }>('/api/accounts'),
+  list: (includeArchived = false) =>
+    api.get<{ accounts: readonly AccountDto[] }>(
+      `/api/accounts${includeArchived ? '?includeArchived=true' : ''}`,
+    ),
+
+  create: (input: {
+    name: string;
+    type: 'asset' | 'debt';
+    balanceCents: string;
+    inBudget: boolean;
+    inNetWorth: boolean;
+    stalenessIntervalDays: number | null;
+  }) => api.post<{ account: { id: string } }>('/api/accounts', input),
+
+  update: (id: string, input: UpdateAccountInput) =>
+    api.patch<{ ok: boolean }>(`/api/accounts/${id}`, input),
+
+  archive: (id: string) => api.post<{ ok: boolean }>(`/api/accounts/${id}/archive`),
+  restore: (id: string) => api.post<{ ok: boolean }>(`/api/accounts/${id}/restore`),
 };
