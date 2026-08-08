@@ -551,6 +551,13 @@ model BudgetSettings {
   // before this date can be understood as backfill.
   goLiveAt DateTime? @map("go_live_at")
 
+  // The SimpleFIN access URL, encrypted at rest (AES-256-GCM). It is a bearer
+  // credential for the household's bank data and the database is dumped nightly,
+  // so it is never stored in the clear. Null means "not connected in-app"; the
+  // SIMPLEFIN_ACCESS_URL environment variable is then used instead.
+  simplefinAccessUrlEncrypted String?   @map("simplefin_access_url_encrypted")
+  simplefinConnectedAt        DateTime? @map("simplefin_connected_at")
+
   updatedAt DateTime @updatedAt @map("updated_at")
 
   @@map("budget_settings")

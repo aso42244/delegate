@@ -80,6 +80,10 @@ export interface SetupState {
 
 export interface SyncStatus {
   readonly configured: boolean;
+  /** Where the credential came from. Never the credential itself. */
+  readonly credentialSource: 'database' | 'environment' | 'none';
+  readonly connectedAt: string | null;
+  readonly credentialProblem: string | null;
   readonly syncing: boolean;
   readonly lastSyncAt: string | null;
   readonly failing: boolean;
@@ -107,4 +111,7 @@ export const authApi = {
 export const syncApi = {
   status: () => api.get<SyncStatus>('/api/sync/status'),
   run: () => api.post<{ transactionsAdded: number }>('/api/sync'),
+  connect: (setupToken: string) =>
+    api.post<{ connectedAt: string }>('/api/sync/connect', { setupToken }),
+  disconnect: () => api.post<{ ok: boolean }>('/api/sync/disconnect'),
 };

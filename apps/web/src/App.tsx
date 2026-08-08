@@ -5,6 +5,7 @@ import { api } from './api/client.js';
 import { useSession } from './auth/SessionProvider.jsx';
 import { Sidebar } from './components/Sidebar.jsx';
 import { ChangePassword } from './pages/ChangePassword.jsx';
+import { Settings } from './pages/Settings.jsx';
 import { SignIn } from './pages/SignIn.jsx';
 
 /**
@@ -98,10 +99,7 @@ export function App(): ReactNode {
             path="insights"
             element={<Placeholder title="Insights" note="Phase 2: needs categorized history." />}
           />
-          <Route
-            path="settings"
-            element={<Placeholder title="Settings" note="Accounts, rules, users and sync." />}
-          />
+          <Route path="settings" element={<Settings />} />
         </Route>
       </Route>
 

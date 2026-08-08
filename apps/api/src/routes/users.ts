@@ -22,14 +22,14 @@ import { USER_MANAGEMENT } from '../plugins/auth.js';
 const idParamsSchema = z.object({ id: z.string().uuid() });
 
 const createUserSchema = z.object({
-  username: z.string().min(1).max(64),
+  username: z.string().min(1).max(254),
   temporaryPassword: z.string().min(1).max(MAX_PASSWORD_LENGTH),
   role: z.enum(USER_ROLES).default('user'),
 });
 
 const updateUserSchema = z
   .object({
-    username: z.string().min(1).max(64).optional(),
+    username: z.string().min(1).max(254).optional(),
     role: z.enum(USER_ROLES).optional(),
   })
   .refine((value) => value.username !== undefined || value.role !== undefined, {

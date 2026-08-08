@@ -41,13 +41,24 @@ export function normalizeUsername(username: string): string {
   return username.trim().toLowerCase();
 }
 
-const USERNAME_PATTERN = /^[a-z0-9][a-z0-9._-]{1,31}$/;
+/**
+ * Deliberately permissive: a plain handle or an email address both work, because
+ * an email is what most people reach for and rejecting it is an irritation with
+ * nothing behind it.
+ *
+ * This is not an email validator. A username is an identifier the household
+ * chooses, not an address anything is ever sent to — nothing in this system
+ * emails anyone — so validating RFC 5322 would buy nothing and reject addresses
+ * that are perfectly legal. It checks only that the value is a sane, storable
+ * identifier. 254 characters is the maximum length of an email address.
+ */
+const USERNAME_PATTERN = /^[a-z0-9][a-z0-9._+@-]{1,253}$/;
 
 export function assertUsernameAcceptable(username: string): void {
   if (!USERNAME_PATTERN.test(username)) {
     throw new ValidationError(
       'invalid_username',
-      'Username must be 2–32 characters: letters, digits, dot, underscore or hyphen, starting with a letter or digit.',
+      'Username must be 2–254 characters, start with a letter or digit, and use only letters, digits and . _ + - @ — an email address is fine.',
     );
   }
 }
