@@ -5,6 +5,7 @@ import { api } from './api/client.js';
 import { useSession } from './auth/SessionProvider.jsx';
 import { Sidebar } from './components/Sidebar.jsx';
 import { ChangePassword } from './pages/ChangePassword.jsx';
+import { MainBudget } from './pages/MainBudget.jsx';
 import { Settings } from './pages/Settings.jsx';
 import { SignIn } from './pages/SignIn.jsx';
 
@@ -81,12 +82,7 @@ export function App(): ReactNode {
 
       <Route element={<RequireSession />}>
         <Route element={<AppShell appName={appName} />}>
-          <Route
-            index
-            element={
-              <Placeholder title="Main Budget" note="Assets, debts and delegations. Built next." />
-            }
-          />
+          <Route index element={<MainBudget />} />
           <Route
             path="transactions"
             element={<Placeholder title="Transactions" note="The full journal. Built next." />}
