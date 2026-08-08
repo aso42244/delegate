@@ -8,10 +8,10 @@
     "clean": "rm -rf dist *.tsbuildinfo",
     "dev": "node --watch --experimental-strip-types src/server.ts",
     "start": "node dist/server.js",
-    "db:generate": "prisma generate",
-    "db:migrate": "prisma migrate dev",
-    "db:deploy": "prisma migrate deploy",
-    "db:reset": "prisma migrate reset --force",
+    "db:generate": "dotenv -e ../../.env -- prisma generate",
+    "db:migrate": "dotenv -e ../../.env -- prisma migrate dev",
+    "db:deploy": "dotenv -e ../../.env -- prisma migrate deploy",
+    "db:reset": "dotenv -e ../../.env -- prisma migrate reset --force",
     "db:seed": "node --experimental-strip-types prisma/seed.ts",
     "recompute-balances": "node dist/cli/recompute-balances.js",
     "simplefin:claim": "npm run build && node dist/cli/claim-simplefin-token.js"
@@ -33,6 +33,7 @@
   },
   "devDependencies": {
     "@types/node-cron": "^3.0.11",
+    "dotenv-cli": "^11.0.0",
     "prisma": "^6.19.1"
   }
 }
