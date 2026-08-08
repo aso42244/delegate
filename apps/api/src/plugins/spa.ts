@@ -24,7 +24,12 @@ const spaPluginCallback: FastifyPluginAsync = async (fastify) => {
   const hasBuild = existsSync(root);
 
   if (hasBuild) {
-    await fastify.register(fastifyStatic, { root, wildcard: false });
+    // Files are resolved per request rather than enumerated once at startup.
+    // With `wildcard: false` the routes are fixed at boot, so a rebuild while
+    // the server is up leaves every newly hashed asset unroutable — and because
+    // they then fall through to the SPA fallback below, the browser receives
+    // `index.html` with a 200 and reports only a baffling MIME type error.
+    await fastify.register(fastifyStatic, { root });
   } else {
     fastify.log.info('No UI build found; serving the API only.');
   }
@@ -37,7 +42,16 @@ const spaPluginCallback: FastifyPluginAsync = async (fastify) => {
       return;
     }
 
-    // Any other path is client-side routing: a deep link or a refresh on
+    // A path with a file extension is asking for a *file*. If it is missing, say
+    // so plainly: answering with index.html turns a missing asset into
+    // "Expected a JavaScript module but got text/html", which points nowhere
+    // near the actual problem.
+    if (/\.[a-z0-9]+$/i.test(new URL(request.url, 'http://localhost').pathname)) {
+      notFoundHandler(request, reply);
+      return;
+    }
+
+    // Anything else is client-side routing: a deep link or a refresh on
     // /transactions has to render the app rather than 404.
     void reply.sendFile('index.html');
   });
