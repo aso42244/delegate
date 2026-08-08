@@ -62,13 +62,37 @@ function toQuery(filters: TransactionFilters): string {
   return query === '' ? '' : `?${query}`;
 }
 
+export interface CreateTransactionInput {
+  readonly accountId: string;
+  /** Signed cents: negative is money out of the account. */
+  readonly amountCents: string;
+  readonly description: string;
+  readonly postedAt: string;
+  readonly kind: 'normal' | 'income' | 'transfer';
+}
+
 export const transactionsApi = {
   list: (filters: TransactionFilters = {}) =>
     api.get<TransactionListDto>(`/api/transactions${toQuery(filters)}`),
 
+  create: (input: CreateTransactionInput) =>
+    api.post<{ transaction: { id: string } }>('/api/transactions', input),
+
   categorize: (transactionId: string, delegationId: string) =>
     api.post<{ allocationCount: number }>(`/api/transactions/${transactionId}/categorize`, {
       delegationId,
+    }),
+
+  /**
+   * A split with exact amounts. The server rejects a set that does not sum to
+   * the transaction, so a cent can never be lost or invented here.
+   */
+  setAllocations: (
+    transactionId: string,
+    allocations: readonly { delegationId: string; amountCents: string }[],
+  ) =>
+    api.post<{ allocationCount: number }>(`/api/transactions/${transactionId}/categorize`, {
+      allocations,
     }),
 
   /** Splits evenly across several delegations; the server holds the remainder cent. */

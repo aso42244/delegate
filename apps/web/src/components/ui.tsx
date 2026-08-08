@@ -1,4 +1,10 @@
-import { useId, type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode } from 'react';
+import {
+  useEffect,
+  useId,
+  type ButtonHTMLAttributes,
+  type InputHTMLAttributes,
+  type ReactNode,
+} from 'react';
 
 /**
  * The small shared pieces, built to the tokens in docs/design.md.
@@ -93,6 +99,90 @@ export function Alert({
   return (
     <div role="alert" className={`rounded-lg border px-3 py-2 text-quiet ${tones[tone]}`}>
       {children}
+    </div>
+  );
+}
+
+/**
+ * A modal dialog.
+ *
+ * Escape closes it and Cancel closes it; clicking the backdrop does not. These
+ * dialogs hold typed money and a description, and losing that to a stray click
+ * beside the card is a worse failure than one extra keypress.
+ */
+export function Modal({
+  label,
+  title,
+  description,
+  onClose,
+  children,
+  width = 'md',
+}: {
+  label: string;
+  title: string;
+  description?: string;
+  onClose: () => void;
+  children: ReactNode;
+  width?: 'md' | 'lg';
+}): ReactNode {
+  useEffect(() => {
+    // Escape is bound on the document rather than the card, so it works before
+    // anything inside has been focused.
+    function onDocumentKeyDown(event: globalThis.KeyboardEvent): void {
+      if (event.key === 'Escape') onClose();
+    }
+    document.addEventListener('keydown', onDocumentKeyDown);
+    return () => document.removeEventListener('keydown', onDocumentKeyDown);
+  }, [onClose]);
+
+  return (
+    <div className="fixed inset-0 z-10 flex items-center justify-center bg-black/20 p-4">
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label={label}
+        className={`max-h-full w-full overflow-auto rounded-lg border border-line bg-canvas p-4 ${
+          width === 'lg' ? 'max-w-2xl' : 'max-w-md'
+        }`}
+      >
+        <h2 className="mb-1 text-section font-bold text-ink">{title}</h2>
+        {description ? <p className="mb-4 text-quiet text-muted">{description}</p> : null}
+        {children}
+      </div>
+    </div>
+  );
+}
+
+/** A labelled `<select>`, wired the same way as TextField. */
+export function SelectField({
+  label,
+  value,
+  onChange,
+  children,
+  id: providedId,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  children: ReactNode;
+  id?: string;
+}): ReactNode {
+  const generatedId = useId();
+  const id = providedId ?? generatedId;
+
+  return (
+    <div className="block">
+      <label htmlFor={id} className="mb-1 block text-quiet font-medium text-ink">
+        {label}
+      </label>
+      <select
+        id={id}
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        className="w-full rounded-lg border border-line bg-canvas px-3 py-2 text-base text-ink"
+      >
+        {children}
+      </select>
     </div>
   );
 }

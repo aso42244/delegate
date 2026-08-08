@@ -9,6 +9,8 @@ import {
   type TransactionFilters,
 } from '../api/transactions.js';
 import { DelegationPicker } from '../components/DelegationPicker.jsx';
+import { NewTransactionDialog } from '../components/NewTransactionDialog.jsx';
+import { SplitDialog } from '../components/SplitDialog.jsx';
 import { Alert, Button, Tag } from '../components/ui.jsx';
 
 /**
@@ -44,6 +46,9 @@ export function Transactions(): ReactNode {
   const [offset, setOffset] = useState(0);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [problem, setProblem] = useState<string | null>(null);
+  const [adding, setAdding] = useState(false);
+  // The transaction whose split is being edited, if any.
+  const [splitting, setSplitting] = useState<TransactionDto | null>(null);
 
   const query = { ...filters, search, limit: PAGE_SIZE, offset };
   const list = useQuery({
@@ -108,12 +113,18 @@ export function Transactions(): ReactNode {
 
   return (
     <div>
-      <header className="mb-4">
-        <h1 className="text-page font-bold text-ink">Transactions</h1>
-        <p className="mt-1 text-quiet text-muted">
-          {total} {total === 1 ? 'transaction' : 'transactions'}
-          {filters.uncategorized ? ' waiting to be categorized' : ''}.
-        </p>
+      <header className="mb-4 flex items-baseline justify-between">
+        <div>
+          <h1 className="text-page font-bold text-ink">Transactions</h1>
+          <p className="mt-1 text-quiet text-muted">
+            {total} {total === 1 ? 'transaction' : 'transactions'}
+            {filters.uncategorized ? ' waiting to be categorized' : ''}.
+          </p>
+        </div>
+
+        <Button variant="primary" onClick={() => setAdding(true)}>
+          Add transaction
+        </Button>
       </header>
 
       <div className="mb-4 flex flex-wrap items-center gap-2">
@@ -176,7 +187,7 @@ export function Transactions(): ReactNode {
               <th className="py-2 text-left font-normal">Date</th>
               <th className="py-2 text-left font-normal">Description</th>
               <th className="py-2 text-left font-normal">Account</th>
-              <th className="py-2 text-right font-normal">Amount</th>
+              <th className="py-2 pr-3 text-right font-normal">Amount</th>
               <th className="py-2 pr-3 text-left font-normal">Delegation</th>
             </tr>
           </thead>
@@ -228,16 +239,29 @@ export function Transactions(): ReactNode {
                     </span>
                   </td>
 
-                  <td className="w-64 py-2 pr-3">
+                  <td className="w-72 py-2 pr-3">
                     {transaction.kind === 'normal' ? (
-                      <DelegationPicker
-                        options={delegations}
-                        {...(current ? { currentName: current } : {})}
-                        label={`Categorize ${transaction.description}`}
-                        onChoose={(delegationId) =>
-                          categorize.mutate({ id: transaction.id, delegationId })
-                        }
-                      />
+                      <div className="flex items-center gap-1">
+                        <div className="flex-1">
+                          <DelegationPicker
+                            options={delegations}
+                            {...(current ? { currentName: current } : {})}
+                            label={`Categorize ${transaction.description}`}
+                            onChoose={(delegationId) =>
+                              categorize.mutate({ id: transaction.id, delegationId })
+                            }
+                          />
+                        </div>
+                        {/* Splits are rare, so this is a plain affordance beside
+                            the picker rather than anything the queue trips over. */}
+                        <Button
+                          variant="ghost"
+                          onClick={() => setSplitting(transaction)}
+                          aria-label={`Split ${transaction.description}`}
+                        >
+                          Split
+                        </Button>
+                      </div>
                     ) : (
                       <AllocationSummary transaction={transaction} />
                     )}
@@ -267,6 +291,17 @@ export function Transactions(): ReactNode {
             Next
           </Button>
         </div>
+      )}
+
+      {adding && (
+        <NewTransactionDialog delegations={delegations} onClose={() => setAdding(false)} />
+      )}
+      {splitting && (
+        <SplitDialog
+          transaction={splitting}
+          delegations={delegations}
+          onClose={() => setSplitting(null)}
+        />
       )}
     </div>
   );
