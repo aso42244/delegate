@@ -59,6 +59,12 @@ test('a categorized transaction moves its delegation', async ({ signedIn, api })
   await picker.fill('gro');
   await picker.press('Enter');
 
+  // Wait for the row to leave the queue before navigating. The Main Budget reads
+  // its balances once on load, so arriving mid-write would snapshot a number
+  // that never updates and the assertion would poll a stale DOM for its whole
+  // timeout.
+  await expect(signedIn.getByText('Whole Foods Market')).toBeHidden();
+
   await signedIn.goto('/');
   await expect(signedIn.getByRole('button', { name: 'Grocery balance' })).toContainText('-$42.10');
 });
@@ -106,6 +112,12 @@ test('bulk categorize assigns a whole selection at once', async ({ signedIn, api
   const picker = signedIn.getByLabel('Bulk categorize selection');
   await picker.fill('gro');
   await picker.press('Enter');
+
+  // Both rows must have left the queue before navigating: a bulk apply
+  // categorizes one row at a time, so arriving early would read a balance with
+  // only half the selection in it.
+  await expect(signedIn.getByText('Shop one')).toBeHidden();
+  await expect(signedIn.getByText('Shop two')).toBeHidden();
 
   await signedIn.goto('/');
   await expect(signedIn.getByRole('button', { name: 'Grocery balance' })).toContainText('-$30.00');
