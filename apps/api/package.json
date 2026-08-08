@@ -14,7 +14,7 @@
     "db:reset": "prisma migrate reset --force",
     "db:seed": "node --experimental-strip-types prisma/seed.ts",
     "recompute-balances": "node dist/cli/recompute-balances.js",
-    "simplefin:claim": "node --experimental-strip-types src/cli/claim-simplefin-token.ts"
+    "simplefin:claim": "npm run build && node dist/cli/claim-simplefin-token.js"
   },
   "prisma": {
     "seed": "node --experimental-strip-types prisma/seed.ts"
