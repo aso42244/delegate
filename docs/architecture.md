@@ -225,6 +225,35 @@ created becomes Super Admin.
 Every delegation event stamps `actor_id`. Not for auditing — it costs nothing and
 answers "when did this line change".
 
+## Auto-categorization rules
+
+Rules are evaluated in priority order and **the first match wins** — no scoring,
+no combining. The owner has to be able to look at a wrongly categorized
+transaction and know exactly which rule did it, which any "best match" scheme
+makes impossible.
+
+Rules match on the cleaned description _and_ the raw feed text, because feeds
+reword a description between the pending and posted versions of the same
+purchase, and a rule written against one form would otherwise stop firing.
+Amount ranges compare magnitude, since the owner thinks "between $20 and $50"
+while spending is stored negative.
+
+Two guarantees are worth stating outright:
+
+- **A bulk apply never overwrites a categorization made by hand.** Only
+  uncategorized transactions are touched unless the caller explicitly opts in.
+  Bulk actions run over hundreds of rows; silently reversing a human decision at
+  that scale would be very hard to notice and worse to unpick.
+- **A sync only applies rules to what that sync imported.** A rule written today
+  does not silently recategorize months of history the next time the hourly job
+  runs. That is what the explicit apply-to-existing action is for.
+
+Regular expressions come from the UI and run against the whole backlog, so a
+pattern like `(a+)+$` would backtrack forever and take the single-process server
+with it. Patterns are length-bounded, rejected at save time if they nest
+unbounded quantifiers or fail to compile, and matched against a truncated
+description.
+
 ## Authentication
 
 Phase 1 is a username, an argon2id password hash, and a session cookie. No second
