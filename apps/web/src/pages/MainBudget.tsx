@@ -5,6 +5,7 @@ import { budgetApi } from '../api/budget.js';
 import { ApiError } from '../api/client.js';
 import { BalanceBanner } from '../components/BalanceBanner.jsx';
 import { BudgetSection } from '../components/BudgetSection.jsx';
+import { DelegationRowMenu } from '../components/DelegationRowMenu.jsx';
 import { Alert, Button } from '../components/ui.jsx';
 
 /**
@@ -18,13 +19,16 @@ import { Alert, Button } from '../components/ui.jsx';
 
 function TransferDialog({
   delegations,
+  initialFrom,
   onClose,
 }: {
   delegations: readonly { id: string; name: string }[];
+  /** Preset when Transfer was reached from a blocked archive. */
+  initialFrom?: string | undefined;
   onClose: () => void;
 }): ReactNode {
   const queryClient = useQueryClient();
-  const [from, setFrom] = useState('');
+  const [from, setFrom] = useState(initialFrom ?? '');
   const [to, setTo] = useState('');
   const [amount, setAmount] = useState('');
   const [problem, setProblem] = useState<string | null>(null);
@@ -213,6 +217,9 @@ export function MainBudget(): ReactNode {
   const queryClient = useQueryClient();
   const [dialog, setDialog] = useState<'none' | 'delegate' | 'transfer'>('none');
   const [problem, setProblem] = useState<string | null>(null);
+  // Set when Transfer was opened from a line whose archive was blocked.
+  const [transferFrom, setTransferFrom] = useState<string | null>(null);
+  const [newGrouping, setNewGrouping] = useState(false);
 
   const view = useQuery({ queryKey: ['budget'], queryFn: budgetApi.view });
 
@@ -245,6 +252,15 @@ export function MainBudget(): ReactNode {
     onError,
   });
 
+  const createGrouping = useMutation({
+    mutationFn: (name: string) => budgetApi.createGrouping(name, 'delegations'),
+    onSuccess: async () => {
+      setNewGrouping(false);
+      await refresh();
+    },
+    onError,
+  });
+
   const toggleGrouping = useMutation({
     mutationFn: ({ id, collapsed }: { id: string; collapsed: boolean }) =>
       budgetApi.setGroupingCollapsed(id, collapsed),
@@ -261,6 +277,11 @@ export function MainBudget(): ReactNode {
     ...view.data.delegations.groupings.flatMap((grouping) => grouping.rows),
     ...view.data.delegations.ungrouped,
   ].map((row) => ({ id: row.id, name: row.name }));
+
+  const groupingOptions = view.data.delegations.groupings.map((grouping) => ({
+    id: grouping.id,
+    name: grouping.name,
+  }));
 
   return (
     <div>
@@ -318,11 +339,52 @@ export function MainBudget(): ReactNode {
         onEditAmount={(id, cents) => editAmount.mutate({ id, cents })}
         onEditBalance={(id, cents) => editBalance.mutate({ id, cents })}
         onCreate={(name) => createDelegation.mutate(name)}
+        headerActions={
+          newGrouping ? (
+            <input
+              autoFocus
+              placeholder="Grouping name, then Enter"
+              aria-label="Add a grouping"
+              onKeyDown={(event) => {
+                if (event.key === 'Escape') setNewGrouping(false);
+                if (event.key !== 'Enter') return;
+                const name = event.currentTarget.value.trim();
+                if (name !== '') createGrouping.mutate(name);
+              }}
+              className="rounded-lg border border-line bg-canvas px-2 py-1 text-quiet"
+            />
+          ) : (
+            <button
+              type="button"
+              onClick={() => setNewGrouping(true)}
+              className="text-quiet font-semibold text-accent"
+            >
+              + Add grouping
+            </button>
+          )
+        }
+        rowMenu={(row) => (
+          <DelegationRowMenu
+            row={row}
+            groupings={groupingOptions}
+            onTransferFrom={(delegationId) => {
+              setTransferFrom(delegationId);
+              setDialog('transfer');
+            }}
+          />
+        )}
       />
 
       {dialog === 'delegate' && <DelegateDialog onClose={() => setDialog('none')} />}
       {dialog === 'transfer' && (
-        <TransferDialog delegations={delegations} onClose={() => setDialog('none')} />
+        <TransferDialog
+          delegations={delegations}
+          {...(transferFrom === null ? {} : { initialFrom: transferFrom })}
+          onClose={() => {
+            setDialog('none');
+            setTransferFrom(null);
+          }}
+        />
       )}
     </div>
   );

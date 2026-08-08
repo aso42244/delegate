@@ -70,6 +70,26 @@ export interface UndoPreviewDto {
   readonly cycleStartAfterUndo?: string | null;
 }
 
+export type DelegationEventType = 'delegate' | 'categorize' | 'transfer' | 'adjust';
+
+export interface DelegationEventDto {
+  readonly id: string;
+  readonly deltaCents: string;
+  readonly eventType: DelegationEventType;
+  readonly occurredAt: string;
+  readonly reversedAt: string | null;
+  readonly batchId: string | null;
+  readonly actor: { readonly id: string; readonly username: string } | null;
+}
+
+export interface UpdateDelegationInput {
+  readonly name?: string;
+  readonly amountToDelegateCents?: string | null;
+  readonly groupingId?: string | null;
+  readonly isUtility?: boolean;
+  readonly notes?: string | null;
+}
+
 export const budgetApi = {
   view: () => api.get<BudgetViewDto>('/api/budget'),
 
@@ -79,14 +99,25 @@ export const budgetApi = {
       amountToDelegateCents,
     }),
 
-  updateDelegation: (
-    id: string,
-    input: { name?: string; amountToDelegateCents?: string | null; groupingId?: string | null },
-  ) => api.patch<{ ok: boolean }>(`/api/delegations/${id}`, input),
+  updateDelegation: (id: string, input: UpdateDelegationInput) =>
+    api.patch<{ ok: boolean }>(`/api/delegations/${id}`, input),
 
   /** Sends the target; the server records the difference as an `adjust` delta. */
   adjustDelegation: (id: string, targetBalanceCents: string) =>
     api.post<{ balanceCents: string }>(`/api/delegations/${id}/adjust`, { targetBalanceCents }),
+
+  /**
+   * Sends the movement itself. "Manually adjust this line" is a delta by
+   * definition — the owner thinks "put another $25 in", not "make it $675".
+   */
+  adjustDelegationByDelta: (id: string, deltaCents: string) =>
+    api.post<{ balanceCents: string }>(`/api/delegations/${id}/adjust`, { deltaCents }),
+
+  archiveDelegation: (id: string) => api.post<{ ok: boolean }>(`/api/delegations/${id}/archive`),
+
+  /** Per-line history. The only place `adjust` events are ever visible. */
+  delegationHistory: (id: string) =>
+    api.get<{ events: readonly DelegationEventDto[] }>(`/api/delegations/${id}/history`),
 
   createGrouping: (name: string, section: 'assets' | 'debts' | 'delegations') =>
     api.post<{ grouping: { id: string } }>('/api/groupings', { name, section }),
