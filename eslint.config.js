@@ -21,7 +21,12 @@ export default tseslint.config(
         projectService: {
           // Root-level config files belong to no tsconfig; without this the
           // type-aware rules cannot parse them at all.
-          allowDefaultProject: ['eslint.config.js', 'vitest.config.ts', 'apps/web/vite.config.ts'],
+          allowDefaultProject: [
+            'eslint.config.js',
+            'vitest.config.ts',
+            'playwright.config.ts',
+            'apps/web/vite.config.ts',
+          ],
         },
         tsconfigRootDir: import.meta.dirname,
       },
@@ -57,7 +62,15 @@ export default tseslint.config(
   {
     // Config files belong to no TypeScript project, so type information for them
     // is unavailable and the type-aware rules can only report false positives.
-    files: ['eslint.config.js', 'vitest.config.ts', 'apps/web/vite.config.ts'],
+    files: [
+      'eslint.config.js',
+      'vitest.config.ts',
+      'playwright.config.ts',
+      'apps/web/vite.config.ts',
+      // End-to-end specs belong to their own tsconfig, which the project service
+      // does not pick up; they are typechecked by apps/web/tsconfig.e2e.json.
+      'e2e/**/*.ts',
+    ],
     extends: [tseslint.configs.disableTypeChecked],
   },
   {
