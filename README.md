@@ -169,8 +169,13 @@ cannot be built at all over plain HTTP.
 
 ## Repository conventions
 
-- `main` is protected and always deployable. Work happens on `feat/`, `fix/`,
-  `chore/`, `docs/` or `refactor/` branches and lands by squash-merge.
+- `main` is always deployable. Work happens on `feat/`, `fix/`, `chore/`, `docs/`
+  or `refactor/` branches and lands by squash-merge.
+- **`main` is not yet protected by a server-side rule.** GitHub restricts branch
+  protection on private repositories to paid plans, so the convention is currently
+  enforced by discipline rather than by GitHub refusing the push. Making the repo
+  public, or upgrading the plan, would let a rule enforce it — see
+  [open questions](docs/open-questions.md).
 - Conventional Commits.
 - CI must pass before merge: typecheck, lint, formatting, unit and integration
   tests, and a check that cached balances agree with the ledger.

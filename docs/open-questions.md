@@ -10,6 +10,12 @@ history.
 
 ## Phase 1 — MVP
 
+- **Should `main` get a real protection rule?** GitHub only allows branch
+  protection on private repositories under a paid plan, so the "never commit to
+  `main`" rule is currently convention rather than something the server enforces.
+  Three ways out: accept the convention, upgrade the plan, or make the repository
+  public once there is a LICENSE and the no-personal-data guarantee has been
+  audited. No action needed while a single person is committing.
 - **Which host port should the app publish?** `HOST_PORT` defaults to `8088` to
   stay clear of the existing Sure container. Needs confirming against what is
   already in use.
