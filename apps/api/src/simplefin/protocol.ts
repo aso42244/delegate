@@ -68,7 +68,11 @@ const connectionSchema = z
 
 export const accountSetSchema = z
   .object({
-    accounts: z.array(accountSchema).default([]),
+    // Required, not defaulted. `accounts` is mandatory at the top level in both
+    // protocol versions, and defaulting it would let an error page or any other
+    // unrelated JSON parse as "zero accounts" — recording a cheerful successful
+    // sync while nothing had actually been read.
+    accounts: z.array(accountSchema),
     connections: z.array(connectionSchema).default([]),
     // v2 errors are objects; v1 errors are plain strings. Accept either and
     // stringify at the edge, because these are surfaced to the owner verbatim.
