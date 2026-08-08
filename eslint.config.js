@@ -23,7 +23,12 @@ export default tseslint.config(
       // Hard constraint: no dead or commented-out code, no bare TODOs.
       'no-warning-comments': ['error', { terms: ['todo', 'fixme'], location: 'anywhere' }],
       'no-console': 'error',
-      '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_' }],
+      // `ignoreRestSiblings` allows the standard way of stripping a secret:
+      // `const { passwordHash, ...publicUser } = user`.
+      '@typescript-eslint/no-unused-vars': [
+        'error',
+        { argsIgnorePattern: '^_', varsIgnorePattern: '^_', ignoreRestSiblings: true },
+      ],
       '@typescript-eslint/no-floating-promises': 'error',
       '@typescript-eslint/explicit-function-return-type': [
         'error',

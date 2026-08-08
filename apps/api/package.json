@@ -20,8 +20,14 @@
   },
   "dependencies": {
     "@budget/shared": "*",
+    "@fastify/cookie": "^11.1.2",
+    "@fastify/session": "^11.1.2",
     "@prisma/client": "^6.19.1",
-    "dotenv": "^16.6.1"
+    "argon2": "^0.45.1",
+    "dotenv": "^16.6.1",
+    "fastify": "^5.11.3",
+    "fastify-plugin": "^6.0.0",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "prisma": "^6.19.1"

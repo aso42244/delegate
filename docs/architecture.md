@@ -225,6 +225,34 @@ created becomes Super Admin.
 Every delegation event stamps `actor_id`. Not for auditing — it costs nothing and
 answers "when did this line change".
 
+## Authentication
+
+Phase 1 is a username, an argon2id password hash, and a session cookie. No second
+factor. This is acceptable **only** while the system is LAN-only; TLS, TOTP,
+passkeys, rate limiting and CSRF are all Phase 3, and none of it may be exposed
+to the internet before that phase ships in full.
+
+What is in place now:
+
+- **argon2id** at OWASP's baseline, and length as the only password rule. See
+  [ADR 007](decisions/007-argon2id-parameters-and-password-policy.md).
+- **Sessions in PostgreSQL**, so a restart does not sign anyone out and logout
+  can genuinely revoke. See [ADR 008](decisions/008-sessions-stored-in-postgres.md).
+- **Session id rotation** on login and on password change, so an id captured
+  before either cannot be replayed after it.
+- **Uniform failure**: an unknown username, a wrong password and an archived
+  account return the same status and the same body, and a missing user still pays
+  the full hash cost, so neither the response nor its timing reveals which
+  usernames exist.
+- **The user is re-read on every request** rather than trusted from the session,
+  so a role change or an archival takes effect at once.
+- **Temporary passwords**: an account created by an Admin can reach only its own
+  identity and the change-password route until it sets a real one.
+
+What is deliberately absent until Phase 3: rate limiting on the auth endpoints.
+Nothing throttles password guessing beyond the ~50 ms a hash costs. That is the
+single strongest reason this must not leave the LAN early.
+
 ## Layout
 
 ```
