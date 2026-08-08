@@ -16,7 +16,7 @@ import { pruneExpiredSessions } from '../plugins/session-store.js';
 /** Sign-in, sign-out, and first-run setup. */
 
 const credentialsSchema = z.object({
-  username: z.string().min(1).max(64),
+  username: z.string().min(1).max(254),
   // Bounded before argon2 sees it: hashing an unbounded string on an
   // unauthenticated route is a denial-of-service vector.
   password: z.string().min(1).max(MAX_PASSWORD_LENGTH),

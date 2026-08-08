@@ -100,7 +100,16 @@ run unless the database name ends in `_test`.
 SimpleFIN issues a one-time **setup token**, which is exchanged once for a
 long-lived **access URL**. Get a token from
 [bridge.simplefin.org](https://bridge.simplefin.org/) after connecting your
-institutions, then:
+institutions.
+
+**The easiest route is the app itself:** sign in, go to **Settings → Sync**, paste
+the token, and press Connect. The claimed credential is stored encrypted in the
+database, so reconnecting after a redeployment needs no file editing and no SSH.
+Because the encryption key is derived from `SESSION_SECRET`, changing that
+variable means reconnecting — see
+[ADR 011](docs/decisions/011-simplefin-credential-stored-encrypted.md).
+
+There is also a command-line route, for a configuration-managed deployment:
 
 ```bash
 npm run simplefin:claim -- <setup-token>

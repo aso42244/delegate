@@ -1,6 +1,13 @@
 import type { FastifyPluginCallback } from 'fastify';
+import { z } from 'zod';
 import { prisma } from '../db/client.js';
 import { ConflictError } from '../domain/errors.js';
+import {
+  connectWithAccessUrl,
+  connectWithSetupToken,
+  disconnect,
+  resolveConnection,
+} from '../domain/simplefin-config.js';
 import { runSync } from '../domain/sync.js';
 import { AUTHENTICATED } from '../plugins/auth.js';
 import { HttpSimpleFinClient } from '../simplefin/client.js';
@@ -35,6 +42,11 @@ export const syncRoutes: FastifyPluginCallback = (fastify, _options, done) => {
    * last one failed, so the UI does not have to interpret run history itself.
    */
   fastify.get('/api/sync/status', async () => {
+    const connection = await resolveConnection(
+      prisma,
+      fastify.config.SIMPLEFIN_ACCESS_URL,
+      fastify.config.SESSION_SECRET,
+    );
     const runs = await prisma.syncRun.findMany({
       orderBy: { startedAt: 'desc' },
       take: 20,
@@ -44,7 +56,11 @@ export const syncRoutes: FastifyPluginCallback = (fastify, _options, done) => {
     const lastSuccess = runs.find((run) => run.status === 'succeeded');
 
     return {
-      configured: fastify.config.SIMPLEFIN_ACCESS_URL.length > 0,
+      configured: connection.accessUrl !== null,
+      // Where the credential came from, never what it is.
+      credentialSource: connection.source,
+      connectedAt: connection.connectedAt?.toISOString() ?? null,
+      credentialProblem: connection.problem,
       syncing: latest?.status === 'running',
       lastSyncAt: lastSuccess?.finishedAt?.toISOString() ?? null,
       // The banner shows while the most recent run is a failure, and clears as
@@ -66,22 +82,56 @@ export const syncRoutes: FastifyPluginCallback = (fastify, _options, done) => {
 
   fastify.post('/api/sync', async (request) => {
     const config = fastify.config;
+    const connection = await resolveConnection(
+      prisma,
+      config.SIMPLEFIN_ACCESS_URL,
+      config.SESSION_SECRET,
+    );
 
-    if (!config.SIMPLEFIN_ACCESS_URL) {
+    if (!connection.accessUrl) {
       throw new ConflictError(
         'simplefin_not_configured',
-        'No SimpleFIN access URL is configured. Claim a setup token and put the result in SIMPLEFIN_ACCESS_URL.',
+        connection.problem ??
+          'SimpleFIN is not connected. Connect it in Settings, or set SIMPLEFIN_ACCESS_URL.',
       );
     }
 
     const summary = await runSync(prisma, {
-      client: new HttpSimpleFinClient({ accessUrl: config.SIMPLEFIN_ACCESS_URL }),
+      client: new HttpSimpleFinClient({ accessUrl: connection.accessUrl }),
       backfillMonths: config.SIMPLEFIN_BACKFILL_MONTHS,
       logger: request.log,
       actorId: request.currentUser?.id ?? null,
     });
 
     return summary;
+  });
+
+  /**
+   * Connect: either claim a one-time setup token, or store an access URL the
+   * owner already holds. Both end up encrypted in the database.
+   */
+  fastify.post('/api/sync/connect', async (request) => {
+    const body = z
+      .union([
+        z.object({ setupToken: z.string().min(1).max(4000) }),
+        z.object({ accessUrl: z.string().min(1).max(4000) }),
+      ])
+      .parse(request.body);
+
+    const result =
+      'setupToken' in body
+        ? await connectWithSetupToken(prisma, body.setupToken, fastify.config.SESSION_SECRET)
+        : await connectWithAccessUrl(prisma, body.accessUrl, fastify.config.SESSION_SECRET);
+
+    // The credential itself is never logged, only that one was stored.
+    request.log.info({ actorId: request.currentUser?.id }, 'SimpleFIN connected');
+    return { connectedAt: result.connectedAt.toISOString() };
+  });
+
+  fastify.post('/api/sync/disconnect', async (request) => {
+    await disconnect(prisma);
+    request.log.info({ actorId: request.currentUser?.id }, 'SimpleFIN disconnected');
+    return { ok: true };
   });
 
   done();

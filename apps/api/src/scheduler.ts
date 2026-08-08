@@ -3,6 +3,7 @@ import type { FastifyBaseLogger } from 'fastify';
 import type { AppConfig } from './config.js';
 import { prisma } from './db/client.js';
 import { ConflictError } from './domain/errors.js';
+import { resolveConnection } from './domain/simplefin-config.js';
 import { runSync } from './domain/sync.js';
 import { HttpSimpleFinClient } from './simplefin/client.js';
 
@@ -22,13 +23,6 @@ export interface Scheduler {
 
 export function startScheduler(config: AppConfig, logger: FastifyBaseLogger): Scheduler {
   const tasks: ScheduledTask[] = [];
-
-  if (!config.SIMPLEFIN_ACCESS_URL) {
-    logger.warn(
-      'SIMPLEFIN_ACCESS_URL is not set; automatic sync is disabled until it is configured.',
-    );
-    return { stop: () => undefined };
-  }
 
   if (!cron.validate(config.SIMPLEFIN_SYNC_CRON)) {
     // Loud rather than silently never running: a mistyped expression that simply
@@ -60,8 +54,24 @@ export function startScheduler(config: AppConfig, logger: FastifyBaseLogger): Sc
  */
 async function runScheduledSync(config: AppConfig, logger: FastifyBaseLogger): Promise<void> {
   try {
+    // Resolved per run rather than at startup: the owner can connect SimpleFIN
+    // from Settings at any time, and the job must pick that up without a restart.
+    const connection = await resolveConnection(
+      prisma,
+      config.SIMPLEFIN_ACCESS_URL,
+      config.SESSION_SECRET,
+    );
+
+    if (!connection.accessUrl) {
+      logger.debug(
+        { problem: connection.problem },
+        'scheduled sync skipped: SimpleFIN is not connected',
+      );
+      return;
+    }
+
     const summary = await runSync(prisma, {
-      client: new HttpSimpleFinClient({ accessUrl: config.SIMPLEFIN_ACCESS_URL }),
+      client: new HttpSimpleFinClient({ accessUrl: connection.accessUrl }),
       backfillMonths: config.SIMPLEFIN_BACKFILL_MONTHS,
       logger,
       // Scheduled runs have no user behind them.
