@@ -1,9 +1,10 @@
-# Household Budget
+# Delegate
 
 A self-hosted envelope budgeting application for a single household. It replaces a
 hand-maintained spreadsheet and a self-hosted Sure instance.
 
-Money sits in real accounts and every dollar is _delegated_ to a named envelope.
+The name is the verb the whole system is built around: money sits in real
+accounts, and every dollar is _delegated_ to a named envelope.
 The health of the budget is one subtraction, shown at the bottom of the Main Budget
 page and recomputed on every view:
 

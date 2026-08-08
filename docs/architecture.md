@@ -1,7 +1,7 @@
 # Architecture
 
-The domain model, kept current. If this document and the code disagree, the code
-is right and this document is a bug.
+The domain model of **Delegate**, kept current. If this document and the code
+disagree, the code is right and this document is a bug.
 
 ## The idea in one paragraph
 

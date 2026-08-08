@@ -266,5 +266,5 @@ personal data in the repository, and §5 requires that going public be a README 
 a LICENCE rather than a refactor.
 
 **The displayed name comes from the `APP_NAME` environment variable**, defaulting
-to `Household Budget`. The owner sets his own in `.env`, which is git-ignored, so
+to `Delegate`. The owner sets his own in `.env`, which is git-ignored, so
 the repository stays free of it. Confirmed by the owner.

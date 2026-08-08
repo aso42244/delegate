@@ -22,7 +22,7 @@ function useAppName(): string {
     queryFn: () => api.get<{ appName: string }>('/api/app'),
     staleTime: Infinity,
   });
-  return query.data?.appName ?? 'Household Budget';
+  return query.data?.appName ?? 'Delegate';
 }
 
 function Placeholder({ title, note }: { title: string; note: string }): ReactNode {
