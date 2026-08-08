@@ -18,11 +18,15 @@ COPY apps/web/package.json apps/web/
 RUN npm ci
 
 COPY . .
-RUN npm run db:generate && npm run build
+RUN npx prisma generate --schema apps/api/prisma/schema.prisma && npm run build
 
 # Reinstalled without dev dependencies rather than pruned, so the runtime layer
-# carries no build toolchain.
-RUN npm ci --omit=dev && npm run db:generate
+# carries no build toolchain. The Prisma client is regenerated afterwards because
+# the reinstall replaces node_modules wholesale.
+#
+# `npx prisma` directly, not `npm run db:generate`: that script routes through
+# dotenv-cli, which is a devDependency and is gone by this point.
+RUN npm ci --omit=dev && npx prisma generate --schema apps/api/prisma/schema.prisma
 
 # ---------------------------------------------------------------------------
 # Runtime
