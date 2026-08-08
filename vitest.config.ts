@@ -26,7 +26,13 @@ export default defineConfig({
           include: ['apps/api/tests/**/*.test.ts'],
           environment: 'node',
           setupFiles: ['apps/api/tests/setup.ts'],
-          fileParallelism: false,
+          // One worker for the whole project, so the files run one after another.
+          // They share a database and each truncates it, so anything concurrent
+          // deletes another file's fixtures mid-test. `fileParallelism` does not
+          // work here — it is a root-level option and is ignored inside a
+          // project, which is exactly the trap this replaces.
+          pool: 'forks',
+          poolOptions: { forks: { singleFork: true } },
           testTimeout: 30_000,
           hookTimeout: 30_000,
         },

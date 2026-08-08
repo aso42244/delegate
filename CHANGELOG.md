@@ -27,5 +27,22 @@ phase (`v0.1.0-phase1`, and so on).
 - 116 tests, including integration tests against a real PostgreSQL asserting the
   identity behaves correctly after delegate, undo, transfer, adjust, categorize,
   split, pending appearing, pending vanishing and archiving.
-- Documentation: architecture, six ADRs, phase-gated open questions.
+- Documentation: architecture, eight ADRs, phase-gated open questions.
 - CI check rejecting the forbidden terminology for the Bitcoin asset class.
+- Fastify application: validated environment configuration, structured logging
+  with a correlation id per request and redaction of credentials, a domain-to-HTTP
+  error mapping, a health check, and graceful shutdown on SIGTERM.
+- Authentication: argon2id password hashing, PostgreSQL-backed sessions, first-run
+  Super Admin creation, login and logout, forced password change on first login,
+  and session id rotation on login and password change.
+- User management for Admins: create, rename, change role, reset password,
+  archive and restore, with Super Admin immunity enforced in the domain layer.
+- 43 further integration tests covering session fixation, user enumeration, the
+  temporary-password lockout, Super Admin immunity, and session revocation on
+  archive and password reset.
+
+### Fixed
+
+- Integration test files ran concurrently against one database despite
+  `fileParallelism: false`, which is a root-level Vitest option and is ignored
+  inside a project. Replaced with a single fork for that project.
