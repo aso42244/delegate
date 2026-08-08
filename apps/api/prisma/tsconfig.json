@@ -1,0 +1,14 @@
+{
+  // The seed script is run directly by node, never bundled into the build output,
+  // so it lives outside apps/api/tsconfig.json. This exists so it is still
+  // typechecked and lintable.
+  "extends": "../../../tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "composite": false,
+    "declaration": false,
+    "declarationMap": false,
+    "incremental": false
+  },
+  "include": ["./**/*.ts"]
+}

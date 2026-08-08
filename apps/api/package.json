@@ -1,0 +1,29 @@
+{
+  "name": "@budget/api",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc --build",
+    "clean": "rm -rf dist *.tsbuildinfo",
+    "dev": "node --watch --experimental-strip-types src/server.ts",
+    "start": "node dist/server.js",
+    "db:generate": "prisma generate",
+    "db:migrate": "prisma migrate dev",
+    "db:deploy": "prisma migrate deploy",
+    "db:reset": "prisma migrate reset --force",
+    "db:seed": "node --experimental-strip-types prisma/seed.ts",
+    "recompute-balances": "node dist/cli/recompute-balances.js"
+  },
+  "prisma": {
+    "seed": "node --experimental-strip-types prisma/seed.ts"
+  },
+  "dependencies": {
+    "@budget/shared": "*",
+    "@prisma/client": "^6.19.1",
+    "dotenv": "^16.6.1"
+  },
+  "devDependencies": {
+    "prisma": "^6.19.1"
+  }
+}
