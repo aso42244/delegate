@@ -102,7 +102,7 @@ export async function reconcileToActual(
   lines: readonly ReconcileLine[],
   options: { readonly actorId?: string | null; readonly goLiveAt?: Date } = {},
 ): Promise<ReconcileResult> {
-  const batchId = await newUuid(db);
+  const batchId = newUuid();
   let adjustedCount = 0;
   let totalDeltaCents: Cents = 0n;
 

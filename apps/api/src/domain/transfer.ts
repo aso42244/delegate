@@ -58,7 +58,7 @@ export async function transferBetweenDelegations(
     if (!lines.some((line) => line.id === id)) throw new NotFoundError('Delegation', id);
   }
 
-  const batchId = await newUuid(db);
+  const batchId = newUuid();
   const transfer = await db.delegationTransfer.create({
     data: {
       fromDelegationId: input.fromDelegationId,

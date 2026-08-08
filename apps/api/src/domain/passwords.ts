@@ -1,4 +1,5 @@
 import argon2 from 'argon2';
+import { randomUUID } from 'node:crypto';
 import { ValidationError } from './errors.js';
 
 /**
@@ -71,12 +72,10 @@ export async function verifyPassword(hash: string, password: string): Promise<bo
  *
  * Without it, a missing user returns in microseconds while a real one takes the
  * ~50ms argon2 deliberately costs, and that difference alone enumerates every
- * valid username. Computed once at module load.
+ * valid username. Computed once at module load, over a random value so the
+ * input is never guessable even in principle.
  */
-const DUMMY_HASH_PROMISE = argon2.hash(
-  `absent-user-${Date.now()}-${Math.random()}`,
-  ARGON2_OPTIONS,
-);
+const DUMMY_HASH_PROMISE = argon2.hash(randomUUID(), ARGON2_OPTIONS);
 
 /** Burn the same time a real verification would, then fail. */
 export async function verifyAgainstDummyHash(password: string): Promise<false> {

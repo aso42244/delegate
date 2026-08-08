@@ -74,7 +74,7 @@ export async function runDelegate(
     );
   }
 
-  const batchId = await newUuid(db);
+  const batchId = newUuid();
   const run = await db.delegateRun.create({
     data: {
       batchId,
