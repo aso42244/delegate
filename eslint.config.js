@@ -4,7 +4,14 @@ import prettier from 'eslint-config-prettier';
 
 export default tseslint.config(
   {
-    ignores: ['**/dist/**', '**/node_modules/**', '**/*.timestamp-*.mjs', '**/generated/**'],
+    ignores: [
+      '**/dist/**',
+      // Emitted declaration files for the web build; generated, not authored.
+      '**/dist-types/**',
+      '**/node_modules/**',
+      '**/*.timestamp-*.mjs',
+      '**/generated/**',
+    ],
   },
   js.configs.recommended,
   ...tseslint.configs.recommendedTypeChecked,
@@ -14,7 +21,7 @@ export default tseslint.config(
         projectService: {
           // Root-level config files belong to no tsconfig; without this the
           // type-aware rules cannot parse them at all.
-          allowDefaultProject: ['eslint.config.js', 'vitest.config.ts'],
+          allowDefaultProject: ['eslint.config.js', 'vitest.config.ts', 'apps/web/vite.config.ts'],
         },
         tsconfigRootDir: import.meta.dirname,
       },
@@ -50,7 +57,7 @@ export default tseslint.config(
   {
     // Config files belong to no TypeScript project, so type information for them
     // is unavailable and the type-aware rules can only report false positives.
-    files: ['eslint.config.js', 'vitest.config.ts'],
+    files: ['eslint.config.js', 'vitest.config.ts', 'apps/web/vite.config.ts'],
     extends: [tseslint.configs.disableTypeChecked],
   },
   {

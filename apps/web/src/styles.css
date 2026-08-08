@@ -1,0 +1,99 @@
+@import 'tailwindcss';
+
+/**
+ * Design tokens, straight from docs/design.md.
+ *
+ * Every colour and size the interface uses is named here rather than written as
+ * a literal in a component. When the design changes — and it will, once real
+ * data is on screen — it changes in one place.
+ */
+@theme {
+  --color-ink: #2c2c2b;
+  --color-muted: #7d7a75;
+  /* Deliberately faint: the To Delegate column is the quiet one. */
+  --color-faint: #b4b1ab;
+  --color-canvas: #ffffff;
+  --color-surface: #f9f8f7;
+  --color-surface-2: #f0efed;
+  --color-line: #e6e5e3;
+
+  --color-accent: #2783de;
+  --color-accent-soft: #e5f2fc;
+
+  --color-positive: #46a171;
+  --color-positive-soft: #e8f1ec;
+
+  --color-warning: #8a6a14;
+  --color-warning-soft: #fff4d6;
+  --color-warning-line: #efdfaf;
+  --color-warning-dot: #d5803b;
+
+  --color-danger: #93332b;
+  --color-danger-soft: #fce9e7;
+  --color-danger-line: #f2c4bf;
+  --color-danger-dot: #e56458;
+
+  /* Negative amounts, and only those, in the tables. */
+  --color-negative: #e56458;
+
+  /* Grouping palette. The owner picks one per grouping; children inherit it. */
+  --color-group-green: #46a171;
+  --color-group-blue: #2783de;
+  --color-group-orange: #d5803b;
+  --color-group-purple: #8b63b8;
+  --color-group-grey: #7d7a75;
+
+  --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+
+  --text-label: 0.6875rem; /* 11px column headers */
+  --text-quiet: 0.8125rem; /* 13px de-emphasised data and menu items */
+  --text-base: 0.875rem; /* 14px body and table rows */
+  --text-hero: 0.9375rem; /* 15px the Remaining column */
+  --text-section: 1rem; /* 16px section titles */
+  --text-page: 1.5rem; /* 24px page titles */
+
+  --spacing-sidebar: 232px;
+  --spacing-rail: 64px;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  background: var(--color-surface);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  font-size: var(--text-base);
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+/**
+ * Every currency figure. Tabular numerals are what let a column of amounts line
+ * up optically; without them the decimal points wander.
+ */
+.money {
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+/* Visible keyboard focus everywhere, in the accent colour. */
+:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* No animation is required to understand the interface. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
