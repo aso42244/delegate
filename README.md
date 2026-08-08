@@ -108,6 +108,11 @@ Container images are built by CI on x86_64 runners rather than locally, because 
 Mac would produce an arm64 image the NAS cannot run. See
 [ADR 005](docs/decisions/005-container-images-built-on-x86-64-ci.md).
 
+The target is a DS220+ (Intel Celeron J4025, 2 cores, 6 GB) running DSM 7.3.2,
+sharing that hardware with DSM itself and the existing Sure container. Postgres
+memory settings are pinned explicitly in the Compose file rather than left at
+defaults, which assume a much larger machine.
+
 1. **Enable SSH** on the NAS: Control Panel → Terminal & SNMP → Enable SSH service.
 2. **Install Container Manager** from Package Center if it is not present.
 3. **Create a folder** for the project, for example `/volume1/docker/household-budget`,

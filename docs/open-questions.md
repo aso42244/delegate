@@ -10,14 +10,13 @@ history.
 
 ## Phase 1 — MVP
 
-- **Which Synology model is this deploying to, and is it x86_64 or arm64?**
-  ADR 005 builds the image on x86_64 CI runners on the assumption it is an Intel
-  or AMD model, which covers almost everything that runs Container Manager. If it
-  is one of the arm64 models the build target changes. `uname -m` over SSH
-  answers it.
 - **Which host port should the app publish?** `HOST_PORT` defaults to `8088` to
   stay clear of the existing Sure container. Needs confirming against what is
   already in use.
+- **How much memory can Postgres have?** The NAS has 6 GB total and is already
+  running the Sure container and DSM itself. Postgres 16's defaults assume far
+  more, so `shared_buffers` and `work_mem` want pinning explicitly in the Compose
+  file rather than left to chance on a 2-core box.
 - **Where should nightly `pg_dump` output live on the NAS?** A shared folder path
   for `BACKUP_DIR`, and confirmation that it is included in whatever off-device
   backup already exists — a dump sitting on the same disk as the database is not

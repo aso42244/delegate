@@ -5,9 +5,10 @@
 
 ## Context
 
-Development happens on an Apple Silicon Mac (arm64). Synology models that run
-Container Manager are overwhelmingly x86_64. An image built locally would be arm64
-and would not start on the NAS.
+Development happens on an Apple Silicon Mac (arm64). The deployment target is a
+Synology DS220+ — an Intel Celeron J4025, so **x86_64**, running DSM 7.3.2 with
+2 cores and 6 GB of memory. An image built on the development machine would be
+arm64 and would not start on the NAS at all.
 
 Building `--platform linux/amd64` locally works through QEMU emulation, but it is
 slow and unreliable for native addons — `argon2` compiles a native binding, which
@@ -15,8 +16,9 @@ is exactly the kind of dependency that misbehaves under emulation.
 
 ## Decision
 
-The deployable image is built by GitHub Actions on x86_64 runners. CI produces the
-exact artefact the NAS pulls, with no emulation involved. The backup restore path
+The deployable image is built by GitHub Actions on `ubuntu-latest`, which is
+x86_64 and therefore matches the NAS natively. CI produces the exact artefact the
+NAS pulls, with no emulation involved. The backup restore path
 is exercised against that same image in CI, so it is verified rather than assumed.
 
 Local development runs natively — `npm run dev` against a local PostgreSQL — which
