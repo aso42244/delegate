@@ -74,8 +74,8 @@ These are non-negotiable. Violating one is a build failure.
 
 ## Where things stand
 
-**Phase 1 is essentially complete.** 22 PRs merged. 294 unit and integration
-tests, 29 end-to-end tests in a real browser, all green.
+**Phase 1 is essentially complete.** 23 PRs merged. 294 unit and integration
+tests, 40 end-to-end tests in a real browser, all green.
 
 Built and working:
 
@@ -92,21 +92,22 @@ Built and working:
 - Auto-categorization rules with apply-to-existing
 - The API behind Transactions and Main Budget, including Delegate/Transfer/
   Adjust/Reconcile
-- The UI: app shell with collapsible sidebar, auth screens, the Main Budget page,
-  the Transactions page including manual entry and the split editor,
-  Settings → Sync
+- The UI: app shell with collapsible sidebar, auth screens, the Main Budget page
+  with the per-row menu and inline grouping creation, the Transactions page
+  including manual entry and the split editor, Settings → Sync
 - Docker image, Compose for the NAS, nightly `pg_dump`, and a restore path proven
   by destroying data and recovering it
 
 ### What is left in Phase 1
 
-1. **The per-row ellipsis menu on Main Budget** — rename, utility toggle,
-   manually adjust, history for this line, move to grouping, archive. The design
-   for it is settled in `docs/design.md`.
-2. **Settings sections beyond Sync** — accounts, delegations, groupings, rules,
+1. **Settings sections beyond Sync** — accounts, delegations, groupings, rules,
    budget, users, archived, and the **Reconcile to Actual** screen. Reconcile
    matters: it is how go-live corrects sixty delegation balances in one commit.
-3. **Deploy to the NAS.** The image has never run on the DS220+. That is the one
+   Accounts brings the write routes with it (`PATCH /api/accounts/:id`, archive),
+   and the **asset and debt row menu on Main Budget** belongs with them — the
+   delegation row menu ships without it deliberately, rather than being built
+   twice against routes that do not exist yet.
+2. **Deploy to the NAS.** The image has never run on the DS220+. That is the one
    remaining unknown; CI proves it boots on x86_64 Linux against real Postgres.
 
 Then Phases 2 (Utilities, Insights, Bitcoin, property, pairing, colours,

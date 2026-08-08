@@ -22,6 +22,11 @@ export interface BudgetSectionProps {
   readonly onEditBalance?: (rowId: string, cents: bigint) => void;
   readonly onCreate?: (name: string) => void;
   readonly headerActions?: ReactNode;
+  /**
+   * The per-row menu, supplied by the page. Kept as a render prop so this
+   * component stays presentational and knows nothing about delegations.
+   */
+  readonly rowMenu?: (row: BudgetRowDto) => ReactNode;
 }
 
 function parseCents(value: string | null): bigint | null {
@@ -38,6 +43,7 @@ export function BudgetSection({
   onEditBalance,
   onCreate,
   headerActions,
+  rowMenu,
 }: BudgetSectionProps): ReactNode {
   const [newName, setNewName] = useState('');
 
@@ -56,7 +62,9 @@ export function BudgetSection({
 
   function renderRow(row: BudgetRowDto, inGrouping: boolean): ReactNode {
     return (
-      <tr key={row.id} className="border-b border-line last:border-0">
+      // `group` so the row's menu button can appear on hover of the row rather
+      // than only on hover of the button itself.
+      <tr key={row.id} className="group border-b border-line last:border-0">
         <td className={`py-2 pr-3 ${inGrouping ? 'pl-8' : 'pl-3'}`}>
           <span className="text-ink">{row.name}</span>
           {row.source && (
@@ -92,11 +100,13 @@ export function BudgetSection({
             />
           </td>
         )}
+
+        {rowMenu && <td className="w-10 py-2 pr-3">{rowMenu(row)}</td>}
       </tr>
     );
   }
 
-  const columnCount = showAmountToDelegate ? 3 : 2;
+  const columnCount = (showAmountToDelegate ? 3 : 2) + (rowMenu ? 1 : 0);
 
   return (
     <section className="mb-8">
@@ -115,6 +125,7 @@ export function BudgetSection({
             {showAmountToDelegate && (
               <th className="py-2 pr-3 text-right font-normal text-faint">To delegate</th>
             )}
+            {rowMenu && <th className="w-10 py-2 pr-3" />}
           </tr>
         </thead>
 
@@ -171,6 +182,8 @@ export function BudgetSection({
                     )}
                   </td>
                 )}
+
+                {rowMenu && <td className="w-10 py-2 pr-3" />}
               </tr>
 
               {!grouping.collapsed && grouping.rows.map((row) => renderRow(row, true))}
@@ -215,6 +228,7 @@ export function BudgetSection({
                 />
               </td>
             )}
+            {rowMenu && <td className="w-10 py-2 pr-3" />}
           </tr>
         </tfoot>
       </table>

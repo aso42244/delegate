@@ -4,6 +4,7 @@ import {
   type ButtonHTMLAttributes,
   type InputHTMLAttributes,
   type ReactNode,
+  type TextareaHTMLAttributes,
 } from 'react';
 
 /**
@@ -74,6 +75,35 @@ export function TextField({
           {hint}
         </p>
       ) : null}
+    </div>
+  );
+}
+
+/**
+ * The multi-line counterpart to TextField, wired the same way.
+ *
+ * The control sits beside its label rather than inside it. A wrapping `<label>`
+ * takes its text from everything it contains, which for a filled-in box means
+ * the label reads as the label plus whatever was typed.
+ */
+export function TextArea({
+  label,
+  className = '',
+  ...props
+}: TextareaHTMLAttributes<HTMLTextAreaElement> & { label: string }): ReactNode {
+  const generatedId = useId();
+  const id = props.id ?? generatedId;
+
+  return (
+    <div className="block">
+      <label htmlFor={id} className="mb-1 block text-quiet font-medium text-ink">
+        {label}
+      </label>
+      <textarea
+        id={id}
+        className={`w-full rounded-lg border border-line bg-canvas px-3 py-2 text-base text-ink placeholder:text-faint ${className}`}
+        {...props}
+      />
     </div>
   );
 }
@@ -184,6 +214,42 @@ export function SelectField({
         {children}
       </select>
     </div>
+  );
+}
+
+/**
+ * A 36×20 switch, per the design.
+ *
+ * `role="switch"` rather than a styled checkbox: the state is announced as on or
+ * off, and it is operable from the keyboard without any handling of our own.
+ */
+export function Toggle({
+  checked,
+  onChange,
+  label,
+}: {
+  checked: boolean;
+  onChange: (next: boolean) => void;
+  label: string;
+}): ReactNode {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      aria-label={label}
+      onClick={() => onChange(!checked)}
+      className={`relative inline-flex h-5 w-9 shrink-0 rounded-full transition-colors ${
+        checked ? 'bg-accent' : 'bg-surface-2'
+      }`}
+    >
+      <span
+        aria-hidden
+        className={`absolute top-0.5 h-4 w-4 rounded-full bg-white transition-transform ${
+          checked ? 'translate-x-[18px]' : 'translate-x-0.5'
+        }`}
+      />
+    </button>
   );
 }
 
