@@ -2,8 +2,10 @@ import Fastify, { type FastifyInstance } from 'fastify';
 import { getConfig, type AppConfig } from './config.js';
 import { errorHandler, notFoundHandler } from './http/errors.js';
 import { auth } from './plugins/auth.js';
+import { configPlugin } from './plugins/config.js';
 import { authRoutes } from './routes/auth.js';
 import { healthRoutes } from './routes/health.js';
+import { syncRoutes } from './routes/sync.js';
 import { userRoutes } from './routes/users.js';
 
 /**
@@ -57,10 +59,12 @@ export async function buildApp(config: AppConfig = getConfig()): Promise<Fastify
   app.setErrorHandler(errorHandler);
   app.setNotFoundHandler(notFoundHandler);
 
+  await app.register(configPlugin, { config });
   await app.register(auth, { config });
   await app.register(healthRoutes);
   await app.register(authRoutes);
   await app.register(userRoutes);
+  await app.register(syncRoutes);
 
   return app;
 }

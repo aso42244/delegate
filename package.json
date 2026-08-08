@@ -28,7 +28,8 @@
     "db:deploy": "npm run db:deploy --workspace @budget/api",
     "db:reset": "npm run db:reset --workspace @budget/api",
     "db:seed": "npm run db:seed --workspace @budget/api",
-    "db:generate": "npm run db:generate --workspace @budget/api"
+    "db:generate": "npm run db:generate --workspace @budget/api",
+    "simplefin:claim": "npm run simplefin:claim --workspace @budget/api --"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.1",
