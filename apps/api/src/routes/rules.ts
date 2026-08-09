@@ -42,6 +42,14 @@ const applyBodySchema = z.object({
   includeCategorized: z.boolean().default(false),
 });
 
+/** Only the literal string "true" opts in; anything else is the safe default. */
+const previewQuerySchema = z.object({
+  includeCategorized: z
+    .enum(['true', 'false'])
+    .default('false')
+    .transform((value) => value === 'true'),
+});
+
 export const ruleRoutes: FastifyPluginCallback = (fastify, _options, done) => {
   for (const guard of AUTHENTICATED) {
     fastify.addHook('preHandler', guard);
@@ -129,11 +137,17 @@ export const ruleRoutes: FastifyPluginCallback = (fastify, _options, done) => {
     return reply.code(201).send({ rule });
   });
 
-  /** How many rows the bulk apply would touch. Read-only. */
+  /**
+   * How many rows the bulk apply would touch. Read-only.
+   *
+   * The flag is parsed as an explicit "true" rather than coerced. A query string
+   * carries text, and `Boolean("false")` is `true` — which made
+   * `?includeCategorized=false` preview the *overwrite* count, the one that
+   * would reverse categorizations made by hand. A preview that errs towards the
+   * dangerous number is worse than no preview.
+   */
   fastify.get('/api/rules/preview', async (request) => {
-    const includeCategorized = request.query
-      ? Boolean((request.query as Record<string, unknown>)['includeCategorized'])
-      : false;
+    const { includeCategorized } = previewQuerySchema.parse(request.query ?? {});
 
     return previewRules(prisma, { includeCategorized });
   });

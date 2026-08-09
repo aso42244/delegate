@@ -11,6 +11,8 @@ import { ArchivedSection } from './pages/settings/Archived.jsx';
 import { BudgetSection } from './pages/settings/Budget.jsx';
 import { DelegationsSection } from './pages/settings/Delegations.jsx';
 import { GroupingsSection } from './pages/settings/Groupings.jsx';
+import { RulesSection } from './pages/settings/Rules.jsx';
+import { UsersSection } from './pages/settings/Users.jsx';
 import { ReconcileSection } from './pages/settings/Reconcile.jsx';
 import { SettingsLayout } from './pages/settings/SettingsLayout.jsx';
 import { SyncSection } from './pages/settings/Sync.jsx';
@@ -108,7 +110,9 @@ export function App(): ReactNode {
             <Route path="accounts" element={<AccountsSection />} />
             <Route path="delegations" element={<DelegationsSection />} />
             <Route path="groupings" element={<GroupingsSection />} />
+            <Route path="rules" element={<RulesSection />} />
             <Route path="budget" element={<BudgetSection />} />
+            <Route path="users" element={<UsersSection />} />
             <Route path="archived" element={<ArchivedSection />} />
             <Route path="reconcile" element={<ReconcileSection />} />
           </Route>
