@@ -32,7 +32,9 @@ test('taking an account out of the budget removes it from the identity', async (
   await expect(signedIn.getByRole('status')).toContainText('$450,000.00 to delegate');
 
   await signedIn.goto('/settings/accounts');
-  await signedIn.getByRole('switch', { name: 'The house in budget' }).click();
+  const inBudget = signedIn.getByRole('switch', { name: 'The house in budget' });
+  await inBudget.click();
+  await expect(inBudget).toHaveAttribute('aria-checked', 'false');
 
   // Out of the budget, still in net worth: the separation that keeps a house
   // and its mortgage from drowning the envelope maths.
@@ -82,7 +84,14 @@ test('an off-budget account archives at any balance', async ({ signedIn }) => {
   await makeAccount('The house', 'asset', 45_000_000n);
 
   await signedIn.goto('/settings/accounts');
-  await signedIn.getByRole('switch', { name: 'The house in budget' }).click();
+
+  // Wait for the toggle to actually reflect the saved state before archiving.
+  // Clicking straight through would race the PATCH, and the archive would be
+  // refused for the right reason at the wrong moment.
+  const inBudget = signedIn.getByRole('switch', { name: 'The house in budget' });
+  await inBudget.click();
+  await expect(inBudget).toHaveAttribute('aria-checked', 'false');
+
   await signedIn.getByRole('button', { name: 'Archive The house' }).click();
 
   // Not part of the identity, so there is nothing to protect.

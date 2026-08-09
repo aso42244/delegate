@@ -14,6 +14,10 @@ export interface AccountDto {
   readonly balanceAsOf: string | null;
   readonly stalenessIntervalDays: number | null;
   readonly groupingId: string | null;
+  /** The mortgage secured against this property, if it is one. */
+  readonly mortgageAccountId: string | null;
+  /** Satoshis as a decimal string, or null when this account holds none. */
+  readonly bitcoinSats: string | null;
   readonly archivedAt: string | null;
 }
 
@@ -27,6 +31,8 @@ export interface UpdateAccountInput {
   readonly needsReview?: boolean;
   /** Manual accounts only — a SimpleFIN balance is the institution's to state. */
   readonly balanceCents?: string;
+  /** The mortgage secured against this property, if it is one. */
+  readonly mortgageAccountId?: string | null;
 }
 
 export const accountsApi = {

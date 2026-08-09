@@ -74,6 +74,8 @@ export const accountRoutes: FastifyPluginCallback = (fastify, _options, done) =>
         balanceAsOf: true,
         stalenessIntervalDays: true,
         groupingId: true,
+        mortgageAccountId: true,
+        bitcoinSats: true,
         archivedAt: true,
       },
       // Alphabetical is the only order this system has.
@@ -93,6 +95,9 @@ export const accountRoutes: FastifyPluginCallback = (fastify, _options, done) =>
         balanceAsOf: dateOut(account.balanceAsOf),
         stalenessIntervalDays: account.stalenessIntervalDays,
         groupingId: account.groupingId,
+        mortgageAccountId: account.mortgageAccountId,
+        // Satoshis as a decimal string, the same reasoning as cents.
+        bitcoinSats: account.bitcoinSats?.toString() ?? null,
         archivedAt: dateOut(account.archivedAt),
       })),
     };

@@ -4,6 +4,10 @@ import {
   SATS_PER_BITCOIN,
   ZERO_CENTS,
   bitcoinValueCents,
+  formatBitcoin,
+  formatBitcoinForInput,
+  parseBitcoin,
+  tryParseBitcoin,
   absCents,
   addCents,
   allocateByWeight,
@@ -263,5 +267,35 @@ describe('bitcoinValueCents', () => {
 
   it('is zero for no holding', () => {
     expect(bitcoinValueCents(0n, 10_000_000n)).toBe(0n);
+  });
+});
+
+describe('parseBitcoin', () => {
+  it('reads a fractional quantity as satoshis', () => {
+    expect(parseBitcoin('0.05')).toBe(5_000_000n);
+    expect(parseBitcoin('1')).toBe(SATS_PER_BITCOIN);
+    expect(parseBitcoin('0.00000001')).toBe(1n);
+  });
+
+  it('rejects finer than a satoshi rather than rounding it away', () => {
+    expect(tryParseBitcoin('0.000000001').ok).toBe(false);
+  });
+
+  it('rejects text that is not a quantity', () => {
+    for (const input of ['', 'abc', '1.2.3', '-1']) {
+      expect(tryParseBitcoin(input).ok).toBe(false);
+    }
+  });
+
+  it('round-trips exactly through the input format', () => {
+    for (const sats of [0n, 1n, 5_000_000n, 2_100_000_000_000_000n]) {
+      expect(parseBitcoin(formatBitcoinForInput(sats))).toBe(sats);
+    }
+  });
+
+  it('trims trailing zeros for display without leaving a bare integer', () => {
+    expect(formatBitcoin(SATS_PER_BITCOIN)).toBe('1.0');
+    expect(formatBitcoin(5_000_000n)).toBe('0.05');
+    expect(formatBitcoin(1n)).toBe('0.00000001');
   });
 });
