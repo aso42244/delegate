@@ -11,6 +11,7 @@ import {
   isInsightWidget,
   SPENDING_WINDOWS,
 } from '../domain/insights.js';
+import { equitySeries, netWorthSeries, singleAccountSeries } from '../domain/history.js';
 import { buildUtilitySummaries } from '../domain/utilities.js';
 import { centsOut, dateOut } from '../http/serialize.js';
 import { AUTHENTICATED } from '../plugins/auth.js';
@@ -69,6 +70,65 @@ export const insightRoutes: FastifyPluginCallback = (fastify, _options, done) =>
     });
 
     return { ok: true };
+  });
+
+  /**
+   * The time series, separately from the rest.
+   *
+   * Reconstructing balances walks the ledger per account per sampled day, which
+   * is real work on a two-core NAS — so it is not loaded unless a chart that
+   * needs it is actually on the page.
+   */
+  fastify.get('/api/insights/series', async (request) => {
+    const { days } = z
+      .object({ days: z.coerce.number().int().min(7).max(730).default(180) })
+      .parse(request.query ?? {});
+
+    const [card, property] = await Promise.all([
+      // The card with the most owed is the one worth trending.
+      prisma.account.findFirst({
+        where: { archivedAt: null, type: 'debt', inBudget: true },
+        orderBy: { balanceCents: 'desc' },
+        select: { id: true, name: true },
+      }),
+      prisma.account.findFirst({
+        where: { archivedAt: null, mortgageAccountId: { not: null } },
+        select: { id: true, name: true },
+      }),
+    ]);
+
+    const [netWorth, cardTrend, equity] = await Promise.all([
+      netWorthSeries(prisma, days),
+      card ? singleAccountSeries(prisma, card.id, days) : null,
+      property ? equitySeries(prisma, property.id, days) : null,
+    ]);
+
+    const present = (
+      series: Awaited<ReturnType<typeof netWorthSeries>> | null,
+    ): {
+      points: { date: string; valueCents: string }[];
+      earliestKnown: string | null;
+      truncated: boolean;
+    } | null =>
+      series === null
+        ? null
+        : {
+            points: series.points.map((point) => ({
+              date: dateOut(point.date),
+              valueCents: centsOut(point.valueCents),
+            })),
+            earliestKnown: dateOut(series.earliestKnown),
+            truncated: series.truncated,
+          };
+
+    return {
+      days,
+      net_worth_over_time: present(netWorth),
+      credit_card_trend:
+        cardTrend === null ? null : { name: card?.name ?? '', ...present(cardTrend)! },
+      home_equity_over_time:
+        equity === null ? null : { name: property?.name ?? '', ...present(equity)! },
+    };
   });
 
   /** Every widget's data in one request; the page shows whichever it was told to. */
