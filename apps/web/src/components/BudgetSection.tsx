@@ -1,4 +1,5 @@
-import { Fragment, useState, type KeyboardEvent, type ReactNode } from 'react';
+import { groupingTint } from '@budget/shared';
+import { Fragment, useState, type DragEvent, type KeyboardEvent, type ReactNode } from 'react';
 import type { BudgetRowDto, BudgetSectionDto } from '../api/budget.js';
 import { MoneyCell } from './MoneyCell.jsx';
 import { Tag } from './ui.jsx';
@@ -27,6 +28,12 @@ export interface BudgetSectionProps {
    * component stays presentational and knows nothing about delegations.
    */
   readonly rowMenu?: (row: BudgetRowDto) => ReactNode;
+  /**
+   * Dragging a row into a grouping. An enhancement, never the only route: the
+   * row menu's "Move to grouping" stays the keyboard path, because drag and drop
+   * is not one.
+   */
+  readonly onMoveToGrouping?: (rowId: string, groupingId: string | null) => void;
 }
 
 function parseCents(value: string | null): bigint | null {
@@ -44,8 +51,26 @@ export function BudgetSection({
   onCreate,
   headerActions,
   rowMenu,
+  onMoveToGrouping,
 }: BudgetSectionProps): ReactNode {
   const [newName, setNewName] = useState('');
+  // Which grouping the pointer is currently over, so the target is obvious
+  // before the drop rather than after it.
+  const [dropTarget, setDropTarget] = useState<string | null | undefined>(undefined);
+
+  const draggable = onMoveToGrouping !== undefined;
+
+  function onDragStart(event: DragEvent, rowId: string): void {
+    event.dataTransfer.setData('text/plain', rowId);
+    event.dataTransfer.effectAllowed = 'move';
+  }
+
+  function onDrop(event: DragEvent, groupingId: string | null): void {
+    event.preventDefault();
+    setDropTarget(undefined);
+    const rowId = event.dataTransfer.getData('text/plain');
+    if (rowId !== '') onMoveToGrouping?.(rowId, groupingId);
+  }
 
   function onNewKeyDown(event: KeyboardEvent<HTMLInputElement>): void {
     if (event.key !== 'Enter') return;
@@ -60,11 +85,17 @@ export function BudgetSection({
     onCreate?.(name);
   }
 
-  function renderRow(row: BudgetRowDto, inGrouping: boolean): ReactNode {
+  function renderRow(row: BudgetRowDto, inGrouping: boolean, tint?: string): ReactNode {
     return (
       // `group` so the row's menu button can appear on hover of the row rather
       // than only on hover of the button itself.
-      <tr key={row.id} className="group border-b border-line last:border-0">
+      <tr
+        key={row.id}
+        className="group border-b border-line last:border-0"
+        {...(tint ? { style: { background: tint } } : {})}
+        draggable={draggable}
+        onDragStart={(event) => onDragStart(event, row.id)}
+      >
         <td className={`py-2 pr-3 ${inGrouping ? 'pl-8' : 'pl-3'}`}>
           <span className="text-ink">{row.name}</span>
           {row.source && (
@@ -134,7 +165,19 @@ export function BudgetSection({
             // The Fragment is the array element, so the key belongs on it rather
             // than on the row inside.
             <Fragment key={grouping.id}>
-              <tr className="border-b border-line bg-surface">
+              <tr
+                className={`border-b border-line bg-surface ${
+                  dropTarget === grouping.id ? 'outline-2 outline-accent' : ''
+                }`}
+                style={{ background: groupingTint(grouping.color, 'header') ?? '' }}
+                onDragOver={(event) => {
+                  if (!draggable) return;
+                  event.preventDefault();
+                  setDropTarget(grouping.id);
+                }}
+                onDragLeave={() => setDropTarget(undefined)}
+                onDrop={(event) => onDrop(event, grouping.id)}
+              >
                 <td className="py-2 pl-3">
                   <button
                     type="button"
@@ -186,11 +229,31 @@ export function BudgetSection({
                 {rowMenu && <td className="w-10 py-2 pr-3" />}
               </tr>
 
-              {!grouping.collapsed && grouping.rows.map((row) => renderRow(row, true))}
+              {!grouping.collapsed &&
+                grouping.rows.map((row) =>
+                  renderRow(row, true, groupingTint(grouping.color, 'row')),
+                )}
             </Fragment>
           ))}
 
           {section.ungrouped.map((row) => renderRow(row, false))}
+
+          {/* A landing strip for dragging a row back out of every grouping.
+              Shown only while something is being dragged. */}
+          {draggable && dropTarget !== undefined && (
+            <tr
+              onDragOver={(event) => {
+                event.preventDefault();
+                setDropTarget(null);
+              }}
+              onDrop={(event) => onDrop(event, null)}
+              className={`border-b border-line ${dropTarget === null ? 'bg-accent-soft' : ''}`}
+            >
+              <td className="py-2 pl-3 text-quiet text-muted" colSpan={columnCount}>
+                Drop here to remove from every grouping
+              </td>
+            </tr>
+          )}
 
           {onCreate && (
             <tr className="border-b border-line">

@@ -30,7 +30,9 @@ test('shows the uncategorized queue by default', async ({ signedIn, api }) => {
 
   await expect(signedIn.getByRole('heading', { name: 'Transactions' })).toBeVisible();
   await expect(signedIn.getByText('Whole Foods Market')).toBeVisible();
-  await expect(signedIn.getByText('waiting to be categorized')).toBeVisible();
+  // Exact: the notification banner carries very similar wording, and a
+  // substring match would resolve to both as soon as its query landed.
+  await expect(signedIn.getByText('1 transaction waiting to be categorized.')).toBeVisible();
 });
 
 test('categorizing with the keyboard removes the row from the queue', async ({ signedIn, api }) => {

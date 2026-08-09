@@ -196,6 +196,20 @@ does.
   a credit card as an asset because the signal was in the institution name, not
   the account name — which would have thrown the identity off by twice the
   balance in the wrong direction.
+- **Anything that races a write eventually fails on a slower machine.** Three
+  separate tests have now been fixed for this: navigating away before a write
+  landed, clicking a second control before the first one's PATCH returned, and
+  asserting on text before an async query had rendered the _other_ element that
+  matched it. Each passed locally for weeks and failed on a CI runner. There is
+  no helper for this — `networkidle` fights the notification poll and a test
+  hook does not belong in production code. The convention is: **after any action
+  that triggers a write, assert on the resulting UI state before the next
+  action.** That is what web-first assertions are for.
+- **A banner's copy can collide with a page's own copy.** The uncategorized
+  notification and the Transactions subtitle both contain "waiting to be
+  categorized", so a substring `getByText` resolved to two elements — but only
+  once the notification query landed, which made it intermittent. Prefer exact
+  text where two parts of the interface describe the same thing.
 - **Navigating straight after a mutation makes an end-to-end test lie.** Two
   specs pressed a key that fired a write and immediately went to another page.
   The Main Budget reads its balances once on load, so arriving mid-write
