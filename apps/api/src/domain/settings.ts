@@ -19,24 +19,38 @@ export interface BudgetSettings {
   readonly undoWindowHours: number;
   readonly identityToleranceCents: Cents;
   readonly goLiveAt: Date | null;
+  /**
+   * Whether every account must carry a second factor. §10 makes this mandatory
+   * before any internet exposure, but it defaults off so that shipping the
+   * mechanism cannot lock the household out of a running deployment in the gap
+   * between the code landing and them enrolling.
+   */
+  readonly requireTotp: boolean;
 }
 
 export async function getBudgetSettings(db: Db): Promise<BudgetSettings> {
   const settings = await db.budgetSettings.findUnique({
     where: { id: 1 },
-    select: { undoWindowHours: true, identityToleranceCents: true, goLiveAt: true },
+    select: {
+      undoWindowHours: true,
+      identityToleranceCents: true,
+      goLiveAt: true,
+      requireTotp: true,
+    },
   });
 
   return {
     undoWindowHours: settings?.undoWindowHours ?? DEFAULT_UNDO_WINDOW_HOURS,
     identityToleranceCents: settings?.identityToleranceCents ?? DEFAULT_IDENTITY_TOLERANCE_CENTS,
     goLiveAt: settings?.goLiveAt ?? null,
+    requireTotp: settings?.requireTotp ?? false,
   };
 }
 
 export interface UpdateBudgetSettingsInput {
   readonly undoWindowHours?: number | undefined;
   readonly identityToleranceCents?: Cents | undefined;
+  readonly requireTotp?: boolean | undefined;
 }
 
 /**
@@ -69,20 +83,47 @@ export async function updateBudgetSettings(
     );
   }
 
+  /**
+   * Turning the requirement on is refused while any active account would be
+   * locked out by it. The alternative is a setting that bricks the other
+   * household member's access at the moment it is saved, recoverable only from
+   * a database prompt.
+   */
+  if (input.requireTotp === true) {
+    const unenrolled = await db.user.count({
+      where: { archivedAt: null, totpConfirmedAt: null },
+    });
+    if (unenrolled > 0) {
+      throw new ValidationError(
+        'totp_not_universal',
+        unenrolled === 1
+          ? 'One account has not set up two-factor yet. It would be locked out.'
+          : `${unenrolled} accounts have not set up two-factor yet. They would be locked out.`,
+      );
+    }
+  }
+
   const updated = await db.budgetSettings.upsert({
     where: { id: 1 },
     create: {
       id: 1,
       undoWindowHours: input.undoWindowHours ?? DEFAULT_UNDO_WINDOW_HOURS,
       identityToleranceCents: input.identityToleranceCents ?? DEFAULT_IDENTITY_TOLERANCE_CENTS,
+      requireTotp: input.requireTotp ?? false,
     },
     update: {
       ...(input.undoWindowHours === undefined ? {} : { undoWindowHours: input.undoWindowHours }),
       ...(input.identityToleranceCents === undefined
         ? {}
         : { identityToleranceCents: input.identityToleranceCents }),
+      ...(input.requireTotp === undefined ? {} : { requireTotp: input.requireTotp }),
     },
-    select: { undoWindowHours: true, identityToleranceCents: true, goLiveAt: true },
+    select: {
+      undoWindowHours: true,
+      identityToleranceCents: true,
+      goLiveAt: true,
+      requireTotp: true,
+    },
   });
 
   return updated;

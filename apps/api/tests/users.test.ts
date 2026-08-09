@@ -362,6 +362,76 @@ describe('archiving', () => {
   });
 });
 
+describe('changing a role', () => {
+  let ownerCookie: string;
+
+  beforeEach(async () => {
+    ownerCookie = await setUpOwner();
+  });
+
+  it("ends that user's sessions", async () => {
+    const partner = await makeActiveUser(ownerCookie, 'partner', 'user');
+
+    const promoted = await app.inject({
+      method: 'PATCH',
+      url: `/api/users/${partner.id}`,
+      headers: { cookie: ownerCookie },
+      payload: { role: 'admin' },
+    });
+    expect(promoted.statusCode).toBe(200);
+    expect(userOf(promoted).role).toBe('admin');
+
+    // The session id was minted while the account held different privileges.
+    // A privilege boundary is not somewhere a session identifier should carry
+    // across.
+    const stale = await app.inject({
+      method: 'GET',
+      url: '/api/auth/me',
+      headers: { cookie: partner.cookie },
+    });
+    expect(stale.statusCode).toBe(401);
+  });
+
+  it('leaves them alone when only the username changes', async () => {
+    const partner = await makeActiveUser(ownerCookie, 'partner', 'user');
+
+    const renamed = await app.inject({
+      method: 'PATCH',
+      url: `/api/users/${partner.id}`,
+      headers: { cookie: ownerCookie },
+      payload: { username: 'partner-renamed' },
+    });
+    expect(renamed.statusCode).toBe(200);
+
+    // Nothing about their authority changed, so signing them out would be
+    // noise rather than caution.
+    const live = await app.inject({
+      method: 'GET',
+      url: '/api/auth/me',
+      headers: { cookie: partner.cookie },
+    });
+    expect(live.statusCode).toBe(200);
+  });
+
+  it('leaves them alone when the role is set to what it already was', async () => {
+    const partner = await makeActiveUser(ownerCookie, 'partner', 'user');
+
+    await app.inject({
+      method: 'PATCH',
+      url: `/api/users/${partner.id}`,
+      headers: { cookie: ownerCookie },
+      payload: { role: 'user' },
+    });
+
+    const live = await app.inject({
+      method: 'GET',
+      url: '/api/auth/me',
+      headers: { cookie: partner.cookie },
+    });
+    expect(live.statusCode).toBe(200);
+  });
+});
+
 describe('password reset by an administrator', () => {
   let ownerCookie: string;
 

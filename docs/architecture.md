@@ -256,10 +256,9 @@ description.
 
 ## Authentication
 
-Phase 1 is a username, an argon2id password hash, and a session cookie. No second
-factor. This is acceptable **only** while the system is LAN-only; TLS, TOTP,
-passkeys, rate limiting and CSRF are all Phase 3, and none of it may be exposed
-to the internet before that phase ships in full.
+A username, an argon2id password hash, a session cookie, and an optional second
+factor. TLS and passkeys remain outstanding, and nothing may be exposed to the
+internet before they ship.
 
 What is in place now:
 
@@ -268,7 +267,8 @@ What is in place now:
 - **Sessions in PostgreSQL**, so a restart does not sign anyone out and logout
   can genuinely revoke. See [ADR 008](decisions/008-sessions-stored-in-postgres.md).
 - **Session id rotation** on login and on password change, so an id captured
-  before either cannot be replayed after it.
+  before either cannot be replayed after it. A **role change ends that user's
+  sessions** outright — the id was minted under different privileges.
 - **Uniform failure**: an unknown username, a wrong password and an archived
   account return the same status and the same body, and a missing user still pays
   the full hash cost, so neither the response nor its timing reveals which
@@ -277,10 +277,22 @@ What is in place now:
   so a role change or an archival takes effect at once.
 - **Temporary passwords**: an account created by an Admin can reach only its own
   identity and the change-password route until it sets a real one.
+- **Rate limiting** on every route that verifies a credential — sign-in,
+  first-run setup, changing a password, and the second-factor exchange. Ten
+  attempts per address per five minutes by default, and the refusal is identical
+  whatever was attempted.
+- **TOTP with recovery codes**, off by default and required of everyone through a
+  setting that refuses to turn on while any active account would be locked out by
+  it. The secret is stored encrypted and the recovery codes as argon2id hashes.
+  See [ADR 014](decisions/014-the-second-factor-step-uses-a-signed-challenge-not-a-session.md).
+- **CSRF protection** as an origin check on every state-changing request, on top
+  of the `SameSite=Lax` session cookie. See
+  [ADR 015](decisions/015-csrf-is-an-origin-check-not-a-token.md).
+- **Security headers** via helmet, including a content security policy that
+  allows scripts and connections from this origin only.
 
-What is deliberately absent until Phase 3: rate limiting on the auth endpoints.
-Nothing throttles password guessing beyond the ~50 ms a hash costs. That is the
-single strongest reason this must not leave the LAN early.
+What is still absent: **TLS**, and therefore **passkeys**, which need a secure
+context. Until both land the system stays on the LAN.
 
 ## Layout
 

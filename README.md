@@ -178,10 +178,10 @@ memory settings are pinned explicitly in the Compose file rather than left at
 defaults, which assume a much larger machine.
 
 **This stays on the LAN until Phase 3 ships in full.** No port forward, no DSM
-reverse proxy, no QuickConnect. Phase 1 has no TLS and no rate limiting on
-sign-in, and that is acceptable _only_ under that condition — see
-[ADR 007](docs/decisions/007-argon2id-parameters-and-password-policy.md). TLS,
-TOTP, passkeys and rate limiting are Phase 3.
+reverse proxy, no QuickConnect. Rate limiting, two-factor authentication and CSRF
+protection are in place; **TLS and passkeys are not**, and passkeys need a secure
+context, so both are still ahead. See
+[ADR 007](docs/decisions/007-argon2id-parameters-and-password-policy.md).
 
 ### First deploy
 
@@ -335,9 +335,14 @@ full history and accurate day-one numbers. Step 5 corrects all of it at once.
 | 3     | Security hardening: LAN TLS, mandatory TOTP, passkeys, rate limiting, CSRF, Cloudflare Tunnel behind Cloudflare Access, dependency audit, tested restore             |
 | 4     | UI polish: mobile, keyboard coverage, empty/loading/error states, accessibility                                                                                      |
 
-**No internet exposure happens until every part of Phase 3 ships.** TLS is
-sequenced first within it, because WebAuthn requires a secure context and passkeys
-cannot be built at all over plain HTTP.
+**No internet exposure happens until every part of Phase 3 ships.** Rate
+limiting, TOTP with recovery codes, CSRF protection and the dependency audit are
+done. TLS, passkeys and Cloudflare Access are not, and TLS is sequenced first
+among them because WebAuthn requires a secure context — passkeys cannot be built
+at all over plain HTTP.
+
+Dependency policy and the update process are in
+[docs/dependencies.md](docs/dependencies.md).
 
 ## Repository conventions
 

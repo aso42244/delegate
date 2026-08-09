@@ -63,6 +63,15 @@ jobs:
       - name: Check formatting
         run: npm run format:check
 
+      # Fails the build only on what ships. A high or critical advisory in a
+      # runtime dependency is a reason to stop; one in a test runner is a reason
+      # to read, which is what the second step is for.
+      - name: Audit runtime dependencies
+        run: npm audit --omit=dev --audit-level=high
+
+      - name: Audit everything, for the record
+        run: npm audit || true
+
       - name: Unit tests
         run: npm run test
 

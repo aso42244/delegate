@@ -1,4 +1,5 @@
-import type { FastifyPluginCallback } from 'fastify';
+import type { UserRole } from '@budget/shared';
+import type { FastifyPluginCallback, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { prisma } from '../db/client.js';
 import { MAX_PASSWORD_LENGTH } from '../domain/passwords.js';
@@ -8,9 +9,17 @@ import {
   createFirstUser,
   needsFirstRunSetup,
   recordLogin,
-  type PublicUser,
 } from '../domain/users.js';
-import { requireSession, type RequestUser } from '../plugins/auth.js';
+import { issueChallenge, readChallenge } from '../domain/challenge.js';
+import {
+  beginEnrolment,
+  confirmEnrolment,
+  disableTotp,
+  totpStatus,
+  verifySecondFactor,
+} from '../domain/totp.js';
+import { getBudgetSettings } from '../domain/settings.js';
+import { requireSession } from '../plugins/auth.js';
 import { authRateLimit } from '../plugins/security.js';
 import { pruneExpiredSessions } from '../plugins/session-store.js';
 
@@ -28,13 +37,43 @@ const changePasswordSchema = z.object({
   newPassword: z.string().min(1).max(MAX_PASSWORD_LENGTH),
 });
 
-function presentUser(user: PublicUser | RequestUser): Record<string, unknown> {
+/** Structurally typed rather than by class, so a narrow `select` also fits. */
+interface PresentableUser {
+  readonly id: string;
+  readonly username: string;
+  readonly role: UserRole;
+  readonly mustChangePassword: boolean;
+}
+
+function presentUser(user: PresentableUser): Record<string, unknown> {
   return {
     id: user.id,
     username: user.username,
     role: user.role,
     mustChangePassword: user.mustChangePassword,
   };
+}
+
+/**
+ * Everything that turns an accepted credential into a session, in one place so
+ * the password path and the second-factor path cannot drift apart.
+ */
+async function establishSession(
+  request: FastifyRequest,
+  _reply: FastifyReply,
+  user: { id: string },
+): Promise<void> {
+  // Regenerate before storing the user: reusing the pre-login session id would
+  // let anyone who could set that cookie ride the session once it is elevated.
+  await request.session.regenerate();
+  request.session.userId = user.id;
+  await recordLogin(prisma, user.id);
+
+  // Expired rows are also dropped when a stale cookie is presented, but a
+  // session nobody ever comes back to would otherwise sit in the table forever.
+  // Signing in is the natural moment to sweep, and the table is tiny.
+  const pruned = await pruneExpiredSessions(prisma);
+  if (pruned > 0) request.log.debug({ pruned }, 'expired sessions removed');
 }
 
 export const authRoutes: FastifyPluginCallback = (fastify, _options, done) => {
@@ -83,19 +122,63 @@ export const authRoutes: FastifyPluginCallback = (fastify, _options, done) => {
       });
     }
 
-    // Regenerate before storing the user: reusing the pre-login session id would
-    // let anyone who could set that cookie ride the session once it is elevated.
-    await request.session.regenerate();
-    request.session.userId = user.id;
-    await recordLogin(prisma, user.id);
+    /**
+     * A correct password is not yet a sign-in when a second factor exists. No
+     * session is established here — the challenge below proves only that this
+     * server accepted a password moments ago, and is accepted by exactly one
+     * route.
+     */
+    const enrolled = await prisma.user.findUnique({
+      where: { id: user.id },
+      select: { totpConfirmedAt: true },
+    });
 
-    // Expired rows are also dropped when a stale cookie is presented, but a
-    // session nobody ever comes back to would otherwise sit in the table
-    // forever. Login is the natural moment to sweep, and the table is tiny.
-    const pruned = await pruneExpiredSessions(prisma);
-    if (pruned > 0) request.log.debug({ pruned }, 'expired sessions removed');
+    if (enrolled?.totpConfirmedAt) {
+      request.log.info({ userId: user.id }, 'password accepted, second factor required');
+      return reply.send({
+        secondFactorRequired: true,
+        challenge: issueChallenge(user.id, fastify.config.SESSION_SECRET),
+      });
+    }
 
-    request.log.info({ userId: user.id }, 'login');
+    await establishSession(request, reply, user);
+    return reply.send({ user: presentUser(user) });
+  });
+
+  /**
+   * The second half of a sign-in. Accepts an authenticator code or an unused
+   * recovery code, and is rate limited exactly like the password route — six
+   * digits is a far smaller space to guess than a passphrase.
+   */
+  fastify.post('/api/auth/second-factor', { config: { rateLimit } }, async (request, reply) => {
+    const { challenge, code } = z
+      .object({ challenge: z.string().min(1), code: z.string().min(1).max(64) })
+      .parse(request.body);
+
+    const userId = readChallenge(challenge, fastify.config.SESSION_SECRET);
+
+    // Re-read rather than trusting the challenge: the account may have been
+    // archived in the minutes since the password was accepted, and a challenge
+    // is not a session — nothing else would notice.
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true, username: true, role: true, mustChangePassword: true, archivedAt: true },
+    });
+
+    const ok =
+      user !== null &&
+      user.archivedAt === null &&
+      (await verifySecondFactor(prisma, userId, code, fastify.config.SESSION_SECRET));
+
+    if (!ok) {
+      request.log.warn({ userId }, 'failed second factor');
+      return reply.code(401).send({
+        error: { code: 'invalid_code', message: 'That code is not correct.' },
+      });
+    }
+
+    await establishSession(request, reply, user);
+    request.log.info({ userId }, 'second factor accepted');
     return reply.send({ user: presentUser(user) });
   });
 
@@ -141,6 +224,67 @@ export const authRoutes: FastifyPluginCallback = (fastify, _options, done) => {
 
       request.log.info({ userId: user.id }, 'password changed');
       return reply.code(204).send();
+    },
+  );
+
+  // --- Two-factor ---------------------------------------------------------
+
+  fastify.get('/api/auth/totp', { preHandler: [requireSession] }, async (request) => {
+    const [status, settings] = await Promise.all([
+      totpStatus(prisma, request.currentUser!.id),
+      getBudgetSettings(prisma),
+    ]);
+    return { ...status, required: settings.requireTotp };
+  });
+
+  /**
+   * Starts enrolment. The secret is stored unconfirmed — a secret that gated
+   * sign-in the moment it was generated would lock out anyone who closed the
+   * tab before scanning it.
+   */
+  fastify.post(
+    '/api/auth/totp/begin',
+    { preHandler: [requireSession], config: { rateLimit } },
+    async (request) => {
+      const offer = await beginEnrolment(
+        prisma,
+        request.currentUser!.id,
+        fastify.config.SESSION_SECRET,
+        fastify.config.APP_NAME,
+      );
+      return offer;
+    },
+  );
+
+  /** Confirms enrolment and returns the recovery codes — once, and never again. */
+  fastify.post(
+    '/api/auth/totp/confirm',
+    { preHandler: [requireSession], config: { rateLimit } },
+    async (request) => {
+      const { code } = z.object({ code: z.string().min(1).max(64) }).parse(request.body);
+      const result = await confirmEnrolment(
+        prisma,
+        request.currentUser!.id,
+        code,
+        fastify.config.SESSION_SECRET,
+      );
+
+      request.log.info({ userId: request.currentUser!.id }, 'two-factor enrolled');
+      return result;
+    },
+  );
+
+  fastify.post(
+    '/api/auth/totp/disable',
+    { preHandler: [requireSession], config: { rateLimit } },
+    async (request) => {
+      const { currentPassword } = z
+        .object({ currentPassword: z.string().min(1).max(MAX_PASSWORD_LENGTH) })
+        .parse(request.body);
+
+      await disableTotp(prisma, request.currentUser!.id, currentPassword);
+      request.log.info({ userId: request.currentUser!.id }, 'two-factor disabled');
+      return { ok: true };
     },
   );
 

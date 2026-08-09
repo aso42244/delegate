@@ -99,16 +99,46 @@ export interface SyncStatus {
   }[];
 }
 
+/**
+ * A password alone signs you in only when no second factor is set up. Otherwise
+ * the server withholds the session and returns a challenge to be exchanged,
+ * with a code, at `/api/auth/second-factor`.
+ */
+export type LoginResult =
+  | { readonly user: SessionUser; readonly secondFactorRequired?: undefined }
+  | { readonly secondFactorRequired: true; readonly challenge: string };
+
+export interface TotpStatusDto {
+  readonly enrolled: boolean;
+  readonly recoveryCodesRemaining: number;
+  /** Whether the budget requires one of every account. */
+  readonly required: boolean;
+}
+
+export interface TotpEnrolmentDto {
+  readonly secret: string;
+  readonly uri: string;
+}
+
 export const authApi = {
   setupState: () => api.get<SetupState>('/api/auth/setup-state'),
   setup: (username: string, password: string) =>
     api.post<{ user: SessionUser }>('/api/auth/setup', { username, password }),
   login: (username: string, password: string) =>
-    api.post<{ user: SessionUser }>('/api/auth/login', { username, password }),
+    api.post<LoginResult>('/api/auth/login', { username, password }),
+  secondFactor: (challenge: string, code: string) =>
+    api.post<{ user: SessionUser }>('/api/auth/second-factor', { challenge, code }),
   logout: () => api.post<void>('/api/auth/logout'),
   me: () => api.get<{ user: SessionUser }>('/api/auth/me'),
   changePassword: (currentPassword: string, newPassword: string) =>
     api.post<void>('/api/auth/change-password', { currentPassword, newPassword }),
+
+  totpStatus: () => api.get<TotpStatusDto>('/api/auth/totp'),
+  totpBegin: () => api.post<TotpEnrolmentDto>('/api/auth/totp/begin'),
+  totpConfirm: (code: string) =>
+    api.post<{ recoveryCodes: string[] }>('/api/auth/totp/confirm', { code }),
+  totpDisable: (currentPassword: string) =>
+    api.post<{ ok: boolean }>('/api/auth/totp/disable', { currentPassword }),
 };
 
 export const syncApi = {
