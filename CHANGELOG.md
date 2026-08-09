@@ -6,8 +6,72 @@ phase (`v0.1.0-phase1`, and so on).
 
 ## [Unreleased]
 
-Nothing yet. Phase 2 begins here: Utilities, Insights, Bitcoin, property values,
-transaction pairing, grouping colours and in-app notifications.
+Nothing yet. Phase 3 begins here: TLS first, then TOTP, passkeys, rate limiting,
+CSRF and Cloudflare Access. **Nothing is exposed to the internet until all of it
+ships.**
+
+## [0.2.0-phase2] — 2026-08-09
+
+Phase 2: everything §12 asks for, built and tested. The pages that need
+categorized history are correct but sparse until go-live fills them.
+
+### Added
+
+- **Bitcoin** held as a quantity in satoshis, valued at the price on the date
+  being shown. Hourly fetch from CoinGecko with Coinbase as a fallback, both
+  keyless, behind a `PriceProvider` interface. A daily close is cached so the net
+  worth chart uses the price that actually applied on each date.
+- Closes settle on the following day's fetch rather than at midnight, so a
+  container stopped overnight leaves no permanent hole in the chart.
+- **Property values** recorded against an as-of date and kept as history, with
+  equity computed on read from a linked mortgage. Manual entry only — §8 rules
+  out Zillow — behind a `ValuationProvider` interface.
+- **In-app notification banners**: a failing sync, balances nobody has confirmed
+  lately, accounts a sync guessed the type of, the uncategorized backlog, and a
+  stale Bitcoin price. Computed on read and not dismissible.
+- **Grouping colours** from a curated palette, enforced server-side, expressed as
+  a soft tint that keeps near-black text above 10:1 contrast.
+- **Dragging a delegation between groupings**, as an addition to the row menu
+  rather than a replacement — dragging is not a keyboard route.
+- **The Utilities page**: twelve months per utility, the monthly average, the
+  suggested per-cycle amount, and what the line is actually funded at.
+- **The Insights page** and all twelve catalog widgets, with the chosen layout
+  persisted per user.
+- **Balance history reconstructed from the ledger** rather than stored, so the
+  time-series widgets cover history that arrived before the feature existed. See
+  [ADR 013](docs/decisions/013-historical-balances-are-reconstructed-from-the-ledger.md).
+- **Transaction pairing**: §7's heuristic exactly, suggested and confirmed, never
+  applied silently. Confirming clears any categorization, since a transfer
+  allocates to nothing.
+- An account's type can be corrected from Settings → Accounts and from the row
+  menu — the API always accepted it and no screen offered it.
+- Container images published to GHCR from `main` and version tags, signed through
+  Sigstore, and deployed **by digest with the signature verified before start**.
+  See [ADR 012](docs/decisions/012-images-are-deployed-by-digest-with-verified-provenance.md).
+- `scripts/deploy.sh`: one SSH command that resolves a tag to a digest, verifies
+  it, pins it, and waits for the health endpoint.
+- 110 further tests, and end-to-end coverage of every page added.
+
+### Fixed
+
+- `GET /api/rules/preview` read its `includeCategorized` flag with `Boolean()`,
+  and `Boolean("false")` is `true` — so asking for the safe preview returned the
+  count for the mode that overwrites categorizations made by hand.
+- Reconcile never stamped the go-live date: the domain accepted one and the route
+  never passed it.
+- `npm run typecheck` did not cover the web application at all.
+- Equity over time zipped two series positionally when each is truncated at its
+  own earliest history, subtracting a mortgage balance from the wrong date.
+- Unpairing did not refresh the suggestion list, so a reversed pair did not
+  reappear until a reload.
+- The container image was built by CI and never published, while the Compose file
+  pointed at it. The first deploy would have failed at the pull.
+- `actions/attest-build-provenance` cannot run on a user-owned private
+  repository; images are signed directly through Sigstore instead.
+- The README told the owner to authenticate to `ghcr.io` with a fine-grained
+  token. GitHub Packages only supports a classic one, and `docker login` fails
+  with `denied: denied`.
+- Several end-to-end tests raced a write and passed only on a fast machine.
 
 ## [0.1.0-phase1] — 2026-08-09
 
