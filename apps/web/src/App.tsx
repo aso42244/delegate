@@ -7,7 +7,10 @@ import { Sidebar } from './components/Sidebar.jsx';
 import { ChangePassword } from './pages/ChangePassword.jsx';
 import { MainBudget } from './pages/MainBudget.jsx';
 import { AccountsSection } from './pages/settings/Accounts.jsx';
+import { ArchivedSection } from './pages/settings/Archived.jsx';
 import { BudgetSection } from './pages/settings/Budget.jsx';
+import { DelegationsSection } from './pages/settings/Delegations.jsx';
+import { GroupingsSection } from './pages/settings/Groupings.jsx';
 import { ReconcileSection } from './pages/settings/Reconcile.jsx';
 import { SettingsLayout } from './pages/settings/SettingsLayout.jsx';
 import { SyncSection } from './pages/settings/Sync.jsx';
@@ -103,7 +106,10 @@ export function App(): ReactNode {
             <Route index element={<Navigate to="sync" replace />} />
             <Route path="sync" element={<SyncSection />} />
             <Route path="accounts" element={<AccountsSection />} />
+            <Route path="delegations" element={<DelegationsSection />} />
+            <Route path="groupings" element={<GroupingsSection />} />
             <Route path="budget" element={<BudgetSection />} />
+            <Route path="archived" element={<ArchivedSection />} />
             <Route path="reconcile" element={<ReconcileSection />} />
           </Route>
         </Route>

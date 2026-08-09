@@ -16,6 +16,26 @@ export interface ReconcileResultDto {
   readonly totalDeltaCents: string;
 }
 
+export interface ArchivedDto {
+  readonly accounts: readonly {
+    id: string;
+    name: string;
+    type: string;
+    archivedAt: string | null;
+  }[];
+  readonly delegations: readonly { id: string; name: string; archivedAt: string | null }[];
+  readonly groupings: readonly {
+    id: string;
+    name: string;
+    section: string;
+    archivedAt: string | null;
+  }[];
+}
+
+export const archivedApi = {
+  list: () => api.get<ArchivedDto>('/api/archived'),
+};
+
 export const settingsApi = {
   get: () => api.get<BudgetSettingsDto>('/api/settings'),
 

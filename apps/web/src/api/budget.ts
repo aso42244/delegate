@@ -118,6 +118,8 @@ export const budgetApi = {
 
   archiveDelegation: (id: string) => api.post<{ ok: boolean }>(`/api/delegations/${id}/archive`),
 
+  restoreDelegation: (id: string) => api.post<{ ok: boolean }>(`/api/delegations/${id}/restore`),
+
   /** Per-line history. The only place `adjust` events are ever visible. */
   delegationHistory: (id: string) =>
     api.get<{ events: readonly DelegationEventDto[] }>(`/api/delegations/${id}/history`),
@@ -125,8 +127,15 @@ export const budgetApi = {
   createGrouping: (name: string, section: 'assets' | 'debts' | 'delegations') =>
     api.post<{ grouping: { id: string } }>('/api/groupings', { name, section }),
 
+  updateGrouping: (id: string, input: { name?: string; color?: string | null }) =>
+    api.patch<{ ok: boolean }>(`/api/groupings/${id}`, input),
+
   setGroupingCollapsed: (id: string, collapsed: boolean) =>
     api.patch<{ ok: boolean }>(`/api/groupings/${id}`, { collapsed }),
+
+  archiveGrouping: (id: string) => api.post<{ ok: boolean }>(`/api/groupings/${id}/archive`),
+
+  restoreGrouping: (id: string) => api.post<{ ok: boolean }>(`/api/groupings/${id}/restore`),
 
   delegatePreview: () => api.get<DelegatePreviewDto>('/api/budget/delegate/preview'),
   delegate: () => api.post<{ runId: string; lineCount: number }>('/api/budget/delegate'),

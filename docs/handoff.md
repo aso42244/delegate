@@ -74,8 +74,8 @@ These are non-negotiable. Violating one is a build failure.
 
 ## Where things stand
 
-**Phase 1 is essentially complete.** 25 PRs merged. 311 unit and integration
-tests, 56 end-to-end tests in a real browser, all green.
+**Phase 1 is essentially complete.** 26 PRs merged. 312 unit and integration
+tests, 63 end-to-end tests in a real browser, all green.
 
 Built and working:
 
@@ -95,16 +95,16 @@ Built and working:
 - The UI: app shell with collapsible sidebar, auth screens, the Main Budget page
   with the per-row menu and inline grouping creation, the Transactions page
   including manual entry and the split editor, and Settings → Sync, Accounts,
-  Budget and Reconcile to Actual
+  Delegations, Groupings, Budget, Reconcile to Actual and Archived
 - Docker image, Compose for the NAS, nightly `pg_dump`, and a restore path proven
   by destroying data and recovering it
 
 ### What is left in Phase 1
 
-1. **The remaining Settings sections** — delegations, groupings, rules, users and
-   archived. Sync, Accounts, Budget and Reconcile to Actual are done, and both
-   row menus on the Main Budget are in place. Archived needs a listing route;
-   restore already exists for accounts, delegations and groupings.
+1. **Settings → Rules and Settings → Users.** Every route both need already
+   exists (`/api/rules` with reorder, preview and apply; `/api/users` with
+   create, role change, password reset, archive and restore) — neither has a
+   screen. Everything else in Settings is done.
 2. **Deploy to the NAS.** The image has never run on the DS220+. That is the one
    remaining unknown; CI proves it boots on x86_64 Linux against real Postgres.
 
