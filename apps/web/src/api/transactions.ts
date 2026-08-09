@@ -23,6 +23,8 @@ export interface TransactionDto {
   readonly pending: boolean;
   readonly kind: 'normal' | 'income' | 'transfer';
   readonly archivedAt: string | null;
+  /** Set once a pair is confirmed; both halves point at each other. */
+  readonly pairedTransactionId: string | null;
   readonly account: { readonly id: string; readonly name: string; readonly type: 'asset' | 'debt' };
   readonly allocations: readonly AllocationDto[];
 }
@@ -71,6 +73,21 @@ export interface CreateTransactionInput {
   readonly kind: 'normal' | 'income' | 'transfer';
 }
 
+export interface PairSideDto {
+  readonly id: string;
+  readonly accountId: string;
+  readonly accountName: string;
+  readonly postedAt: string;
+  readonly amountCents: string;
+  readonly description: string;
+}
+
+export interface PairCandidateDto {
+  readonly outflow: PairSideDto;
+  readonly inflow: PairSideDto;
+  readonly daysApart: number;
+}
+
 export const transactionsApi = {
   list: (filters: TransactionFilters = {}) =>
     api.get<TransactionListDto>(`/api/transactions${toQuery(filters)}`),
@@ -103,6 +120,16 @@ export const transactionsApi = {
 
   uncategorize: (transactionId: string) =>
     api.post<{ reversedEventCount: number }>(`/api/transactions/${transactionId}/uncategorize`),
+
+  /** Suggestions only — §7: wrong automatic pairing is worse than no pairing. */
+  pairCandidates: () =>
+    api.get<{ candidates: readonly PairCandidateDto[] }>('/api/transactions/pair-candidates'),
+
+  pair: (firstId: string, secondId: string) =>
+    api.post<{ ok: boolean }>('/api/transactions/pair', { firstId, secondId }),
+
+  unpair: (transactionId: string) =>
+    api.post<{ ok: boolean }>(`/api/transactions/${transactionId}/unpair`),
 
   bulkCategorize: (transactionIds: readonly string[], delegationId: string) =>
     api.post<{ categorized: number; failures: { transactionId: string; reason: string }[] }>(

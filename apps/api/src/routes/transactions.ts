@@ -17,6 +17,7 @@ import {
   updateTransaction,
   DEFAULT_PAGE_SIZE,
 } from '../domain/transactions.js';
+import { confirmPair, findPairCandidates, unpair } from '../domain/pairing.js';
 import { centsInLoose, centsOut, dateOut } from '../http/serialize.js';
 import { AUTHENTICATED } from '../plugins/auth.js';
 
@@ -209,6 +210,58 @@ export const transactionRoutes: FastifyPluginCallback = (fastify, _options, done
       'bulk categorization applied',
     );
     return { categorized, failures };
+  });
+
+  // --- Pairing -----------------------------------------------------------
+  //
+  // A credit card payment and a mortgage payment each produce two transactions
+  // that are not spending. §7: suggested and confirmed, never applied silently —
+  // wrong automatic pairing is worse than no pairing.
+
+  fastify.get('/api/transactions/pair-candidates', async () => {
+    const candidates = await findPairCandidates(prisma);
+
+    const side = (entry: (typeof candidates)[number]['outflow']): Record<string, unknown> => ({
+      id: entry.id,
+      accountId: entry.accountId,
+      accountName: entry.accountName,
+      postedAt: dateOut(entry.postedAt),
+      amountCents: centsOut(entry.amountCents),
+      description: entry.description,
+    });
+
+    return {
+      candidates: candidates.map((candidate) => ({
+        outflow: side(candidate.outflow),
+        inflow: side(candidate.inflow),
+        daysApart: candidate.daysApart,
+      })),
+    };
+  });
+
+  fastify.post('/api/transactions/pair', async (request) => {
+    const body = z
+      .object({ firstId: z.string().uuid(), secondId: z.string().uuid() })
+      .parse(request.body);
+
+    await confirmPair(prisma, body.firstId, body.secondId);
+
+    request.log.info(
+      { firstId: body.firstId, secondId: body.secondId, actorId: request.currentUser?.id },
+      'transactions paired',
+    );
+    return { ok: true };
+  });
+
+  fastify.post('/api/transactions/:id/unpair', async (request) => {
+    const { id } = idParamsSchema.parse(request.params);
+
+    await unpair(prisma, id);
+    request.log.info(
+      { transactionId: id, actorId: request.currentUser?.id },
+      'transactions unpaired',
+    );
+    return { ok: true };
   });
 
   done();

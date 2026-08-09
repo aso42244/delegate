@@ -10,6 +10,7 @@ import {
 } from '../api/transactions.js';
 import { DelegationPicker } from '../components/DelegationPicker.jsx';
 import { NewTransactionDialog } from '../components/NewTransactionDialog.jsx';
+import { PairSuggestions } from '../components/PairSuggestions.jsx';
 import { SplitDialog } from '../components/SplitDialog.jsx';
 import { Alert, Button, Tag } from '../components/ui.jsx';
 
@@ -79,6 +80,17 @@ export function Transactions(): ReactNode {
     onError,
   });
 
+  const unpair = useMutation({
+    mutationFn: (id: string) => transactionsApi.unpair(id),
+    onSuccess: async () => {
+      await refresh();
+      // Both halves are suggestible again the moment they are unpaired, so the
+      // suggestion panel has to hear about it.
+      await queryClient.invalidateQueries({ queryKey: ['pair-candidates'] });
+    },
+    onError,
+  });
+
   const bulk = useMutation({
     mutationFn: (delegationId: string) =>
       transactionsApi.bulkCategorize([...selected], delegationId),
@@ -126,6 +138,8 @@ export function Transactions(): ReactNode {
           Add transaction
         </Button>
       </header>
+
+      <PairSuggestions />
 
       <div className="mb-4 flex flex-wrap items-center gap-2">
         <input
@@ -225,6 +239,18 @@ export function Transactions(): ReactNode {
                       <span className="ml-2">
                         <Tag>{transaction.kind}</Tag>
                       </span>
+                    )}
+                    {/* A confirmed pair has to be reversible: the suggestion was
+                        a judgement, and judgements are sometimes wrong. */}
+                    {transaction.pairedTransactionId && (
+                      <button
+                        type="button"
+                        onClick={() => unpair.mutate(transaction.id)}
+                        aria-label={`Unpair ${transaction.description}`}
+                        className="ml-2 text-quiet text-muted underline"
+                      >
+                        unpair
+                      </button>
                     )}
                     <div>
                       <AllocationSummary transaction={transaction} />
