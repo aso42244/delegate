@@ -1,3 +1,4 @@
+import { GROUPING_COLORS } from '@budget/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState, type FormEvent, type ReactNode } from 'react';
 import { budgetApi, type BudgetGroupingDto, type BudgetViewDto } from '../../api/budget.js';
@@ -12,9 +13,10 @@ import { SettingsCard } from './SettingsCard.jsx';
  * and no amount to delegate of their own — collapsed, a grouping row shows the
  * sum of its children, and that sum is computed rather than stored.
  *
- * Colour is deliberately absent. It is a Phase 2 deliverable, deferred because
- * the restraint it needs is easier to judge against a populated page than an
- * empty one.
+ * Colour is chosen from a curated palette rather than a colour picker. §11 asks
+ * that it "must not be in your face", and an arbitrary picker is how a dense
+ * financial table ends up with a magenta row. Every delegation inside a grouping
+ * inherits it; there is no per-delegation colour.
  */
 
 type Section = 'assets' | 'debts' | 'delegations';
@@ -53,6 +55,15 @@ function GroupingRow({
     onError,
   });
 
+  const recolour = useMutation({
+    mutationFn: (color: string | null) => budgetApi.updateGrouping(grouping.id, { color }),
+    onSuccess: async () => {
+      setProblem(null);
+      await refresh();
+    },
+    onError,
+  });
+
   const archive = useMutation({
     mutationFn: () => budgetApi.archiveGrouping(grouping.id),
     onSuccess: async () => {
@@ -81,6 +92,35 @@ function GroupingRow({
         <span className="rounded bg-surface-2 px-1.5 py-0.5 text-label font-semibold text-muted">
           {SECTION_LABELS[section]}
         </span>
+
+        {/* Each swatch names its colour, so the choice is not carried by colour
+            alone for anyone who cannot see the difference. */}
+        <div className="flex items-center gap-1">
+          {GROUPING_COLORS.map((option) => (
+            <button
+              key={option.value}
+              type="button"
+              onClick={() => recolour.mutate(option.value)}
+              aria-label={`${option.name} for ${grouping.name}`}
+              aria-pressed={grouping.color === option.value}
+              className={`h-5 w-5 rounded-[4px] border ${
+                grouping.color === option.value ? 'border-ink' : 'border-line'
+              }`}
+              style={{ background: option.value }}
+            />
+          ))}
+          <button
+            type="button"
+            onClick={() => recolour.mutate(null)}
+            aria-label={`No colour for ${grouping.name}`}
+            aria-pressed={grouping.color === null}
+            className={`h-5 rounded-[4px] border px-1 text-label ${
+              grouping.color === null ? 'border-ink text-ink' : 'border-line text-muted'
+            }`}
+          >
+            None
+          </button>
+        </div>
 
         <span className="text-quiet text-muted">
           {grouping.rows.length} {grouping.rows.length === 1 ? 'line' : 'lines'}

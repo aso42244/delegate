@@ -262,6 +262,13 @@ export function MainBudget(): ReactNode {
     onError,
   });
 
+  const moveDelegation = useMutation({
+    mutationFn: ({ id, groupingId }: { id: string; groupingId: string | null }) =>
+      budgetApi.updateDelegation(id, { groupingId }),
+    onSuccess: refresh,
+    onError,
+  });
+
   const toggleGrouping = useMutation({
     mutationFn: ({ id, collapsed }: { id: string; collapsed: boolean }) =>
       budgetApi.setGroupingCollapsed(id, collapsed),
@@ -347,6 +354,7 @@ export function MainBudget(): ReactNode {
         onEditAmount={(id, cents) => editAmount.mutate({ id, cents })}
         onEditBalance={(id, cents) => editBalance.mutate({ id, cents })}
         onCreate={(name) => createDelegation.mutate(name)}
+        onMoveToGrouping={(rowId, groupingId) => moveDelegation.mutate({ id: rowId, groupingId })}
         headerActions={
           newGrouping ? (
             <input

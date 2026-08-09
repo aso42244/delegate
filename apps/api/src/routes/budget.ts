@@ -1,4 +1,4 @@
-import { GROUPING_SECTIONS } from '@budget/shared';
+import { GROUPING_COLORS, GROUPING_SECTIONS } from '@budget/shared';
 import type { FastifyPluginCallback } from 'fastify';
 import { z } from 'zod';
 import { prisma } from '../db/client.js';
@@ -66,15 +66,23 @@ const updateDelegationSchema = z.object({
   notes: z.string().max(2000).nullish(),
 });
 
+/**
+ * Only the curated palette. §11 asks that grouping colour "must not be in your
+ * face", and a rule the UI merely observes is a rule the next caller ignores.
+ */
+const groupingColorSchema = z.enum(
+  GROUPING_COLORS.map((color) => color.value) as [string, ...string[]],
+);
+
 const createGroupingSchema = z.object({
   name: z.string().min(1).max(100),
   section: z.enum(GROUPING_SECTIONS),
-  color: z.string().max(32).nullish(),
+  color: groupingColorSchema.nullish(),
 });
 
 const updateGroupingSchema = z.object({
   name: z.string().min(1).max(100).optional(),
-  color: z.string().max(32).nullish(),
+  color: groupingColorSchema.nullish(),
   collapsed: z.boolean().optional(),
 });
 

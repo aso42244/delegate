@@ -76,3 +76,44 @@ export function suggestedPerCycleCents(monthlyAverageCents: bigint): bigint {
 }
 
 export const CYCLES_PER_YEAR = 26;
+
+/**
+ * The curated palette a grouping colour is chosen from.
+ *
+ * A fixed list rather than a colour picker, and deliberately: §11 asks that
+ * grouping colour "must not be in your face", and an arbitrary picker is how a
+ * dense financial table ends up with a magenta row. Every delegation inside a
+ * grouping inherits its colour — there is no per-delegation colour.
+ */
+export const GROUPING_COLORS = [
+  { value: '#46A171', name: 'Green' },
+  { value: '#2783DE', name: 'Blue' },
+  { value: '#D5803B', name: 'Orange' },
+  { value: '#8B63B8', name: 'Purple' },
+  { value: '#7D7A75', name: 'Grey' },
+] as const;
+
+export type GroupingColor = (typeof GROUPING_COLORS)[number]['value'];
+
+export function isGroupingColor(value: string): value is GroupingColor {
+  return GROUPING_COLORS.some((color) => color.value === value);
+}
+
+/**
+ * The row tint for a grouping colour, as an `rgb()` with alpha.
+ *
+ * Faint on purpose. The grouping header takes a soft tint and its children an
+ * even fainter one, so near-black text keeps well past the 4.5:1 the design
+ * requires — at these alphas over white the ratio stays above 10:1, which is the
+ * point of expressing colour as a tint rather than a fill.
+ */
+export function groupingTint(color: string | null, depth: 'header' | 'row'): string | undefined {
+  if (color === null || !isGroupingColor(color)) return undefined;
+
+  const red = Number.parseInt(color.slice(1, 3), 16);
+  const green = Number.parseInt(color.slice(3, 5), 16);
+  const blue = Number.parseInt(color.slice(5, 7), 16);
+  const alpha = depth === 'header' ? 0.1 : 0.04;
+
+  return `rgb(${red} ${green} ${blue} / ${alpha})`;
+}

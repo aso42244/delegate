@@ -5,6 +5,8 @@ import {
   canModifyUser,
   isBalanceStale,
   suggestedPerCycleCents,
+  groupingTint,
+  isGroupingColor,
 } from './domain.js';
 
 describe('permissions', () => {
@@ -74,5 +76,24 @@ describe('suggestedPerCycleCents', () => {
     expect(suggestedPerCycleCents(0n)).toBe(0n);
     expect(suggestedPerCycleCents(-120_00n)).toBe(-55_38n);
     expect(suggestedPerCycleCents(-2n)).toBe(-1n);
+  });
+});
+
+describe('grouping colours', () => {
+  it('accepts only the curated palette', () => {
+    expect(isGroupingColor('#46A171')).toBe(true);
+    // An arbitrary colour is how a dense financial table ends up with a magenta row.
+    expect(isGroupingColor('#FF00FF')).toBe(false);
+    expect(isGroupingColor('red')).toBe(false);
+  });
+
+  it('tints a header more strongly than a row, and both faintly', () => {
+    expect(groupingTint('#2783DE', 'header')).toBe('rgb(39 131 222 / 0.1)');
+    expect(groupingTint('#2783DE', 'row')).toBe('rgb(39 131 222 / 0.04)');
+  });
+
+  it('has no tint for an uncoloured or unrecognised grouping', () => {
+    expect(groupingTint(null, 'header')).toBeUndefined();
+    expect(groupingTint('#FF00FF', 'header')).toBeUndefined();
   });
 });
