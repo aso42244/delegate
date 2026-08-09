@@ -46,6 +46,14 @@ const environmentSchema = z.object({
   SIMPLEFIN_SYNC_CRON: z.string().default('0 * * * *'),
   SIMPLEFIN_BACKFILL_MONTHS: z.coerce.number().int().positive().max(24).default(12),
 
+  // Bitcoin is held as a quantity; its worth is that quantity times the price on
+  // the date being shown. Both endpoints are keyless and free, and hourly
+  // polling sits far inside what either asks for. Offset from the hour so it
+  // does not contend with the sync job on a two-core machine.
+  BITCOIN_PRICE_CRON: z.string().default('5 * * * *'),
+  BITCOIN_PRICE_PRIMARY: z.enum(['coingecko', 'coinbase']).default('coingecko'),
+  BITCOIN_PRICE_FALLBACK: z.enum(['coingecko', 'coinbase']).default('coinbase'),
+
   // Nightly pg_dump. §14 puts this in Phase 1 rather than Phase 3, because data
   // loss during the move off the spreadsheet would be unrecoverable.
   BACKUP_DIR: z.string().default('./backups'),

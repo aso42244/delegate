@@ -12,6 +12,7 @@ import { settingsRoutes } from './routes/settings.js';
 import { syncRoutes } from './routes/sync.js';
 import { accountRoutes } from './routes/accounts.js';
 import { appInfoRoutes } from './routes/app-info.js';
+import { bitcoinRoutes } from './routes/bitcoin.js';
 import { budgetRoutes } from './routes/budget.js';
 import { transactionRoutes } from './routes/transactions.js';
 import { userRoutes } from './routes/users.js';
@@ -62,6 +63,7 @@ export async function buildApp(config: AppConfig = getConfig()): Promise<Fastify
   await app.register(ruleRoutes);
   await app.register(settingsRoutes);
   await app.register(accountRoutes);
+  await app.register(bitcoinRoutes);
   await app.register(transactionRoutes);
   await app.register(budgetRoutes);
 
