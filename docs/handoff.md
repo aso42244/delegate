@@ -78,7 +78,11 @@ These are non-negotiable. Violating one is a build failure.
 split into **2a** (buildable without real data) and **2b** (blocked on it).
 413 unit and integration tests, 92 end-to-end tests in a real browser.
 
-**Phase 2a is complete.** Everything that could be built and verified without
+**Phase 2 is complete.** Every item in §12's Phase 2 list has shipped, including
+transaction pairing. What remains needs the owner's real data or his judgement
+against a populated page — see Phase 2b.
+
+**Phase 2a was complete first.** Everything that could be built and verified without
 real household data is done: Bitcoin, property and equity, notification banners,
 grouping colours and drag-to-move, Utilities, and Insights with all twelve
 widgets. **Phase 2b is blocked on real data** — see below.
