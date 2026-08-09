@@ -14,8 +14,10 @@ const SECTIONS = [
   { to: 'accounts', label: 'Accounts' },
   { to: 'delegations', label: 'Delegations' },
   { to: 'groupings', label: 'Groupings' },
+  { to: 'rules', label: 'Rules' },
   { to: 'budget', label: 'Budget' },
   { to: 'reconcile', label: 'Reconcile' },
+  { to: 'users', label: 'Users' },
   { to: 'archived', label: 'Archived' },
 ] as const;
 

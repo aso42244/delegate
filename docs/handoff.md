@@ -74,8 +74,8 @@ These are non-negotiable. Violating one is a build failure.
 
 ## Where things stand
 
-**Phase 1 is essentially complete.** 26 PRs merged. 312 unit and integration
-tests, 63 end-to-end tests in a real browser, all green.
+**Phase 1 is essentially complete.** 27 PRs merged. 317 unit and integration
+tests, 70 end-to-end tests in a real browser, all green.
 
 Built and working:
 
@@ -95,17 +95,14 @@ Built and working:
 - The UI: app shell with collapsible sidebar, auth screens, the Main Budget page
   with the per-row menu and inline grouping creation, the Transactions page
   including manual entry and the split editor, and Settings → Sync, Accounts,
-  Delegations, Groupings, Budget, Reconcile to Actual and Archived
+  Delegations, Groupings, Rules, Budget, Users, Reconcile to Actual and Archived
+  — every section §9.5 asks for
 - Docker image, Compose for the NAS, nightly `pg_dump`, and a restore path proven
   by destroying data and recovering it
 
 ### What is left in Phase 1
 
-1. **Settings → Rules and Settings → Users.** Every route both need already
-   exists (`/api/rules` with reorder, preview and apply; `/api/users` with
-   create, role change, password reset, archive and restore) — neither has a
-   screen. Everything else in Settings is done.
-2. **Deploy to the NAS.** The image has never run on the DS220+. That is the one
+1. **Deploy to the NAS.** The image has never run on the DS220+. That is the one
    remaining unknown; CI proves it boots on x86_64 Linux against real Postgres.
 
 Then Phases 2 (Utilities, Insights, Bitcoin, property, pairing, colours,
@@ -199,6 +196,12 @@ does.
   first run after a cold server start, which is exactly the run that looks like a
   real bug. Wait for a UI signal that the write landed (the row leaving the
   queue, the dialog closing) before navigating.
+- **A query string carries text, so a flag in one must be parsed, not coerced.**
+  `GET /api/rules/preview` read its `includeCategorized` flag with `Boolean(...)`,
+  and `Boolean("false")` is `true` — so asking for the safe preview returned the
+  count for the mode that overwrites categorizations made by hand. Nothing
+  called it with the flag until Settings → Rules did, which is why it survived.
+  It is now an explicit `z.enum(['true','false'])`.
 - **`npm run typecheck` did not cover the web app.** The root `tsconfig.json`
   referenced only `packages/shared` and `apps/api`, so type errors in
   `apps/web` surfaced only at `npm run build` — the same shape of hole as the
