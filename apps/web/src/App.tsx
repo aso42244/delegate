@@ -3,6 +3,7 @@ import type { ReactNode } from 'react';
 import { Navigate, Outlet, Route, Routes, useLocation } from 'react-router-dom';
 import { api } from './api/client.js';
 import { useSession } from './auth/SessionProvider.jsx';
+import { NotificationBanners } from './components/NotificationBanners.jsx';
 import { Sidebar } from './components/Sidebar.jsx';
 import { ChangePassword } from './pages/ChangePassword.jsx';
 import { MainBudget } from './pages/MainBudget.jsx';
@@ -52,6 +53,9 @@ function AppShell({ appName }: { appName: string }): ReactNode {
       <Sidebar appName={appName} />
       <main className="flex-1 overflow-auto px-6 py-8 md:px-12">
         <div className="mx-auto w-full max-w-[1200px]">
+          {/* Above the page rather than on one of them: a failing sync is not a
+              fact about the Transactions page. */}
+          <NotificationBanners />
           <Outlet />
         </div>
       </main>
