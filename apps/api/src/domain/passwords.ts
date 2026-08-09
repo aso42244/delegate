@@ -55,6 +55,18 @@ export async function hashPassword(password: string): Promise<string> {
 }
 
 /**
+ * The same hashing, without the human-password length policy.
+ *
+ * For machine-generated secrets — recovery codes — where the strength comes
+ * from the generator rather than from the length rule. A twelve-character
+ * minimum written for passphrases would reject a code with more entropy than
+ * most of the passwords it exists to protect.
+ */
+export async function hashGeneratedSecret(secret: string): Promise<string> {
+  return argon2.hash(secret, ARGON2_OPTIONS);
+}
+
+/**
  * Returns false rather than throwing on a malformed stored hash: a corrupted row
  * should deny access, not return a 500 that tells an attacker the account exists.
  */

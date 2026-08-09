@@ -5,14 +5,15 @@ import type { FastifyPluginAsync, FastifyReply, FastifyRequest } from 'fastify';
 import fp from 'fastify-plugin';
 import type { AppConfig } from '../config.js';
 import { prisma } from '../db/client.js';
+import { getBudgetSettings } from '../domain/settings.js';
 import { PrismaSessionStore } from './session-store.js';
 
 /**
  * Session cookies and the request guards built on them.
  *
- * Phase 1 is username and password only, which is acceptable solely because the
- * system is LAN-only until Phase 3. TOTP, passkeys, rate limiting and CSRF all
- * arrive in Phase 3, before anything is exposed to the internet.
+ * Passwords, a second factor, rate limiting and CSRF are all in place. Passkeys
+ * and TLS termination remain outstanding, and the system stays LAN-only until
+ * they land.
  */
 
 /** The authenticated user attached to a request by `requireSession`. */
@@ -21,6 +22,8 @@ export interface RequestUser {
   readonly username: string;
   readonly role: UserRole;
   readonly mustChangePassword: boolean;
+  /** Whether a confirmed second factor exists — see `requireTwoFactor`. */
+  readonly hasTotp: boolean;
 }
 
 declare module 'fastify' {
@@ -83,7 +86,14 @@ export async function requireSession(request: FastifyRequest, reply: FastifyRepl
 
   const user = await prisma.user.findUnique({
     where: { id: userId },
-    select: { id: true, username: true, role: true, mustChangePassword: true, archivedAt: true },
+    select: {
+      id: true,
+      username: true,
+      role: true,
+      mustChangePassword: true,
+      archivedAt: true,
+      totpConfirmedAt: true,
+    },
   });
 
   if (!user || user.archivedAt) {
@@ -99,7 +109,33 @@ export async function requireSession(request: FastifyRequest, reply: FastifyRepl
     username: user.username,
     role: user.role,
     mustChangePassword: user.mustChangePassword,
+    hasTotp: user.totpConfirmedAt !== null,
   };
+}
+
+/**
+ * Blocks everything except enrolling once the budget requires a second factor
+ * and this account has not set one up.
+ *
+ * The settings row is only read when the user is *not* enrolled, so the ordinary
+ * request pays nothing for this. Like `requirePasswordChanged`, the routes that
+ * resolve the state — the enrolment pair, and logout — deliberately skip it.
+ */
+export async function requireTwoFactor(
+  request: FastifyRequest,
+  reply: FastifyReply,
+): Promise<void> {
+  if (!request.currentUser || request.currentUser.hasTotp) return;
+
+  const { requireTotp } = await getBudgetSettings(prisma);
+  if (!requireTotp) return;
+
+  await reply.code(403).send({
+    error: {
+      code: 'two_factor_required',
+      message: 'Set up two-factor authentication before continuing.',
+    },
+  });
 }
 
 /**
@@ -138,11 +174,12 @@ export async function requireUserManagement(
  * The guard chain every authenticated route wants: a live session, and a
  * password that is no longer temporary.
  */
-export const AUTHENTICATED = [requireSession, requirePasswordChanged] as const;
+export const AUTHENTICATED = [requireSession, requirePasswordChanged, requireTwoFactor] as const;
 
 /** As above, plus the user-management capability. */
 export const USER_MANAGEMENT = [
   requireSession,
   requirePasswordChanged,
+  requireTwoFactor,
   requireUserManagement,
 ] as const;

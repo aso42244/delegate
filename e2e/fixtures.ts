@@ -31,6 +31,7 @@ async function resetDatabase(): Promise<void> {
       undoWindowHours: 12,
       identityToleranceCents: 500n,
       goLiveAt: null,
+      requireTotp: false,
       simplefinAccessUrlEncrypted: null,
     },
   });

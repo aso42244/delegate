@@ -48,7 +48,14 @@ export function SessionProvider({ children }: { children: ReactNode }): ReactNod
     },
     clear: () => {
       // Everything cached was fetched as this user; none of it should survive.
-      queryClient.clear();
+      // `removeQueries` rather than `clear`, which also empties the mutation
+      // cache — including, when this is called from a mutation's callback, the
+      // one still running.
+      queryClient.removeQueries();
+      // Then state the answer rather than waiting to be told it. Leaving the
+      // session query merely absent means the guards see "still loading" and
+      // keep rendering the signed-in interface until a round trip completes.
+      queryClient.setQueryData(['session'], null);
     },
   };
 

@@ -19,6 +19,7 @@ const SECTIONS = [
   { to: 'budget', label: 'Budget' },
   { to: 'reconcile', label: 'Reconcile' },
   { to: 'users', label: 'Users' },
+  { to: 'security', label: 'Security' },
   { to: 'archived', label: 'Archived' },
 ] as const;
 

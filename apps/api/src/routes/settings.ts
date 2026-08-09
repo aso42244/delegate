@@ -2,7 +2,11 @@ import type { FastifyPluginCallback } from 'fastify';
 import { z } from 'zod';
 import { prisma } from '../db/client.js';
 import { listArchivedEntities } from '../domain/archive.js';
-import { getBudgetSettings, updateBudgetSettings } from '../domain/settings.js';
+import {
+  getBudgetSettings,
+  updateBudgetSettings,
+  type BudgetSettings,
+} from '../domain/settings.js';
 import { centsIn, centsOut, dateOut } from '../http/serialize.js';
 import { AUTHENTICATED } from '../plugins/auth.js';
 
@@ -17,32 +21,31 @@ import { AUTHENTICATED } from '../plugins/auth.js';
 const updateSchema = z.object({
   undoWindowHours: z.number().int().optional(),
   identityToleranceCents: centsIn.optional(),
+  requireTotp: z.boolean().optional(),
 });
+
+function present(settings: BudgetSettings): Record<string, unknown> {
+  return {
+    undoWindowHours: settings.undoWindowHours,
+    identityToleranceCents: centsOut(settings.identityToleranceCents),
+    goLiveAt: dateOut(settings.goLiveAt),
+    requireTotp: settings.requireTotp,
+  };
+}
 
 export const settingsRoutes: FastifyPluginCallback = (fastify, _options, done) => {
   for (const guard of AUTHENTICATED) {
     fastify.addHook('preHandler', guard);
   }
 
-  fastify.get('/api/settings', async () => {
-    const settings = await getBudgetSettings(prisma);
-    return {
-      undoWindowHours: settings.undoWindowHours,
-      identityToleranceCents: centsOut(settings.identityToleranceCents),
-      goLiveAt: dateOut(settings.goLiveAt),
-    };
-  });
+  fastify.get('/api/settings', async () => present(await getBudgetSettings(prisma)));
 
   fastify.patch('/api/settings', async (request) => {
     const body = updateSchema.parse(request.body);
     const settings = await updateBudgetSettings(prisma, body);
 
     request.log.info({ actorId: request.currentUser?.id }, 'budget settings updated');
-    return {
-      undoWindowHours: settings.undoWindowHours,
-      identityToleranceCents: centsOut(settings.identityToleranceCents),
-      goLiveAt: dateOut(settings.goLiveAt),
-    };
+    return present(settings);
   });
 
   /**

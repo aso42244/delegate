@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState, type ReactNode } from 'react';
-import { NavLink, useNavigate } from 'react-router-dom';
+import { NavLink } from 'react-router-dom';
 import { authApi, syncApi } from '../api/client.js';
 import { useSession } from '../auth/SessionProvider.jsx';
 import { Button } from './ui.jsx';
@@ -49,8 +49,7 @@ function formatLastSync(iso: string | null): string {
 
 export function Sidebar({ appName }: { appName: string }): ReactNode {
   const [collapsed, setCollapsed] = useCollapsed();
-  const { user, clear } = useSession();
-  const navigate = useNavigate();
+  const { user } = useSession();
   const queryClient = useQueryClient();
 
   const syncStatus = useQuery({
@@ -71,9 +70,20 @@ export function Sidebar({ appName }: { appName: string }): ReactNode {
 
   const signOut = useMutation({
     mutationFn: authApi.logout,
-    onSuccess: () => {
-      clear();
-      void navigate('/login', { replace: true });
+    /**
+     * A full page load rather than a client-side route change.
+     *
+     * Signing out has to leave nothing behind, and the in-memory caches of a
+     * single-page application are exactly the sort of thing that quietly
+     * survives a re-render — query data fetched as the previous user, a stale
+     * session read, component state. Reloading discards all of it at once, and
+     * cannot be got subtly wrong the way unwinding it by hand can.
+     *
+     * `onSettled`, not `onSuccess`: if the request failed the browser is in an
+     * unknown state, which is the last moment to keep showing someone's budget.
+     */
+    onSettled: () => {
+      window.location.assign('/login');
     },
   });
 

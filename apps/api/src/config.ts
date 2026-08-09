@@ -39,6 +39,12 @@ const environmentSchema = z.object({
   // than loudly.
   SESSION_COOKIE_SECURE: booleanFromString.default(false),
 
+  // Extra origins allowed to make state-changing requests, comma separated
+  // (e.g. https://budget.example). The server's own Host always counts, so a
+  // direct LAN deployment needs nothing here; this exists for the day a reverse
+  // proxy fronts it under a different name. See plugins/csrf.ts.
+  TRUSTED_ORIGINS: z.string().default(''),
+
   // A bearer credential for the household's bank data: it embeds Basic Auth and
   // anyone holding it can read every transaction. Empty is valid — the app runs
   // without it and reports sync as unconfigured.

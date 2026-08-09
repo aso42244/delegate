@@ -185,7 +185,7 @@ export async function updateUser(
   id: string,
   input: UpdateUserInput,
 ): Promise<PublicUser> {
-  await loadModifiableUser(db, actorRole, id);
+  const target = await loadModifiableUser(db, actorRole, id);
 
   // Promoting someone to Super Admin is itself a Super Admin action, or an Admin
   // could grant themselves immunity through a proxy account.
@@ -205,6 +205,19 @@ export async function updateUser(
     data.username = username;
   }
   if (input.role !== undefined) data.role = input.role;
+
+  /**
+   * A changed role drops that user's sessions.
+   *
+   * Guards re-read the role on every request, so a demotion already bites
+   * immediately — but the session id itself was minted while the account held
+   * different privileges, and a privilege boundary is exactly where a session
+   * identifier should not survive. Signing in again is a small price on an
+   * action that happens about once.
+   */
+  if (data.role !== undefined && data.role !== target.role) {
+    await db.session.deleteMany({ where: { userId: id } });
+  }
 
   return db.user.update({ where: { id }, data, select: PUBLIC_USER_SELECT });
 }

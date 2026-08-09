@@ -7,6 +7,8 @@ export interface BudgetSettingsDto {
   readonly identityToleranceCents: string;
   /** Stamped by the first Reconcile commit, then never moved. */
   readonly goLiveAt: string | null;
+  /** Whether every account must have a second factor before it can be used. */
+  readonly requireTotp: boolean;
 }
 
 export interface ReconcileResultDto {
@@ -39,8 +41,11 @@ export const archivedApi = {
 export const settingsApi = {
   get: () => api.get<BudgetSettingsDto>('/api/settings'),
 
-  update: (input: { undoWindowHours?: number; identityToleranceCents?: string }) =>
-    api.patch<BudgetSettingsDto>('/api/settings', input),
+  update: (input: {
+    undoWindowHours?: number;
+    identityToleranceCents?: string;
+    requireTotp?: boolean;
+  }) => api.patch<BudgetSettingsDto>('/api/settings', input),
 
   /** Every correction in one commit, sharing a batch. Not sixty separate writes. */
   reconcile: (lines: readonly { delegationId: string; actualBalanceCents: string }[]) =>

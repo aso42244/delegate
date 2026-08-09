@@ -35,7 +35,12 @@ export async function resetDatabase(): Promise<void> {
   await prisma.budgetSettings.upsert({
     where: { id: 1 },
     create: { id: 1, undoWindowHours: 12, identityToleranceCents: 500n },
-    update: { undoWindowHours: 12, identityToleranceCents: 500n, goLiveAt: null },
+    update: {
+      undoWindowHours: 12,
+      identityToleranceCents: 500n,
+      goLiveAt: null,
+      requireTotp: false,
+    },
   });
 }
 

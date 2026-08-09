@@ -109,6 +109,14 @@ model User {
   // Accounts created by an Admin start with a temporary password that must be
   // replaced at first login.
   mustChangePassword Boolean   @default(false) @map("must_change_password")
+
+  /// The TOTP shared secret, encrypted at rest (AES-256-GCM, key derived from
+  /// SESSION_SECRET). Every nightly pg_dump contains this table, and a
+  /// plaintext secret in a stolen dump is a working second factor.
+  totpSecretEncrypted String?   @map("totp_secret_encrypted")
+  /// Set when a code from the authenticator has actually been verified. Until
+  /// then enrolment is incomplete and the secret must not gate a sign-in.
+  totpConfirmedAt     DateTime? @map("totp_confirmed_at")
   lastLoginAt        DateTime? @map("last_login_at")
   archivedAt         DateTime? @map("archived_at")
   createdAt          DateTime  @default(now()) @map("created_at")
@@ -123,6 +131,25 @@ model User {
   @@index([archivedAt])
   @@map("users")
   insightLayouts InsightLayout[]
+  recoveryCodes  RecoveryCode[]
+}
+
+/// A single-use code that bypasses the second factor when the authenticator is
+/// lost. Hashed with argon2id exactly like a password, because that is what it
+/// is.
+model RecoveryCode {
+  id        String    @id @default(uuid()) @db.Uuid
+  userId    String    @map("user_id") @db.Uuid
+  codeHash  String    @map("code_hash")
+  /// Set when spent rather than deleted, so a code cannot be quietly reused and
+  /// "seven of ten remaining" is answerable.
+  usedAt    DateTime? @map("used_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, usedAt])
+  @@map("recovery_codes")
 }
 
 // Sessions live in Postgres rather than in process memory: an in-memory store
@@ -572,6 +599,11 @@ model BudgetSettings {
   // Recorded when the owner commits the go-live Reconcile screen, so history
   // before this date can be understood as backfill.
   goLiveAt DateTime? @map("go_live_at")
+
+  /// Whether every account must carry a second factor. §10 requires it before
+  /// any internet exposure; it is a setting so that shipping the code cannot
+  /// lock a running deployment out between release and enrolment.
+  requireTotp Boolean @default(false) @map("require_totp")
 
   // The SimpleFIN access URL, encrypted at rest (AES-256-GCM). It is a bearer
   // credential for the household's bank data and the database is dumped nightly,
