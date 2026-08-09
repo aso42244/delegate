@@ -247,3 +247,31 @@ export function centsFromJson(value: string): Cents {
   }
   return BigInt(value);
 }
+
+// ---------------------------------------------------------------------------
+// Bitcoin
+// ---------------------------------------------------------------------------
+
+/**
+ * Bitcoin is held as a **quantity**, never as a dollar value: the holding is a
+ * number of satoshis, and its worth is that quantity times the price on the date
+ * being displayed. Storing a dollar value would freeze a number that changes by
+ * the minute, and would make the net worth chart wrong for every historical date.
+ */
+export const SATS_PER_BITCOIN = 100_000_000n;
+
+/**
+ * What a holding is worth at a given price, in cents.
+ *
+ * Integer throughout, rounded half away from zero at the final division — the
+ * same rule the rest of this module uses. A float here would be a rounding error
+ * multiplied by a hundred million.
+ */
+export function bitcoinValueCents(sats: Cents, priceCentsPerBitcoin: Cents): Cents {
+  const product = sats * priceCentsPerBitcoin;
+  const sign = product < 0n ? -1n : 1n;
+  const magnitude = product < 0n ? -product : product;
+
+  // + half the divisor before truncating: rounds .5 away from zero.
+  return sign * ((magnitude + SATS_PER_BITCOIN / 2n) / SATS_PER_BITCOIN);
+}

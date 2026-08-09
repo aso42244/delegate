@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
   MoneyParseError,
+  SATS_PER_BITCOIN,
   ZERO_CENTS,
+  bitcoinValueCents,
   absCents,
   addCents,
   allocateByWeight,
@@ -233,5 +235,33 @@ describe('JSON serialization', () => {
     expect(() => centsFromJson('')).toThrow(TypeError);
     expect(() => centsFromJson('1e3')).toThrow(TypeError);
     expect(() => centsFromJson('abc')).toThrow(TypeError);
+  });
+});
+
+describe('bitcoinValueCents', () => {
+  it('values a whole Bitcoin at the price', () => {
+    expect(bitcoinValueCents(SATS_PER_BITCOIN, 10_000_000n)).toBe(10_000_000n);
+  });
+
+  it('values a fraction proportionally', () => {
+    // 0.5 BTC at $100,000.00
+    expect(bitcoinValueCents(50_000_000n, 10_000_000n)).toBe(5_000_000n);
+  });
+
+  it('rounds half away from zero rather than truncating', () => {
+    // 1 sat at $100,000.00 is 0.1 cents, which rounds to nothing…
+    expect(bitcoinValueCents(1n, 10_000_000n)).toBe(0n);
+    // …but 1 sat at $500,000.00 is 0.5 cents, which rounds up.
+    expect(bitcoinValueCents(1n, 50_000_000n)).toBe(1n);
+  });
+
+  it('holds exact for a quantity and price far beyond a safe JS integer', () => {
+    // 21,000,000 BTC — the whole supply — at $1,000,000.00.
+    const everything = 21_000_000n * SATS_PER_BITCOIN;
+    expect(bitcoinValueCents(everything, 100_000_000n)).toBe(21_000_000n * 100_000_000n);
+  });
+
+  it('is zero for no holding', () => {
+    expect(bitcoinValueCents(0n, 10_000_000n)).toBe(0n);
   });
 });

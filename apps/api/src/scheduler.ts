@@ -4,6 +4,7 @@ import type { AppConfig } from './config.js';
 import { prisma } from './db/client.js';
 import { ConflictError } from './domain/errors.js';
 import { runBackup } from './domain/backup.js';
+import { fetchAndRecordPrice, providerByName } from './domain/bitcoin.js';
 import { resolveConnection } from './domain/simplefin-config.js';
 import { runSync } from './domain/sync.js';
 import { HttpSimpleFinClient } from './simplefin/client.js';
@@ -53,11 +54,48 @@ export function startScheduler(config: AppConfig, logger: FastifyBaseLogger): Sc
 
   logger.info({ cron: config.BACKUP_CRON, directory: config.BACKUP_DIR }, 'nightly backup enabled');
 
+  if (!cron.validate(config.BITCOIN_PRICE_CRON)) {
+    throw new Error(
+      `BITCOIN_PRICE_CRON is not a valid cron expression: "${config.BITCOIN_PRICE_CRON}"`,
+    );
+  }
+
+  tasks.push(
+    cron.schedule(config.BITCOIN_PRICE_CRON, () => {
+      void runScheduledPriceFetch(config, logger);
+    }),
+  );
+
+  logger.info({ cron: config.BITCOIN_PRICE_CRON }, 'Bitcoin price fetch enabled');
+
   return {
     stop: () => {
       for (const task of tasks) void task.stop();
     },
   };
+}
+
+/**
+ * A price that cannot be fetched is not a fault to escalate. The last known one
+ * is held and flagged stale wherever it is displayed — §8 is explicit that a
+ * holding must never read zero or blank — so a quiet log line is the right
+ * volume for a feed having a bad hour.
+ */
+async function runScheduledPriceFetch(config: AppConfig, logger: FastifyBaseLogger): Promise<void> {
+  try {
+    const result = await fetchAndRecordPrice(prisma, [
+      providerByName(config.BITCOIN_PRICE_PRIMARY),
+      providerByName(config.BITCOIN_PRICE_FALLBACK),
+    ]);
+    if (result) {
+      logger.info(
+        { source: result.source, closesSettled: result.closesSettled },
+        'Bitcoin price recorded',
+      );
+    }
+  } catch (error) {
+    logger.warn({ err: error }, 'Bitcoin price fetch failed; holding the last known price');
+  }
 }
 
 /**
