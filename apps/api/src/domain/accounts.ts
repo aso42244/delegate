@@ -110,6 +110,8 @@ export interface UpdateAccountInput {
   readonly needsReview?: boolean | undefined;
   /** Manual accounts only. Sets the balance outright and stamps it as of now. */
   readonly balanceCents?: Cents | undefined;
+  /** The mortgage secured against this property, if it is one. */
+  readonly mortgageAccountId?: string | null | undefined;
 }
 
 /**
@@ -169,6 +171,9 @@ export async function updateAccount(
         : { stalenessIntervalDays: input.stalenessIntervalDays }),
       ...(input.groupingId === undefined ? {} : { groupingId: input.groupingId }),
       ...(input.needsReview === undefined ? {} : { needsReview: input.needsReview }),
+      ...(input.mortgageAccountId === undefined
+        ? {}
+        : { mortgageAccountId: input.mortgageAccountId }),
       // Typing a balance is confirming it, so the staleness clock restarts.
       ...(input.balanceCents === undefined
         ? {}

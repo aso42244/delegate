@@ -8,6 +8,7 @@ import {
   restoreAccount,
   updateAccount,
 } from '../domain/accounts.js';
+import { equityFor, listValuations, recordValuation } from '../domain/valuations.js';
 import { centsInLoose, centsOut, dateOut } from '../http/serialize.js';
 import { AUTHENTICATED } from '../plugins/auth.js';
 
@@ -46,6 +47,9 @@ const updateSchema = z.object({
   groupingId: z.string().uuid().nullish(),
   needsReview: z.boolean().optional(),
   balanceCents: centsInLoose.optional(),
+  // A property may point at the mortgage secured against it; equity is the
+  // difference, computed on read.
+  mortgageAccountId: z.string().uuid().nullish(),
 });
 
 export const accountRoutes: FastifyPluginCallback = (fastify, _options, done) => {
@@ -126,6 +130,67 @@ export const accountRoutes: FastifyPluginCallback = (fastify, _options, done) =>
     const { id } = idParamsSchema.parse(request.params);
     await restoreAccount(prisma, id);
     return { ok: true };
+  });
+
+  // --- Valuations --------------------------------------------------------
+
+  /**
+   * Records what something was worth on a date. Manual entry only — see §8 on
+   * why there is no property valuation API behind this.
+   */
+  fastify.post('/api/accounts/:id/valuations', async (request, reply) => {
+    const { id } = idParamsSchema.parse(request.params);
+    const body = z
+      .object({
+        valueCents: centsInLoose,
+        asOf: z.coerce.date(),
+        note: z.string().max(500).nullish(),
+      })
+      .parse(request.body);
+
+    const result = await recordValuation(prisma, {
+      accountId: id,
+      valueCents: body.valueCents,
+      asOf: body.asOf,
+      note: body.note ?? null,
+      actorId: request.currentUser?.id ?? null,
+    });
+
+    request.log.info(
+      { accountId: id, isCurrent: result.isCurrent, actorId: request.currentUser?.id },
+      'valuation recorded',
+    );
+    return reply.code(201).send(result);
+  });
+
+  /** The history behind the current figure, newest first. */
+  fastify.get('/api/accounts/:id/valuations', async (request) => {
+    const { id } = idParamsSchema.parse(request.params);
+    const valuations = await listValuations(prisma, id);
+
+    return {
+      valuations: valuations.map((valuation) => ({
+        id: valuation.id,
+        valueCents: centsOut(valuation.valueCents),
+        asOf: dateOut(valuation.asOf),
+        note: valuation.note,
+      })),
+    };
+  });
+
+  /** Equity, computed on read. Null when no mortgage is linked. */
+  fastify.get('/api/accounts/:id/equity', async (request) => {
+    const { id } = idParamsSchema.parse(request.params);
+    const equity = await equityFor(prisma, id);
+
+    if (!equity) return { equity: null };
+    return {
+      equity: {
+        propertyValueCents: centsOut(equity.propertyValueCents),
+        mortgageBalanceCents: centsOut(equity.mortgageBalanceCents),
+        equityCents: centsOut(equity.equityCents),
+      },
+    };
   });
 
   done();
