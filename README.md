@@ -210,16 +210,30 @@ TOTP, passkeys and rate limiting are Phase 3.
      https://github.com/sigstore/cosign/releases/latest/download/cosign-linux-amd64
    sudo chmod +x /usr/local/bin/cosign
    ```
-6. **Sign in to the registry**, using a **fine-grained** personal access token
-   scoped to this repository with `read:packages` and nothing else:
+6. **Sign in to the registry.** This needs a **classic** personal access token
+   with `read:packages` ticked and nothing else, plus an expiry.
+
+   A fine-grained token does not work here, however much one would prefer it:
+   GitHub's documentation states that Packages
+   [only supports a classic token](https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-container-registry),
+   and `docker login` fails with `denied: denied`. A classic token is
+   account-wide, so keeping it to the single `read:packages` scope is what limits
+   the blast radius.
 
    ```bash
-   docker login ghcr.io -u <github-username> --password-stdin
+   sudo docker login ghcr.io -u <github-username>
    ```
 
-   Paste the token, then Ctrl-D. `docker login` stores it base64-encoded in
-   `~/.docker/config.json`, which is encoding rather than encryption — run
-   `docker logout ghcr.io` afterwards if you would rather not leave it there.
+   Paste the token at the hidden `Password:` prompt — a token pasted on a visible
+   line stays in the terminal's scrollback afterwards. `docker login` stores it
+   base64-encoded in `~/.docker/config.json`, which is encoding rather than
+   encryption, so run `docker logout ghcr.io` afterwards if you would rather not
+   leave it on the NAS.
+
+   Two things that cost time the first time round: copy the token value alone —
+   a label copied with it makes the login fail for no visible reason — and DSM's
+   `scp` may need `-O` to copy files across, because its SSH server does not
+   offer the SFTP subsystem that modern `scp` expects.
 
    _Or skip steps 5 and 6 entirely_ by using the tarball route in step 7, which
    needs no credential on the NAS at all.
