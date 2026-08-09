@@ -9,15 +9,16 @@ import { expect, makeAccount, test } from './fixtures.js';
  * revaluation.
  */
 
-test('a holding is entered as a quantity and valued at the price', async ({ signedIn, api }) => {
+test('a holding is entered as a quantity, and shows no value without a price', async ({
+  signedIn,
+}) => {
   await makeAccount('Hardware wallet', 'asset', 0n);
-  // A price has to exist before anything can be worth anything.
-  await api.post('/api/bitcoin/refresh').catch(() => undefined);
 
   await signedIn.goto('/settings/bitcoin');
 
-  // No feed in the end-to-end environment, so this is the honest state: no
-  // price, and therefore no value — never a zero.
+  // Nothing here reaches a real price feed — see playwright.config.ts — so this
+  // is the honest state, and the one worth asserting: no price, therefore no
+  // value. Never a zero, which would look like an answer.
   await expect(signedIn.getByText('No price has been fetched yet.')).toBeVisible();
 
   await signedIn.getByLabel('Bitcoin held in Hardware wallet').fill('0.05');

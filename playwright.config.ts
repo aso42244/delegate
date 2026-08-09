@@ -61,6 +61,11 @@ export default defineConfig({
       APP_NAME: 'Delegate',
       // Never let an end-to-end run reach a real bridge.
       SIMPLEFIN_ACCESS_URL: '',
+      // Nor a real price feed. The scheduler runs inside this server, and a
+      // suite that makes outbound calls to a third party is a suite that goes
+      // red when somebody else has an outage. Once a year, on a date no run
+      // will hit.
+      BITCOIN_PRICE_CRON: '0 0 1 1 *',
     },
   },
 });
