@@ -1,6 +1,7 @@
 import type { FastifyPluginCallback } from 'fastify';
 import { z } from 'zod';
 import { prisma } from '../db/client.js';
+import { listArchivedEntities } from '../domain/archive.js';
 import { getBudgetSettings, updateBudgetSettings } from '../domain/settings.js';
 import { centsIn, centsOut, dateOut } from '../http/serialize.js';
 import { AUTHENTICATED } from '../plugins/auth.js';
@@ -41,6 +42,34 @@ export const settingsRoutes: FastifyPluginCallback = (fastify, _options, done) =
       undoWindowHours: settings.undoWindowHours,
       identityToleranceCents: centsOut(settings.identityToleranceCents),
       goLiveAt: dateOut(settings.goLiveAt),
+    };
+  });
+
+  /**
+   * Settings → Archived. Nothing is ever hard-deleted, so this is where an
+   * archived account, delegation or grouping is found and brought back.
+   */
+  fastify.get('/api/archived', async () => {
+    const archived = await listArchivedEntities(prisma);
+
+    return {
+      accounts: archived.accounts.map((account) => ({
+        id: account.id,
+        name: account.name,
+        type: account.type,
+        archivedAt: dateOut(account.archivedAt),
+      })),
+      delegations: archived.delegations.map((delegation) => ({
+        id: delegation.id,
+        name: delegation.name,
+        archivedAt: dateOut(delegation.archivedAt),
+      })),
+      groupings: archived.groupings.map((grouping) => ({
+        id: grouping.id,
+        name: grouping.name,
+        section: grouping.section,
+        archivedAt: dateOut(grouping.archivedAt),
+      })),
     };
   });
 

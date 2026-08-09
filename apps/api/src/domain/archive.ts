@@ -103,6 +103,42 @@ export async function archiveAccount(
 }
 
 /** Restore, offered from Settings → Archived. */
+export interface ArchivedEntities {
+  readonly accounts: { id: string; name: string; archivedAt: Date | null; type: string }[];
+  readonly delegations: { id: string; name: string; archivedAt: Date | null }[];
+  readonly groupings: { id: string; name: string; archivedAt: Date | null; section: string }[];
+}
+
+/**
+ * Everything currently archived, for Settings → Archived.
+ *
+ * Transactions are excluded on purpose. An archived transaction is a pending row
+ * that vanished or one entered by mistake, and there are potentially thousands
+ * of them — restoring one individually is not a thing the owner needs, while a
+ * list of entities he might genuinely want back is.
+ */
+export async function listArchivedEntities(db: Db): Promise<ArchivedEntities> {
+  const [accounts, delegations, groupings] = await Promise.all([
+    db.account.findMany({
+      where: { archivedAt: { not: null } },
+      select: { id: true, name: true, archivedAt: true, type: true },
+      orderBy: { name: 'asc' },
+    }),
+    db.delegation.findMany({
+      where: { archivedAt: { not: null } },
+      select: { id: true, name: true, archivedAt: true },
+      orderBy: { name: 'asc' },
+    }),
+    db.grouping.findMany({
+      where: { archivedAt: { not: null } },
+      select: { id: true, name: true, archivedAt: true, section: true },
+      orderBy: { name: 'asc' },
+    }),
+  ]);
+
+  return { accounts, delegations, groupings };
+}
+
 export async function restoreDelegation(db: Db, delegationId: string): Promise<void> {
   const delegation = await db.delegation.findUnique({
     where: { id: delegationId },

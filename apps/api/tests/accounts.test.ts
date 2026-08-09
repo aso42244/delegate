@@ -313,3 +313,34 @@ describe('archiving', () => {
     expect(restored.archivedAt).toBeNull();
   });
 });
+
+describe('GET /api/archived', () => {
+  it('lists what is archived, and nothing that is not', async () => {
+    const live = await makeAccount({ name: 'Everyday', type: 'asset', balanceCents: 500n });
+    const gone = await makeAccount({ name: 'Old Card', type: 'debt', balanceCents: 0n });
+    await app.inject({
+      method: 'POST',
+      url: `/api/accounts/${gone.id}/archive`,
+      headers: { cookie },
+    });
+
+    const delegation = await prisma.delegation.create({
+      data: { name: 'Retired envelope', archivedAt: new Date() },
+      select: { id: true },
+    });
+
+    const response = await app.inject({ method: 'GET', url: '/api/archived', headers: { cookie } });
+    expect(response.statusCode).toBe(200);
+
+    const body = response.json<{
+      accounts: { id: string; name: string }[];
+      delegations: { id: string }[];
+      groupings: { id: string }[];
+    }>();
+
+    expect(body.accounts.map((account) => account.id)).toEqual([gone.id]);
+    expect(body.accounts.map((account) => account.id)).not.toContain(live.id);
+    expect(body.delegations.map((row) => row.id)).toEqual([delegation.id]);
+    expect(body.groupings).toEqual([]);
+  });
+});
