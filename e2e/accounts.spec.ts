@@ -17,7 +17,8 @@ test('a manual account is added and appears on the Main Budget', async ({ signed
   await signedIn.getByLabel('Balance', { exact: true }).fill('200.00');
   await signedIn.getByRole('button', { name: 'Add account' }).click();
 
-  await expect(signedIn.getByText('Physical Cash')).toBeVisible();
+  // Exact: the type control's label also contains the account name.
+  await expect(signedIn.getByText('Physical Cash', { exact: true })).toBeVisible();
 
   await signedIn.goto('/');
   await expect(signedIn.getByRole('button', { name: 'Physical Cash balance' })).toContainText(
@@ -147,4 +148,33 @@ test('a SimpleFIN account is not offered a balance to set', async ({ signedIn })
   await expect(
     signedIn.getByRole('button', { name: 'Balance for Everyday Checking' }),
   ).toBeDisabled();
+});
+
+/**
+ * §6.1: a sync guesses the type from the institution and account name, and the
+ * owner can override it. A wrong guess moves the identity by twice the balance —
+ * a credit card read as an asset adds what it should subtract.
+ */
+test('an account type can be corrected from Settings', async ({ signedIn }) => {
+  await makeAccount('Mystery Account', 'asset', 40000n);
+
+  await signedIn.goto('/settings/accounts');
+  await signedIn.getByLabel('Type of Mystery Account').selectOption('debt');
+
+  await signedIn.reload();
+  await expect(signedIn.getByLabel('Type of Mystery Account')).toHaveValue('debt');
+
+  // It moves from Assets to Debts on the budget, and the identity follows.
+  await signedIn.goto('/');
+  await expect(signedIn.getByRole('status')).toContainText('$400.00 over-delegated');
+});
+
+test('an account type can be corrected from the row menu', async ({ signedIn }) => {
+  await makeAccount('Mystery Account', 'asset', 40000n);
+
+  await signedIn.goto('/');
+  await signedIn.getByRole('button', { name: 'Options for Mystery Account' }).click();
+  await signedIn.getByLabel('Type of Mystery Account').selectOption('debt');
+
+  await expect(signedIn.getByRole('status')).toContainText('$400.00 over-delegated');
 });

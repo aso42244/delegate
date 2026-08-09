@@ -194,9 +194,6 @@ function AccountRow({ account }: { readonly account: AccountDto }): ReactNode {
       <div className="flex flex-wrap items-center gap-3">
         <div className="min-w-48 flex-1">
           <span className="text-ink">{account.name}</span>
-          <span className="ml-2 rounded bg-surface-2 px-1.5 py-0.5 text-label font-semibold text-muted">
-            {account.type === 'asset' ? 'Asset' : 'Debt'}
-          </span>
           <span className="ml-1 rounded bg-surface-2 px-1.5 py-0.5 text-label font-semibold text-muted">
             {account.source}
           </span>
@@ -206,6 +203,24 @@ function AccountRow({ account }: { readonly account: AccountDto }): ReactNode {
           {/* Stale means the confirmed balance has aged past its own interval —
               said in words, not by colour alone. */}
           {stale && <span className="ml-2 text-label font-semibold text-warning">stale</span>}
+        </div>
+
+        {/* A discovered account's type is a guess, and a wrong one moves the
+            budget identity by twice the balance — §6.1 makes it the owner's to
+            override. */}
+        <div className="w-28">
+          <label className="sr-only" htmlFor={`type-${account.id}`}>
+            Type of {account.name}
+          </label>
+          <select
+            id={`type-${account.id}`}
+            value={account.type}
+            onChange={(event) => update.mutate({ type: event.target.value as 'asset' | 'debt' })}
+            className="w-full rounded-lg border border-line bg-canvas px-2 py-1 text-quiet text-ink"
+          >
+            <option value="asset">Asset</option>
+            <option value="debt">Debt</option>
+          </select>
         </div>
 
         <div className="w-40 text-right">

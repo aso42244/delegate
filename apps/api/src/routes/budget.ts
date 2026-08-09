@@ -96,6 +96,7 @@ function presentRow(row: BudgetRow): Record<string, unknown> {
     isUtility: row.isUtility,
     notes: row.notes,
     source: row.source,
+    type: row.type,
     inBudget: row.inBudget,
     inNetWorth: row.inNetWorth,
     needsReview: row.needsReview,
