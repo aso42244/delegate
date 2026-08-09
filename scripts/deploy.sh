@@ -13,7 +13,7 @@ set -eu
 #   * Resolves the tag you asked for to a **digest**, and runs that. A tag is a
 #     moving pointer; a digest is the artefact. This is what makes a deploy
 #     reproducible and a rollback a one-line change. See ADR 012.
-#   * **Verifies** that the digest was built by this repository's workflow before
+#   * **Verifies** that the digest was signed by this repository's workflow before
 #     starting it. The image gets the database and the bank feed credential; the
 #     question "is this the image my repository built?" deserves an answer better
 #     than a tag.
@@ -24,7 +24,9 @@ set -eu
 # Nothing here contains a secret, and nothing here writes one.
 
 REPO_IMAGE='ghcr.io/aso42244/delegate'
-WORKFLOW_IDENTITY='https://github.com/aso42244/delegate/.github/workflows/ci.yml@refs/'
+# The certificate identity cosign checks: this repository's CI workflow, on any
+# ref it publishes from. Anchored at both ends so it cannot match a longer name.
+WORKFLOW_IDENTITY='^https://github\.com/aso42244/delegate/\.github/workflows/ci\.yml@refs/.+$'
 OIDC_ISSUER='https://token.actions.githubusercontent.com'
 
 usage() {
@@ -179,20 +181,21 @@ MISSING
     exit 1
   fi
 
-  echo 'Verifying build provenance …'
-  # Keyless: the identity is the workflow itself, proved through the Sigstore
-  # transparency log. There is no key for anyone to hold, leak, or rotate.
-  if ! cosign verify-attestation \
-    --type slsaprovenance \
+  echo 'Verifying the signature …'
+  # Keyless: the identity being checked is the workflow itself, certified through
+  # the Sigstore transparency log. There is no key for anyone to hold, leak or
+  # rotate. The identity regexp pins it to this repository's CI workflow, so a
+  # signature from any other workflow — or any other repository — fails.
+  if ! cosign verify \
     --certificate-oidc-issuer "$OIDC_ISSUER" \
-    --certificate-identity-regexp "^${WORKFLOW_IDENTITY}" \
+    --certificate-identity-regexp "$WORKFLOW_IDENTITY" \
     "$PINNED" >/dev/null 2>&1; then
-    echo 'error: provenance did not verify.' >&2
+    echo 'error: the signature did not verify.' >&2
     echo '       This image does not demonstrably come from this repository.' >&2
     echo '       Not starting it.' >&2
     exit 1
   fi
-  echo '  → built by this repository.'
+  echo '  → signed by this repository’s workflow.'
 fi
 
 # --- Pin it, so what runs is what was verified -----------------------------

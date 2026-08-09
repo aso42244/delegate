@@ -172,10 +172,8 @@ jobs:
       contents: read
       packages: write
       # Sigstore keyless signing: the workflow proves its own identity to the
-      # transparency log, so provenance can be verified later without a key
-      # anybody has to hold or rotate.
+      # transparency log, so there is no signing key to hold or rotate.
       id-token: write
-      attestations: write
 
     steps:
       - uses: actions/checkout@v5
@@ -290,14 +288,6 @@ jobs:
           provenance: mode=max
           sbom: true
 
-      - name: Attest what was built
-        if: github.event_name == 'push'
-        uses: actions/attest-build-provenance@v2
-        with:
-          subject-name: ${{ steps.tags.outputs.image }}
-          subject-digest: ${{ steps.publish.outputs.digest }}
-          push-to-registry: true
-
       # The digest is what actually gets deployed, so it is printed where a human
       # can find it rather than left to be dug out of the registry.
       - name: Report the digest
@@ -327,3 +317,25 @@ jobs:
           name: delegate-image
           path: delegate-image.tar.gz
           retention-days: 14
+
+      # Signed through Sigstore rather than GitHub's attestation store, which is
+      # unavailable to user-owned private repositories — it asks you to make the
+      # repository public, which is not a trade this project will make. Sigstore
+      # is the better dependency regardless: the proof does not hinge on a
+      # GitHub plan tier, and the signature lands in the same registry as the
+      # image.
+      - name: Install cosign
+        if: github.event_name == 'push'
+        uses: sigstore/cosign-installer@v3
+
+      - name: Sign the image
+        if: github.event_name == 'push'
+        env:
+          DIGEST: ${{ steps.publish.outputs.digest }}
+          IMAGE: ${{ steps.tags.outputs.image }}
+        run: |
+          # Keyless: the workflow's own OIDC identity is what gets certified, so
+          # there is no signing key for anyone to hold, leak or rotate. The
+          # certificate records which repository, workflow and ref produced this,
+          # which is exactly what deploy.sh checks before starting it.
+          cosign sign --yes "${IMAGE}@${DIGEST}"
