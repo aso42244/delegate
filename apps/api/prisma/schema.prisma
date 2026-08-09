@@ -122,6 +122,7 @@ model User {
 
   @@index([archivedAt])
   @@map("users")
+  insightLayouts InsightLayout[]
 }
 
 // Sessions live in Postgres rather than in process memory: an in-memory store
@@ -523,6 +524,27 @@ model SyncRun {
 // Daily close prices, so a historical net worth point uses the price that was
 // true on that date. `isClose` distinguishes the settled daily close from the
 // most recent intraday spot reading for the same day.
+/// Which Insights widgets a person has chosen, and in what order.
+///
+/// Per user, because §9.4 says the layout persists per user and two people
+/// looking at one budget can want different things from it. The widget is a
+/// string key into a fixed catalog in code rather than a foreign key: the
+/// catalog is deliberately not user-extensible, so a table would only be a
+/// second place for the list to disagree with itself.
+model InsightLayout {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  widgetKey String   @map("widget_key")
+  position  Int
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, widgetKey])
+  @@index([userId, position])
+  @@map("insight_layouts")
+}
+
 model BitcoinPrice {
   id         String   @id @default(uuid()) @db.Uuid
   priceDate  DateTime @map("price_date") @db.Date

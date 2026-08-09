@@ -61,6 +61,9 @@ export const api = {
   get: <T>(path: string): Promise<T> => request<T>('GET', path),
   post: <T>(path: string, body?: unknown): Promise<T> => request<T>('POST', path, body),
   patch: <T>(path: string, body?: unknown): Promise<T> => request<T>('PATCH', path, body),
+  // PUT where the whole resource is replaced — the Insights layout is an
+  // ordered set, and a partial update would leave positions nobody chose.
+  put: <T>(path: string, body?: unknown): Promise<T> => request<T>('PUT', path, body),
 };
 
 // --- Shapes the server returns -------------------------------------------

@@ -19,6 +19,7 @@ import { ReconcileSection } from './pages/settings/Reconcile.jsx';
 import { SettingsLayout } from './pages/settings/SettingsLayout.jsx';
 import { SyncSection } from './pages/settings/Sync.jsx';
 import { Transactions } from './pages/Transactions.jsx';
+import { Insights } from './pages/Insights.jsx';
 import { Utilities } from './pages/Utilities.jsx';
 import { SignIn } from './pages/SignIn.jsx';
 
@@ -37,15 +38,6 @@ function useAppName(): string {
     staleTime: Infinity,
   });
   return query.data?.appName ?? 'Delegate';
-}
-
-function Placeholder({ title, note }: { title: string; note: string }): ReactNode {
-  return (
-    <div>
-      <h1 className="text-page font-bold text-ink">{title}</h1>
-      <p className="mt-1 text-quiet text-muted">{note}</p>
-    </div>
-  );
 }
 
 /** Everything behind a session, wrapped in the shell. */
@@ -101,10 +93,7 @@ export function App(): ReactNode {
           <Route index element={<MainBudget />} />
           <Route path="transactions" element={<Transactions />} />
           <Route path="utilities" element={<Utilities />} />
-          <Route
-            path="insights"
-            element={<Placeholder title="Insights" note="Phase 2: needs categorized history." />}
-          />
+          <Route path="insights" element={<Insights />} />
           <Route path="settings" element={<SettingsLayout />}>
             {/* Sync is the landing section: it is the one that has to work
                 before anything else on this page means anything. */}
