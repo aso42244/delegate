@@ -106,6 +106,20 @@ Built and working:
 - Docker image, Compose for the NAS, nightly `pg_dump`, and a restore path proven
   by destroying data and recovering it
 
+### Known gaps to fix
+
+1. **An account's type cannot be changed from the UI.** `PATCH /api/accounts/:id`
+   accepts `type` and an integration test covers it, but neither Settings →
+   Accounts nor the asset/debt row menu offers a control. §6.1 says the owner can
+   override a guessed type and §9.5 lists "asset or debt" among the Accounts
+   settings, so this is an omission rather than a decision. Found by the owner on
+   his first real sync, 9 Aug 2026. Nothing was mistyped, so it was not urgent.
+2. **The README told the owner to use a fine-grained GitHub token for `ghcr.io`.**
+   It does not work: GitHub's documentation states that Packages only supports a
+   **classic** token, and login fails with `denied: denied`. Corrected wording is
+   needed in the deployment section — a classic token with `read:packages` only,
+   and an expiry.
+
 ### Phase 2b — waiting on real data
 
 Nothing further can be built honestly until the owner has deployed, synced and
