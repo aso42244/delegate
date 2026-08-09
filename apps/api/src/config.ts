@@ -46,6 +46,14 @@ const environmentSchema = z.object({
   SIMPLEFIN_SYNC_CRON: z.string().default('0 * * * *'),
   SIMPLEFIN_BACKFILL_MONTHS: z.coerce.number().int().positive().max(24).default(12),
 
+  // Attempts allowed per address per window on the routes that verify a
+  // credential. Configurable so the test suites — which sign in hundreds of
+  // times from one address — can raise it, while a dedicated test lowers it and
+  // proves the limit actually bites. Ten in five minutes is generous for two
+  // people and useless for a guessing loop.
+  AUTH_RATE_LIMIT_MAX: z.coerce.number().int().positive().max(100_000).default(10),
+  AUTH_RATE_LIMIT_WINDOW: z.string().default('5 minutes'),
+
   // Bitcoin is held as a quantity; its worth is that quantity times the price on
   // the date being shown. Both endpoints are keyless and free, and hourly
   // polling sits far inside what either asks for. Offset from the hour so it

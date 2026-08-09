@@ -11,6 +11,7 @@ import {
   type PublicUser,
 } from '../domain/users.js';
 import { requireSession, type RequestUser } from '../plugins/auth.js';
+import { authRateLimit } from '../plugins/security.js';
 import { pruneExpiredSessions } from '../plugins/session-store.js';
 
 /** Sign-in, sign-out, and first-run setup. */
@@ -37,6 +38,9 @@ function presentUser(user: PublicUser | RequestUser): Record<string, unknown> {
 }
 
 export const authRoutes: FastifyPluginCallback = (fastify, _options, done) => {
+  // Built at registration from configuration rather than a constant, so the
+  // limit can be raised for a test suite that signs in hundreds of times.
+  const rateLimit = authRateLimit(fastify.config);
   /**
    * Tells the login screen whether to offer sign-in or first-run setup. Public
    * by necessity — it is what an unauthenticated browser asks first — and it
@@ -47,7 +51,9 @@ export const authRoutes: FastifyPluginCallback = (fastify, _options, done) => {
   }));
 
   /** Creates the first account, which becomes Super Admin, and signs it in. */
-  fastify.post('/api/auth/setup', async (request, reply) => {
+  // Throttled: this is the route that mints the Super Admin, and before the
+  // first account exists it is unauthenticated by necessity.
+  fastify.post('/api/auth/setup', { config: { rateLimit } }, async (request, reply) => {
     const { username, password } = credentialsSchema.parse(request.body);
     const user = await createFirstUser(prisma, { username, password });
 
@@ -59,7 +65,12 @@ export const authRoutes: FastifyPluginCallback = (fastify, _options, done) => {
     return reply.code(201).send({ user: presentUser(user) });
   });
 
-  fastify.post('/api/auth/login', async (request, reply) => {
+  /**
+   * The route the rate limit exists for. Nothing else throttled password
+   * guessing beyond the ~50 ms an argon2id hash costs — ADR 007 names that as
+   * the strongest reason this application must not leave the LAN.
+   */
+  fastify.post('/api/auth/login', { config: { rateLimit } }, async (request, reply) => {
     const { username, password } = credentialsSchema.parse(request.body);
     const user = await authenticate(prisma, username, password);
 
@@ -115,7 +126,8 @@ export const authRoutes: FastifyPluginCallback = (fastify, _options, done) => {
    */
   fastify.post(
     '/api/auth/change-password',
-    { preHandler: [requireSession] },
+    // Verifies the current password, so it is a guessing surface too.
+    { preHandler: [requireSession], config: { rateLimit } },
     async (request, reply) => {
       const { currentPassword, newPassword } = changePasswordSchema.parse(request.body);
       const user = request.currentUser!;

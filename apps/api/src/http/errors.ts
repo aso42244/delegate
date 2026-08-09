@@ -70,6 +70,27 @@ export function errorHandler(
 
   const status = 'statusCode' in error && error.statusCode ? error.statusCode : 500;
 
+  /**
+   * Rate limiting, which arrives as a thrown error rather than a domain rule.
+   * Given its own branch so the body carries a stable `too_many_requests` code
+   * — the generic `bad_request` below would tell a caller nothing about why
+   * waiting is the remedy.
+   *
+   * The message is identical whatever was attempted: a refusal that differed
+   * for a real username would hand back exactly what the uniform login failure
+   * is designed to withhold.
+   */
+  if (status === 429) {
+    request.log.warn({ ip: request.ip, url: request.url }, 'rate limit reached');
+    void reply.code(429).send({
+      error: {
+        code: 'too_many_requests',
+        message: 'Too many attempts. Wait a few minutes and try again.',
+      },
+    } satisfies ErrorBody);
+    return;
+  }
+
   if (status < 500) {
     void reply.code(status).send({
       error: { code: 'bad_request', message: error.message },
