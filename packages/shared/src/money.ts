@@ -275,3 +275,55 @@ export function bitcoinValueCents(sats: Cents, priceCentsPerBitcoin: Cents): Cen
   // + half the divisor before truncating: rounds .5 away from zero.
   return sign * ((magnitude + SATS_PER_BITCOIN / 2n) / SATS_PER_BITCOIN);
 }
+
+/**
+ * Reads a quantity of Bitcoin as satoshis: `0.05` becomes `5_000_000`.
+ *
+ * Eight decimal places exactly, because that is what a satoshi is. A ninth is
+ * rejected rather than rounded — the same rule as a third decimal place on a
+ * dollar amount, and for the same reason: silently discarding precision in
+ * financial software is worse than saying the input is wrong.
+ */
+const BITCOIN_PATTERN = /^(\d*)(?:\.(\d*))?$/;
+
+export function parseBitcoin(input: string): bigint {
+  const text = input.trim().replace(/,/g, '');
+  if (text === '') throw new MoneyParseError(input, 'it is empty');
+
+  const match = BITCOIN_PATTERN.exec(text);
+  if (!match) throw new MoneyParseError(input, 'it is not a quantity of Bitcoin');
+
+  const whole = match[1] ?? '';
+  const fraction = match[2] ?? '';
+  if (whole === '' && fraction === '') throw new MoneyParseError(input, 'it has no digits');
+  if (fraction.length > 8) {
+    throw new MoneyParseError(input, 'Bitcoin cannot be divided finer than one satoshi');
+  }
+
+  return BigInt(whole === '' ? '0' : whole) * SATS_PER_BITCOIN + BigInt(fraction.padEnd(8, '0'));
+}
+
+export function tryParseBitcoin(
+  input: string,
+): { ok: true; value: bigint } | { ok: false; error: string } {
+  try {
+    return { ok: true, value: parseBitcoin(input) };
+  } catch (error) {
+    if (error instanceof MoneyParseError) return { ok: false, error: error.message };
+    throw error;
+  }
+}
+
+/** The full eight places, for prefilling a field so it round-trips exactly. */
+export function formatBitcoinForInput(sats: bigint): string {
+  const whole = sats / SATS_PER_BITCOIN;
+  const fraction = sats % SATS_PER_BITCOIN;
+  return `${whole}.${fraction.toString().padStart(8, '0')}`;
+}
+
+/** For display: trailing zeros trimmed, but never to a bare integer. */
+export function formatBitcoin(sats: bigint): string {
+  const full = formatBitcoinForInput(sats);
+  const trimmed = full.replace(/0+$/, '');
+  return trimmed.endsWith('.') ? `${trimmed}0` : trimmed;
+}

@@ -15,6 +15,7 @@ const SECTIONS = [
   { to: 'delegations', label: 'Delegations' },
   { to: 'groupings', label: 'Groupings' },
   { to: 'rules', label: 'Rules' },
+  { to: 'bitcoin', label: 'Bitcoin & Property' },
   { to: 'budget', label: 'Budget' },
   { to: 'reconcile', label: 'Reconcile' },
   { to: 'users', label: 'Users' },
