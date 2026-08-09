@@ -204,7 +204,7 @@ TOTP, passkeys and rate limiting are Phase 3.
    ```
    `deploy.sh` refuses to run if this is wrong.
 5. **Install `cosign`** — one static binary, used to check that an image was
-   built by this repository before it is started:
+   signed by this repository's workflow before it is started:
    ```bash
    sudo curl -fsSL -o /usr/local/bin/cosign \
      https://github.com/sigstore/cosign/releases/latest/download/cosign-linux-amd64
@@ -243,9 +243,11 @@ More than `docker compose up -d`, for three reasons:
 - It resolves the tag to a **digest** and runs that, recording it in `.env` as
   `APP_IMAGE`. A tag is a moving pointer; a digest is the artefact. A later bare
   `docker compose up -d` then starts the same image rather than drifting.
-- It **verifies build provenance** before starting anything, and refuses if it
-  cannot. This image is handed the database and the bank feed credential, so
-  "did my repository build this?" is worth answering properly.
+- It **verifies the signature** before starting anything, and refuses if it
+  cannot. CI signs each published digest through Sigstore, keyed to the workflow
+  itself rather than to a key anyone holds. This image is handed the database and
+  the bank feed credential, so "did my repository build this?" is worth answering
+  properly.
 - It waits for the **health endpoint**. A container that is "up" is not
   necessarily one that is serving: migrations run at start, and a failure there
   leaves a process that exits seconds later.

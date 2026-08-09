@@ -36,13 +36,32 @@ digest is the artefact. This makes a deploy reproducible, makes a rollback a
 one-line edit to a previous digest, and means a re-run of the same command
 cannot quietly pick up a different image.
 
-**Build provenance is attested at publish time and verified before start.** The
-publish step emits SLSA provenance, and the deploy script verifies with `cosign`
-that the digest it is about to run was built by this repository's workflow, from
-`main` or a tag. Verification is required: if `cosign` is absent the script says
-how to install it and stops, rather than continuing unverified. `--skip-verify`
-exists for the case where that is genuinely wanted, and leaves a trace in shell
-history.
+**The image is signed at publish time and verified before start.** The publish
+step emits SLSA provenance through BuildKit and then signs the digest with
+`cosign`, using Sigstore keyless signing — the workflow's own OIDC identity is
+what gets certified, so there is no signing key for anyone to hold, leak or
+rotate. The deploy script verifies that signature against this repository's CI
+workflow identity before starting anything.
+
+Verification is required: if `cosign` is absent the script says how to install it
+and stops, rather than continuing unverified. `--skip-verify` exists for the case
+where that is genuinely wanted, and leaves a trace in shell history.
+
+**Signed through Sigstore rather than GitHub's attestation store.** The first
+implementation used `actions/attest-build-provenance`, and it failed on the first
+real run:
+
+> Failed to persist attestation: Feature not available for user-owned private
+> repositories. To enable this feature, please make this repository public.
+
+Making the repository public in order to obtain a security feature is not a trade
+this project will make. It could not have been found from a pull request either,
+because publishing is gated to `main` by design — the first execution of that
+path is necessarily the first merge.
+
+Signing directly through Sigstore is the better dependency regardless: the proof
+does not depend on a GitHub plan tier, the signature is stored in the same
+registry as the image, and verifying it needs nothing from GitHub at all.
 
 **A tarball route exists alongside it.** CI uploads a `docker save` artifact.
 Loading it needs no registry credential on the NAS at all, which is the right
@@ -56,9 +75,13 @@ possible, and for the day GHCR is unreachable.
   `docker login` stores it base64-encoded in `~/.docker/config.json`, which is
   encoding rather than encryption, so the deploy documentation says to log out
   afterwards and the tarball route avoids it entirely.
-- Verification needs `cosign` on the NAS — one static binary. That is the "more
-  work short-term" this decision accepted, and it buys the ability to answer
-  "is this the image my repository built?" with something better than a tag.
+- Verification needs `cosign` on the NAS — one static binary, and the same tool
+  CI signs with. That is the "more work short-term" this decision accepted, and
+  it buys the ability to answer "is this the image my repository built?" with
+  something better than a tag.
+- Verification reaches Sigstore's public transparency log, so a deploy needs
+  outbound internet. The NAS already needs it to pull the image at all, and the
+  tarball route remains for when it does not.
 - Pinning by digest means an update is deliberate. `deploy.sh` re-resolves the
   tag each run, so updating is still one command; but nothing changes underneath
   a running deployment on its own.
