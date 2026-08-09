@@ -19,6 +19,7 @@ import { ReconcileSection } from './pages/settings/Reconcile.jsx';
 import { SettingsLayout } from './pages/settings/SettingsLayout.jsx';
 import { SyncSection } from './pages/settings/Sync.jsx';
 import { Transactions } from './pages/Transactions.jsx';
+import { Utilities } from './pages/Utilities.jsx';
 import { SignIn } from './pages/SignIn.jsx';
 
 /**
@@ -99,10 +100,7 @@ export function App(): ReactNode {
         <Route element={<AppShell appName={appName} />}>
           <Route index element={<MainBudget />} />
           <Route path="transactions" element={<Transactions />} />
-          <Route
-            path="utilities"
-            element={<Placeholder title="Utilities" note="Phase 2: needs categorized history." />}
-          />
+          <Route path="utilities" element={<Utilities />} />
           <Route
             path="insights"
             element={<Placeholder title="Insights" note="Phase 2: needs categorized history." />}
