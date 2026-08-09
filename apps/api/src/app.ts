@@ -17,6 +17,7 @@ import { bitcoinRoutes } from './routes/bitcoin.js';
 import { budgetRoutes } from './routes/budget.js';
 import { transactionRoutes } from './routes/transactions.js';
 import { userRoutes } from './routes/users.js';
+import { utilityRoutes } from './routes/utilities.js';
 
 /**
  * Builds the Fastify instance.
@@ -66,6 +67,7 @@ export async function buildApp(config: AppConfig = getConfig()): Promise<Fastify
   await app.register(accountRoutes);
   await app.register(bitcoinRoutes);
   await app.register(notificationRoutes);
+  await app.register(utilityRoutes);
   await app.register(transactionRoutes);
   await app.register(budgetRoutes);
 
