@@ -74,18 +74,14 @@ These are non-negotiable. Violating one is a build failure.
 
 ## Where things stand
 
-**Phase 1 is complete and tagged `v0.1.0-phase1`.** Phase 2 is in progress,
-split into **2a** (buildable without real data) and **2b** (blocked on it).
-413 unit and integration tests, 92 end-to-end tests in a real browser.
+**Phase 1 is complete and tagged `v0.1.0-phase1`. Phase 2 is complete and tagged
+`v0.2.0-phase2`. Phase 3 is complete except TLS, passkeys and Cloudflare Access,
+which the owner explicitly deferred.** 352 unit and integration tests, 103
+end-to-end tests in a real browser.
 
-**Phase 2 is complete.** Every item in §12's Phase 2 list has shipped, including
-transaction pairing. What remains needs the owner's real data or his judgement
-against a populated page — see Phase 2b.
-
-**Phase 2a was complete first.** Everything that could be built and verified without
-real household data is done: Bitcoin, property and equity, notification banners,
-grouping colours and drag-to-move, Utilities, and Insights with all twelve
-widgets. **Phase 2b is blocked on real data** — see below.
+**It is deployed and running on the NAS**, serving on port 8088 from an image
+pulled by digest with its cosign signature verified. SimpleFIN is connected and
+eight accounts have synced.
 
 Built and working:
 
@@ -97,16 +93,24 @@ Built and working:
 - `recompute-balances` CLI, run by CI with `--check`
 - Auth: argon2id, sessions in PostgreSQL, first-run Super Admin, three roles,
   Admin-only user management
+- **Security (Phase 3):** rate limiting on every credential route, helmet with a
+  same-origin CSP, TOTP with recovery codes and an optional household-wide
+  requirement ([ADR 014](decisions/014-the-second-factor-step-uses-a-signed-challenge-not-a-session.md)),
+  CSRF as an origin check ([ADR 015](decisions/015-csrf-is-an-origin-check-not-a-token.md)),
+  session rotation on role change, and a dependency audit in CI
+  ([docs/dependencies.md](dependencies.md))
 - SimpleFIN sync: hourly, windowed backfill, idempotent, full pending lifecycle,
   run history; connect in-app from Settings with the credential encrypted at rest
 - Auto-categorization rules with apply-to-existing
+- Utilities, Insights with all twelve widgets, Bitcoin, property value and equity,
+  transaction pairing, grouping colours, notification banners
 - The API behind Transactions and Main Budget, including Delegate/Transfer/
   Adjust/Reconcile
-- The UI: app shell with collapsible sidebar, auth screens, the Main Budget page
-  with the per-row menu and inline grouping creation, the Transactions page
-  including manual entry and the split editor, and Settings → Sync, Accounts,
-  Delegations, Groupings, Rules, Budget, Users, Reconcile to Actual and Archived
-  — every section §9.5 asks for
+- The UI: app shell with collapsible sidebar, auth screens including the
+  second-factor step, the Main Budget page with the per-row menu and inline
+  grouping creation, the Transactions page including manual entry and the split
+  editor, and Settings → Sync, Accounts, Delegations, Groupings, Rules, Budget,
+  Users, Security, Reconcile to Actual and Archived
 - Docker image, Compose for the NAS, nightly `pg_dump`, and a restore path proven
   by destroying data and recovering it
 
@@ -117,43 +121,49 @@ Built and working:
    Accounts nor the asset/debt row menu offers a control. §6.1 says the owner can
    override a guessed type and §9.5 lists "asset or debt" among the Accounts
    settings, so this is an omission rather than a decision. Found by the owner on
-   his first real sync, 9 Aug 2026. Nothing was mistyped, so it was not urgent.
-2. **The README told the owner to use a fine-grained GitHub token for `ghcr.io`.**
-   It does not work: GitHub's documentation states that Packages only supports a
-   **classic** token, and login fails with `denied: denied`. Corrected wording is
-   needed in the deployment section — a classic token with `read:packages` only,
-   and an expiry.
+   his first real sync, 9 Aug 2026. He said to ship it later — nothing was
+   mistyped, so it is not urgent.
 
-### Phase 2b — waiting on real data
+### Waiting on the owner
 
-Nothing further can be built honestly until the owner has deployed, synced and
-reconciled:
+Nothing further can be built honestly until these happen. All of them need him at
+a keyboard with his own data in front of him.
 
-1. **Transaction pairing.** §12 is explicit that the matching heuristics need a
-   real corpus and that tuning them on synthetic data is guesswork. The mechanism
-   could be written; the thresholds cannot be chosen.
-2. **Judging Utilities, Insights and the grouping tints against a populated
-   page.** §12 anticipated this too. All three are correct and largely empty.
-3. **The NAS deploy**, which is what produces the data. The owner deferred it to
-   the end of Phase 2 and wants to run it at a keyboard.
+1. **Turn off "In budget" on `Frontier Bank Real Estate (5286)`.** The identity
+   reads about $234k off until then. It is a mortgage-adjacent account that
+   should count toward net worth but not the budget.
+2. **Re-deploy** to pick up everything since his deploy, then **enrol in
+   two-factor** at Settings → Security before turning on the household-wide
+   requirement. The requirement refuses to turn on while any account would be
+   locked out, so enrolment has to come first for both accounts.
+3. **The go-live sequence:** rules → bulk-apply → categorise → confirm pairs →
+   Reconcile. This is what produces the data everything below needs.
+4. **A DSM firewall rule** confining 8088 to the LAN. His to do; do not touch the
+   NAS directly.
+5. **Tuning transaction pairing thresholds**, and **judging Utilities, Insights
+   and the grouping tints against a populated page.** §12 anticipated all of
+   this: the mechanisms are built and correct, and the numbers cannot be chosen
+   on synthetic data.
+6. **Mark which delegations are utilities** and set their staleness intervals.
+7. **A TLS hostname decision**, which blocks passkeys — WebAuthn needs a secure
+   context, so nothing about passkeys can be built until it exists.
 
-### What is left in Phase 1
+### Deployment
 
-1. **Deploy to the NAS.** The image has never run on the DS220+. That is the one
-   remaining unknown; CI proves it boots on x86_64 Linux against real Postgres.
+CI publishes to GHCR from `main` and from tags. `scripts/deploy.sh` resolves a
+tag to a digest, verifies its cosign signature (failing closed), pins the digest
+in `.env` atomically and waits for `/health`. See
+[ADR 012](decisions/012-images-are-deployed-by-digest-with-verified-provenance.md).
 
-   The mechanism is now built and documented — CI publishes to GHCR from `main`
-   and tags, `scripts/deploy.sh` resolves a tag to a digest, verifies its build
-   provenance with `cosign`, pins it in `.env` and waits for health. See
-   [ADR 012](decisions/012-images-are-deployed-by-digest-with-verified-provenance.md).
-   **None of it has been run against the NAS.** The owner is away for a week and
-   is deliberately not doing this over a remote session; it wants a keyboard, and
-   the DSM-side work (firewall rule confining the port to the LAN) is his.
+This has been run against the DS220+ successfully. Two things cost the owner time
+and are worth knowing: `scp` to DSM needs `-O`, and `ghcr.io` login needs a
+**classic** personal access token — GitHub Packages does not accept fine-grained
+tokens, and the failure reads only `denied: denied`.
 
-Then Phases 2 (Utilities, Insights, Bitcoin, property, pairing, colours,
-notifications), 3 (security hardening — TLS first, then TOTP, passkeys, rate
-limiting, CSRF, Cloudflare Access; **nothing exposed until all of it ships**),
-and 4 (mobile, keyboard shortcuts, empty/loading/error states, accessibility).
+What is left overall: the rest of **Phase 3** — LAN TLS, then passkeys, then
+Cloudflare Tunnel behind Cloudflare Access — and **Phase 4** (mobile, keyboard
+shortcuts, empty/loading/error states, accessibility). **Nothing is exposed to
+the internet until all of Phase 3 ships**, and TLS is sequenced first within it.
 
 ---
 
