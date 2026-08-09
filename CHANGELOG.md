@@ -6,6 +6,13 @@ phase (`v0.1.0-phase1`, and so on).
 
 ## [Unreleased]
 
+Nothing yet. Phase 2 begins here: Utilities, Insights, Bitcoin, property values,
+transaction pairing, grouping colours and in-app notifications.
+
+## [0.1.0-phase1] — 2026-08-09
+
+Phase 1: everything needed to stop using the spreadsheet, on the LAN.
+
 ### Added
 
 - Repository scaffold: npm workspaces, TypeScript project references, type-aware
@@ -63,6 +70,54 @@ phase (`v0.1.0-phase1`, and so on).
 - 28 further tests covering ordering, the refusal to overwrite a categorization
   made by hand, regular-expression safety, and cache-versus-ledger agreement
   after a bulk apply.
+- Transactions API with search across description, account, delegation and
+  amount; filters for date, account, delegation, kind, uncategorized and pending;
+  splits with exact amounts or an even division; and bulk categorize.
+- Main Budget API: the read model with groupings and totals, inline creation and
+  editing, and Delegate with preview and 12-hour undo, Transfer, manual
+  adjustment and Reconcile to Actual.
+- The web application: app shell with a collapsible sidebar, authentication
+  screens, first-run Super Admin creation, and the design tokens from
+  `docs/design.md`.
+- The Main Budget page — three sections, inline creation, click-to-edit money
+  cells, the identity banner, Delegate with its confirmation and undo bar, and
+  Transfer.
+- The Transactions page: the uncategorized queue, a keyboard-driven delegation
+  type-ahead, search, filters and bulk categorize.
+- SimpleFIN connection from Settings, with the access URL encrypted at rest
+  (AES-256-GCM) and taking precedence over the environment variable.
+- Manual transaction entry, and a split editor that shows the remainder as
+  amounts are typed and refuses to save until the parts sum to the whole.
+- `GET /api/accounts`, since the Main Budget read model deliberately carries only
+  in-budget accounts and a manual transaction may belong to an off-budget one.
+- The per-row menu on the Main Budget: rename, the utility toggle, a note,
+  manual adjustment, per-line history, move to grouping, and archive. A blocked
+  archive offers Adjust and Transfer inline.
+- Per-delegation history — the only place `adjust` events are ever visible,
+  since the transaction journal exists for categorization rather than auditing.
+- Inline grouping creation on the Main Budget.
+- Settings, one section per page: Sync, Accounts, Delegations, Groupings, Rules,
+  Budget, Users, Reconcile and Archived.
+- **Reconcile to Actual** — every delegation with its computed balance and an
+  editable actual, committed in one batch. A line left blank is not touched, so
+  it can be done in several sittings. The first commit is recorded as the go-live
+  date.
+- Settings → Budget: the identity tolerance and the undo window, both bounded,
+  with the derived warning and danger thresholds stated on screen.
+- Account management: create a manual account, edit it, and archive or restore
+  it. A balance is editable only on a manual account, and an in-budget account
+  holding money refuses to archive.
+- The asset and debt row menu, sharing its mechanics with the delegation menu.
+- Settings → Archived, backed by a new `GET /api/archived`.
+- Settings → Rules with reordering, and apply-to-existing behind its preview.
+- Settings → Users: create, change role, reset password, archive and restore,
+  mirroring the server's Super Admin immunity rather than reimplementing it.
+- Container images published to GHCR from `main` and version tags, with SLSA
+  build provenance attested through Sigstore.
+- `scripts/deploy.sh` — one SSH command that resolves a tag to a digest, verifies
+  its provenance, pins it, and waits for the health endpoint.
+- 70 end-to-end tests in a real browser covering the budget, transactions, manual
+  entry and splits, both row menus, reconciliation, accounts, settings and rules.
 
 ### Fixed
 
@@ -83,3 +138,27 @@ phase (`v0.1.0-phase1`, and so on).
 - Integration test files ran concurrently against one database despite
   `fileParallelism: false`, which is a root-level Vitest option and is ignored
   inside a project. Replaced with a single fork for that project.
+- A missing hashed asset returned `index.html` with a 200 and `text/html`,
+  producing a blank page and a MIME error that pointed nowhere near the cause.
+  End-to-end tests now assert content type rather than status.
+- `GET /api/rules/preview` read its `includeCategorized` flag with `Boolean()`,
+  and `Boolean("false")` is `true` — so asking for the safe preview returned the
+  count for the mode that overwrites categorizations made by hand. That number is
+  read immediately before deciding whether to rewrite a year of history.
+- Reconcile never stamped the go-live date: the domain accepted one and the route
+  never passed it, so `budget_settings.go_live_at` could not be set by any path
+  through the application.
+- `npm run typecheck` did not cover the web application at all — the root
+  TypeScript project referenced only `packages/shared` and `apps/api`, so type
+  errors in `apps/web` surfaced only at build time. Adding it found two real
+  ones, including a query function receiving TanStack Query's context object as
+  its first argument.
+- A `<label>` wrapping its textarea took its accessible text from everything it
+  contained, so a filled-in note field could no longer be found by its own label.
+  Replaced with a `TextArea` primitive wiring label and control by `htmlFor`.
+- Two end-to-end tests fired a mutation and immediately navigated away, so the
+  next page rendered mid-write and the assertion then polled a static DOM. They
+  passed for months and failed only on a slow first run after a cold start.
+- The container image was built by CI and never published, while the Compose file
+  pointed at `ghcr.io/aso42244/delegate:latest`. The documented first deploy
+  would have failed at the pull.
