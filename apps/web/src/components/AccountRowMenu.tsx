@@ -231,6 +231,24 @@ export function AccountRowMenu({
               </button>
             )}
 
+            {/* A sync guesses the type from the institution and account name.
+                A wrong guess moves the identity by twice the balance, so it has
+                to be correctable from here as well as from Settings. */}
+            <div className={ITEM_CLASS}>
+              <span>Type</span>
+              <select
+                value={row.type ?? 'asset'}
+                onChange={(event) =>
+                  update.mutate({ type: event.target.value as 'asset' | 'debt' })
+                }
+                aria-label={`Type of ${row.name}`}
+                className="rounded border border-line bg-canvas px-1 py-0.5 text-quiet text-ink"
+              >
+                <option value="asset">Asset</option>
+                <option value="debt">Debt</option>
+              </select>
+            </div>
+
             <div className={ITEM_CLASS}>
               <span>In budget</span>
               <Toggle

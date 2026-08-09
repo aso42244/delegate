@@ -24,6 +24,8 @@ export interface BudgetRow {
   readonly notes: string | null;
   /** Assets and debts only. */
   readonly source: string | null;
+  /** Assets and debts only; null for a delegation, which is neither. */
+  readonly type: 'asset' | 'debt' | null;
   readonly inBudget: boolean;
   readonly inNetWorth: boolean;
   readonly needsReview: boolean;
@@ -169,6 +171,7 @@ export async function buildBudgetView(db: Db): Promise<BudgetView> {
     isUtility: false,
     notes: null,
     source: account.source,
+    type: account.type,
     inBudget: account.inBudget,
     inNetWorth: account.inNetWorth,
     needsReview: account.needsReview,
@@ -185,7 +188,8 @@ export async function buildBudgetView(db: Db): Promise<BudgetView> {
     isUtility: delegation.isUtility,
     notes: delegation.notes,
     source: null,
-    // Delegations are not accounts; these two are an account's business.
+    type: null,
+    // Delegations are not accounts; these are an account's business.
     inBudget: false,
     inNetWorth: false,
     needsReview: false,
