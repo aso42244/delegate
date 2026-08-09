@@ -76,7 +76,12 @@ These are non-negotiable. Violating one is a build failure.
 
 **Phase 1 is complete and tagged `v0.1.0-phase1`.** Phase 2 is in progress,
 split into **2a** (buildable without real data) and **2b** (blocked on it).
-404 unit and integration tests, 85 end-to-end tests in a real browser.
+413 unit and integration tests, 92 end-to-end tests in a real browser.
+
+**Phase 2a is complete.** Everything that could be built and verified without
+real household data is done: Bitcoin, property and equity, notification banners,
+grouping colours and drag-to-move, Utilities, and Insights with all twelve
+widgets. **Phase 2b is blocked on real data** — see below.
 
 Built and working:
 
@@ -100,6 +105,19 @@ Built and working:
   — every section §9.5 asks for
 - Docker image, Compose for the NAS, nightly `pg_dump`, and a restore path proven
   by destroying data and recovering it
+
+### Phase 2b — waiting on real data
+
+Nothing further can be built honestly until the owner has deployed, synced and
+reconciled:
+
+1. **Transaction pairing.** §12 is explicit that the matching heuristics need a
+   real corpus and that tuning them on synthetic data is guesswork. The mechanism
+   could be written; the thresholds cannot be chosen.
+2. **Judging Utilities, Insights and the grouping tints against a populated
+   page.** §12 anticipated this too. All three are correct and largely empty.
+3. **The NAS deploy**, which is what produces the data. The owner deferred it to
+   the end of Phase 2 and wants to run it at a keyboard.
 
 ### What is left in Phase 1
 

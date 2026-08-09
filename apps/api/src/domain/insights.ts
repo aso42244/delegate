@@ -23,6 +23,11 @@ export const INSIGHT_WIDGETS = [
   'utilities_vs_delegated',
   'income_vs_spending',
   'cycle_surplus',
+  // Reconstructed from the ledger rather than stored — ADR 013.
+  'net_worth_over_time',
+  'credit_card_trend',
+  'home_equity_over_time',
+  'bitcoin_value_over_time',
 ] as const;
 
 export type InsightWidget = (typeof INSIGHT_WIDGETS)[number];

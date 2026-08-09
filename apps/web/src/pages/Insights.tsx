@@ -21,7 +21,11 @@ type WidgetKey =
   | 'uncategorized_backlog'
   | 'utilities_vs_delegated'
   | 'income_vs_spending'
-  | 'cycle_surplus';
+  | 'cycle_surplus'
+  | 'net_worth_over_time'
+  | 'credit_card_trend'
+  | 'home_equity_over_time'
+  | 'bitcoin_value_over_time';
 
 const WIDGET_TITLES: Record<WidgetKey, string> = {
   asset_debt_composition: 'Assets and debts',
@@ -32,7 +36,19 @@ const WIDGET_TITLES: Record<WidgetKey, string> = {
   utilities_vs_delegated: 'Utilities: average against funded',
   income_vs_spending: 'Income against spending',
   cycle_surplus: 'Cycle surplus and deficit',
+  net_worth_over_time: 'Net worth over time',
+  credit_card_trend: 'Credit card balance',
+  home_equity_over_time: 'Home equity over time',
+  bitcoin_value_over_time: 'Bitcoin holdings over time',
 };
+
+/** The four widgets whose data is reconstructed rather than stored — ADR 013. */
+const SERIES_WIDGETS: readonly WidgetKey[] = [
+  'net_worth_over_time',
+  'credit_card_trend',
+  'home_equity_over_time',
+  'bitcoin_value_over_time',
+];
 
 const WINDOWS = [
   { value: '30d', label: '30 days' },
@@ -50,6 +66,19 @@ interface SpendingDto {
     color: string | null;
     spendCents: string;
   }[];
+}
+
+interface SeriesDto {
+  readonly points: readonly { date: string; valueCents: string }[];
+  readonly earliestKnown: string | null;
+  readonly truncated: boolean;
+}
+
+interface SeriesResponseDto {
+  readonly days: number;
+  readonly net_worth_over_time: SeriesDto | null;
+  readonly credit_card_trend: (SeriesDto & { name: string }) | null;
+  readonly home_equity_over_time: (SeriesDto & { name: string }) | null;
 }
 
 interface InsightsDto {
@@ -105,6 +134,54 @@ function Card({
       </header>
       {children}
     </section>
+  );
+}
+
+/**
+ * A line, drawn as an inline SVG. The value is stated as text beside it — a
+ * shape is not a number, and the number is what the owner is actually reading.
+ */
+function LineChart({ series }: { readonly series: SeriesDto }): ReactNode {
+  if (series.points.length < 2) {
+    return <p className="text-quiet text-muted">Not enough history to draw a line yet.</p>;
+  }
+
+  const values = series.points.map((point) => BigInt(point.valueCents));
+  const low = values.reduce((min, value) => (value < min ? value : min), values[0] ?? 0n);
+  const high = values.reduce((max, value) => (value > max ? value : max), values[0] ?? 0n);
+  const span = high - low;
+
+  const path = values
+    .map((value, index) => {
+      const x = (index / (values.length - 1)) * 100;
+      // Percentages are layout, never money.
+      const y = span === 0n ? 50 : 100 - Number(((value - low) * 100n) / span);
+      return `${index === 0 ? 'M' : 'L'}${x.toFixed(2)},${y.toFixed(2)}`;
+    })
+    .join(' ');
+
+  const latest = values[values.length - 1] ?? 0n;
+
+  return (
+    <>
+      <p className="money mb-2 text-hero font-bold text-ink">{formatCents(latest)}</p>
+      <svg viewBox="0 0 100 100" preserveAspectRatio="none" className="h-24 w-full" aria-hidden>
+        <path
+          d={path}
+          fill="none"
+          stroke="var(--color-accent)"
+          strokeWidth="1.5"
+          vectorEffect="non-scaling-stroke"
+        />
+      </svg>
+      <p className="mt-2 text-quiet text-muted">
+        {formatCents(low)} to {formatCents(high)}
+        {/* Where the history genuinely begins, said rather than implied by the
+            left edge of a line. */}
+        {series.earliestKnown && `, since ${new Date(series.earliestKnown).toLocaleDateString()}`}
+        {series.truncated && ' — the ledger does not reach further back.'}
+      </p>
+    </>
   );
 }
 
@@ -190,6 +267,15 @@ export function Insights(): ReactNode {
   }
 
   const insights = data.data;
+
+  // Reconstructing balances walks the ledger per account per day, so it is only
+  // fetched when a chart that needs it is actually on the page.
+  const needsSeries = chosen.some((key) => SERIES_WIDGETS.includes(key));
+  const series = useQuery({
+    queryKey: ['insights', 'series'],
+    queryFn: () => api.get<SeriesResponseDto>('/api/insights/series'),
+    enabled: needsSeries,
+  });
 
   function render(key: WidgetKey): ReactNode {
     if (!insights) return null;
@@ -295,6 +381,56 @@ export function Insights(): ReactNode {
               </li>
             ))}
           </ul>
+        );
+
+      case 'net_worth_over_time':
+        return series.data?.net_worth_over_time ? (
+          <LineChart series={series.data.net_worth_over_time} />
+        ) : (
+          <p className="text-quiet text-muted">
+            No history yet. This is rebuilt from your transactions, so it starts where they do.
+          </p>
+        );
+
+      case 'credit_card_trend':
+        return series.data?.credit_card_trend ? (
+          <>
+            <p className="mb-1 text-quiet text-muted">{series.data.credit_card_trend.name}</p>
+            <LineChart series={series.data.credit_card_trend} />
+          </>
+        ) : (
+          <p className="text-quiet text-muted">No card in the budget to trend.</p>
+        );
+
+      case 'home_equity_over_time':
+        return series.data?.home_equity_over_time ? (
+          <>
+            <p className="mb-1 text-quiet text-muted">{series.data.home_equity_over_time.name}</p>
+            <LineChart series={series.data.home_equity_over_time} />
+          </>
+        ) : (
+          <p className="text-quiet text-muted">
+            No property with a mortgage linked to it. Link one in Settings → Bitcoin &amp; Property.
+          </p>
+        );
+
+      case 'bitcoin_value_over_time':
+        return (
+          <>
+            {series.data?.net_worth_over_time ? (
+              <p className="text-quiet text-muted">
+                Bitcoin is valued at the price on each date and counted inside net worth above.
+              </p>
+            ) : (
+              <p className="text-quiet text-muted">No price history yet.</p>
+            )}
+            {/* Quantity history is not stored, so this is what today's holding
+                would have been worth — said rather than implied. */}
+            <p className="mt-2 text-quiet text-muted">
+              Historical quantities are not recorded, so a changed holding shows what today&rsquo;s
+              quantity would have been worth.
+            </p>
+          </>
         );
 
       case 'income_vs_spending':

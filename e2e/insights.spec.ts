@@ -71,3 +71,30 @@ test('says there is no cycle rather than showing an empty one', async ({ signedI
     signedIn.getByText('No Delegate press yet, so there is no cycle to report on.').first(),
   ).toBeVisible();
 });
+
+test('a rebuilt series says where the history actually begins', async ({ signedIn, api }) => {
+  const accountId = await makeAccount('Everyday Checking', 'asset', 300000n);
+  await api.post('/api/transactions', {
+    data: {
+      accountId,
+      amountCents: '-4210',
+      description: 'Whole Foods Market',
+      postedAt: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString(),
+    },
+  });
+
+  await signedIn.goto('/insights');
+
+  // The net worth chart is rebuilt from the ledger, so it begins where the
+  // transactions do — and says so rather than implying it with a line edge.
+  await expect(signedIn.getByRole('heading', { name: 'Net worth over time' })).toBeVisible();
+  await expect(signedIn.getByText(/does not reach further back/)).toBeVisible();
+});
+
+test('says what it cannot chart rather than drawing an empty box', async ({ signedIn }) => {
+  await signedIn.goto('/insights');
+
+  await expect(
+    signedIn.getByText('No property with a mortgage linked to it.', { exact: false }),
+  ).toBeVisible();
+});
