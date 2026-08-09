@@ -52,6 +52,9 @@ beforeAll(async () => {
       LOG_LEVEL: 'fatal',
       SESSION_SECRET: 'test-session-secret-at-least-32-characters-long',
       SESSION_COOKIE_SECURE: 'false',
+      // These suites sign in on every test from one address. The limit itself
+      // is proved in auth.test.ts, which builds an app with a low one.
+      AUTH_RATE_LIMIT_MAX: '100000',
     }),
   );
   await app.ready();

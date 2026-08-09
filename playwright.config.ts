@@ -66,6 +66,10 @@ export default defineConfig({
       // red when somebody else has an outage. Once a year, on a date no run
       // will hit.
       BITCOIN_PRICE_CRON: '0 0 1 1 *',
+      // The suite signs in on every test from one address. The limit itself is
+      // proved in the integration tests, against an app configured with a low
+      // one; here it would only throttle the tests.
+      AUTH_RATE_LIMIT_MAX: '100000',
     },
   },
 });

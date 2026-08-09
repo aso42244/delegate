@@ -4,6 +4,7 @@ import { getConfig, type AppConfig } from './config.js';
 import { errorHandler } from './http/errors.js';
 import { auth } from './plugins/auth.js';
 import { configPlugin } from './plugins/config.js';
+import { security } from './plugins/security.js';
 import { spa } from './plugins/spa.js';
 import { authRoutes } from './routes/auth.js';
 import { healthRoutes } from './routes/health.js';
@@ -57,6 +58,10 @@ export async function buildApp(config: AppConfig = getConfig()): Promise<Fastify
   // between a JSON 404 and the client-side routing fallback.
 
   await app.register(configPlugin, { config });
+  // Before the routes: the rate limiter has to be in place when they register
+  // their per-route limits, and the headers apply to every response including
+  // the SPA fallback.
+  await app.register(security, { config });
   await app.register(auth, { config });
   await app.register(healthRoutes);
   await app.register(appInfoRoutes);

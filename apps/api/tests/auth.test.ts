@@ -28,6 +28,9 @@ beforeAll(async () => {
       LOG_LEVEL: 'fatal',
       SESSION_SECRET: 'test-session-secret-at-least-32-characters-long',
       SESSION_COOKIE_SECURE: 'false',
+      // These suites sign in on every test from one address. The limit itself
+      // is proved in auth.test.ts, which builds an app with a low one.
+      AUTH_RATE_LIMIT_MAX: '100000',
     }),
   );
   await app.ready();
@@ -351,5 +354,98 @@ describe('temporary passwords', () => {
     });
 
     expect(sessionCookie(change.headers)).not.toBe(cookie);
+  });
+});
+
+/**
+ * The rate limit, proved against an app configured with a low one.
+ *
+ * Until this existed, nothing throttled password guessing beyond the ~50 ms an
+ * argon2id hash costs — roughly twenty attempts a second, forever. ADR 007 named
+ * that as the single strongest reason this application must not leave the LAN.
+ */
+describe('rate limiting the credential routes', () => {
+  let limited: FastifyInstance;
+
+  beforeAll(async () => {
+    limited = await buildApp(
+      loadConfig({
+        ...process.env,
+        NODE_ENV: 'test',
+        LOG_LEVEL: 'fatal',
+        SESSION_SECRET: 'test-session-secret-at-least-32-characters-long',
+        SESSION_COOKIE_SECURE: 'false',
+        AUTH_RATE_LIMIT_MAX: '3',
+        AUTH_RATE_LIMIT_WINDOW: '5 minutes',
+      }),
+    );
+    await limited.ready();
+  });
+
+  afterAll(async () => {
+    await limited.close();
+  });
+
+  it('stops a guessing loop after the configured number of attempts', async () => {
+    await limited.inject({ method: 'POST', url: '/api/auth/setup', payload: OWNER });
+
+    const statuses: number[] = [];
+    for (let attempt = 0; attempt < 6; attempt += 1) {
+      const response = await limited.inject({
+        method: 'POST',
+        url: '/api/auth/login',
+        payload: { username: OWNER.username, password: 'not-the-password' },
+      });
+      statuses.push(response.statusCode);
+    }
+
+    // The first few are ordinary rejections; the rest never reach the hash.
+    expect(statuses.filter((status) => status === 429).length).toBeGreaterThan(0);
+    expect(statuses[statuses.length - 1]).toBe(429);
+  });
+
+  /**
+   * The refusal must not become an oracle. A 429 that named the account, or
+   * differed for a real username, would hand back exactly what the uniform
+   * failure response is designed to withhold.
+   */
+  it('says nothing about whether the username exists', async () => {
+    const responses: string[] = [];
+    for (const username of ['definitely-not-a-user', OWNER.username]) {
+      for (let attempt = 0; attempt < 5; attempt += 1) {
+        const response = await limited.inject({
+          method: 'POST',
+          url: '/api/auth/login',
+          payload: { username, password: 'wrong' },
+        });
+        if (response.statusCode === 429) responses.push(response.body);
+      }
+    }
+
+    expect(responses.length).toBeGreaterThan(0);
+    expect(new Set(responses).size).toBe(1);
+    expect(responses[0]).not.toContain(OWNER.username);
+  });
+});
+
+describe('response headers', () => {
+  it('refuses to be framed, and confines what the page may load', async () => {
+    const response = await app.inject({ method: 'GET', url: '/api/auth/setup-state' });
+
+    const csp = response.headers['content-security-policy'];
+    expect(csp).toContain("frame-ancestors 'none'");
+    expect(csp).toContain("default-src 'self'");
+    expect(response.headers['x-content-type-options']).toBe('nosniff');
+    expect(response.headers['referrer-policy']).toBe('no-referrer');
+  });
+
+  /**
+   * HSTS is meaningless over plain http and actively harmful early: a browser
+   * that has seen it refuses http afterwards, which would lock the household
+   * out of their own LAN deployment. It arrives with TLS.
+   */
+  it('does not send HSTS while there is no TLS', async () => {
+    const response = await app.inject({ method: 'GET', url: '/api/auth/setup-state' });
+    expect(response.headers['strict-transport-security']).toBeUndefined();
   });
 });
