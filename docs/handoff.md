@@ -74,7 +74,7 @@ These are non-negotiable. Violating one is a build failure.
 
 ## Where things stand
 
-**Phase 1 is essentially complete.** 27 PRs merged. 317 unit and integration
+**Phase 1 is essentially complete.** 28 PRs merged. 317 unit and integration
 tests, 70 end-to-end tests in a real browser, all green.
 
 Built and working:
@@ -104,6 +104,14 @@ Built and working:
 
 1. **Deploy to the NAS.** The image has never run on the DS220+. That is the one
    remaining unknown; CI proves it boots on x86_64 Linux against real Postgres.
+
+   The mechanism is now built and documented — CI publishes to GHCR from `main`
+   and tags, `scripts/deploy.sh` resolves a tag to a digest, verifies its build
+   provenance with `cosign`, pins it in `.env` and waits for health. See
+   [ADR 012](decisions/012-images-are-deployed-by-digest-with-verified-provenance.md).
+   **None of it has been run against the NAS.** The owner is away for a week and
+   is deliberately not doing this over a remote session; it wants a keyboard, and
+   the DSM-side work (firewall rule confining the port to the LAN) is his.
 
 Then Phases 2 (Utilities, Insights, Bitcoin, property, pairing, colours,
 notifications), 3 (security hardening — TLS first, then TOTP, passkeys, rate

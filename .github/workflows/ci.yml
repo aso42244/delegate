@@ -3,6 +3,8 @@ name: CI
 on:
   push:
     branches: [main]
+    # A version tag publishes the image the NAS pulls.
+    tags: ['v*']
   pull_request:
 
 concurrency:
@@ -163,6 +165,18 @@ jobs:
   image:
     name: Container image
     runs-on: ubuntu-latest
+
+    # Only what publishing needs. `contents: read` is stated rather than left to
+    # the default so widening it later is a visible change.
+    permissions:
+      contents: read
+      packages: write
+      # Sigstore keyless signing: the workflow proves its own identity to the
+      # transparency log, so provenance can be verified later without a key
+      # anybody has to hold or rotate.
+      id-token: write
+      attestations: write
+
     steps:
       - uses: actions/checkout@v5
 
@@ -216,3 +230,100 @@ jobs:
           # The UI must be served too, not just the API: they ship in one image.
           curl -fsS http://localhost:8088/ | grep -q '<title>Delegate</title>'
           echo 'The interface is served by the same container.'
+
+      # --- Publishing -----------------------------------------------------
+      #
+      # Only from `main` and version tags, and never from a pull request. An
+      # unreviewed branch must not be able to produce something the NAS would
+      # pull and run.
+      #
+      # Two routes onto the NAS, deliberately. The registry is the ordinary one;
+      # the tarball needs no credential on the NAS at all, which matters while
+      # this is LAN-only and every credential on that machine is one more thing
+      # to protect.
+
+      - name: Sign in to the registry
+        if: github.event_name == 'push'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          # The workflow's own token, scoped by the permissions above. No
+          # long-lived secret is stored in the repository.
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Work out the tags
+        if: github.event_name == 'push'
+        id: tags
+        run: |
+          image=ghcr.io/${{ github.repository }}
+          # Lowercased: a registry reference must be lowercase, and a GitHub
+          # owner or repository name need not be.
+          image=$(echo "$image" | tr '[:upper:]' '[:lower:]')
+
+          if [ "${{ github.ref_type }}" = "tag" ]; then
+            # A tag is a release: it takes `latest`, which is what the Compose
+            # file defaults to, plus its own version.
+            echo "tags=$image:${{ github.ref_name }},$image:latest" >> "$GITHUB_OUTPUT"
+            echo "image=$image" >> "$GITHUB_OUTPUT"
+          else
+            # main is always deployable, but `latest` is reserved for tags so a
+            # NAS pull cannot pick up an untagged commit by accident.
+            echo "tags=$image:main,$image:${{ github.sha }}" >> "$GITHUB_OUTPUT"
+            echo "image=$image" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Publish it
+        if: github.event_name == 'push'
+        id: publish
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64
+          push: true
+          tags: ${{ steps.tags.outputs.tags }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          # Records how this image was built — which repository, which workflow,
+          # which commit. The deploy script refuses to start an image whose
+          # provenance does not say this repository. See ADR 012.
+          provenance: mode=max
+          sbom: true
+
+      - name: Attest what was built
+        if: github.event_name == 'push'
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-name: ${{ steps.tags.outputs.image }}
+          subject-digest: ${{ steps.publish.outputs.digest }}
+          push-to-registry: true
+
+      # The digest is what actually gets deployed, so it is printed where a human
+      # can find it rather than left to be dug out of the registry.
+      - name: Report the digest
+        if: github.event_name == 'push'
+        run: |
+          {
+            echo '### Image published'
+            echo
+            echo '```'
+            echo '${{ steps.tags.outputs.image }}@${{ steps.publish.outputs.digest }}'
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # The no-credential route. Downloaded from the run, copied to the NAS, and
+      # loaded with `docker load` — nothing to authenticate, nothing left at rest
+      # on the machine afterwards.
+      - name: Save a loadable tarball
+        if: github.event_name == 'push'
+        run: |
+          docker save delegate:ci | gzip > delegate-image.tar.gz
+          ls -lh delegate-image.tar.gz
+
+      - name: Upload the tarball
+        if: github.event_name == 'push'
+        uses: actions/upload-artifact@v4
+        with:
+          name: delegate-image
+          path: delegate-image.tar.gz
+          retention-days: 14

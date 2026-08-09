@@ -165,36 +165,104 @@ disagreement is a defect worth investigating, not routine maintenance. Add
 
 > Written so that someone who is not the owner could follow it.
 
-Container images are built by CI on x86_64 runners rather than locally, because a
-Mac would produce an arm64 image the NAS cannot run. See
-[ADR 005](docs/decisions/005-container-images-built-on-x86-64-ci.md).
+Images are built by CI on x86_64 runners rather than locally, because a Mac would
+produce an arm64 image the NAS cannot run
+([ADR 005](docs/decisions/005-container-images-built-on-x86-64-ci.md)). They are
+published from `main` and version tags only — never from a pull request — and are
+deployed **by digest with verified provenance**
+([ADR 012](docs/decisions/012-images-are-deployed-by-digest-with-verified-provenance.md)).
 
 The target is a DS220+ (Intel Celeron J4025, 2 cores, 6 GB) running DSM 7.3.2,
 sharing that hardware with DSM itself and the existing Sure container. Postgres
 memory settings are pinned explicitly in the Compose file rather than left at
 defaults, which assume a much larger machine.
 
+**This stays on the LAN until Phase 3 ships in full.** No port forward, no DSM
+reverse proxy, no QuickConnect. Phase 1 has no TLS and no rate limiting on
+sign-in, and that is acceptable _only_ under that condition — see
+[ADR 007](docs/decisions/007-argon2id-parameters-and-password-policy.md). TLS,
+TOTP, passkeys and rate limiting are Phase 3.
+
+### First deploy
+
 1. **Install Container Manager** from Package Center if it is not present.
-2. **Create two folders**, for example `/volume1/docker/delegate` for the project
-   and `/volume1/backups/delegate` for database dumps.
-3. **Copy `docker-compose.yml` and a `.env`** into the project folder. Set:
+2. **Create two folders** — for example `/volume1/docker/delegate` for the
+   project and `/volume1/backups/delegate` for database dumps.
+3. **Copy `docker-compose.yml`, the `scripts/` directory and a `.env`** into the
+   project folder. Set in `.env`:
    - `POSTGRES_PASSWORD` — a long random value
    - `SESSION_SECRET` — `openssl rand -base64 48`. It also encrypts the stored
      SimpleFIN credential, so changing it later means reconnecting SimpleFIN.
-   - `HOST_PORT` — defaults to `8088`. The container's own port is 3000 but that
-     is private to the compose network, so it cannot collide with another
-     container using 3000.
+   - `HOST_PORT` — defaults to `8088`. The container's own port is 3000, private
+     to the compose network, so it cannot collide with another container.
    - `BACKUP_DIR` — the dump folder from step 2
    - `APP_NAME` — whatever you want in the sidebar
-4. **Start it:**
+4. **Lock that file down.** It holds the database password and the key the
+   SimpleFIN credential is encrypted with:
    ```bash
-   sudo docker compose up -d
+   chmod 600 .env
    ```
-   Migrations are applied automatically on start.
-5. **Check health:** `curl http://<nas-address>:8088/health`
-6. **Open it** at `http://<nas-address>:8088` and create the first account, which
+   `deploy.sh` refuses to run if this is wrong.
+5. **Install `cosign`** — one static binary, used to check that an image was
+   built by this repository before it is started:
+   ```bash
+   sudo curl -fsSL -o /usr/local/bin/cosign \
+     https://github.com/sigstore/cosign/releases/latest/download/cosign-linux-amd64
+   sudo chmod +x /usr/local/bin/cosign
+   ```
+6. **Sign in to the registry**, using a **fine-grained** personal access token
+   scoped to this repository with `read:packages` and nothing else:
+
+   ```bash
+   docker login ghcr.io -u <github-username> --password-stdin
+   ```
+
+   Paste the token, then Ctrl-D. `docker login` stores it base64-encoded in
+   `~/.docker/config.json`, which is encoding rather than encryption — run
+   `docker logout ghcr.io` afterwards if you would rather not leave it there.
+
+   _Or skip steps 5 and 6 entirely_ by using the tarball route in step 7, which
+   needs no credential on the NAS at all.
+
+7. **Deploy**, over SSH from the project directory:
+   ```bash
+   sudo ./scripts/deploy.sh
+   ```
+   or, from a downloaded CI artifact:
+   ```bash
+   sudo ./scripts/deploy.sh --image-file /volume1/docker/delegate-image.tar.gz
+   ```
+8. **Open it** at `http://<nas-address>:8088` and create the first account, which
    becomes Super Admin.
-7. **Connect SimpleFIN** in Settings → Sync by pasting a setup token.
+9. **Connect SimpleFIN** in Settings → Sync by pasting a setup token.
+
+### What `deploy.sh` does
+
+More than `docker compose up -d`, for three reasons:
+
+- It resolves the tag to a **digest** and runs that, recording it in `.env` as
+  `APP_IMAGE`. A tag is a moving pointer; a digest is the artefact. A later bare
+  `docker compose up -d` then starts the same image rather than drifting.
+- It **verifies build provenance** before starting anything, and refuses if it
+  cannot. This image is handed the database and the bank feed credential, so
+  "did my repository build this?" is worth answering properly.
+- It waits for the **health endpoint**. A container that is "up" is not
+  necessarily one that is serving: migrations run at start, and a failure there
+  leaves a process that exits seconds later.
+
+### Later deploys, and rolling back
+
+The same command pulls the current image, re-verifies it, and restarts:
+
+```bash
+cd /volume1/docker/delegate && sudo ./scripts/deploy.sh
+```
+
+It prints the digest it replaced, and the exact command to go back to it:
+
+```bash
+sudo ./scripts/deploy.sh --digest sha256:…
+```
 
 ### Backups, and restoring from one
 
