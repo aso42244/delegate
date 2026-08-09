@@ -74,8 +74,9 @@ These are non-negotiable. Violating one is a build failure.
 
 ## Where things stand
 
-**Phase 1 is essentially complete.** 28 PRs merged. 317 unit and integration
-tests, 70 end-to-end tests in a real browser, all green.
+**Phase 1 is complete and tagged `v0.1.0-phase1`.** Phase 2 is in progress,
+split into **2a** (buildable without real data) and **2b** (blocked on it).
+404 unit and integration tests, 85 end-to-end tests in a real browser.
 
 Built and working:
 

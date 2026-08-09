@@ -7,6 +7,7 @@ import { configPlugin } from './plugins/config.js';
 import { spa } from './plugins/spa.js';
 import { authRoutes } from './routes/auth.js';
 import { healthRoutes } from './routes/health.js';
+import { insightRoutes } from './routes/insights.js';
 import { notificationRoutes } from './routes/notifications.js';
 import { ruleRoutes } from './routes/rules.js';
 import { settingsRoutes } from './routes/settings.js';
@@ -68,6 +69,7 @@ export async function buildApp(config: AppConfig = getConfig()): Promise<Fastify
   await app.register(bitcoinRoutes);
   await app.register(notificationRoutes);
   await app.register(utilityRoutes);
+  await app.register(insightRoutes);
   await app.register(transactionRoutes);
   await app.register(budgetRoutes);
 
