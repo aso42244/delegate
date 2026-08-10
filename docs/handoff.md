@@ -66,10 +66,14 @@ These are non-negotiable. Violating one is a build failure.
    resolvable so old transactions render `Grocery (archived)`.
 4. **No personal data or secrets in the repository.** `.env` is git-ignored;
    `APP_NAME` exists so a family name never lands in committed UI copy.
-5. **LAN only.** No Cloudflare Tunnel, no internet exposure, and do not document
-   any. The transport is plain http by decision
-   ([ADR 017](decisions/017-plain-http-is-the-default-and-tls-is-optional.md)),
-   which makes this constraint stricter rather than looser.
+5. **Reachable from outside only through a Cloudflare Tunnel**, never a port
+   forward, a DSM reverse proxy or QuickConnect. The transport to the origin is
+   plain http by decision
+   ([ADR 017](decisions/017-plain-http-is-the-default-and-tls-is-optional.md));
+   the tunnel encrypts everything that crosses the internet
+   ([ADR 018](decisions/018-a-proxy-is-trusted-only-when-configured.md),
+   [docs/remote-access.md](remote-access.md)). `TRUST_PROXY` must never be set
+   while the port is also reachable directly.
 6. **USD only.** No multi-currency, no selector.
 
 ---
@@ -170,10 +174,11 @@ What is left overall: **Phase 4** (mobile, keyboard shortcuts,
 empty/loading/error states, accessibility), and **Phase 5**, in which feature and
 bug requests arrive from a Notion database and are built automatically.
 
-**Nothing is exposed to the internet.** Plain http cannot satisfy the rule that
-nothing is exposed until Phase 3 holds in full, so exposure would mean reopening
-[ADR 017](decisions/017-plain-http-is-the-default-and-tls-is-optional.md) first,
-not merely opening a port.
+Exposure is now through a **Cloudflare Tunnel**, configured but not yet stood up
+by the owner. **Cloudflare Access was declined for now** and recorded as a future
+request, which means the sign-in page will be on the public internet: the rate
+limit, the second factor and argon2id are what stand in its place. Turning on the
+household-wide two-factor requirement matters more than it did.
 
 Phase 5 needs an ADR before it needs code. It creates an automated path from a
 text field someone typed into, to a merge on `main`. A request is **input, not an

@@ -24,6 +24,30 @@ import { userRoutes } from './routes/users.js';
 import { utilityRoutes } from './routes/utilities.js';
 
 /**
+ * Turns `TRUST_PROXY` into what Fastify wants.
+ *
+ * `false` unless configured. The reason this is opt-in rather than clever
+ * auto-detection: `X-Forwarded-For` is a header, and any client can send one.
+ * Trusting it while the application is also reachable directly means anyone can
+ * claim to be a different address on every request — which does not merely
+ * weaken the sign-in rate limit, it removes it, since each forged address gets
+ * its own fresh bucket.
+ *
+ * So it is only correct to turn this on when the application cannot be reached
+ * except through the proxy. That is a fact about the deployment, which the
+ * deployment has to state.
+ */
+function proxyTrust(value: string): boolean | string[] {
+  const trimmed = value.trim();
+  if (!trimmed) return false;
+  if (trimmed === 'true') return true;
+  return trimmed
+    .split(',')
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+}
+
+/**
  * Reads the TLS material, or returns nothing when none is configured.
  *
  * Read once at boot and held in memory. A certificate that vanished from disk
@@ -89,7 +113,7 @@ export async function buildApp(config: AppConfig = getConfig()): Promise<Fastify
     // failure can quote the id from the UI and have it match a log line.
     genReqId: (request) => request.headers['x-request-id']?.toString() ?? randomUUID(),
     requestIdHeader: 'x-request-id',
-    trustProxy: false,
+    trustProxy: proxyTrust(config.TRUST_PROXY),
     // Spread rather than set: `https: undefined` is not the same as absent to
     // Fastify's overloads, and plain http is the default (ADR 017).
     ...(https ? { https } : {}),
