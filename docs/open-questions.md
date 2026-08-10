@@ -51,18 +51,15 @@ history.
 
 ## Phase 3 — Security hardening
 
-- **Is LAN TLS still wanted, and if so under what hostname?** Passkeys are gone
-  ([ADR 016](decisions/016-passkeys-are-out-of-scope.md)), which removes the
-  reason TLS had to come first — but not the reason to have it. Over plain http
-  every password, every TOTP code and the session cookie itself are readable by
-  anything else on the network. Options are an internal CA, or a real domain with
-  DNS-01 certificates resolving to a private address.
+- ~~**Is LAN TLS still wanted, and if so under what hostname?**~~ **Answered.**
+  Plain http by default, with TLS available as a configured option —
+  [ADR 017](decisions/017-plain-http-is-the-default-and-tls-is-optional.md).
 - **Who holds the TOTP recovery codes, and where?** Mandatory 2FA on every account
   means a lost phone locks someone out of the household budget.
-- **Cloudflare Access policy** — which identity provider, and which email
-  addresses are allowed through the edge?
-- **Does the household want session expiry shorter than 7 days** once the app is
-  reachable from outside the LAN?
+- ~~**Cloudflare Access policy.**~~ Dropped with passkeys and internet exposure;
+  there is no edge to configure.
+- **Does the household want session expiry shorter than 7 days?** Seven days on a
+  LAN-only deployment is defensible; it would not be if that ever changed.
 
 ## Phase 4 — UI polish
 
@@ -71,3 +68,16 @@ history.
   the responsive work, so effort goes to the right screens.
 - **Keyboard shortcut scheme** — is there an existing muscle memory from the
   spreadsheet worth matching?
+
+## Phase 5 — Requests from Notion
+
+- **Who can approve a request, and is approval a person or a Notion property?**
+  The difference decides whether an attacker needs an account or a checkbox.
+- **What may an approved request touch?** A blanket "build and merge" includes
+  the authentication code, the migrations and the CI configuration itself. Some
+  boundary has to be drawn, and drawing it in the pipeline is the only place it
+  cannot be argued away by a persuasive request.
+- **What must CI prove before a merge, beyond what it proves today?** The current
+  suite is written against a human reading the diff. Nobody would be.
+- **What happens to a request that fails?** Silence, a comment back in Notion, or
+  a human in the loop — and whether a failed attempt can be retried indefinitely.

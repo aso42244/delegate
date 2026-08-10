@@ -238,6 +238,50 @@ jobs:
           curl -fsS http://localhost:8088/ | grep -q '<title>Delegate</title>'
           echo 'The interface is served by the same container.'
 
+      # Plain http is the default (ADR 017), so the TLS path is the one nobody
+      # exercises by accident. The same image, the same database, one certificate
+      # and two environment variables — if this ever stops working, it should
+      # stop here rather than on the NAS.
+      - name: Start the same image over TLS and check its health
+        run: |
+          docker rm -f app
+
+          # The runner cannot chown to another uid without root, and the script
+          # says so rather than failing silently. This is the same step the NAS
+          # needs, which is why the script prints it.
+          sudo ./scripts/make-tls-cert.sh 127.0.0.1 localhost
+
+          docker run -d --name app-tls --network delegate-ci -p 8443:3000 \
+            -v "$PWD/tls:/tls:ro" \
+            -e DATABASE_URL=postgresql://postgres:ci-password@pg:5432/delegate \
+            -e SESSION_SECRET=ci-session-secret-at-least-32-characters \
+            -e TLS_CERT_PATH=/tls/delegate.crt \
+            -e TLS_KEY_PATH=/tls/delegate.key \
+            -e SESSION_COOKIE_SECURE=true \
+            delegate:ci
+
+          for i in $(seq 1 45); do
+            # --insecure: the certificate is self-signed by design. What is under
+            # test is that TLS is negotiated at all.
+            if curl -fsS --insecure https://localhost:8443/health > /dev/null; then
+              echo 'The image is serving over TLS.'
+              break
+            fi
+            if [ "$i" = "45" ]; then
+              echo 'The container never became healthy over TLS. Logs:'
+              docker logs app-tls
+              exit 1
+            fi
+            sleep 2
+          done
+
+          # And plain http must now fail, or "TLS is on" would mean nothing.
+          if curl -fsS --max-time 5 http://localhost:8443/health > /dev/null 2>&1; then
+            echo 'The server answered plain http while TLS was configured.'
+            exit 1
+          fi
+          echo 'Plain http is refused while TLS is configured.'
+
       # --- Publishing -----------------------------------------------------
       #
       # Only from `main` and version tags, and never from a pull request. An

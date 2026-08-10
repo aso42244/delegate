@@ -101,12 +101,36 @@ for required in POSTGRES_PASSWORD SESSION_SECRET; do
   fi
 done
 
-if grep -qE '^SESSION_COOKIE_SECURE=true' .env; then
-  # A browser never sends a Secure cookie over plain http, so sign-in fails with
-  # nothing on screen to explain it. This becomes correct in Phase 3, behind TLS.
-  echo 'error: SESSION_COOKIE_SECURE=true without TLS will break sign-in silently.' >&2
-  echo '       Leave it false until Phase 3 puts TLS in front of this.' >&2
+# Half a TLS configuration serves plain http under a name that promises
+# otherwise, which is worse than no TLS at all. The app refuses to start on this
+# too; catching it here means finding out before the container is replaced.
+if grep -qE '^TLS_CERT_PATH=".+"' .env && ! grep -qE '^TLS_KEY_PATH=".+"' .env; then
+  echo 'error: TLS_CERT_PATH is set but TLS_KEY_PATH is not. Set both, or neither.' >&2
   exit 1
+fi
+if grep -qE '^TLS_KEY_PATH=".+"' .env && ! grep -qE '^TLS_CERT_PATH=".+"' .env; then
+  echo 'error: TLS_KEY_PATH is set but TLS_CERT_PATH is not. Set both, or neither.' >&2
+  exit 1
+fi
+
+if grep -qE '^SESSION_COOKIE_SECURE=true' .env && ! grep -qE '^TLS_CERT_PATH=".+"' .env; then
+  # A browser never sends a Secure cookie over plain http, so sign-in fails with
+  # nothing on screen to explain it.
+  echo 'error: SESSION_COOKIE_SECURE=true with no TLS will break sign-in silently.' >&2
+  echo '       Set TLS_CERT_PATH and TLS_KEY_PATH first — see ./scripts/make-tls-cert.sh —' >&2
+  echo '       or leave SESSION_COOKIE_SECURE false.' >&2
+  exit 1
+fi
+
+# Everything below talks to the app over whichever transport it is now serving.
+if grep -qE '^TLS_CERT_PATH=".+"' .env; then
+  SCHEME='https'
+  # A self-signed certificate is the expected case here, and curl would refuse
+  # it. This checks that the app is up, not who it claims to be.
+  CURL_TLS_FLAG='--insecure'
+else
+  SCHEME='http'
+  CURL_TLS_FLAG=''
 fi
 
 if docker compose version >/dev/null 2>&1; then
@@ -231,13 +255,21 @@ HOST_PORT="${HOST_PORT:-8088}"
 echo "Waiting for it to answer on port $HOST_PORT …"
 i=1
 while [ "$i" -le 60 ]; do
-  if curl -fsS "http://localhost:${HOST_PORT}/health" >/dev/null 2>&1; then
+  # shellcheck disable=SC2086 -- CURL_TLS_FLAG is deliberately unquoted: empty
+  # must expand to no argument at all.
+  if curl -fsS $CURL_TLS_FLAG "${SCHEME}://localhost:${HOST_PORT}/health" >/dev/null 2>&1; then
     echo
-    echo "Serving on port ${HOST_PORT}."
+    echo "Serving on port ${HOST_PORT} over ${SCHEME}."
     echo "Running: $PINNED"
+    if [ "$SCHEME" = 'http' ]; then
+      echo
+      echo 'Plain http: passwords and two-factor codes cross this network in the'
+      echo 'clear. That is the documented default for a trusted LAN (ADR 017).'
+      echo 'To change it, run ./scripts/make-tls-cert.sh and set TLS_CERT_PATH.'
+    fi
     echo
-    echo 'This must stay on the LAN until Phase 3 ships in full — no port'
-    echo 'forward, no reverse proxy, no QuickConnect.'
+    echo 'This must stay on the LAN — no port forward, no reverse proxy, no'
+    echo 'QuickConnect.'
     exit 0
   fi
   i=$((i + 1))
