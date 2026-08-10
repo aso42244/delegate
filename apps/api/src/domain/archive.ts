@@ -25,10 +25,36 @@ export async function archiveDelegation(
 ): Promise<void> {
   const delegation = await db.delegation.findUnique({
     where: { id: delegationId },
-    select: { id: true, name: true, balanceCents: true, archivedAt: true },
+    select: { id: true, name: true, balanceCents: true, archivedAt: true, kind: true },
   });
   if (!delegation) throw new NotFoundError('Delegation', delegationId);
   if (delegation.archivedAt !== null) return;
+
+  // A check is settled by matching it to the payment that cashed it, or voided
+  // if it never will be. Archiving one directly would leave the money it holds
+  // with nowhere to have gone.
+  if (delegation.kind === 'check') {
+    throw new ConflictError(
+      'delegation_is_a_check',
+      `${delegation.name} is an outstanding check. Match it to the payment that cashed it, or void it.`,
+      { delegationId },
+    );
+  }
+
+  // Settling a check allocates the payment to the delegation it was drawn on,
+  // and an allocation cannot name an archived line. A delegation sits at zero
+  // once its check is written, so without this it would look archivable right up
+  // until the check cleared and had nowhere to go.
+  const outstandingChecks = await db.delegation.count({
+    where: { kind: 'check', archivedAt: null, checkSourceDelegationId: delegationId },
+  });
+  if (outstandingChecks > 0) {
+    throw new ConflictError(
+      'delegation_has_outstanding_checks',
+      `${delegation.name} has ${outstandingChecks} outstanding check(s) drawn on it. Settle or void them first.`,
+      { delegationId, outstandingChecks },
+    );
+  }
 
   if (delegation.balanceCents !== 0n) {
     throw new ConflictError(
@@ -55,10 +81,20 @@ export async function archiveGrouping(
 ): Promise<void> {
   const grouping = await db.grouping.findUnique({
     where: { id: groupingId },
-    select: { id: true, name: true, archivedAt: true },
+    select: { id: true, name: true, archivedAt: true, systemKey: true },
   });
   if (!grouping) throw new NotFoundError('Grouping', groupingId);
   if (grouping.archivedAt !== null) return;
+
+  // The application owns this one and re-creates it on demand; archiving it
+  // would be undone by the next check written.
+  if (grouping.systemKey !== null) {
+    throw new ConflictError(
+      'grouping_is_system_owned',
+      `${grouping.name} is managed by the budget itself and cannot be archived.`,
+      { groupingId },
+    );
+  }
 
   const [delegations, accounts] = await Promise.all([
     db.delegation.count({ where: { groupingId, archivedAt: null } }),

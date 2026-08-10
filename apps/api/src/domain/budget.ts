@@ -31,6 +31,12 @@ export interface BudgetRow {
   readonly needsReview: boolean;
   readonly balanceAsOf: Date | null;
   readonly stalenessIntervalDays: number | null;
+  /** `check` rows are outstanding checks — see domain/checks.ts. */
+  readonly kind: 'envelope' | 'check';
+  /** Checks only: the number that identifies one among several outstanding. */
+  readonly checkNumber: string | null;
+  readonly checkMemo: string | null;
+  readonly checkIssuedAt: Date | null;
 }
 
 export interface BudgetGrouping {
@@ -38,6 +44,8 @@ export interface BudgetGrouping {
   readonly name: string;
   readonly color: string | null;
   readonly collapsed: boolean;
+  /** Set on groupings the application owns, currently only outstanding checks. */
+  readonly systemKey: string | null;
   /** Summed from children, so a collapsed row can show totals without a second query. */
   readonly balanceCents: Cents;
   readonly amountToDelegateCents: Cents | null;
@@ -87,6 +95,7 @@ function groupRows(
     color: string | null;
     collapsed: boolean;
     section: GroupingSection;
+    systemKey: string | null;
   }[],
   rows: readonly BudgetRow[],
 ): BudgetSection {
@@ -100,12 +109,20 @@ function groupRows(
         name: grouping.name,
         color: grouping.color,
         collapsed: grouping.collapsed,
+        systemKey: grouping.systemKey,
         balanceCents: sumCents(children.map((child) => child.balanceCents)),
         amountToDelegateCents: sumAmountToDelegate(children),
         rows: children,
       };
     })
-    .sort(byName);
+    // Alphabetical, except that the groupings the application owns sit at the
+    // bottom. Outstanding checks are a holding pen rather than part of the plan,
+    // and sorting them into the middle of it by name would read as if they were.
+    .filter((grouping) => grouping.systemKey === null || grouping.rows.length > 0)
+    .sort((a, b) => {
+      if ((a.systemKey === null) !== (b.systemKey === null)) return a.systemKey === null ? -1 : 1;
+      return byName(a, b);
+    });
 
   const ungrouped = rows.filter((row) => row.groupingId === null).sort(byName);
 
@@ -147,11 +164,22 @@ export async function buildBudgetView(db: Db): Promise<BudgetView> {
         groupingId: true,
         isUtility: true,
         notes: true,
+        kind: true,
+        checkNumber: true,
+        checkMemo: true,
+        checkIssuedAt: true,
       },
     }),
     db.grouping.findMany({
       where: { archivedAt: null },
-      select: { id: true, name: true, color: true, collapsed: true, section: true },
+      select: {
+        id: true,
+        name: true,
+        color: true,
+        collapsed: true,
+        section: true,
+        systemKey: true,
+      },
     }),
     computeBudgetIdentity(db),
     db.delegateRun.findFirst({
@@ -177,6 +205,10 @@ export async function buildBudgetView(db: Db): Promise<BudgetView> {
     needsReview: account.needsReview,
     balanceAsOf: account.balanceAsOf,
     stalenessIntervalDays: account.stalenessIntervalDays,
+    kind: 'envelope',
+    checkNumber: null,
+    checkMemo: null,
+    checkIssuedAt: null,
   });
 
   const delegationRows: BudgetRow[] = delegations.map((delegation) => ({
@@ -195,6 +227,10 @@ export async function buildBudgetView(db: Db): Promise<BudgetView> {
     needsReview: false,
     balanceAsOf: null,
     stalenessIntervalDays: null,
+    kind: delegation.kind,
+    checkNumber: delegation.checkNumber,
+    checkMemo: delegation.checkMemo,
+    checkIssuedAt: delegation.checkIssuedAt,
   }));
 
   return {

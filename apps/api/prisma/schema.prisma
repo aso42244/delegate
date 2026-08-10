@@ -180,8 +180,14 @@ model Grouping {
   section GroupingSection
 
   // Rendered as a 3px left rail or a small dot, never a filled row background.
-  color      String?
-  collapsed  Boolean   @default(false)
+  color     String?
+  collapsed Boolean @default(false)
+
+  /// Set on groupings the application owns — currently only "outstanding-checks".
+  /// A key rather than a name, so the lookup does not depend on text a person
+  /// can edit. System groupings cannot be renamed or archived.
+  systemKey String? @map("system_key")
+
   archivedAt DateTime? @map("archived_at")
   createdAt  DateTime  @default(now()) @map("created_at")
   updatedAt  DateTime  @updatedAt @map("updated_at")
@@ -281,10 +287,27 @@ model AccountValuation {
 // Delegations — the envelopes
 // ---------------------------------------------------------------------------
 
+enum DelegationKind {
+  envelope
+  check
+}
+
 model Delegation {
   id         String  @id @default(uuid()) @db.Uuid
   name       String
   groupingId String? @map("grouping_id") @db.Uuid
+
+  /// An outstanding check is a delegation holding money the bank has not seen
+  /// yet. Same ledger, same identity, same everything — the kind only changes
+  /// how it is presented and which operations it accepts.
+  kind DelegationKind @default(envelope)
+
+  /// The identifier when several checks are outstanding at once.
+  checkNumber   String?   @map("check_number")
+  checkMemo     String?   @map("check_memo")
+  checkIssuedAt DateTime? @map("check_issued_at")
+  /// Where the money came from, and where any residue returns on void.
+  checkSourceDelegationId String? @map("check_source_delegation_id") @db.Uuid
 
   // Nullable on purpose. Null means "ad hoc line — add nothing when Delegate is
   // pressed", and renders as an empty cell rather than $0. Null is not zero.
@@ -307,6 +330,8 @@ model Delegation {
   updatedAt  DateTime  @updatedAt @map("updated_at")
 
   grouping     Grouping?               @relation(fields: [groupingId], references: [id])
+  checkSource  Delegation?             @relation("CheckSource", fields: [checkSourceDelegationId], references: [id])
+  checksDrawn  Delegation[]            @relation("CheckSource")
   events       DelegationEvent[]
   allocations  TransactionAllocation[]
   rules        CategorizationRule[]
@@ -316,6 +341,7 @@ model Delegation {
   @@index([archivedAt])
   @@index([groupingId])
   @@index([isUtility])
+  @@index([kind])
   @@map("delegations")
 }
 

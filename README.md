@@ -333,6 +333,7 @@ full history and accurate day-one numbers. Step 5 corrects all of it at once.
 | ----- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | 1     | MVP: auth, accounts, SimpleFIN sync, transactions, rules, delegations, the ledger, Delegate/Transfer/Adjust, Reconcile, Settings, nightly backups, Docker deployment |
 | 2     | Utilities, Insights, Bitcoin, property value and equity, transaction pairing, grouping colours, notification banners                                                 |
+| —     | Outstanding checks: written but not yet cashed, matched to the payment that clears them                                                                              |
 | 3     | Security hardening: mandatory TOTP, rate limiting, CSRF, optional TLS, dependency audit, tested restore                                                              |
 | 4     | UI polish: mobile, keyboard coverage, empty/loading/error states, accessibility                                                                                      |
 | 5     | Feature and bug requests arrive from a Notion database and are built automatically                                                                                   |

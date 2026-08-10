@@ -19,6 +19,7 @@ import { accountRoutes } from './routes/accounts.js';
 import { appInfoRoutes } from './routes/app-info.js';
 import { bitcoinRoutes } from './routes/bitcoin.js';
 import { budgetRoutes } from './routes/budget.js';
+import { checkRoutes } from './routes/checks.js';
 import { transactionRoutes } from './routes/transactions.js';
 import { userRoutes } from './routes/users.js';
 import { utilityRoutes } from './routes/utilities.js';
@@ -146,6 +147,7 @@ export async function buildApp(config: AppConfig = getConfig()): Promise<Fastify
   await app.register(insightRoutes);
   await app.register(transactionRoutes);
   await app.register(budgetRoutes);
+  await app.register(checkRoutes);
 
   // Registered last: its not-found handler is the SPA fallback, so it must see
   // every API route already declared.

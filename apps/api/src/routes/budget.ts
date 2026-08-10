@@ -102,6 +102,10 @@ function presentRow(row: BudgetRow): Record<string, unknown> {
     needsReview: row.needsReview,
     balanceAsOf: dateOut(row.balanceAsOf),
     stalenessIntervalDays: row.stalenessIntervalDays,
+    kind: row.kind,
+    checkNumber: row.checkNumber,
+    checkMemo: row.checkMemo,
+    checkIssuedAt: dateOut(row.checkIssuedAt),
   };
 }
 
@@ -111,6 +115,7 @@ function presentGrouping(grouping: BudgetGrouping): Record<string, unknown> {
     name: grouping.name,
     color: grouping.color,
     collapsed: grouping.collapsed,
+    systemKey: grouping.systemKey,
     balanceCents: centsOut(grouping.balanceCents),
     amountToDelegateCents: centsOut(grouping.amountToDelegateCents),
     rows: grouping.rows.map(presentRow),

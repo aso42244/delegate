@@ -305,3 +305,38 @@ for a bulk assignment.
 One rule governs all of it: **a keystroke inside a form field belongs to the
 field.** Every row in the queue contains a text input, so someone typing a
 delegation name containing j or k gets the letters, not three rows of movement.
+
+## Outstanding checks
+
+A check that has been written and not yet cashed is money the household has spent
+and the bank has not seen. Until it clears, the envelope it came from would
+otherwise show funds that are already committed — and with a chequebook, spending
+the same money twice is an easy mistake.
+
+**New outstanding check** sits beside Transfer and Delegate on the Main Budget.
+It asks for the number, the amount, the date, a memo, and which delegation the
+money comes from. Recording one moves the money out of that delegation and onto a
+line of its own, filed under **Outstanding Checks** — a grouping the budget owns,
+pinned to the bottom of the Delegations section and shown only while something is
+in it.
+
+A check is a delegation, technically, which is what keeps the budget identity
+exact through the whole life of one. It is not presented as one: its row menu
+offers History and Void, and nothing else. There is nothing to rename, re-file or
+adjust about a piece of paper that already exists.
+
+When the bank posts the payment, the check is settled automatically if the amount
+matches exactly **and** the description names the number as a whole token. Both
+are required — an amount alone matches any payment for the same figure, and a
+number alone matches a coincidence among the trace numbers and store numbers
+banks put in descriptions. Anything it cannot resolve is left for the **Check**
+action on the transaction row, which lists what is outstanding.
+
+The spending lands on the delegation the check was drawn on, never on the check
+line. Money spent on piano lessons was spent on piano lessons whether or not it
+travelled by check; attributing it to "Check 1062" would balance perfectly and
+tell Insights something false.
+
+The bank is the record of what was paid. A check written down as $120 that clears
+for $125 leaves the envelope $5 short, which is exactly where someone would want
+to find the discrepancy.
