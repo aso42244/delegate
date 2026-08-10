@@ -12,9 +12,9 @@ there and was never the one written down: over plain http, every password, every
 TOTP code and the session cookie itself are readable by anything else on the
 network.
 
-Delegate has no _technical_ requirement for a secure context. It does no
-client-side cryptography — money is computed on the server, and nothing in the
-browser touches `SubtleCrypto`. This is worth stating because Actual Budget, the
+Delegate has no _technical_ requirement for a secure context. Money is computed
+on the server, and nothing in the browser does cryptography of its own. This is
+worth stating because Actual Budget, the
 nearest comparable self-hosted application, **does** require HTTPS for exactly
 that reason and exempts only `localhost`. Sure, the other application already
 running on this NAS, ships plain http and says so: its Docker guide notes the
