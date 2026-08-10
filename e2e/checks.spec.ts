@@ -97,7 +97,8 @@ test('a payment naming the check settles it on the next sync', async ({ signedIn
   });
 
   await page.goto('/transactions');
-  await page.getByRole('button', { name: 'Match CHECK 1062 to a check' }).click();
+  await page.getByRole('button', { name: 'Options for CHECK 1062' }).click();
+  await page.getByRole('menuitem', { name: 'Match to an outstanding check' }).click();
   await page.getByRole('button', { name: 'Match', exact: true }).click();
 
   // The check is gone from the budget, and the spending landed on the envelope

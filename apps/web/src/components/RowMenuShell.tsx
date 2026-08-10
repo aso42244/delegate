@@ -26,9 +26,14 @@ export const ITEM_CLASS =
 
 export interface RowMenuShellProps {
   readonly name: string;
-  readonly groupings: readonly GroupingOption[];
-  readonly currentGroupingId: string | null;
-  readonly onMoveToGrouping: (groupingId: string | null) => void;
+  /**
+   * Omit all three to get a menu with no "move to grouping" panel. A transaction
+   * has no grouping, and an outstanding check is not moved out of the one the
+   * budget puts it in.
+   */
+  readonly groupings?: readonly GroupingOption[];
+  readonly currentGroupingId?: string | null;
+  readonly onMoveToGrouping?: (groupingId: string | null) => void;
   /** Rendered under the name, above the items — the delegation note panel. */
   readonly header?: ReactNode;
   /** The menu items, on the root panel. */
@@ -40,12 +45,13 @@ export interface RowMenuShellProps {
 export function RowMenuShell({
   name,
   groupings,
-  currentGroupingId,
+  currentGroupingId = null,
   onMoveToGrouping,
   header,
   children,
   overlay,
 }: RowMenuShellProps): ReactNode {
+  const canMove = groupings !== undefined && onMoveToGrouping !== undefined;
   const containerRef = useRef<HTMLDivElement>(null);
   const [open, setOpen] = useState(false);
   const [panel, setPanel] = useState<'root' | 'grouping'>('root');
@@ -77,7 +83,9 @@ export function RowMenuShell({
       setOpen(false);
       setPanel('root');
     },
-    openGroupingPanel: () => setPanel('grouping'),
+    openGroupingPanel: () => {
+      if (canMove) setPanel('grouping');
+    },
   };
 
   return (
@@ -90,7 +98,7 @@ export function RowMenuShell({
         aria-label={`Options for ${name}`}
         aria-expanded={open}
         aria-haspopup="menu"
-        className="rounded px-2 py-0.5 text-muted opacity-0 group-hover:opacity-100 focus:opacity-100 focus-visible:opacity-100 aria-expanded:opacity-100"
+        className="row-menu-trigger rounded px-2 py-0.5 text-muted"
       >
         ⋯
       </button>
@@ -101,7 +109,7 @@ export function RowMenuShell({
           aria-label={`Options for ${name}`}
           className="absolute top-full right-0 z-20 w-[250px] rounded-[10px] border border-line bg-canvas p-2 shadow-[0_4px_16px_rgba(0,0,0,.10)]"
         >
-          {panel === 'root' ? (
+          {panel === 'root' || !canMove ? (
             <>
               <p className="px-2 py-1 text-quiet font-semibold text-ink">{name}</p>
               {header}
@@ -125,7 +133,7 @@ export function RowMenuShell({
                 role="menuitem"
                 className={ITEM_CLASS}
                 onClick={() => {
-                  onMoveToGrouping(null);
+                  onMoveToGrouping?.(null);
                   controls.close();
                 }}
                 disabled={currentGroupingId === null}
@@ -133,14 +141,14 @@ export function RowMenuShell({
                 No grouping
               </button>
 
-              {groupings.map((grouping) => (
+              {(groupings ?? []).map((grouping) => (
                 <button
                   key={grouping.id}
                   type="button"
                   role="menuitem"
                   className={ITEM_CLASS}
                   onClick={() => {
-                    onMoveToGrouping(grouping.id);
+                    onMoveToGrouping?.(grouping.id);
                     controls.close();
                   }}
                   disabled={currentGroupingId === grouping.id}
@@ -149,7 +157,7 @@ export function RowMenuShell({
                 </button>
               ))}
 
-              {groupings.length === 0 && (
+              {(groupings ?? []).length === 0 && (
                 <p className="px-2 py-1.5 text-quiet text-muted">
                   No groupings yet. Add one above the table.
                 </p>

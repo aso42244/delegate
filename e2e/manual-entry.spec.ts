@@ -98,7 +98,8 @@ test('a split must add up before it can be saved', async ({ signedIn, api }) => 
   });
 
   await signedIn.goto('/transactions');
-  await signedIn.getByRole('button', { name: 'Split Big shop' }).click();
+  await signedIn.getByRole('button', { name: 'Options for Big shop' }).click();
+  await signedIn.getByRole('menuitem', { name: 'Split between delegations' }).click();
 
   const save = signedIn.getByRole('button', { name: 'Save split' });
   await expect(save).toBeDisabled();
@@ -144,7 +145,8 @@ test('splitting evenly hands the odd cent to the first line', async ({ signedIn,
   });
 
   await signedIn.goto('/transactions');
-  await signedIn.getByRole('button', { name: 'Split Three ways' }).click();
+  await signedIn.getByRole('button', { name: 'Options for Three ways' }).click();
+  await signedIn.getByRole('menuitem', { name: 'Split between delegations' }).click();
 
   const first = signedIn.getByLabel('Delegation for split line 1');
   await first.fill('gro');

@@ -78,10 +78,7 @@ export function CheckRowMenu({ row }: { readonly row: BudgetRowDto }): ReactNode
   return (
     <RowMenuShell
       name={row.name}
-      // A check lives in the grouping the budget owns and is not moved out of it.
-      groupings={[]}
-      currentGroupingId={row.groupingId}
-      onMoveToGrouping={() => undefined}
+      // No grouping panel: a check lives in the grouping the budget owns.
       header={
         <p className="mx-1 my-1 rounded-md bg-surface px-2 py-1.5 text-quiet text-muted">
           Written{' '}

@@ -109,6 +109,36 @@ body {
   text-align: right;
 }
 
+/**
+ * The `⋯` trigger on a row menu.
+ *
+ * Hidden until the row is hovered or something in it has focus, so a table of
+ * sixty rows is not sixty pieces of chrome. Three escapes from that, because a
+ * control that exists only under a mouse pointer is a control some people never
+ * get:
+ *
+ * - keyboard focus, on the button or anywhere in the row;
+ * - the menu being open;
+ * - a device that cannot hover at all, where it stays visible permanently.
+ */
+.row-menu-trigger {
+  opacity: 0;
+}
+
+.group:hover .row-menu-trigger,
+.group:focus-within .row-menu-trigger,
+.row-menu-trigger:focus,
+.row-menu-trigger:focus-visible,
+.row-menu-trigger[aria-expanded='true'] {
+  opacity: 1;
+}
+
+@media (hover: none) {
+  .row-menu-trigger {
+    opacity: 1;
+  }
+}
+
 /* Visible keyboard focus everywhere, in the accent colour. */
 :focus-visible {
   outline: 2px solid var(--color-accent);
