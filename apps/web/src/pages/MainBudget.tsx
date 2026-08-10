@@ -6,7 +6,9 @@ import { ApiError } from '../api/client.js';
 import { AccountRowMenu } from '../components/AccountRowMenu.jsx';
 import { BalanceBanner } from '../components/BalanceBanner.jsx';
 import { BudgetSection } from '../components/BudgetSection.jsx';
+import { CheckRowMenu } from '../components/CheckRowMenu.jsx';
 import { DelegationRowMenu } from '../components/DelegationRowMenu.jsx';
+import { NewCheckDialog } from '../components/NewCheckDialog.jsx';
 import { Alert, Button } from '../components/ui.jsx';
 
 /**
@@ -216,7 +218,7 @@ function UndoBar(): ReactNode {
 
 export function MainBudget(): ReactNode {
   const queryClient = useQueryClient();
-  const [dialog, setDialog] = useState<'none' | 'delegate' | 'transfer'>('none');
+  const [dialog, setDialog] = useState<'none' | 'delegate' | 'transfer' | 'check'>('none');
   const [problem, setProblem] = useState<string | null>(null);
   // Set when Transfer was opened from a line whose archive was blocked.
   const [transferFrom, setTransferFrom] = useState<string | null>(null);
@@ -305,6 +307,7 @@ export function MainBudget(): ReactNode {
         </div>
 
         <div className="flex gap-2">
+          <Button onClick={() => setDialog('check')}>New outstanding check</Button>
           {/* Transfer sits to the left of Delegate, per the design. */}
           <Button onClick={() => setDialog('transfer')}>Transfer</Button>
           <Button variant="primary" onClick={() => setDialog('delegate')}>
@@ -379,18 +382,25 @@ export function MainBudget(): ReactNode {
             </button>
           )
         }
-        rowMenu={(row) => (
-          <DelegationRowMenu
-            row={row}
-            groupings={groupingOptions}
-            onTransferFrom={(delegationId) => {
-              setTransferFrom(delegationId);
-              setDialog('transfer');
-            }}
-          />
-        )}
+        rowMenu={(row) =>
+          // A check is not a delegation to rename, re-file or adjust; its menu
+          // offers only what the bank can decide.
+          row.kind === 'check' ? (
+            <CheckRowMenu row={row} />
+          ) : (
+            <DelegationRowMenu
+              row={row}
+              groupings={groupingOptions}
+              onTransferFrom={(delegationId) => {
+                setTransferFrom(delegationId);
+                setDialog('transfer');
+              }}
+            />
+          )
+        }
       />
 
+      {dialog === 'check' && <NewCheckDialog view={view.data} onClose={() => setDialog('none')} />}
       {dialog === 'delegate' && <DelegateDialog onClose={() => setDialog('none')} />}
       {dialog === 'transfer' && (
         <TransferDialog

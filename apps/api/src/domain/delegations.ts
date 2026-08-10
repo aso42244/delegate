@@ -115,13 +115,22 @@ export async function updateDelegation(
 ): Promise<void> {
   const existing = await db.delegation.findUnique({
     where: { id },
-    select: { id: true, archivedAt: true },
+    select: { id: true, archivedAt: true, kind: true },
   });
   if (!existing) throw new NotFoundError('Delegation', id);
   if (existing.archivedAt) {
     throw new ConflictError(
       'delegation_archived',
       'That delegation is archived. Restore it first.',
+    );
+  }
+
+  // A check's name, amount and grouping are all consequences of the check
+  // itself. Editing them here would let the line disagree with what was written.
+  if (existing.kind === 'check') {
+    throw new ConflictError(
+      'delegation_is_a_check',
+      'An outstanding check is not edited. Void it and write it again if it was wrong.',
     );
   }
 
@@ -186,11 +195,21 @@ export async function updateGrouping(
 ): Promise<void> {
   const existing = await db.grouping.findUnique({
     where: { id },
-    select: { id: true, section: true, archivedAt: true },
+    select: { id: true, section: true, archivedAt: true, systemKey: true },
   });
   if (!existing) throw new NotFoundError('Grouping', id);
   if (existing.archivedAt) {
     throw new ConflictError('grouping_archived', 'That grouping is archived. Restore it first.');
+  }
+
+  // Collapsing it is a view preference and stays available; its name and colour
+  // are the application's, and renaming it would break nothing except the
+  // reader's understanding of what the section is.
+  if (existing.systemKey !== null && (input.name !== undefined || input.color !== undefined)) {
+    throw new ConflictError(
+      'grouping_is_system_owned',
+      'That grouping is managed by the budget itself and cannot be renamed.',
+    );
   }
 
   const name = input.name === undefined ? undefined : normalizeName(input.name);

@@ -24,6 +24,11 @@ export interface BudgetRowDto {
   readonly needsReview: boolean;
   readonly balanceAsOf: string | null;
   readonly stalenessIntervalDays: number | null;
+  /** `check` rows are outstanding checks: money written but not yet cashed. */
+  readonly kind: 'envelope' | 'check';
+  readonly checkNumber: string | null;
+  readonly checkMemo: string | null;
+  readonly checkIssuedAt: string | null;
 }
 
 export interface BudgetGroupingDto {
@@ -31,6 +36,8 @@ export interface BudgetGroupingDto {
   readonly name: string;
   readonly color: string | null;
   readonly collapsed: boolean;
+  /** Set on groupings the budget owns; only "outstanding-checks" today. */
+  readonly systemKey: string | null;
   readonly balanceCents: string;
   readonly amountToDelegateCents: string | null;
   readonly rows: readonly BudgetRowDto[];

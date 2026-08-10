@@ -11,6 +11,7 @@ import {
 import { DelegationPicker } from '../components/DelegationPicker.jsx';
 import { NewTransactionDialog } from '../components/NewTransactionDialog.jsx';
 import { PairSuggestions } from '../components/PairSuggestions.jsx';
+import { MatchCheckDialog } from '../components/MatchCheckDialog.jsx';
 import { SplitDialog } from '../components/SplitDialog.jsx';
 import { Alert, Button, Tag } from '../components/ui.jsx';
 import { useRowKeyboard } from '../useRowKeyboard.js';
@@ -56,6 +57,8 @@ export function Transactions(): ReactNode {
   const [adding, setAdding] = useState(false);
   // The transaction whose split is being edited, if any.
   const [splitting, setSplitting] = useState<TransactionDto | null>(null);
+  // The transaction being matched to an outstanding check, if any.
+  const [matching, setMatching] = useState<TransactionDto | null>(null);
 
   const query = { ...filters, search, limit: PAGE_SIZE, offset };
   const list = useQuery({
@@ -90,7 +93,11 @@ export function Transactions(): ReactNode {
   const delegations = [
     ...(budget.data?.delegations.groupings.flatMap((grouping) => grouping.rows) ?? []),
     ...(budget.data?.delegations.ungrouped ?? []),
-  ].map((row) => ({ id: row.id, name: row.name }));
+  ]
+    // Outstanding checks are delegations, but they are not a category anything
+    // is spent on. They are settled by matching, which is a different action.
+    .filter((row) => row.kind !== 'check')
+    .map((row) => ({ id: row.id, name: row.name }));
 
   const refresh = async (): Promise<void> => {
     await queryClient.invalidateQueries({ queryKey: ['transactions'] });
@@ -316,6 +323,13 @@ export function Transactions(): ReactNode {
                             the picker rather than anything the queue trips over. */}
                         <Button
                           variant="ghost"
+                          onClick={() => setMatching(transaction)}
+                          aria-label={`Match ${transaction.description} to a check`}
+                        >
+                          Check
+                        </Button>
+                        <Button
+                          variant="ghost"
                           onClick={() => setSplitting(transaction)}
                           aria-label={`Split ${transaction.description}`}
                         >
@@ -363,6 +377,7 @@ export function Transactions(): ReactNode {
           onClose={() => setSplitting(null)}
         />
       )}
+      {matching && <MatchCheckDialog transaction={matching} onClose={() => setMatching(null)} />}
     </div>
   );
 }
