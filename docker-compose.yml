@@ -48,9 +48,21 @@ services:
       DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-delegate}
       SESSION_SECRET: ${SESSION_SECRET:?SESSION_SECRET is required}
       SESSION_TTL_SECONDS: ${SESSION_TTL_SECONDS:-604800}
-      # Stays false until TLS lands in Phase 3: a browser never sends a Secure
-      # cookie over plain http, so enabling it early breaks login silently.
+      # False by default, because plain http is the default (ADR 017). A browser
+      # never sends a Secure cookie over plain http, so turning this on without
+      # TLS in front breaks sign-in silently.
       SESSION_COOKIE_SECURE: ${SESSION_COOKIE_SECURE:-false}
+      # Empty unless ./scripts/make-tls-cert.sh has been run and the paths point
+      # into the mounted /tls directory below. Both or neither — the app refuses
+      # to start with half a TLS configuration.
+      TLS_CERT_PATH: ${TLS_CERT_PATH:-}
+      TLS_KEY_PATH: ${TLS_KEY_PATH:-}
+      TRUSTED_ORIGINS: ${TRUSTED_ORIGINS:-}
+      AUTH_RATE_LIMIT_MAX: ${AUTH_RATE_LIMIT_MAX:-10}
+      AUTH_RATE_LIMIT_WINDOW: ${AUTH_RATE_LIMIT_WINDOW:-5 minutes}
+      BITCOIN_PRICE_CRON: ${BITCOIN_PRICE_CRON:-5 * * * *}
+      BITCOIN_PRICE_PRIMARY: ${BITCOIN_PRICE_PRIMARY:-coingecko}
+      BITCOIN_PRICE_FALLBACK: ${BITCOIN_PRICE_FALLBACK:-coinbase}
       SIMPLEFIN_ACCESS_URL: ${SIMPLEFIN_ACCESS_URL:-}
       SIMPLEFIN_SYNC_CRON: ${SIMPLEFIN_SYNC_CRON:-0 * * * *}
       SIMPLEFIN_BACKFILL_MONTHS: ${SIMPLEFIN_BACKFILL_MONTHS:-12}
@@ -64,6 +76,9 @@ services:
       # DSM so they can be included in whatever off-device backup already exists.
       # A dump on the same disk as the database is not a backup.
       - ${BACKUP_DIR:-./backups}:/backups
+      # Read-only, and only meaningful when TLS_CERT_PATH is set. The directory
+      # is harmless when empty.
+      - ${TLS_DIR:-./tls}:/tls:ro
 
 volumes:
   postgres-data:

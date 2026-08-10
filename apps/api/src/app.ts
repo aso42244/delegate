@@ -1,5 +1,6 @@
-import Fastify, { type FastifyInstance } from 'fastify';
+import Fastify, { type FastifyInstance, type FastifyServerOptions } from 'fastify';
 import { randomUUID } from 'node:crypto';
+import { readFileSync } from 'node:fs';
 import { getConfig, type AppConfig } from './config.js';
 import { errorHandler } from './http/errors.js';
 import { auth } from './plugins/auth.js';
@@ -23,12 +24,35 @@ import { userRoutes } from './routes/users.js';
 import { utilityRoutes } from './routes/utilities.js';
 
 /**
+ * Reads the TLS material, or returns nothing when none is configured.
+ *
+ * Read once at boot and held in memory. A certificate that vanished from disk
+ * should not take the server down at the moment someone tries to sign in, and a
+ * self-signed certificate on a NAS is replaced roughly never — when it is, the
+ * container restarts anyway.
+ *
+ * Failures here are fatal on purpose. An unreadable key means the operator
+ * believes this is encrypted; falling back to plain http would be the worst
+ * possible answer.
+ */
+function readTls(config: AppConfig): { key: Buffer; cert: Buffer } | undefined {
+  if (!config.TLS_CERT_PATH || !config.TLS_KEY_PATH) return undefined;
+
+  return {
+    key: readFileSync(config.TLS_KEY_PATH),
+    cert: readFileSync(config.TLS_CERT_PATH),
+  };
+}
+
+/**
  * Builds the Fastify instance.
  *
  * Separated from `server.ts` so tests can build an app, drive it through
  * `app.inject()` and never bind a port.
  */
 export async function buildApp(config: AppConfig = getConfig()): Promise<FastifyInstance> {
+  const https = readTls(config);
+
   const app = Fastify({
     logger: {
       level: config.LOG_LEVEL,
@@ -52,7 +76,10 @@ export async function buildApp(config: AppConfig = getConfig()): Promise<Fastify
     genReqId: (request) => request.headers['x-request-id']?.toString() ?? randomUUID(),
     requestIdHeader: 'x-request-id',
     trustProxy: false,
-  });
+    // Spread rather than set: `https: undefined` is not the same as absent to
+    // Fastify's overloads, and plain http is the default (ADR 017).
+    ...(https ? { https } : {}),
+  } satisfies FastifyServerOptions);
 
   app.setErrorHandler(errorHandler);
   // The not-found handler is set by the spa plugin, which owns the decision

@@ -61,8 +61,16 @@ EXPOSE 3000
 # kill the process mid-write rather than letting it shut down cleanly.
 ENTRYPOINT ["/sbin/tini", "--"]
 
+# Shell form, so TLS_CERT_PATH is read at run time rather than baked in: the same
+# image serves plain http or https depending only on configuration (ADR 017).
+# --no-check-certificate because a self-signed certificate is the expected case,
+# and this checks that the app is up, not who it claims to be.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
-  CMD wget --quiet --tries=1 --spider http://localhost:3000/health || exit 1
+  CMD if [ -n "$TLS_CERT_PATH" ]; then \
+        wget --quiet --tries=1 --no-check-certificate --spider https://localhost:3000/health || exit 1; \
+      else \
+        wget --quiet --tries=1 --spider http://localhost:3000/health || exit 1; \
+      fi
 
 # Migrations are applied on start. Prisma takes an advisory lock, so this is safe
 # even if two containers ever start at once.

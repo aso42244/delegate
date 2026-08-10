@@ -333,7 +333,7 @@ full history and accurate day-one numbers. Step 5 corrects all of it at once.
 | ----- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | 1     | MVP: auth, accounts, SimpleFIN sync, transactions, rules, delegations, the ledger, Delegate/Transfer/Adjust, Reconcile, Settings, nightly backups, Docker deployment |
 | 2     | Utilities, Insights, Bitcoin, property value and equity, transaction pairing, grouping colours, notification banners                                                 |
-| 3     | Security hardening: LAN TLS, mandatory TOTP, rate limiting, CSRF, Cloudflare Tunnel behind Cloudflare Access, dependency audit, tested restore                       |
+| 3     | Security hardening: mandatory TOTP, rate limiting, CSRF, optional TLS, dependency audit, tested restore                                                              |
 | 4     | UI polish: mobile, keyboard coverage, empty/loading/error states, accessibility                                                                                      |
 | 5     | Feature and bug requests arrive from a Notion database and are built automatically                                                                                   |
 
@@ -341,9 +341,38 @@ full history and accurate day-one numbers. Step 5 corrects all of it at once.
 [ADR 016](docs/decisions/016-passkeys-are-out-of-scope.md). TOTP is the second
 factor.
 
-**No internet exposure happens until every part of Phase 3 ships.** Rate
-limiting, TOTP with recovery codes, CSRF protection and the dependency audit are
-done. TLS and Cloudflare Access are not.
+**Phase 3 is done.** Rate limiting, TOTP with recovery codes, CSRF protection,
+optional TLS and the dependency audit have all shipped.
+
+**Delegate serves plain http by default, and stays on the LAN.**
+[ADR 017](docs/decisions/017-plain-http-is-the-default-and-tls-is-optional.md)
+records that as a decision with its trade stated: on a trusted home network the
+exposure is other devices on that network, and passwords and two-factor codes
+cross it in clear text. TLS is supported for anyone who wants it — see below —
+but internet exposure remains off the table while the default stands.
+
+### Optional TLS
+
+```bash
+./scripts/make-tls-cert.sh 10.0.3.4 nas.local
+```
+
+Give it every address the household will actually type. Then in `.env`:
+
+```
+TLS_CERT_PATH="/tls/delegate.crt"
+TLS_KEY_PATH="/tls/delegate.key"
+SESSION_COOKIE_SECURE="true"
+```
+
+and `docker compose up -d`. The same image serves either transport; only
+configuration decides. Both paths or neither — the application refuses to start
+on half a configuration, because that would serve plain http from a deployment
+whose settings claim otherwise.
+
+Browsers warn until the certificate is trusted on each device. That warning is
+the accurate report that nothing vouches for this identity except the machine
+presenting it.
 
 ### Phase 5 — requests from Notion
 

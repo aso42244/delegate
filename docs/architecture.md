@@ -257,8 +257,8 @@ description.
 ## Authentication
 
 A username, an argon2id password hash, a session cookie, and an optional second
-factor. TLS remains outstanding, and nothing may be exposed to the internet
-before it ships.
+factor. The transport is plain http unless TLS is configured, and nothing is
+exposed to the internet either way.
 
 What is in place now:
 
@@ -291,8 +291,12 @@ What is in place now:
 - **Security headers** via helmet, including a content security policy that
   allows scripts and connections from this origin only.
 
-What is still absent: **TLS**. Until it lands, passwords, TOTP codes and the
-session cookie cross the LAN in clear text, and the system stays on the LAN.
+**The transport is plain http by default**, which is a decision rather than a
+gap — [ADR 017](decisions/017-plain-http-is-the-default-and-tls-is-optional.md),
+which states the trade: passwords, TOTP codes and the session cookie cross the
+LAN in clear text, and the exposure is every other device on that network. TLS is
+supported behind `TLS_CERT_PATH` and `TLS_KEY_PATH`, both or neither. Internet
+exposure stays off the table while the default stands.
 
 **Passkeys are not coming.** TOTP covers the stolen-password threat they were
 there for; what they would have added is phishing resistance, which is narrow for
