@@ -16,7 +16,39 @@ import type { Db } from '../db/client.js';
  * visitor never reaches the store at all, and `set` refuses anything without a
  * user rather than writing a row that violates the foreign key.
  */
+/**
+ * How long a destroyed session id is remembered as destroyed.
+ *
+ * Only needs to outlive requests that were already in flight when the session
+ * was destroyed. A minute is far longer than any of them and short enough that
+ * the set stays small.
+ */
+const TOMBSTONE_MS = 60_000;
+
 export class PrismaSessionStore implements SessionStore {
+  /**
+   * Session ids destroyed recently, and when they may be forgotten.
+   *
+   * This exists because of a race that made signing out unreliable, which is a
+   * security bug rather than an annoyance:
+   *
+   * 1. The page has several ordinary requests in flight — the sync poll, the
+   *    notification poll — each holding a loaded session.
+   * 2. Logout runs and deletes the session row.
+   * 3. One of those requests finishes. Sessions are `rolling`, so responding
+   *    re-saves the session to push its expiry out — and `upsert` **re-creates
+   *    the row that logout just deleted**.
+   *
+   * The user is then signed out in every visible sense and still signed in as
+   * far as their cookie is concerned. It was intermittent, because it depended
+   * on what happened to be in flight.
+   *
+   * In-process is the right scope: one process serves this household (ADR 001),
+   * and a restart both clears the map and drops every in-flight request that the
+   * map exists to outlive.
+   */
+  private readonly destroyed = new Map<string, number>();
+
   constructor(
     private readonly db: Db,
     private readonly defaultTtlSeconds: number,
@@ -24,6 +56,13 @@ export class PrismaSessionStore implements SessionStore {
 
   set(sessionId: string, session: Session, callback: (err?: unknown) => void): void {
     const userId = readUserId(session);
+
+    // A session that has been destroyed is not written again, whatever a request
+    // that started earlier still believes.
+    if (this.isDestroyed(sessionId)) {
+      callback();
+      return;
+    }
 
     if (!userId) {
       // Not an error: an unauthenticated session simply has nowhere to live.
@@ -42,7 +81,14 @@ export class PrismaSessionStore implements SessionStore {
         create: { id: sessionId, userId, data, expiresAt },
         update: { userId, data, expiresAt },
       })
-      .then(() => {
+      .then(async () => {
+        // Checked again, because the check above cannot cover a write that was
+        // already on its way to the database when the logout deleted the row.
+        // In that ordering the upsert lands last and re-creates it, so the
+        // remedy is to undo it rather than to prevent it.
+        if (this.isDestroyed(sessionId)) {
+          await this.db.session.deleteMany({ where: { id: sessionId } });
+        }
         callback();
       })
       .catch(callback);
@@ -72,6 +118,8 @@ export class PrismaSessionStore implements SessionStore {
   }
 
   destroy(sessionId: string, callback: (err?: unknown) => void): void {
+    this.remember(sessionId);
+
     // deleteMany, not delete: destroying an already-absent session is success,
     // and `delete` would throw on the logout-twice path.
     this.db.session
@@ -80,6 +128,26 @@ export class PrismaSessionStore implements SessionStore {
         callback();
       })
       .catch(callback);
+  }
+
+  private remember(sessionId: string): void {
+    const now = Date.now();
+    // Swept here rather than on a timer: the map is only touched on logout, so
+    // it cannot grow without something clearing it in the same breath.
+    for (const [id, expiry] of this.destroyed) {
+      if (expiry <= now) this.destroyed.delete(id);
+    }
+    this.destroyed.set(sessionId, now + TOMBSTONE_MS);
+  }
+
+  private isDestroyed(sessionId: string): boolean {
+    const expiry = this.destroyed.get(sessionId);
+    if (expiry === undefined) return false;
+    if (expiry <= Date.now()) {
+      this.destroyed.delete(sessionId);
+      return false;
+    }
+    return true;
   }
 
   private expiryOf(session: Session): Date {

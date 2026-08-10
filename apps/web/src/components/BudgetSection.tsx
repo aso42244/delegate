@@ -1,6 +1,15 @@
 import { groupingTint } from '@budget/shared';
-import { Fragment, useState, type DragEvent, type KeyboardEvent, type ReactNode } from 'react';
+import {
+  Fragment,
+  useRef,
+  useState,
+  type DragEvent,
+  type KeyboardEvent,
+  type ReactNode,
+  type TouchEvent,
+} from 'react';
 import type { BudgetRowDto, BudgetSectionDto } from '../api/budget.js';
+import { NARROW, useMediaQuery } from '../useMediaQuery.js';
 import { MoneyCell } from './MoneyCell.jsx';
 import { Tag } from './ui.jsx';
 
@@ -54,6 +63,43 @@ export function BudgetSection({
   onMoveToGrouping,
 }: BudgetSectionProps): ReactNode {
   const [newName, setNewName] = useState('');
+
+  /**
+   * On a phone there is not room for a name and two money columns, so one money
+   * column shows at a time and swiping horizontally switches between them.
+   *
+   * Swipe is never the only route — the same rule the row menu follows for
+   * drag-and-drop. The buttons below do the same job, and are what a screen
+   * reader or a keyboard reaches.
+   */
+  const narrow = useMediaQuery(NARROW);
+  const [mobileColumn, setMobileColumn] = useState<'remaining' | 'toDelegate'>('remaining');
+  const splitColumns = narrow && showAmountToDelegate;
+
+  const showRemaining = !splitColumns || mobileColumn === 'remaining';
+  const showToDelegate = showAmountToDelegate && (!splitColumns || mobileColumn === 'toDelegate');
+
+  const touchStart = useRef<{ x: number; y: number } | null>(null);
+
+  function onTouchStart(event: TouchEvent<HTMLTableElement>): void {
+    const touch = event.touches[0];
+    if (touch) touchStart.current = { x: touch.clientX, y: touch.clientY };
+  }
+
+  function onTouchEnd(event: TouchEvent<HTMLTableElement>): void {
+    const start = touchStart.current;
+    const touch = event.changedTouches[0];
+    touchStart.current = null;
+    if (!start || !touch || !splitColumns) return;
+
+    const dx = touch.clientX - start.x;
+    const dy = touch.clientY - start.y;
+    // Horizontal intent only: a diagonal drag during a vertical scroll must not
+    // change the column out from under someone's thumb.
+    if (Math.abs(dx) < 48 || Math.abs(dx) <= Math.abs(dy)) return;
+
+    setMobileColumn(dx < 0 ? 'toDelegate' : 'remaining');
+  }
   // Which grouping the pointer is currently over, so the target is obvious
   // before the drop rather than after it.
   const [dropTarget, setDropTarget] = useState<string | null | undefined>(undefined);
@@ -96,7 +142,7 @@ export function BudgetSection({
         draggable={draggable}
         onDragStart={(event) => onDragStart(event, row.id)}
       >
-        <td className={`py-2 pr-3 ${inGrouping ? 'pl-8' : 'pl-3'}`}>
+        <td className={`row-cell pr-3 ${inGrouping ? 'pl-8' : 'pl-3'}`}>
           <span className="text-ink">{row.name}</span>
           {row.source && (
             <span className="ml-2">
@@ -109,19 +155,21 @@ export function BudgetSection({
           )}
         </td>
 
-        <td className="w-40 py-2">
-          <MoneyCell
-            valueCents={parseCents(row.balanceCents)}
-            editable={onEditBalance !== undefined}
-            redWhenNegative={redNegatives}
-            emphasis={showAmountToDelegate ? 'hero' : 'normal'}
-            label={`${row.name} balance`}
-            onCommit={(cents) => onEditBalance?.(row.id, cents)}
-          />
-        </td>
+        {showRemaining && (
+          <td className="w-40 row-cell">
+            <MoneyCell
+              valueCents={parseCents(row.balanceCents)}
+              editable={onEditBalance !== undefined}
+              redWhenNegative={redNegatives}
+              emphasis={showAmountToDelegate ? 'hero' : 'normal'}
+              label={`${row.name} balance`}
+              onCommit={(cents) => onEditBalance?.(row.id, cents)}
+            />
+          </td>
+        )}
 
-        {showAmountToDelegate && (
-          <td className="w-36 py-2 pr-3">
+        {showToDelegate && (
+          <td className="w-36 row-cell pr-3">
             <MoneyCell
               valueCents={parseCents(row.amountToDelegateCents)}
               editable={onEditAmount !== undefined}
@@ -132,12 +180,12 @@ export function BudgetSection({
           </td>
         )}
 
-        {rowMenu && <td className="w-10 py-2 pr-3">{rowMenu(row)}</td>}
+        {rowMenu && <td className="w-10 row-cell pr-3">{rowMenu(row)}</td>}
       </tr>
     );
   }
 
-  const columnCount = (showAmountToDelegate ? 3 : 2) + (rowMenu ? 1 : 0);
+  const columnCount = 1 + (showRemaining ? 1 : 0) + (showToDelegate ? 1 : 0) + (rowMenu ? 1 : 0);
 
   return (
     <section className="mb-8">
@@ -146,17 +194,51 @@ export function BudgetSection({
         {headerActions}
       </header>
 
-      <table className="w-full border-t-2 border-ink">
+      {splitColumns && (
+        <div
+          role="radiogroup"
+          aria-label="Which amount to show"
+          className="mb-2 flex gap-1 rounded-lg bg-surface-2 p-0.5"
+        >
+          {(
+            [
+              ['remaining', 'Remaining'],
+              ['toDelegate', 'To delegate'],
+            ] as const
+          ).map(([value, label]) => (
+            <button
+              key={value}
+              type="button"
+              role="radio"
+              aria-checked={mobileColumn === value}
+              onClick={() => setMobileColumn(value)}
+              className={`flex-1 rounded-md px-3 py-1.5 text-quiet font-semibold ${
+                mobileColumn === value ? 'bg-canvas text-ink shadow-sm' : 'text-muted'
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      )}
+
+      <table
+        className="w-full border-t-2 border-ink"
+        onTouchStart={onTouchStart}
+        onTouchEnd={onTouchEnd}
+      >
         <thead>
           <tr className="text-label uppercase tracking-[0.05em] text-muted">
-            <th className="py-2 pl-3 text-left font-normal">Name</th>
-            <th className="py-2 text-right font-normal">
-              {showAmountToDelegate ? 'Remaining' : 'Balance'}
-            </th>
-            {showAmountToDelegate && (
-              <th className="py-2 pr-3 text-right font-normal text-faint">To delegate</th>
+            <th className="row-cell pl-3 text-left font-normal">Name</th>
+            {showRemaining && (
+              <th className="row-cell text-right font-normal">
+                {showAmountToDelegate ? 'Remaining' : 'Balance'}
+              </th>
             )}
-            {rowMenu && <th className="w-10 py-2 pr-3" />}
+            {showToDelegate && (
+              <th className="row-cell pr-3 text-right font-normal text-faint">To delegate</th>
+            )}
+            {rowMenu && <th className="w-10 row-cell pr-3" />}
           </tr>
         </thead>
 
@@ -178,7 +260,7 @@ export function BudgetSection({
                 onDragLeave={() => setDropTarget(undefined)}
                 onDrop={(event) => onDrop(event, grouping.id)}
               >
-                <td className="py-2 pl-3">
+                <td className="row-cell pl-3">
                   <button
                     type="button"
                     onClick={() => onToggleGrouping?.(grouping.id, !grouping.collapsed)}
@@ -203,19 +285,21 @@ export function BudgetSection({
 
                 {/* Amounts appear on the grouping row only when collapsed. Shown
                     while expanded they would double every figure below them. */}
-                <td className="py-2">
-                  {grouping.collapsed && (
-                    <MoneyCell
-                      valueCents={parseCents(grouping.balanceCents)}
-                      redWhenNegative={redNegatives}
-                      emphasis={showAmountToDelegate ? 'hero' : 'normal'}
-                      label={`${grouping.name} total`}
-                    />
-                  )}
-                </td>
+                {showRemaining && (
+                  <td className="row-cell">
+                    {grouping.collapsed && (
+                      <MoneyCell
+                        valueCents={parseCents(grouping.balanceCents)}
+                        redWhenNegative={redNegatives}
+                        emphasis={showAmountToDelegate ? 'hero' : 'normal'}
+                        label={`${grouping.name} total`}
+                      />
+                    )}
+                  </td>
+                )}
 
-                {showAmountToDelegate && (
-                  <td className="py-2 pr-3">
+                {showToDelegate && (
+                  <td className="row-cell pr-3">
                     {grouping.collapsed && (
                       <MoneyCell
                         valueCents={parseCents(grouping.amountToDelegateCents)}
@@ -226,7 +310,7 @@ export function BudgetSection({
                   </td>
                 )}
 
-                {rowMenu && <td className="w-10 py-2 pr-3" />}
+                {rowMenu && <td className="w-10 row-cell pr-3" />}
               </tr>
 
               {!grouping.collapsed &&
@@ -249,7 +333,7 @@ export function BudgetSection({
               onDrop={(event) => onDrop(event, null)}
               className={`border-b border-line ${dropTarget === null ? 'bg-accent-soft' : ''}`}
             >
-              <td className="py-2 pl-3 text-quiet text-muted" colSpan={columnCount}>
+              <td className="row-cell pl-3 text-quiet text-muted" colSpan={columnCount}>
                 Drop here to remove from every grouping
               </td>
             </tr>
@@ -257,7 +341,7 @@ export function BudgetSection({
 
           {onCreate && (
             <tr className="border-b border-line">
-              <td className="py-2 pl-3" colSpan={columnCount}>
+              <td className="row-cell pl-3" colSpan={columnCount}>
                 <input
                   value={newName}
                   onChange={(event) => setNewName(event.target.value)}
@@ -273,17 +357,19 @@ export function BudgetSection({
 
         <tfoot>
           <tr className="border-t-2 border-ink bg-surface font-bold">
-            <td className="py-2 pl-3 text-ink">Total</td>
-            <td className="py-2">
-              <MoneyCell
-                valueCents={parseCents(section.totalBalanceCents)}
-                redWhenNegative={redNegatives}
-                emphasis={showAmountToDelegate ? 'hero' : 'normal'}
-                label={`${title} total`}
-              />
-            </td>
-            {showAmountToDelegate && (
-              <td className="py-2 pr-3">
+            <td className="row-cell pl-3 text-ink">Total</td>
+            {showRemaining && (
+              <td className="row-cell">
+                <MoneyCell
+                  valueCents={parseCents(section.totalBalanceCents)}
+                  redWhenNegative={redNegatives}
+                  emphasis={showAmountToDelegate ? 'hero' : 'normal'}
+                  label={`${title} total`}
+                />
+              </td>
+            )}
+            {showToDelegate && (
+              <td className="row-cell pr-3">
                 <MoneyCell
                   valueCents={parseCents(section.totalAmountToDelegateCents)}
                   emphasis="quiet"
@@ -291,7 +377,7 @@ export function BudgetSection({
                 />
               </td>
             )}
-            {rowMenu && <td className="w-10 py-2 pr-3" />}
+            {rowMenu && <td className="w-10 row-cell pr-3" />}
           </tr>
         </tfoot>
       </table>

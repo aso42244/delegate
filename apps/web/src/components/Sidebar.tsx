@@ -68,24 +68,35 @@ export function Sidebar({ appName }: { appName: string }): ReactNode {
     },
   });
 
-  const signOut = useMutation({
-    mutationFn: authApi.logout,
-    /**
-     * A full page load rather than a client-side route change.
-     *
-     * Signing out has to leave nothing behind, and the in-memory caches of a
-     * single-page application are exactly the sort of thing that quietly
-     * survives a re-render — query data fetched as the previous user, a stale
-     * session read, component state. Reloading discards all of it at once, and
-     * cannot be got subtly wrong the way unwinding it by hand can.
-     *
-     * `onSettled`, not `onSuccess`: if the request failed the browser is in an
-     * unknown state, which is the last moment to keep showing someone's budget.
-     */
-    onSettled: () => {
+  const [signingOut, setSigningOut] = useState(false);
+
+  /**
+   * A full page load rather than a client-side route change.
+   *
+   * Signing out has to leave nothing behind, and the in-memory caches of a
+   * single-page application are exactly the sort of thing that quietly survives
+   * a re-render — query data fetched as the previous user, a stale session read,
+   * component state. Reloading discards all of it at once, and cannot be got
+   * subtly wrong the way unwinding it by hand can.
+   *
+   * Deliberately not a `useMutation`. Its callbacks belong to the component's
+   * observer, so if this component unmounts while the request is in flight —
+   * which a re-render of the shell can do — the callback is dropped and the
+   * navigation never happens. The result is a browser still showing the budget
+   * of a session the server has already destroyed. A plain handler cannot be
+   * skipped that way.
+   *
+   * `finally`, not the success path: if the request failed the browser is in an
+   * unknown state, which is the last moment to keep someone's budget on screen.
+   */
+  async function signOut(): Promise<void> {
+    setSigningOut(true);
+    try {
+      await authApi.logout();
+    } finally {
       window.location.assign('/login');
-    },
-  });
+    }
+  }
 
   const width = collapsed ? 'w-rail' : 'w-sidebar';
 
@@ -172,7 +183,8 @@ export function Sidebar({ appName }: { appName: string }): ReactNode {
         )}
         <Button
           variant="ghost"
-          onClick={() => signOut.mutate()}
+          onClick={() => void signOut()}
+          disabled={signingOut}
           className="w-full"
           title={collapsed ? 'Sign out' : undefined}
         >
