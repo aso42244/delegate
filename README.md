@@ -179,8 +179,9 @@ defaults, which assume a much larger machine.
 
 **This stays on the LAN until Phase 3 ships in full.** No port forward, no DSM
 reverse proxy, no QuickConnect. Rate limiting, two-factor authentication and CSRF
-protection are in place; **TLS and passkeys are not**, and passkeys need a secure
-context, so both are still ahead. See
+protection are in place; **TLS is not**, so passwords and codes still cross the
+network in clear text. Passkeys have been dropped
+([ADR 016](docs/decisions/016-passkeys-are-out-of-scope.md)). See
 [ADR 007](docs/decisions/007-argon2id-parameters-and-password-policy.md).
 
 ### First deploy
@@ -332,14 +333,30 @@ full history and accurate day-one numbers. Step 5 corrects all of it at once.
 | ----- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | 1     | MVP: auth, accounts, SimpleFIN sync, transactions, rules, delegations, the ledger, Delegate/Transfer/Adjust, Reconcile, Settings, nightly backups, Docker deployment |
 | 2     | Utilities, Insights, Bitcoin, property value and equity, transaction pairing, grouping colours, notification banners                                                 |
-| 3     | Security hardening: LAN TLS, mandatory TOTP, passkeys, rate limiting, CSRF, Cloudflare Tunnel behind Cloudflare Access, dependency audit, tested restore             |
+| 3     | Security hardening: LAN TLS, mandatory TOTP, rate limiting, CSRF, Cloudflare Tunnel behind Cloudflare Access, dependency audit, tested restore                       |
 | 4     | UI polish: mobile, keyboard coverage, empty/loading/error states, accessibility                                                                                      |
+| 5     | Feature and bug requests arrive from a Notion database and are built automatically                                                                                   |
+
+**Passkeys have been dropped** — see
+[ADR 016](docs/decisions/016-passkeys-are-out-of-scope.md). TOTP is the second
+factor.
 
 **No internet exposure happens until every part of Phase 3 ships.** Rate
 limiting, TOTP with recovery codes, CSRF protection and the dependency audit are
-done. TLS, passkeys and Cloudflare Access are not, and TLS is sequenced first
-among them because WebAuthn requires a secure context — passkeys cannot be built
-at all over plain HTTP.
+done. TLS and Cloudflare Access are not.
+
+### Phase 5 — requests from Notion
+
+A Notion database holds feature and bug requests. Approved ones are handed to
+Claude Code, which builds and merges them.
+
+This crosses a trust boundary the rest of the application does not, so it gets
+designed before it gets built: a request written in Notion is **input, not an
+instruction**, and an automated path from a text field to a merge on `main` is a
+path an attacker would very much like to have. At minimum it needs a recorded ADR
+covering who can approve, what an approved request is allowed to touch, and what
+CI must prove before anything merges — the hard constraints above are not
+negotiable by a request, whoever wrote it.
 
 Dependency policy and the update process are in
 [docs/dependencies.md](docs/dependencies.md).

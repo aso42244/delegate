@@ -257,8 +257,8 @@ description.
 ## Authentication
 
 A username, an argon2id password hash, a session cookie, and an optional second
-factor. TLS and passkeys remain outstanding, and nothing may be exposed to the
-internet before they ship.
+factor. TLS remains outstanding, and nothing may be exposed to the internet
+before it ships.
 
 What is in place now:
 
@@ -291,8 +291,14 @@ What is in place now:
 - **Security headers** via helmet, including a content security policy that
   allows scripts and connections from this origin only.
 
-What is still absent: **TLS**, and therefore **passkeys**, which need a secure
-context. Until both land the system stays on the LAN.
+What is still absent: **TLS**. Until it lands, passwords, TOTP codes and the
+session cookie cross the LAN in clear text, and the system stays on the LAN.
+
+**Passkeys are not coming.** TOTP covers the stolen-password threat they were
+there for; what they would have added is phishing resistance, which is narrow for
+a two-person application with no public URL to impersonate, and expensive to keep
+correct. See [ADR 016](decisions/016-passkeys-are-out-of-scope.md), which also
+records the trade being accepted: Delegate remains phishable.
 
 ## Layout
 

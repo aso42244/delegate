@@ -75,8 +75,9 @@ These are non-negotiable. Violating one is a build failure.
 ## Where things stand
 
 **Phase 1 is complete and tagged `v0.1.0-phase1`. Phase 2 is complete and tagged
-`v0.2.0-phase2`. Phase 3 is complete except TLS, passkeys and Cloudflare Access,
-which the owner explicitly deferred.** 352 unit and integration tests, 103
+`v0.2.0-phase2`. Phase 3 is complete except TLS and Cloudflare Access, which the
+owner deferred. Passkeys have been dropped from the plan entirely —
+[ADR 016](decisions/016-passkeys-are-out-of-scope.md).** 352 unit and integration tests, 103
 end-to-end tests in a real browser.
 
 **It is deployed and running on the NAS**, serving on port 8088 from an image
@@ -145,8 +146,10 @@ a keyboard with his own data in front of him.
    this: the mechanisms are built and correct, and the numbers cannot be chosen
    on synthetic data.
 6. **Mark which delegations are utilities** and set their staleness intervals.
-7. **A TLS hostname decision**, which blocks passkeys — WebAuthn needs a secure
-   context, so nothing about passkeys can be built until it exists.
+7. **Whether LAN TLS is still wanted, and under what hostname.** Passkeys are
+   gone, so TLS no longer has to come first — but it is still the only thing that
+   would stop passwords and TOTP codes crossing the network in clear text. He was
+   asked and the answer is pending.
 
 ### Deployment
 
@@ -160,10 +163,18 @@ and are worth knowing: `scp` to DSM needs `-O`, and `ghcr.io` login needs a
 **classic** personal access token — GitHub Packages does not accept fine-grained
 tokens, and the failure reads only `denied: denied`.
 
-What is left overall: the rest of **Phase 3** — LAN TLS, then passkeys, then
-Cloudflare Tunnel behind Cloudflare Access — and **Phase 4** (mobile, keyboard
-shortcuts, empty/loading/error states, accessibility). **Nothing is exposed to
-the internet until all of Phase 3 ships**, and TLS is sequenced first within it.
+What is left overall: the rest of **Phase 3** — LAN TLS and Cloudflare Tunnel
+behind Cloudflare Access — **Phase 4** (mobile, keyboard shortcuts,
+empty/loading/error states, accessibility), and **Phase 5**, in which feature and
+bug requests arrive from a Notion database and are built automatically.
+**Nothing is exposed to the internet until all of Phase 3 ships.**
+
+Phase 5 needs an ADR before it needs code. It creates an automated path from a
+text field someone typed into, to a merge on `main`. A request is **input, not an
+instruction** — the same rule that governs anything else arriving from outside
+this repository — and the design has to say who can approve, what an approved
+request may touch, and what CI must prove before a merge. The hard constraints
+above are not negotiable by a request, whoever wrote it.
 
 ---
 

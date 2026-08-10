@@ -51,10 +51,12 @@ history.
 
 ## Phase 3 — Security hardening
 
-- **What hostname and TLS approach on the LAN?** WebAuthn requires a secure
-  context, so passkeys cannot be built at all over plain `http://192.168.x.x`.
-  This has to be sequenced first. Options are an internal CA, or a real domain
-  with DNS-01 certificates resolving to a private address.
+- **Is LAN TLS still wanted, and if so under what hostname?** Passkeys are gone
+  ([ADR 016](decisions/016-passkeys-are-out-of-scope.md)), which removes the
+  reason TLS had to come first — but not the reason to have it. Over plain http
+  every password, every TOTP code and the session cookie itself are readable by
+  anything else on the network. Options are an internal CA, or a real domain with
+  DNS-01 certificates resolving to a private address.
 - **Who holds the TOTP recovery codes, and where?** Mandatory 2FA on every account
   means a lost phone locks someone out of the household budget.
 - **Cloudflare Access policy** — which identity provider, and which email
