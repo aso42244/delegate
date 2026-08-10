@@ -219,3 +219,75 @@ test.describe('keyboard navigation', () => {
     await expect(page.getByLabel('Categorize Corner Shop')).toBeFocused();
   });
 });
+
+test.describe('the row menu on a phone', () => {
+  test.use({ viewport: { width: 375, height: 812 }, hasTouch: true });
+
+  /** Presses and holds the first transaction row, in real touch events. */
+  async function hold(page: Page, ms: number): Promise<void> {
+    await page.evaluate(() => {
+      const row = document.querySelector('tbody tr');
+      if (!row) throw new Error('no transaction row');
+      const touch = new Touch({ identifier: 1, target: row, clientX: 120, clientY: 200 });
+      row.dispatchEvent(new TouchEvent('touchstart', { touches: [touch], bubbles: true }));
+    });
+    await page.waitForTimeout(ms);
+  }
+
+  async function aTransaction(page: Page, api: APIRequestContext): Promise<void> {
+    const accountId = await makeAccount('Everyday Checking', 'asset', 500000n);
+    await makeDelegation(api, 'Grocery');
+    await api.post('/api/transactions', {
+      data: {
+        accountId,
+        amountCents: '-1000',
+        description: 'Corner Shop',
+        postedAt: '2026-08-05T00:00:00Z',
+      },
+    });
+    await page.goto('/transactions');
+    // The row has to be on screen before touch events can be aimed at it.
+    await expect(page.getByText('Corner Shop')).toBeVisible();
+  }
+
+  test('touch and hold opens it, where there is no hover to reveal it', async ({
+    signedIn: page,
+    api,
+  }) => {
+    await aTransaction(page, api);
+
+    await hold(page, 700);
+
+    await expect(page.getByRole('menu', { name: 'Options for Corner Shop' })).toBeVisible();
+    await expect(page.getByRole('menuitem', { name: 'Split between delegations' })).toBeVisible();
+  });
+
+  test('a tap is not a hold', async ({ signedIn: page, api }) => {
+    await aTransaction(page, api);
+
+    await hold(page, 150);
+    await page.evaluate(() => {
+      const row = document.querySelector('tbody tr');
+      const touch = new Touch({ identifier: 1, target: row!, clientX: 120, clientY: 200 });
+      row!.dispatchEvent(new TouchEvent('touchend', { changedTouches: [touch], bubbles: true }));
+    });
+    await page.waitForTimeout(600);
+
+    await expect(page.getByRole('menu', { name: 'Options for Corner Shop' })).toBeHidden();
+  });
+
+  /** A finger travelling down the page is scrolling, not holding a row. */
+  test('scrolling away does not open it', async ({ signedIn: page, api }) => {
+    await aTransaction(page, api);
+
+    await hold(page, 150);
+    await page.evaluate(() => {
+      const row = document.querySelector('tbody tr');
+      const moved = new Touch({ identifier: 1, target: row!, clientX: 120, clientY: 40 });
+      row!.dispatchEvent(new TouchEvent('touchmove', { touches: [moved], bubbles: true }));
+    });
+    await page.waitForTimeout(700);
+
+    await expect(page.getByRole('menu', { name: 'Options for Corner Shop' })).toBeHidden();
+  });
+});

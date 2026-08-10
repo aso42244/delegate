@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import { useLongPress } from '../useLongPress.js';
 
 /**
  * The mechanics shared by every row menu on the Main Budget: the `⋯` trigger,
@@ -8,6 +9,10 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
  * the behaviour is the part that would be easy to get subtly wrong twice — the
  * trigger has to be reachable by keyboard although it is revealed on hover, and
  * the menu has to close on Escape and on a click elsewhere.
+ *
+ * Three ways in, one per input device: hover and click the `⋯`, focus the row
+ * and press it by keyboard, or **touch and hold the row** on a phone, where
+ * there is no hover to reveal anything with.
  */
 
 export interface GroupingOption {
@@ -53,8 +58,28 @@ export function RowMenuShell({
 }: RowMenuShellProps): ReactNode {
   const canMove = groupings !== undefined && onMoveToGrouping !== undefined;
   const containerRef = useRef<HTMLDivElement>(null);
+  const rowRef = useRef<HTMLTableRowElement | null>(null);
   const [open, setOpen] = useState(false);
   const [panel, setPanel] = useState<'root' | 'grouping'>('root');
+
+  /**
+   * The row this menu belongs to, found rather than passed.
+   *
+   * Every caller renders this inside a cell of the row it acts on, so the
+   * relationship is already true — threading a ref through each one would only
+   * be a second place for it to be stated, and to be stated wrongly.
+   */
+  useEffect(() => {
+    rowRef.current = containerRef.current?.closest('tr') ?? null;
+  });
+
+  useLongPress(
+    rowRef,
+    useCallback(() => {
+      setPanel('root');
+      setOpen(true);
+    }, []),
+  );
 
   useEffect(() => {
     if (!open) return;

@@ -119,7 +119,8 @@ body {
  *
  * - keyboard focus, on the button or anywhere in the row;
  * - the menu being open;
- * - a device that cannot hover at all, where it stays visible permanently.
+ * - touch and hold anywhere on the row, which is the route on a phone, where
+ *   there is no hover to reveal anything with.
  */
 .row-menu-trigger {
   opacity: 0;
@@ -131,12 +132,6 @@ body {
 .row-menu-trigger:focus-visible,
 .row-menu-trigger[aria-expanded='true'] {
   opacity: 1;
-}
-
-@media (hover: none) {
-  .row-menu-trigger {
-    opacity: 1;
-  }
 }
 
 /* Visible keyboard focus everywhere, in the accent colour. */

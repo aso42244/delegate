@@ -15,6 +15,7 @@ import { MatchCheckDialog } from '../components/MatchCheckDialog.jsx';
 import { TransactionRowMenu } from '../components/TransactionRowMenu.jsx';
 import { SplitDialog } from '../components/SplitDialog.jsx';
 import { Alert, Button, Tag } from '../components/ui.jsx';
+import { NO_HOVER, useMediaQuery } from '../useMediaQuery.js';
 import { useRowKeyboard } from '../useRowKeyboard.js';
 
 /**
@@ -67,6 +68,7 @@ export function Transactions(): ReactNode {
     queryFn: () => transactionsApi.list(query),
   });
 
+  const noHover = useMediaQuery(NO_HOVER);
   const rows = list.data?.transactions ?? [];
 
   /**
@@ -174,6 +176,15 @@ export function Transactions(): ReactNode {
           Add transaction
         </Button>
       </header>
+
+      {/* Touch and hold is the only route to the row menu on a phone, and a
+          gesture with nothing on screen to suggest it is a gesture nobody finds.
+          One quiet line, and only where it applies. */}
+      {noHover && (
+        <p className="mb-4 text-quiet text-muted">
+          Touch and hold a transaction for more, including splitting it.
+        </p>
+      )}
 
       <PairSuggestions />
 
