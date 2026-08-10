@@ -27,3 +27,10 @@ export function useMediaQuery(query: string): boolean {
 
 /** Phone-width. Matches Tailwind's `sm` breakpoint, so CSS and state agree. */
 export const NARROW = '(max-width: 639px)';
+
+/**
+ * A device with no hover — a phone or tablet. Distinct from narrowness: a
+ * touchscreen laptop is wide and still has a pointer, and a small window on a
+ * desktop is narrow and still hovers.
+ */
+export const NO_HOVER = '(hover: none)';

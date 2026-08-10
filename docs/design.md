@@ -313,6 +313,23 @@ and the bank has not seen. Until it clears, the envelope it came from would
 otherwise show funds that are already committed — and with a chequebook, spending
 the same money twice is an easy mistake.
 
+Splitting a transaction and matching one to a check both live in the row's `⋯`
+menu on the Transactions page, not as buttons in the row. Categorizing is the
+frequent act there and stays a field; two permanent buttons beside every one of
+sixty rows made the rare thing as loud as the common one.
+
+Every row menu has one way in per input device. A pointer hovers the row and
+clicks the `⋯`. A keyboard focuses the row, which reveals the same control. A
+finger **touches and holds the row**, because a phone has no hover to reveal
+anything with — half a second, cancelled by moving more than about ten pixels,
+since a finger travelling down the page is scrolling rather than holding. The
+platform's own long-press menu is suppressed only for presses this actually
+handled, so selecting a description to copy it still works.
+
+A gesture with nothing on screen to suggest it is a gesture nobody finds, so the
+Transactions page carries one quiet line saying so — and only on devices where
+it applies.
+
 **New outstanding check** sits beside Transfer and Delegate on the Main Budget.
 It asks for the number, the amount, the date, a memo, and which delegation the
 money comes from. Recording one moves the money out of that delegation and onto a

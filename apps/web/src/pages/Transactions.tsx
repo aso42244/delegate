@@ -12,8 +12,10 @@ import { DelegationPicker } from '../components/DelegationPicker.jsx';
 import { NewTransactionDialog } from '../components/NewTransactionDialog.jsx';
 import { PairSuggestions } from '../components/PairSuggestions.jsx';
 import { MatchCheckDialog } from '../components/MatchCheckDialog.jsx';
+import { TransactionRowMenu } from '../components/TransactionRowMenu.jsx';
 import { SplitDialog } from '../components/SplitDialog.jsx';
 import { Alert, Button, Tag } from '../components/ui.jsx';
+import { NO_HOVER, useMediaQuery } from '../useMediaQuery.js';
 import { useRowKeyboard } from '../useRowKeyboard.js';
 
 /**
@@ -66,6 +68,7 @@ export function Transactions(): ReactNode {
     queryFn: () => transactionsApi.list(query),
   });
 
+  const noHover = useMediaQuery(NO_HOVER);
   const rows = list.data?.transactions ?? [];
 
   /**
@@ -174,6 +177,15 @@ export function Transactions(): ReactNode {
         </Button>
       </header>
 
+      {/* Touch and hold is the only route to the row menu on a phone, and a
+          gesture with nothing on screen to suggest it is a gesture nobody finds.
+          One quiet line, and only where it applies. */}
+      {noHover && (
+        <p className="mb-4 text-quiet text-muted">
+          Touch and hold a transaction for more, including splitting it.
+        </p>
+      )}
+
       <PairSuggestions />
 
       <div className="mb-4 flex flex-wrap items-center gap-2">
@@ -238,6 +250,7 @@ export function Transactions(): ReactNode {
               <th className="row-cell text-left font-normal">Account</th>
               <th className="row-cell pr-3 text-right font-normal">Amount</th>
               <th className="row-cell pr-3 text-left font-normal">Delegation</th>
+              <th className="w-10 row-cell pr-3" />
             </tr>
           </thead>
 
@@ -249,7 +262,9 @@ export function Transactions(): ReactNode {
               return (
                 <tr
                   key={transaction.id}
-                  className="border-b border-line focus:bg-accent-soft"
+                  // `group` so the row's menu appears on hover of the row rather
+                  // than only of the trigger itself.
+                  className="group border-b border-line focus:bg-accent-soft"
                   {...keyboard.rowProps(index)}
                 >
                   <td className="row-cell pl-3">
@@ -308,36 +323,29 @@ export function Transactions(): ReactNode {
 
                   <td className="w-72 row-cell pr-3">
                     {transaction.kind === 'normal' ? (
-                      <div className="flex items-center gap-1">
-                        <div className="flex-1">
-                          <DelegationPicker
-                            options={delegations}
-                            {...(current ? { currentName: current } : {})}
-                            label={`Categorize ${transaction.description}`}
-                            onChoose={(delegationId) =>
-                              categorize.mutate({ id: transaction.id, delegationId })
-                            }
-                          />
-                        </div>
-                        {/* Splits are rare, so this is a plain affordance beside
-                            the picker rather than anything the queue trips over. */}
-                        <Button
-                          variant="ghost"
-                          onClick={() => setMatching(transaction)}
-                          aria-label={`Match ${transaction.description} to a check`}
-                        >
-                          Check
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          onClick={() => setSplitting(transaction)}
-                          aria-label={`Split ${transaction.description}`}
-                        >
-                          Split
-                        </Button>
-                      </div>
+                      <DelegationPicker
+                        options={delegations}
+                        {...(current ? { currentName: current } : {})}
+                        label={`Categorize ${transaction.description}`}
+                        onChoose={(delegationId) =>
+                          categorize.mutate({ id: transaction.id, delegationId })
+                        }
+                      />
                     ) : (
                       <AllocationSummary transaction={transaction} />
+                    )}
+                  </td>
+
+                  {/* Splitting and matching a check are both uncommon; the
+                      frequent act on this page is categorizing, which stays a
+                      field in the row. */}
+                  <td className="w-10 row-cell pr-3">
+                    {transaction.kind === 'normal' && (
+                      <TransactionRowMenu
+                        transaction={transaction}
+                        onSplit={() => setSplitting(transaction)}
+                        onMatchCheck={() => setMatching(transaction)}
+                      />
                     )}
                   </td>
                 </tr>
