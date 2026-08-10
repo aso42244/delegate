@@ -13,6 +13,7 @@ import { NewTransactionDialog } from '../components/NewTransactionDialog.jsx';
 import { PairSuggestions } from '../components/PairSuggestions.jsx';
 import { SplitDialog } from '../components/SplitDialog.jsx';
 import { Alert, Button, Tag } from '../components/ui.jsx';
+import { useRowKeyboard } from '../useRowKeyboard.js';
 
 /**
  * The Transactions page.
@@ -40,6 +41,11 @@ function AllocationSummary({ transaction }: { transaction: TransactionDto }): Re
   );
 }
 
+/** Descriptions come from the bank and can contain quotes, which would break the selector. */
+function cssEscape(value: string): string {
+  return value.replace(/["\\]/g, '\\$&');
+}
+
 export function Transactions(): ReactNode {
   const queryClient = useQueryClient();
   const [filters, setFilters] = useState<TransactionFilters>({ uncategorized: true });
@@ -55,6 +61,28 @@ export function Transactions(): ReactNode {
   const list = useQuery({
     queryKey: ['transactions', query],
     queryFn: () => transactionsApi.list(query),
+  });
+
+  const rows = list.data?.transactions ?? [];
+
+  /**
+   * j/k and the arrow keys move between rows; Enter steps into that row's
+   * categorize field; Space selects it for a bulk assignment. Keys typed inside
+   * the field itself are left alone, so searching for "jam" still types "jam".
+   */
+  const keyboard = useRowKeyboard(rows.length, {
+    onActivate: (index) => {
+      const transaction = rows[index];
+      if (!transaction) return;
+      const field = document.querySelector<HTMLInputElement>(
+        `[aria-label="Categorize ${cssEscape(transaction.description)}"]`,
+      );
+      field?.focus();
+    },
+    onToggle: (index) => {
+      const transaction = rows[index];
+      if (transaction) toggleSelected(transaction.id);
+    },
   });
 
   // The picker needs every delegation, which the budget view already provides.
@@ -197,23 +225,27 @@ export function Transactions(): ReactNode {
         <table className="w-full border-t-2 border-ink">
           <thead>
             <tr className="text-label uppercase tracking-[0.05em] text-muted">
-              <th className="w-8 py-2 pl-3" />
-              <th className="py-2 text-left font-normal">Date</th>
-              <th className="py-2 text-left font-normal">Description</th>
-              <th className="py-2 text-left font-normal">Account</th>
-              <th className="py-2 pr-3 text-right font-normal">Amount</th>
-              <th className="py-2 pr-3 text-left font-normal">Delegation</th>
+              <th className="w-8 row-cell pl-3" />
+              <th className="row-cell text-left font-normal">Date</th>
+              <th className="row-cell text-left font-normal">Description</th>
+              <th className="row-cell text-left font-normal">Account</th>
+              <th className="row-cell pr-3 text-right font-normal">Amount</th>
+              <th className="row-cell pr-3 text-left font-normal">Delegation</th>
             </tr>
           </thead>
 
-          <tbody>
-            {list.data?.transactions.map((transaction) => {
+          <tbody onKeyDown={keyboard.onKeyDown}>
+            {list.data?.transactions.map((transaction, index) => {
               const amount = BigInt(transaction.amountCents);
               const current = transaction.allocations[0]?.delegation.name;
 
               return (
-                <tr key={transaction.id} className="border-b border-line">
-                  <td className="py-2 pl-3">
+                <tr
+                  key={transaction.id}
+                  className="border-b border-line focus:bg-accent-soft"
+                  {...keyboard.rowProps(index)}
+                >
+                  <td className="row-cell pl-3">
                     <input
                       type="checkbox"
                       checked={selected.has(transaction.id)}
@@ -222,11 +254,11 @@ export function Transactions(): ReactNode {
                     />
                   </td>
 
-                  <td className="py-2 pr-3 text-quiet whitespace-nowrap text-muted">
+                  <td className="row-cell pr-3 text-quiet whitespace-nowrap text-muted">
                     {new Date(transaction.postedAt).toLocaleDateString()}
                   </td>
 
-                  <td className="py-2 pr-3">
+                  <td className="row-cell pr-3">
                     <span className="text-ink">{transaction.description}</span>
                     {/* Pending rows already moved the envelopes, so they are
                         marked rather than hidden. */}
@@ -257,15 +289,17 @@ export function Transactions(): ReactNode {
                     </div>
                   </td>
 
-                  <td className="py-2 pr-3 text-quiet text-muted">{transaction.account.name}</td>
+                  <td className="row-cell pr-3 text-quiet text-muted">
+                    {transaction.account.name}
+                  </td>
 
-                  <td className="money py-2 pr-3">
+                  <td className="money row-cell pr-3">
                     <span className={amount > 0n ? 'font-semibold text-positive' : 'text-ink'}>
                       {formatCents(amount, { explicitPlus: true })}
                     </span>
                   </td>
 
-                  <td className="w-72 py-2 pr-3">
+                  <td className="w-72 row-cell pr-3">
                     {transaction.kind === 'normal' ? (
                       <div className="flex items-center gap-1">
                         <div className="flex-1">

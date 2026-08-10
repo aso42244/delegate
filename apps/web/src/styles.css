@@ -56,6 +56,35 @@
   --spacing-rail: 64px;
 }
 
+/**
+ * Table row height, as one variable rather than padding written into every
+ * table.
+ *
+ * 40px is the default. 32px is available in Settings for anyone who would
+ * rather see more rows than have more room — the design values density "never
+ * at the cost of legibility", and the honest way to hold both is to let the
+ * person reading decide. The type size does not change with it; only the space
+ * around it does, so the compact setting is denser without being smaller.
+ */
+:root {
+  --row-height: 40px;
+}
+
+:root[data-density='compact'] {
+  --row-height: 32px;
+}
+
+/**
+ * Applied to every `td` and `th` in a data table. Height rather than padding,
+ * so the two settings differ by exactly the number they are named for however
+ * tall the content inside happens to be.
+ */
+.row-cell {
+  height: var(--row-height);
+  padding-top: 0;
+  padding-bottom: 0;
+}
+
 html,
 body,
 #root {

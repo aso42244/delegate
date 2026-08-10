@@ -14,6 +14,7 @@ import { BudgetSection } from './pages/settings/Budget.jsx';
 import { DelegationsSection } from './pages/settings/Delegations.jsx';
 import { GroupingsSection } from './pages/settings/Groupings.jsx';
 import { RulesSection } from './pages/settings/Rules.jsx';
+import { DisplaySection } from './pages/settings/Display.jsx';
 import { SecuritySection } from './pages/settings/Security.jsx';
 import { UsersSection } from './pages/settings/Users.jsx';
 import { ReconcileSection } from './pages/settings/Reconcile.jsx';
@@ -108,6 +109,7 @@ export function App(): ReactNode {
             <Route path="budget" element={<BudgetSection />} />
             <Route path="users" element={<UsersSection />} />
             <Route path="security" element={<SecuritySection />} />
+            <Route path="display" element={<DisplaySection />} />
             <Route path="archived" element={<ArchivedSection />} />
             <Route path="reconcile" element={<ReconcileSection />} />
           </Route>

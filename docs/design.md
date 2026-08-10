@@ -99,6 +99,12 @@ red are reserved for over-delegation — the direction that is genuinely wrong.
 Borderless spreadsheet style: no card box, a 2px near-black rule across the top
 of each table, then 1px `#E6E5E3` row dividers. No fill on the header row.
 
+Rows are **40px tall**, with a **32px compact** setting in Settings → Display.
+Only the spacing differs; the type size is the same in both, so compact is denser
+without being smaller. The preference is stored per device rather than per
+household — it describes the screen someone is looking at, the same reasoning as
+the sidebar's collapsed state.
+
 Section header above each table: 16px title left, accent-coloured
 "+ Add …" links right. Rows are 8px vertical / 14px side padding. Assets and
 Debts show Account, Source (grey tag chip), Balance (right), ellipsis.
@@ -268,3 +274,34 @@ a LICENCE rather than a refactor.
 **The displayed name comes from the `APP_NAME` environment variable**, defaulting
 to `Delegate`. The owner sets his own in `.env`, which is git-ignored, so
 the repository stays free of it. Confirmed by the owner.
+
+## On a phone
+
+Below 640px there is not room for a name and two money columns, so the
+Delegations table shows **one amount at a time** — Remaining first, because that
+is the number the budget is read for. Swiping horizontally across the table
+switches to To delegate and back.
+
+Swipe is never the only route. A two-button switch sits above the table doing the
+same job, which is what a screen reader, a keyboard, and anyone who does not
+think to try swiping will find. The same rule the row menu follows for
+drag-and-drop: the gesture is an enhancement, the control is the interface.
+
+A swipe is only read as one when it is decisively horizontal — at least 48px, and
+further across than down. A thumb scrolling the page must not find the column
+swapped underneath it.
+
+## Keyboard
+
+`j`/`k` and the arrow keys both move between rows in the transaction queue; both
+are muscle memory for somebody and supporting both costs nothing. `Home` and
+`End` jump to the ends. Movement is clamped rather than wrapped — wrapping from
+the last row to the first silently moves the eye to the other end of a long
+queue.
+
+`Enter` steps into the focused row's categorize field. `Space` selects the row
+for a bulk assignment.
+
+One rule governs all of it: **a keystroke inside a form field belongs to the
+field.** Every row in the queue contains a text input, so someone typing a
+delegation name containing j or k gets the letters, not three rows of movement.
