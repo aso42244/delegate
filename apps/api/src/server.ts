@@ -1,6 +1,7 @@
 import { buildApp } from './app.js';
 import { getConfig } from './config.js';
 import { prisma } from './db/client.js';
+import { getBudgetSettings } from './domain/settings.js';
 import { startScheduler } from './scheduler.js';
 
 /**
@@ -33,6 +34,13 @@ if (config.TLS_CERT_PATH) {
       'TLS is on but SESSION_COOKIE_SECURE is false. Set it to true so the session cookie is never sent in clear text.',
     );
   }
+} else if (config.TRUST_PROXY) {
+  // Plain http to a proxy on the same host is loopback traffic. Saying "clear
+  // text" here would be alarming and wrong.
+  app.log.info(
+    { trustProxy: config.TRUST_PROXY },
+    'serving plain http behind a trusted proxy, which is expected to terminate TLS',
+  );
 } else {
   app.log.warn(
     'serving over plain http: passwords, two-factor codes and the session cookie are readable by anything else on this network. See ADR 017.',
@@ -40,6 +48,22 @@ if (config.TLS_CERT_PATH) {
   if (config.SESSION_COOKIE_SECURE) {
     app.log.warn(
       'SESSION_COOKIE_SECURE is true without TLS here. Sign-in will fail unless something in front of this terminates TLS.',
+    );
+  }
+}
+
+/**
+ * The combination worth refusing to be quiet about: reachable from the internet
+ * through a proxy, while the sign-in page is protected by a password alone.
+ *
+ * Not an error — the household may be mid-enrolment, and refusing to boot would
+ * lock them out of the screen where they fix it.
+ */
+if (config.TRUST_PROXY) {
+  const { requireTotp } = await getBudgetSettings(prisma);
+  if (!requireTotp) {
+    app.log.warn(
+      'a proxy is trusted, so this may be reachable from outside the LAN, but two-factor is not required of every account. Turn it on in Settings -> Security.',
     );
   }
 }

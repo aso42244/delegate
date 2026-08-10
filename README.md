@@ -344,12 +344,15 @@ factor.
 **Phase 3 is done.** Rate limiting, TOTP with recovery codes, CSRF protection,
 optional TLS and the dependency audit have all shipped.
 
-**Delegate serves plain http by default, and stays on the LAN.**
+**Delegate serves plain http by default.** Reaching it from outside the house
+goes through a Cloudflare Tunnel — see
+[docs/remote-access.md](docs/remote-access.md), which covers what is encrypted on
+which leg, and the two things that must be true before turning it on.
+
 [ADR 017](docs/decisions/017-plain-http-is-the-default-and-tls-is-optional.md)
 records that as a decision with its trade stated: on a trusted home network the
 exposure is other devices on that network, and passwords and two-factor codes
-cross it in clear text. TLS is supported for anyone who wants it — see below —
-but internet exposure remains off the table while the default stands.
+cross it in clear text. TLS is supported for anyone who wants it — see below.
 
 ### Optional TLS
 

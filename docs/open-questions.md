@@ -56,10 +56,11 @@ history.
   [ADR 017](decisions/017-plain-http-is-the-default-and-tls-is-optional.md).
 - **Who holds the TOTP recovery codes, and where?** Mandatory 2FA on every account
   means a lost phone locks someone out of the household budget.
-- ~~**Cloudflare Access policy.**~~ Dropped with passkeys and internet exposure;
-  there is no edge to configure.
-- **Does the household want session expiry shorter than 7 days?** Seven days on a
-  LAN-only deployment is defensible; it would not be if that ever changed.
+- ~~**Cloudflare Access policy.**~~ Declined for now and recorded as a future
+  feature request. The tunnel goes ahead without it
+  ([ADR 018](decisions/018-a-proxy-is-trusted-only-when-configured.md)).
+- **Does the household want session expiry shorter than 7 days?** Defensible on a
+  LAN; less so once the tunnel is up and the sign-in page is public.
 
 ## Phase 4 — UI polish
 

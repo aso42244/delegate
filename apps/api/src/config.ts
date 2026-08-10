@@ -40,6 +40,18 @@ const environmentSchema = z
     // than loudly.
     SESSION_COOKIE_SECURE: booleanFromString.default(false),
 
+    // Whether to believe `X-Forwarded-For`, and from whom.
+    //
+    // Empty (the default) means the connecting socket is the client, which is
+    // correct when nothing sits in front. Behind a Cloudflare Tunnel it is wrong
+    // in a way that matters: every request appears to come from `cloudflared`, so
+    // the sign-in rate limit becomes one shared bucket for the whole internet.
+    //
+    // Accepts `true`, or a comma-separated list of addresses and CIDR ranges to
+    // trust. See ADR 018 — this is opt-in because a header is only evidence when
+    // something trustworthy set it.
+    TRUST_PROXY: z.string().default(''),
+
     // Optional TLS, terminated by the application itself. Both paths or neither;
     // see ADR 017. Left empty, Delegate serves plain http, which is the default
     // and is only acceptable on a trusted LAN.

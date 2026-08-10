@@ -113,13 +113,28 @@ if grep -qE '^TLS_KEY_PATH=".+"' .env && ! grep -qE '^TLS_CERT_PATH=".+"' .env; 
   exit 1
 fi
 
-if grep -qE '^SESSION_COOKIE_SECURE=true' .env && ! grep -qE '^TLS_CERT_PATH=".+"' .env; then
-  # A browser never sends a Secure cookie over plain http, so sign-in fails with
-  # nothing on screen to explain it.
-  echo 'error: SESSION_COOKIE_SECURE=true with no TLS will break sign-in silently.' >&2
-  echo '       Set TLS_CERT_PATH and TLS_KEY_PATH first — see ./scripts/make-tls-cert.sh —' >&2
+# A Secure cookie is never sent over plain http, so sign-in fails with nothing on
+# screen to explain it. TLS has to be somewhere — terminated here, or by a proxy
+# in front, which TRUST_PROXY is the deployment saying exists.
+if grep -qE '^SESSION_COOKIE_SECURE=true' .env \
+  && ! grep -qE '^TLS_CERT_PATH=".+"' .env \
+  && ! grep -qE '^TRUST_PROXY=".+"' .env; then
+  echo 'error: SESSION_COOKIE_SECURE=true with no TLS anywhere will break sign-in silently.' >&2
+  echo '       Either set TLS_CERT_PATH and TLS_KEY_PATH (see ./scripts/make-tls-cert.sh),' >&2
+  echo '       or set TRUST_PROXY if something in front terminates TLS,' >&2
   echo '       or leave SESSION_COOKIE_SECURE false.' >&2
   exit 1
+fi
+
+# The reverse: trusting a forwarded address while the port is also reachable
+# directly is worse than not trusting one, because a forged address gets a fresh
+# rate-limit bucket on every request. This cannot be checked from here, so it is
+# said out loud.
+if grep -qE '^TRUST_PROXY=".+"' .env; then
+  echo 'TRUST_PROXY is set. This is only correct if the app cannot be reached'
+  echo 'except through the proxy — confine the port in the DSM firewall, or the'
+  echo 'sign-in rate limit can be stepped around with a forged header. See ADR 018.'
+  echo
 fi
 
 # Everything below talks to the app over whichever transport it is now serving.
