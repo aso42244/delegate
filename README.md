@@ -357,7 +357,14 @@ but internet exposure remains off the table while the default stands.
 ./scripts/make-tls-cert.sh 10.0.3.4 nas.local
 ```
 
-Give it every address the household will actually type. Then in `.env`:
+Give it every address the household will actually type.
+
+The container runs as uid 1000, not root, so the key has to be **owned** by that
+uid — the script does it, using `sudo` if it needs to, and tells you the exact
+command if it cannot. Do not widen the mode instead: the point of `600` is that
+no other account on the NAS can read the private key.
+
+Then in `.env`:
 
 ```
 TLS_CERT_PATH="/tls/delegate.crt"

@@ -79,10 +79,37 @@ openssl req -x509 -newkey rsa:2048 -sha256 -days "$DAYS" -nodes \
 chmod 600 "$OUT_DIR/delegate.key"
 chmod 644 "$OUT_DIR/delegate.crt"
 
+# The container does not run as root — it runs as `node`, uid 1000 — so a key
+# owned by whoever ran this script and readable only by them is a key the
+# application cannot open. It fails at boot with EACCES, which reads like a bug
+# in the application and is not.
+#
+# The fix is ownership, not permissions: widening the mode to 644 would make the
+# private key readable by every account on the NAS, which is the thing mode 600
+# was for.
+CONTAINER_UID="${TLS_OWNER_UID:-1000}"
+
+if chown "${CONTAINER_UID}:${CONTAINER_UID}" "$OUT_DIR/delegate.key" "$OUT_DIR/delegate.crt" 2>/dev/null; then
+  owned=1
+elif sudo -n chown "${CONTAINER_UID}:${CONTAINER_UID}" "$OUT_DIR/delegate.key" "$OUT_DIR/delegate.crt" 2>/dev/null; then
+  echo "Used sudo to give the key to uid ${CONTAINER_UID}, the container's user."
+  owned=1
+else
+  owned=0
+fi
+
 echo "Wrote:"
 echo "  $OUT_DIR/delegate.crt"
 echo "  $OUT_DIR/delegate.key   (mode 600)"
 echo
+
+if [ "$owned" -eq 0 ]; then
+  echo "WARNING: could not change ownership. The container runs as uid ${CONTAINER_UID}"
+  echo "and will fail to start with EACCES until it can read the key. Run:"
+  echo
+  echo "  sudo chown ${CONTAINER_UID}:${CONTAINER_UID} $OUT_DIR/delegate.key $OUT_DIR/delegate.crt"
+  echo
+fi
 echo "Valid for $DAYS days, covering: $*"
 echo
 echo "Next, in .env:"

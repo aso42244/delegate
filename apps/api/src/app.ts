@@ -38,10 +38,24 @@ import { utilityRoutes } from './routes/utilities.js';
 function readTls(config: AppConfig): { key: Buffer; cert: Buffer } | undefined {
   if (!config.TLS_CERT_PATH || !config.TLS_KEY_PATH) return undefined;
 
-  return {
-    key: readFileSync(config.TLS_KEY_PATH),
-    cert: readFileSync(config.TLS_CERT_PATH),
-  };
+  try {
+    return {
+      key: readFileSync(config.TLS_KEY_PATH),
+      cert: readFileSync(config.TLS_CERT_PATH),
+    };
+  } catch (error) {
+    // The overwhelmingly common cause is ownership, not a missing file: the
+    // container runs as `node`, and a key written by whoever generated it is
+    // mode 600 and owned by them. A bare EACCES stack trace reads like a bug in
+    // the application, so say what it actually is.
+    const detail = error instanceof Error ? error.message : String(error);
+    throw new Error(
+      `Could not read the TLS material: ${detail}\n` +
+        'The container runs as uid 1000. If this is a permission error, give it the files:\n' +
+        '  sudo chown 1000:1000 <cert> <key>\n' +
+        'Do not widen the mode instead — the key must stay unreadable to other accounts.',
+    );
+  }
 }
 
 /**

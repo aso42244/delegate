@@ -246,7 +246,10 @@ jobs:
         run: |
           docker rm -f app
 
-          ./scripts/make-tls-cert.sh 127.0.0.1 localhost
+          # The runner cannot chown to another uid without root, and the script
+          # says so rather than failing silently. This is the same step the NAS
+          # needs, which is why the script prints it.
+          sudo ./scripts/make-tls-cert.sh 127.0.0.1 localhost
 
           docker run -d --name app-tls --network delegate-ci -p 8443:3000 \
             -v "$PWD/tls:/tls:ro" \
