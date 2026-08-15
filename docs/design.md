@@ -371,13 +371,20 @@ to find the discrepancy.
 
 ## Insights, arranged
 
-Tiles move with **◂ ▸** in their own header, and the order is saved per person on
-the server, so it follows you to a phone. Buttons rather than dragging: a drag is
-unreachable by keyboard and awkward with a thumb, and this page is read on both.
+Tiles move by dragging one onto another, and with **◂ ▸** in their own header.
+The order is saved per person on the server, so it follows you to a phone.
+
+Both, for the reason the budget rows already give: a drag is not reachable by
+keyboard and does nothing under a thumb, so the buttons are the route that always
+works and the drag is the one that feels right with a mouse. The grip beside each
+title says the card can be pulled — a card that happens to move when dragged,
+with nothing to suggest it would, is a surprise rather than a feature.
 
 Each tile also says how it is drawn, where there is a real choice — a ranked
 breakdown reads as bars or as a donut, and a series reads as a line, an area or
-columns. Some tiles offer one shape and show no switch at all: a donut of a
+columns. **Bitcoin over time** is one of those series: the holding valued at each
+day's price. Quantity history is not recorded, so the tile says plainly that the
+line moves with the price rather than with buying or selling. Some tiles offer one shape and show no switch at all: a donut of a
 single number says nothing, and an option that made a tile worse would not be a
 choice worth offering.
 

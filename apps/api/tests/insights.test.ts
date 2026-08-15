@@ -296,3 +296,73 @@ describe('the layout', () => {
     expect(response.statusCode).toBe(401);
   });
 });
+
+/**
+ * Bitcoin over time.
+ *
+ * The series was computable all along — `accountSeries` has valued a holding at
+ * each day's price since Phase 2 — but the route never returned it, so the tile
+ * had nothing to draw and showed a paragraph instead.
+ */
+describe('the bitcoin series', () => {
+  it('values the holding at each day s price', async () => {
+    const wallet = await makeAccount({
+      name: 'Hardware wallet',
+      type: 'asset',
+      balanceCents: 0n,
+    });
+    await prisma.account.update({
+      where: { id: wallet.id },
+      // Half a bitcoin, in satoshis.
+      data: { bitcoinSats: 50_000_000n },
+    });
+
+    for (const [daysAgo, dollars] of [
+      [3, 60_000],
+      [2, 65_000],
+      [1, 70_000],
+    ] as const) {
+      const date = new Date(NOW);
+      date.setUTCDate(date.getUTCDate() - daysAgo);
+      await prisma.bitcoinPrice.create({
+        data: {
+          priceDate: new Date(date.toISOString().slice(0, 10)),
+          priceCents: BigInt(dollars) * 100n,
+          source: 'test',
+        },
+      });
+    }
+
+    const response = await app.inject({
+      method: 'GET',
+      url: '/api/insights/series?days=7',
+      headers: { cookie },
+    });
+
+    const body = response.json<{
+      bitcoin_value_over_time: { name: string; points: { valueCents: string }[] } | null;
+    }>();
+
+    expect(body.bitcoin_value_over_time?.name).toBe('Hardware wallet');
+
+    const values = (body.bitcoin_value_over_time?.points ?? []).map((point) =>
+      BigInt(point.valueCents),
+    );
+    // Half a coin at $70,000 is $35,000 — the price moves, the quantity does not.
+    expect(values.some((value) => value === 3_500_000n)).toBe(true);
+  });
+
+  it('returns nothing when no account holds any', async () => {
+    await makeAccount({ name: 'Checking', type: 'asset', balanceCents: 100n });
+
+    const response = await app.inject({
+      method: 'GET',
+      url: '/api/insights/series?days=7',
+      headers: { cookie },
+    });
+
+    expect(
+      response.json<{ bitcoin_value_over_time: unknown }>().bitcoin_value_over_time,
+    ).toBeNull();
+  });
+});
