@@ -111,3 +111,40 @@ test('the sparkline takes the grouping colour', async ({ signedIn, api }) => {
   const bar = signedIn.locator('[aria-hidden] > div').first();
   await expect(bar).toHaveCSS('background-color', 'rgb(139, 99, 184)');
 });
+
+/**
+ * Every figure on the card carries its unit.
+ *
+ * The monthly average used to lead in hero type with an unlabelled "Currently"
+ * beside it — a per-month figure and a per-paycheck one, adjacent and looking
+ * comparable. The two per-cycle numbers are the comparison, so they are the two
+ * that sit together now.
+ */
+test('the card compares like with like', async ({ signedIn, api }) => {
+  const accountId = await makeAccount('Everyday Checking', 'asset', 500000n);
+  const electricity = await makeDelegation(api, 'Electricity', '6500');
+  await api.patch(`/api/delegations/${electricity}`, { data: { isUtility: true } });
+
+  const spend = await api.post('/api/transactions', {
+    data: {
+      accountId,
+      amountCents: '-26000',
+      description: 'Power company',
+      postedAt: '2026-07-05T00:00:00Z',
+    },
+  });
+  const { transaction } = (await spend.json()) as { transaction: { id: string } };
+  await api.post(`/api/transactions/${transaction.id}/categorize`, {
+    data: { delegationId: electricity },
+  });
+
+  await signedIn.goto('/utilities');
+
+  // Both headline figures name their unit, and neither is a monthly one.
+  await expect(signedIn.getByText('Suggested per cycle')).toBeVisible();
+  await expect(signedIn.getByText('Funded per cycle')).toBeVisible();
+  await expect(signedIn.getByText('Currently', { exact: true })).toHaveCount(0);
+
+  // The monthly average is still there, as the sentence it belongs in.
+  await expect(signedIn.getByText(/Averages .* a month, spread across 26 paychecks/)).toBeVisible();
+});

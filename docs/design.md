@@ -430,8 +430,26 @@ quantity is not a value until something says what it is worth.
 The budget identity is untouched by this. Bitcoin sits in net worth and outside
 the budget, so it never appeared in that sum to begin with.
 
+A property with a mortgage against it appears as **one line, at equity**, and
+that mortgage is dropped from the debts beside it. The net is identical either
+way — this is presentation, not arithmetic — but a $350,000 line taking 96% of
+the assets, next to a debt nobody connects to it, describes a household that owns
+a house outright. Netting the pair says how much of it is actually theirs.
+
+The line is named `… (equity)`, because the same name against a number that is
+not the property's value would be the same confusion in a new place. An
+underwater property moves to the debts side, where it belongs. A mortgage that is
+not itself in net worth is never netted, since subtracting it here would subtract
+it twice.
+
 ## Utilities
 
 Each card's sparkline takes its grouping's colour, the same one as the dot beside
 the name. A purple dot above a blue chart read as two unrelated things on one
 card.
+
+Both headline figures name their unit, and both are per cycle — the suggestion
+and what is actually funded, which is the comparison. The monthly average sits in
+the sentence explaining where the suggestion comes from. It used to lead in hero
+type with an unlabelled "Currently" beside it: a per-month figure and a
+per-paycheck one, adjacent and looking comparable.
