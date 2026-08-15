@@ -213,6 +213,11 @@ model Account {
   type   AccountType
   source AccountSource
 
+  /// A short name for the places a full bank name does not fit — the budget, the
+  /// transaction register. The real name stays on Settings → Accounts, where
+  /// identifying which account this is happens to be the whole point.
+  nickname String?
+
   // Two orthogonal booleans. The house and the mortgage are inNetWorth only,
   // which is precisely why the mortgage does not blow up the budget identity.
   inBudget   Boolean @default(true) @map("in_budget")
@@ -589,6 +594,11 @@ model InsightLayout {
   userId    String   @map("user_id") @db.Uuid
   widgetKey String   @map("widget_key")
   position  Int
+
+  /// Which chart this tile is drawn as. Null means the widget's own default;
+  /// the options are per widget, because which charts suit which data is a fact
+  /// about the widget.
+  display String?
   createdAt DateTime @default(now()) @map("created_at")
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)

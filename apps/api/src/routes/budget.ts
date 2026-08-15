@@ -1,4 +1,4 @@
-import { GROUPING_COLORS, GROUPING_SECTIONS } from '@budget/shared';
+import { isHexColor, normalizeHexColor, GROUPING_SECTIONS } from '@budget/shared';
 import type { FastifyPluginCallback } from 'fastify';
 import { z } from 'zod';
 import { prisma } from '../db/client.js';
@@ -67,12 +67,18 @@ const updateDelegationSchema = z.object({
 });
 
 /**
- * Only the curated palette. §11 asks that grouping colour "must not be in your
- * face", and a rule the UI merely observes is a rule the next caller ignores.
+ * Any `#RRGGBB`, upper-cased so two spellings of one colour compare equal.
+ *
+ * The five presets remain the shortcut, and §11's "must not be in your face"
+ * survives without an allow-list: colour reaches the page only as a tint at 4%
+ * and 10% alpha, so even a shouting hex arrives as a whisper. What the format
+ * rule protects is the tint function, which reads the three channels out of the
+ * string by position.
  */
-const groupingColorSchema = z.enum(
-  GROUPING_COLORS.map((color) => color.value) as [string, ...string[]],
-);
+const groupingColorSchema = z
+  .string()
+  .transform(normalizeHexColor)
+  .refine(isHexColor, { message: 'A colour looks like #2783DE.' });
 
 const createGroupingSchema = z.object({
   name: z.string().min(1).max(100),

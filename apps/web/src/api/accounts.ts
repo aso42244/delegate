@@ -5,6 +5,8 @@ import { api } from './client.js';
 export interface AccountDto {
   readonly id: string;
   readonly name: string;
+  /** Null when none is set; the full name is shown everywhere in that case. */
+  readonly nickname: string | null;
   readonly type: 'asset' | 'debt';
   readonly source: 'simplefin' | 'manual';
   readonly balanceCents: string;
@@ -23,6 +25,8 @@ export interface AccountDto {
 
 export interface UpdateAccountInput {
   readonly name?: string;
+  /** Empty clears it. Shown wherever the full bank name does not fit. */
+  readonly nickname?: string | null;
   readonly type?: 'asset' | 'debt';
   readonly inBudget?: boolean;
   readonly inNetWorth?: boolean;

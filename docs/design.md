@@ -368,3 +368,43 @@ tell Insights something false.
 The bank is the record of what was paid. A check written down as $120 that clears
 for $125 leaves the envelope $5 short, which is exactly where someone would want
 to find the discrepancy.
+
+## Insights, arranged
+
+Tiles move with **◂ ▸** in their own header, and the order is saved per person on
+the server, so it follows you to a phone. Buttons rather than dragging: a drag is
+unreachable by keyboard and awkward with a thumb, and this page is read on both.
+
+Each tile also says how it is drawn, where there is a real choice — a ranked
+breakdown reads as bars or as a donut, and a series reads as a line, an area or
+columns. Some tiles offer one shape and show no switch at all: a donut of a
+single number says nothing, and an option that made a tile worse would not be a
+choice worth offering.
+
+## Grouping colour
+
+The five presets are a shortcut, not the vocabulary. A colour well and a hex
+field sit beside them, so a colour someone already thinks in does not have to be
+rounded to the nearest of five. §11's "must not be in your face" holds without an
+allow-list, because colour reaches the page only as a tint at 4% and 10% alpha —
+even a shouting hex arrives as a whisper.
+
+`#RRGGBB` is still enforced. Three-digit shorthand and named colours are refused
+rather than guessed at, because the tint reads the three channels out of the
+string by position.
+
+## Account nicknames
+
+An account may carry a short name, shown on the Main Budget and in the
+transaction register. "Citibank Costco VISA Costco Anywhere Visa® Card by
+Citi-7459" is a column of its own on every row otherwise.
+
+The full name stays on Settings → Accounts, where identifying which account this
+is happens to be the point, and search matches both — so looking for either what
+is on screen or what the bank calls it finds the row.
+
+## One more rule about money
+
+A figure never wraps. A squeezed column was breaking `+$3,527.63` after the sign
+and putting the amount on a second line, which reads as two numbers rather than
+one.

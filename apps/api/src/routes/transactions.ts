@@ -89,7 +89,13 @@ function present(transaction: TransactionRow): Record<string, unknown> {
     kind: transaction.kind,
     archivedAt: dateOut(transaction.archivedAt),
     pairedTransactionId: transaction.pairedTransactionId,
-    account: transaction.account,
+    account: {
+      id: transaction.account.id,
+      // The short name where one exists. The register is the other place a full
+      // bank name pushes everything else off the row.
+      name: transaction.account.nickname ?? transaction.account.name,
+      type: transaction.account.type,
+    },
     allocations: transaction.allocations.map((allocation) => ({
       id: allocation.id,
       delegationId: allocation.delegationId,

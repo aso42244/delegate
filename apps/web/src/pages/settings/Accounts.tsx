@@ -144,6 +144,8 @@ function AccountRow({ account }: { readonly account: AccountDto }): ReactNode {
   const queryClient = useQueryClient();
   const [editingBalance, setEditingBalance] = useState(false);
   const [balanceDraft, setBalanceDraft] = useState('');
+  // Null means "not being edited", so the stored value shows until it is.
+  const [nickname, setNickname] = useState<string | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
 
   const refresh = async (): Promise<void> => {
@@ -157,6 +159,15 @@ function AccountRow({ account }: { readonly account: AccountDto }): ReactNode {
   const update = useMutation({
     mutationFn: (input: Parameters<typeof accountsApi.update>[1]) =>
       accountsApi.update(account.id, input),
+    onSuccess: async () => {
+      setProblem(null);
+      await refresh();
+    },
+    onError,
+  });
+
+  const rename = useMutation({
+    mutationFn: (next: string | null) => accountsApi.update(account.id, { nickname: next }),
     onSuccess: async () => {
       setProblem(null);
       await refresh();
@@ -203,6 +214,29 @@ function AccountRow({ account }: { readonly account: AccountDto }): ReactNode {
           {/* Stale means the confirmed balance has aged past its own interval —
               said in words, not by colour alone. */}
           {stale && <span className="ml-2 text-label font-semibold text-warning">stale</span>}
+
+          {/* The full name stays here, where identifying which account this is
+              happens to be the point. The nickname is what the budget and the
+              register show instead. */}
+          <input
+            value={nickname ?? account.nickname ?? ''}
+            onChange={(event) => setNickname(event.target.value)}
+            onBlur={() => {
+              const next = (nickname ?? '').trim();
+              if (nickname !== null && next !== (account.nickname ?? '')) {
+                rename.mutate(next === '' ? null : next);
+              }
+              setNickname(null);
+            }}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') event.currentTarget.blur();
+              if (event.key === 'Escape') setNickname(null);
+            }}
+            placeholder="Short name (optional)"
+            maxLength={40}
+            aria-label={`Short name for ${account.name}`}
+            className="mt-1 block w-full rounded border border-transparent bg-transparent px-2 py-0.5 text-quiet text-muted hover:border-line focus:border-accent focus:bg-canvas focus:text-ink"
+          />
         </div>
 
         {/* A discovered account's type is a guess, and a wrong one moves the

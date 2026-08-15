@@ -248,7 +248,7 @@ export function Transactions(): ReactNode {
               <th className="row-cell text-left font-normal">Date</th>
               <th className="row-cell text-left font-normal">Description</th>
               <th className="row-cell text-left font-normal">Account</th>
-              <th className="row-cell pr-3 text-right font-normal">Amount</th>
+              <th className="w-32 row-cell pr-3 text-right font-normal">Amount</th>
               <th className="row-cell pr-3 text-left font-normal">Delegation</th>
               <th className="w-10 row-cell pr-3" />
             </tr>
@@ -315,7 +315,10 @@ export function Transactions(): ReactNode {
                     {transaction.account.name}
                   </td>
 
-                  <td className="money row-cell pr-3">
+                  {/* `whitespace-nowrap`: a squeezed column was breaking
+                      "+$3,527.63" after the sign, putting the amount on a second
+                      line. A figure is one thing and wraps nowhere. */}
+                  <td className="money row-cell w-32 pr-3 whitespace-nowrap">
                     <span className={amount > 0n ? 'font-semibold text-positive' : 'text-ink'}>
                       {formatCents(amount, { explicitPlus: true })}
                     </span>
