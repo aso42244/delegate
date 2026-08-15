@@ -31,21 +31,26 @@ OIDC_ISSUER='https://token.actions.githubusercontent.com'
 
 usage() {
   cat <<'USAGE'
-Usage: deploy.sh [--tag TAG | --digest sha256:…] [--image-file PATH] [--skip-verify]
+Usage: deploy.sh [--build | --tag TAG | --digest sha256:… | --image-file PATH]
+                 [--skip-verify]
 
-  --tag TAG           Tag to resolve and deploy. Default: latest
+  --build             Build the image here, from the source in this directory.
+                      The ordinary route: this machine is x86_64, so the build
+                      is native, and nothing is pulled from a registry.
+  --tag TAG           Pull and deploy a registry tag. Default: latest
   --digest DIGEST     Deploy exactly this digest. Use to roll back.
   --image-file PATH   Load from a `docker save` tarball instead of pulling.
                       Needs no registry credential on this machine.
   --skip-verify       Start without verifying build provenance. Say why to
-                      yourself first; this is the check that answers whether the
-                      image came from this repository.
+                      yourself first; this is the check that answers whether a
+                      pulled image came from this repository.
 USAGE
 }
 
 TAG='latest'
 DIGEST=''
 IMAGE_FILE=''
+BUILD='no'
 VERIFY='yes'
 
 while [ $# -gt 0 ]; do
@@ -59,6 +64,8 @@ while [ $# -gt 0 ]; do
     --image-file)
       [ $# -ge 2 ] || { echo 'error: --image-file needs a path' >&2; exit 2; }
       IMAGE_FILE="$2"; shift 2 ;;
+    --build)
+      BUILD='yes'; shift ;;
     --skip-verify)
       VERIFY='no'; shift ;;
     -h | --help)
@@ -159,7 +166,30 @@ fi
 
 # --- Work out exactly which image to run -----------------------------------
 
-if [ -n "$IMAGE_FILE" ]; then
+if [ "$BUILD" = 'yes' ]; then
+  [ -f Dockerfile ] || {
+    echo 'error: no Dockerfile here. --build needs the source in this directory.' >&2
+    echo '       From your Mac:' >&2
+    echo '         git archive --format=tar.gz -o delegate-src.tar.gz <tag>' >&2
+    echo "         scp -O delegate-src.tar.gz ${USER:-you}@this-nas:$(pwd)/" >&2
+    echo '       Then here: tar xzf delegate-src.tar.gz' >&2
+    exit 1
+  }
+
+  # Tagged by content, so two builds of different source cannot be confused for
+  # each other, and rolling back is naming an earlier tag.
+  STAMP=$(date +%Y%m%d%H%M%S)
+  PINNED="delegate:local-${STAMP}"
+
+  echo "Building ${PINNED} here. On this hardware expect fifteen minutes or so."
+  docker build -t "$PINNED" .
+
+  # Nothing was pulled, so there is no registry claim to check. The provenance
+  # question — did this image come from my source? — is answered by having just
+  # built it from the source in this directory.
+  VERIFY='no'
+
+elif [ -n "$IMAGE_FILE" ]; then
   [ -f "$IMAGE_FILE" ] || { echo "error: no such file: $IMAGE_FILE" >&2; exit 1; }
 
   echo "Loading the image from $IMAGE_FILE …"
