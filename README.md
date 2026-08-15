@@ -239,14 +239,35 @@ network in clear text. Passkeys have been dropped
    _Or skip steps 5 and 6 entirely_ by using the tarball route in step 7, which
    needs no credential on the NAS at all.
 
-7. **Deploy**, over SSH from the project directory:
+7. **Deploy**, over SSH from the project directory. The ordinary route builds the
+   image on the NAS itself — it is x86_64, so the build is native and nothing
+   travels through a registry ([ADR 019](docs/decisions/019-the-image-is-built-on-the-machine-that-runs-it.md)).
+
+   From your Mac, send the source for the tag you are deploying:
+
    ```bash
-   sudo ./scripts/deploy.sh
+   git archive --format=tar.gz -o delegate-src.tar.gz v0.3.0-phase3
+   scp -O delegate-src.tar.gz grub@10.0.3.4:/volume1/docker/delegate/
    ```
+
+   Then on the NAS:
+
+   ```bash
+   tar xzf delegate-src.tar.gz && sudo ./scripts/deploy.sh --build
+   ```
+
+   Or, if you do have an image in a registry:
+
+   ```bash
+   sudo ./scripts/deploy.sh --tag v0.3.0-phase3
+   ```
+
    or, from a downloaded CI artifact:
+
    ```bash
    sudo ./scripts/deploy.sh --image-file /volume1/docker/delegate-image.tar.gz
    ```
+
 8. **Open it** at `http://<nas-address>:8088` and create the first account, which
    becomes Super Admin.
 9. **Connect SimpleFIN** in Settings → Sync by pasting a setup token.
