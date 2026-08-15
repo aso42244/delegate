@@ -1,4 +1,4 @@
-import { formatCents } from '@budget/shared';
+import { formatCents, CYCLES_PER_YEAR } from '@budget/shared';
 import { useQuery } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
 import { api } from '../api/client.js';
@@ -98,33 +98,45 @@ function UtilityCard({ utility }: { readonly utility: UtilityDto }): ReactNode {
 
       <MiniChart months={utility.months} color={utility.groupingColor} />
 
-      <dl className="mt-3 flex flex-wrap items-baseline gap-x-6 gap-y-1">
-        <div>
-          <dt className="text-label uppercase tracking-[0.05em] text-muted">Monthly average</dt>
-          <dd className="money text-hero font-bold text-ink">{formatCents(average)}</dd>
-        </div>
+      {/*
+        The two per-cycle figures sit together, at the same weight, because they
+        are the comparison. The monthly average used to lead in hero type with
+        "Currently" beside it carrying no unit at all — a monthly figure and a
+        per-paycheck one, adjacent and looking comparable. They never were.
+      */}
+      <dl className="mt-3 flex flex-wrap items-baseline gap-x-8 gap-y-1">
         <div>
           <dt className="text-label uppercase tracking-[0.05em] text-muted">Suggested per cycle</dt>
-          <dd className="money text-base text-ink">{formatCents(suggested)}</dd>
+          <dd className="money text-hero font-bold text-ink">{formatCents(suggested)}</dd>
         </div>
         <div>
-          <dt className="text-label uppercase tracking-[0.05em] text-muted">Currently</dt>
-          <dd className="money text-base text-muted">
+          <dt className="text-label uppercase tracking-[0.05em] text-muted">Funded per cycle</dt>
+          <dd
+            className={`money text-hero font-bold ${
+              gap !== null && gap < 0n ? 'text-warning' : 'text-ink'
+            }`}
+          >
             {configured === null ? '—' : formatCents(configured)}
           </dd>
         </div>
       </dl>
 
+      {/* Where the suggestion comes from, in a sentence rather than as a figure
+          that looks like it belongs in the comparison above. */}
+      <p className="mt-2 text-quiet text-muted">
+        Averages {formatCents(average)} a month, spread across {CYCLES_PER_YEAR} paychecks a year.
+      </p>
+
       {/* Said in words rather than by colour, and never acted on automatically. */}
       {gap !== null && gap !== 0n && (
-        <p className="mt-2 text-quiet text-muted">
+        <p className="text-quiet text-muted">
           {gap < 0n
             ? `Funded ${formatCents(-gap)} per cycle below the suggestion.`
             : `Funded ${formatCents(gap)} per cycle above the suggestion.`}
         </p>
       )}
       {configured === null && (
-        <p className="mt-2 text-quiet text-muted">
+        <p className="text-quiet text-muted">
           This line is ad hoc, so Delegate adds nothing to it.
         </p>
       )}
