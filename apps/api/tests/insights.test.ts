@@ -423,3 +423,92 @@ describe('net worth with a Bitcoin holding', () => {
     expect(composition.totalAssetsCents).toBe(5_000_000n);
   });
 });
+
+/**
+ * A property shown at equity.
+ *
+ * Listing the house gross and its mortgage separately nets to the same number,
+ * but reads as a household that owns a house outright with an unrelated loan
+ * beside it. One line at equity says the true thing.
+ */
+describe('a mortgaged property in the composition', () => {
+  async function house(valueCents: bigint, owedCents: bigint): Promise<void> {
+    const mortgage = await makeAccount({
+      name: 'Frontier Bank Mortgage',
+      type: 'debt',
+      balanceCents: owedCents,
+      inBudget: false,
+      inNetWorth: true,
+    });
+    const property = await makeAccount({
+      name: '1505 E Otonka Trail',
+      type: 'asset',
+      balanceCents: valueCents,
+      inBudget: false,
+      inNetWorth: true,
+    });
+    await prisma.account.update({
+      where: { id: property.id },
+      data: { mortgageAccountId: mortgage.id },
+    });
+  }
+
+  it('shows one line at equity, and drops the mortgage beside it', async () => {
+    await makeAccount({ name: 'Checking', type: 'asset', balanceCents: 1_379_665n });
+    await house(35_000_000n, 23_500_000n);
+
+    const composition = await buildComposition(prisma);
+
+    expect(composition.assets.map((entry) => entry.name)).toContain('1505 E Otonka Trail (equity)');
+    expect(composition.assets.find((entry) => entry.name.includes('Otonka'))?.balanceCents).toBe(
+      11_500_000n,
+    );
+    // The mortgage is not listed twice.
+    expect(composition.debts.map((entry) => entry.name)).not.toContain('Frontier Bank Mortgage');
+  });
+
+  /** The whole point of netting is that it changes presentation, not totals. */
+  it('leaves net worth exactly where it was', async () => {
+    await makeAccount({ name: 'Checking', type: 'asset', balanceCents: 1_379_665n });
+    await house(35_000_000n, 23_500_000n);
+
+    const composition = await buildComposition(prisma);
+    expect(composition.netCents).toBe(35_000_000n - 23_500_000n + 1_379_665n);
+  });
+
+  it('puts an underwater property on the debts side', async () => {
+    await house(20_000_000n, 25_000_000n);
+
+    const composition = await buildComposition(prisma);
+
+    expect(composition.debts.map((entry) => entry.name)).toContain('1505 E Otonka Trail (equity)');
+    expect(composition.totalDebtsCents).toBe(5_000_000n);
+    expect(composition.netCents).toBe(-5_000_000n);
+  });
+
+  /** Netting against a loan outside this sum would subtract it twice. */
+  it('does not net a mortgage that is not itself in net worth', async () => {
+    const mortgage = await makeAccount({
+      name: 'Frontier Bank Mortgage',
+      type: 'debt',
+      balanceCents: 23_500_000n,
+      inBudget: false,
+      inNetWorth: false,
+    });
+    const property = await makeAccount({
+      name: '1505 E Otonka Trail',
+      type: 'asset',
+      balanceCents: 35_000_000n,
+      inBudget: false,
+      inNetWorth: true,
+    });
+    await prisma.account.update({
+      where: { id: property.id },
+      data: { mortgageAccountId: mortgage.id },
+    });
+
+    const composition = await buildComposition(prisma);
+    expect(composition.totalAssetsCents).toBe(35_000_000n);
+    expect(composition.netCents).toBe(35_000_000n);
+  });
+});

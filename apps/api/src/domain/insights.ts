@@ -99,7 +99,15 @@ export async function buildComposition(db: Db): Promise<Composition> {
   const [rows, price] = await Promise.all([
     db.account.findMany({
       where: { archivedAt: null, inNetWorth: true },
-      select: { name: true, nickname: true, type: true, balanceCents: true, bitcoinSats: true },
+      select: {
+        id: true,
+        name: true,
+        nickname: true,
+        type: true,
+        balanceCents: true,
+        bitcoinSats: true,
+        mortgageAccountId: true,
+      },
     }),
     latestPrice(db),
   ]);
@@ -114,17 +122,57 @@ export async function buildComposition(db: Db): Promise<Composition> {
    * Without a price the holding contributes nothing, which is the honest answer
    * — a quantity is not a value until something says what it is worth.
    */
+  const worthOf = (account: (typeof rows)[number]): Cents =>
+    account.bitcoinSats === null
+      ? account.balanceCents
+      : price === null
+        ? 0n
+        : bitcoinValueCents(account.bitcoinSats, price.priceCents);
+
+  /**
+   * A property with a mortgage against it is shown as **one line, at equity**,
+   * and the mortgage is removed from the debts beside it.
+   *
+   * Listing the house gross and the loan separately is arithmetically fine — the
+   * net is identical either way — but it reads badly: a $350,000 line taking 96%
+   * of the assets, next to a debt nobody connects to it, describes a household
+   * that owns a house outright. Netting the pair says the true thing, which is
+   * how much of the house is actually theirs.
+   *
+   * Only when the mortgage is itself in net worth and not archived. Netting
+   * against a loan that is not in this sum would subtract it twice.
+   */
+  const byId = new Map(rows.map((account) => [account.id, account]));
+  const nettedAway = new Set(
+    rows
+      .filter((account) => account.mortgageAccountId !== null)
+      .map((account) => account.mortgageAccountId)
+      .filter((id): id is string => id !== null && byId.has(id)),
+  );
+
   const accounts = rows
-    .map((account) => ({
-      name: account.nickname ?? account.name,
-      type: account.type,
-      valueCents:
-        account.bitcoinSats === null
-          ? account.balanceCents
-          : price === null
-            ? 0n
-            : bitcoinValueCents(account.bitcoinSats, price.priceCents),
-    }))
+    .filter((account) => !nettedAway.has(account.id))
+    .map((account) => {
+      const mortgage =
+        account.mortgageAccountId === null ? null : (byId.get(account.mortgageAccountId) ?? null);
+      if (mortgage === null) {
+        return {
+          name: account.nickname ?? account.name,
+          type: account.type,
+          valueCents: worthOf(account),
+        };
+      }
+
+      const equity = worthOf(account) - worthOf(mortgage);
+      return {
+        // Named for what the figure is. "1505 E Otonka Trail" beside a number
+        // that is not its value would be the same confusion in a new place.
+        name: `${account.nickname ?? account.name} (equity)`,
+        // Underwater is a debt, and belongs on the other side of the page.
+        type: equity < 0n ? ('debt' as const) : account.type,
+        valueCents: equity < 0n ? -equity : equity,
+      };
+    })
     .sort((a, b) => (b.valueCents > a.valueCents ? 1 : b.valueCents < a.valueCents ? -1 : 0));
 
   const assets = accounts.filter((account) => account.type === 'asset');
