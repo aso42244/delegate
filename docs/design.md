@@ -415,3 +415,23 @@ is on screen or what the bank calls it finds the row.
 A figure never wraps. A squeezed column was breaking `+$3,527.63` after the sign
 and putting the amount on a second line, which reads as two numbers rather than
 one.
+
+## What an account is worth
+
+Most accounts carry a dollar balance. A Bitcoin account does not — its
+`balance_cents` is zero and its worth is the quantity at today's price. Anywhere
+net worth is summed or an account's worth is shown, that valuation is applied,
+so a real holding is not reported as $0.00 and net worth is not quietly short by
+the size of it.
+
+Without a price the holding contributes nothing, which is the honest answer: a
+quantity is not a value until something says what it is worth.
+
+The budget identity is untouched by this. Bitcoin sits in net worth and outside
+the budget, so it never appeared in that sum to begin with.
+
+## Utilities
+
+Each card's sparkline takes its grouping's colour, the same one as the dot beside
+the name. A purple dot above a blue chart read as two unrelated things on one
+card.

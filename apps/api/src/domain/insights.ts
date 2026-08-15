@@ -1,5 +1,6 @@
-import { sumCents, type Cents } from '@budget/shared';
+import { bitcoinValueCents, sumCents, type Cents } from '@budget/shared';
 import type { Db } from '../db/client.js';
+import { latestPrice } from './bitcoin.js';
 
 /**
  * Insights.
@@ -95,16 +96,41 @@ export interface Composition {
  * still money's business.
  */
 export async function buildComposition(db: Db): Promise<Composition> {
-  const accounts = await db.account.findMany({
-    where: { archivedAt: null, inNetWorth: true },
-    select: { name: true, type: true, balanceCents: true },
-    orderBy: { balanceCents: 'desc' },
-  });
+  const [rows, price] = await Promise.all([
+    db.account.findMany({
+      where: { archivedAt: null, inNetWorth: true },
+      select: { name: true, nickname: true, type: true, balanceCents: true, bitcoinSats: true },
+    }),
+    latestPrice(db),
+  ]);
+
+  /**
+   * A Bitcoin account's worth is its quantity at today's price, not its
+   * `balance_cents` — which is zero, because there is no dollar balance to
+   * carry. Summing the column alone left a real holding out of net worth
+   * entirely while the net-worth-over-time chart, which has always valued it
+   * this way, included it. The two disagreed, and the chart was right.
+   *
+   * Without a price the holding contributes nothing, which is the honest answer
+   * — a quantity is not a value until something says what it is worth.
+   */
+  const accounts = rows
+    .map((account) => ({
+      name: account.nickname ?? account.name,
+      type: account.type,
+      valueCents:
+        account.bitcoinSats === null
+          ? account.balanceCents
+          : price === null
+            ? 0n
+            : bitcoinValueCents(account.bitcoinSats, price.priceCents),
+    }))
+    .sort((a, b) => (b.valueCents > a.valueCents ? 1 : b.valueCents < a.valueCents ? -1 : 0));
 
   const assets = accounts.filter((account) => account.type === 'asset');
   const debts = accounts.filter((account) => account.type === 'debt');
-  const totalAssetsCents = sumCents(assets.map((account) => account.balanceCents));
-  const totalDebtsCents = sumCents(debts.map((account) => account.balanceCents));
+  const totalAssetsCents = sumCents(assets.map((account) => account.valueCents));
+  const totalDebtsCents = sumCents(debts.map((account) => account.valueCents));
 
   const share = (value: Cents, total: Cents): number =>
     total === 0n ? 0 : Number((value * 10_000n) / total);
@@ -112,13 +138,13 @@ export async function buildComposition(db: Db): Promise<Composition> {
   return {
     assets: assets.map((account) => ({
       name: account.name,
-      balanceCents: account.balanceCents,
-      shareBasisPoints: share(account.balanceCents, totalAssetsCents),
+      balanceCents: account.valueCents,
+      shareBasisPoints: share(account.valueCents, totalAssetsCents),
     })),
     debts: debts.map((account) => ({
       name: account.name,
-      balanceCents: account.balanceCents,
-      shareBasisPoints: share(account.balanceCents, totalDebtsCents),
+      balanceCents: account.valueCents,
+      shareBasisPoints: share(account.valueCents, totalDebtsCents),
     })),
     totalAssetsCents,
     totalDebtsCents,

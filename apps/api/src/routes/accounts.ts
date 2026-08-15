@@ -1,7 +1,8 @@
-import { ACCOUNT_TYPES } from '@budget/shared';
+import { ACCOUNT_TYPES, bitcoinValueCents } from '@budget/shared';
 import type { FastifyPluginCallback } from 'fastify';
 import { z } from 'zod';
 import { prisma } from '../db/client.js';
+import { latestPrice } from '../domain/bitcoin.js';
 import {
   archiveAccount,
   createManualAccount,
@@ -86,6 +87,17 @@ export const accountRoutes: FastifyPluginCallback = (fastify, _options, done) =>
       orderBy: { name: 'asc' },
     });
 
+    // A Bitcoin account carries no dollar balance; its worth is the quantity at
+    // today's price. Reporting the raw column showed a real holding as $0.00.
+    const price = accounts.some((account) => account.bitcoinSats !== null)
+      ? await latestPrice(prisma)
+      : null;
+
+    const worthOf = (account: (typeof accounts)[number]): bigint => {
+      if (account.bitcoinSats === null) return account.balanceCents;
+      return price === null ? 0n : bitcoinValueCents(account.bitcoinSats, price.priceCents);
+    };
+
     return {
       accounts: accounts.map((account) => ({
         id: account.id,
@@ -93,7 +105,7 @@ export const accountRoutes: FastifyPluginCallback = (fastify, _options, done) =>
         nickname: account.nickname,
         type: account.type,
         source: account.source,
-        balanceCents: centsOut(account.balanceCents),
+        balanceCents: centsOut(worthOf(account)),
         inBudget: account.inBudget,
         inNetWorth: account.inNetWorth,
         needsReview: account.needsReview,
