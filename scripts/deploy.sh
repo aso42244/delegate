@@ -291,6 +291,27 @@ fi
 
 # --- Start -----------------------------------------------------------------
 
+# Compose bind-mounts two host directories, and Synology's Docker refuses to
+# start rather than creating a missing one — unlike Docker Desktop, which makes
+# it silently. The difference only shows up on the machine that matters, so the
+# directories are made here rather than assumed.
+#
+# `tls` is empty and unused unless TLS_CERT_PATH is set. It still has to exist,
+# because a bind mount is resolved whether or not anything reads it.
+setting_of() {
+  grep -E "^$1=" .env 2>/dev/null | head -n 1 | cut -d= -f2- | tr -d '"' || true
+}
+
+for pair in "$(setting_of TLS_DIR):./tls" "$(setting_of BACKUP_DIR):./backups"; do
+  configured=${pair%%:*}
+  fallback=${pair##*:}
+  directory=${configured:-$fallback}
+  [ -d "$directory" ] || {
+    echo "Creating $directory, which compose mounts into the container."
+    mkdir -p "$directory"
+  }
+done
+
 echo 'Starting …'
 $COMPOSE up -d
 
