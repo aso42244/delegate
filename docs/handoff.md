@@ -125,13 +125,10 @@ Built and working:
 
 ### Known gaps to fix
 
-1. **An account's type cannot be changed from the UI.** `PATCH /api/accounts/:id`
-   accepts `type` and an integration test covers it, but neither Settings →
-   Accounts nor the asset/debt row menu offers a control. §6.1 says the owner can
-   override a guessed type and §9.5 lists "asset or debt" among the Accounts
-   settings, so this is an omission rather than a decision. Found by the owner on
-   his first real sync, 9 Aug 2026. He said to ship it later — nothing was
-   mistyped, so it is not urgent.
+None outstanding. The one that stood here — an account's type could not be
+corrected from the UI, found by the owner on his first real sync — shipped in
+[#41](https://github.com/aso42244/delegate/pull/41) and is available from both
+Settings → Accounts and the asset or debt row menu.
 
 ### Waiting on the owner
 
