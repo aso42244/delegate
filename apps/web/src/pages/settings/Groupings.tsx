@@ -1,4 +1,4 @@
-import { GROUPING_COLORS } from '@budget/shared';
+import { GROUPING_COLORS, isGroupingColor, isHexColor, normalizeHexColor } from '@budget/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState, type FormEvent, type ReactNode } from 'react';
 import { budgetApi, type BudgetGroupingDto, type BudgetViewDto } from '../../api/budget.js';
@@ -120,6 +120,11 @@ function GroupingRow({
           >
             None
           </button>
+
+          {/* The presets are a shortcut, not the whole vocabulary. Anyone
+              matching a grouping to a colour they already think in should not
+              have to settle for the nearest of five. */}
+          <CustomColour grouping={grouping} onPick={(hex) => recolour.mutate(hex)} />
         </div>
 
         <span className="text-quiet text-muted">
@@ -208,6 +213,59 @@ function sectionsOf(
     { section: 'debts', groupings: view.debts.groupings },
     { section: 'delegations', groupings: view.delegations.groupings },
   ];
+}
+
+/**
+ * A colour well and a hex field, side by side.
+ *
+ * Two routes to the same value because they suit different people: the native
+ * picker is what most reach for, and a hex is what someone copying a colour from
+ * elsewhere already has in their clipboard. The field commits on blur or Enter
+ * and refuses anything that is not `#RRGGBB`, rather than guessing.
+ */
+function CustomColour({
+  grouping,
+  onPick,
+}: {
+  readonly grouping: BudgetGroupingDto;
+  readonly onPick: (hex: string) => void;
+}): ReactNode {
+  const isPreset = grouping.color !== null && isGroupingColor(grouping.color);
+  const current = grouping.color ?? '#2783DE';
+  const [typed, setTyped] = useState<string | null>(null);
+
+  function commit(value: string): void {
+    const hex = normalizeHexColor(value);
+    if (isHexColor(hex)) onPick(hex);
+    setTyped(null);
+  }
+
+  return (
+    <span className="flex items-center gap-1">
+      <input
+        type="color"
+        value={current}
+        onChange={(event) => onPick(normalizeHexColor(event.target.value))}
+        aria-label={`Custom colour for ${grouping.name}`}
+        className={`h-5 w-5 cursor-pointer rounded-[4px] border bg-transparent ${
+          grouping.color !== null && !isPreset ? 'border-ink' : 'border-line'
+        }`}
+      />
+      <input
+        value={typed ?? grouping.color ?? ''}
+        onChange={(event) => setTyped(event.target.value)}
+        onBlur={(event) => commit(event.target.value)}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter') commit(event.currentTarget.value);
+          if (event.key === 'Escape') setTyped(null);
+        }}
+        placeholder="#2783DE"
+        aria-label={`Colour hex for ${grouping.name}`}
+        spellCheck={false}
+        className="w-20 rounded border border-line bg-canvas px-1 py-0.5 font-mono text-label text-ink"
+      />
+    </span>
+  );
 }
 
 export function GroupingsSection(): ReactNode {

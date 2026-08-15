@@ -57,6 +57,7 @@ export async function applyTransactionToAccountBalance(
 }
 
 export interface CreateAccountInput {
+  readonly nickname?: string | null | undefined;
   readonly name: string;
   readonly type: AccountType;
   readonly balanceCents: Cents;
@@ -102,6 +103,8 @@ export async function createManualAccount(
 
 export interface UpdateAccountInput {
   readonly name?: string | undefined;
+  /** Empty is stored as null: a blank nickname is the absence of one. */
+  readonly nickname?: string | null | undefined;
   readonly type?: AccountType | undefined;
   readonly inBudget?: boolean | undefined;
   readonly inNetWorth?: boolean | undefined;
@@ -163,6 +166,9 @@ export async function updateAccount(
     where: { id },
     data: {
       ...(input.name === undefined ? {} : { name: input.name.trim() }),
+      ...(input.nickname === undefined
+        ? {}
+        : { nickname: input.nickname?.trim() ? input.nickname.trim() : null }),
       ...(input.type === undefined ? {} : { type: input.type }),
       ...(input.inBudget === undefined ? {} : { inBudget: input.inBudget }),
       ...(input.inNetWorth === undefined ? {} : { inNetWorth: input.inNetWorth }),

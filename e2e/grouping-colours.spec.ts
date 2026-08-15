@@ -53,20 +53,29 @@ test('colour can be taken off again', async ({ signedIn }) => {
 });
 
 /**
- * The palette is enforced rather than merely offered — the UI is not the only
- * caller, and a rule only the UI observes is a rule the next caller ignores.
+ * The five presets are a shortcut, not the vocabulary: any `#RRGGBB` is
+ * accepted. §11's "must not be in your face" survives without an allow-list,
+ * because colour reaches the page only as a tint at 4% and 10% alpha.
+ *
+ * The format is still enforced rather than merely offered — the UI is not the
+ * only caller, and the tint function reads three channels out of the string by
+ * position.
  */
-test('the API refuses a colour outside the palette', async ({ api }) => {
+test('the API takes any hex and refuses anything that is not one', async ({ api }) => {
   const created = await api.post('/api/groupings', {
     data: { name: 'Essentials', section: 'delegations' },
   });
   const { grouping } = (await created.json()) as { grouping: { id: string } };
 
-  const response = await api.patch(`/api/groupings/${grouping.id}`, {
-    data: { color: '#FF00FF' },
+  const custom = await api.patch(`/api/groupings/${grouping.id}`, {
+    data: { color: '#ff00ff' },
   });
+  expect(custom.status()).toBe(200);
 
-  expect(response.status()).toBe(400);
+  for (const bad of ['#FFF', 'rebeccapurple', '2783DE']) {
+    const response = await api.patch(`/api/groupings/${grouping.id}`, { data: { color: bad } });
+    expect(response.status(), bad).toBe(400);
+  }
 });
 
 test('dragging a delegation into a grouping moves it', async ({ signedIn, api }) => {

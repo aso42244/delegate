@@ -92,8 +92,16 @@ describe('grouping colours', () => {
     expect(groupingTint('#2783DE', 'row')).toBe('rgb(39 131 222 / 0.04)');
   });
 
-  it('has no tint for an uncoloured or unrecognised grouping', () => {
+  /**
+   * Any valid hex tints, not only the five presets — the palette is a shortcut
+   * rather than the vocabulary. What is still refused is a string the tint
+   * function cannot read three channels out of by position.
+   */
+  it('tints any valid hex, and nothing that is not one', () => {
+    expect(groupingTint('#FF00FF', 'header')).toBe('rgb(255 0 255 / 0.1)');
     expect(groupingTint(null, 'header')).toBeUndefined();
-    expect(groupingTint('#FF00FF', 'header')).toBeUndefined();
+    expect(groupingTint('#FFF', 'header')).toBeUndefined();
+    expect(groupingTint('rebeccapurple', 'header')).toBeUndefined();
+    expect(groupingTint('2783DE', 'header')).toBeUndefined();
   });
 });

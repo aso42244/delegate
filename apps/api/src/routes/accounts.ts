@@ -30,6 +30,7 @@ const listQuerySchema = z.object({
 
 const createSchema = z.object({
   name: z.string().min(1).max(100),
+  nickname: z.string().max(40).nullish(),
   type: z.enum(ACCOUNT_TYPES),
   balanceCents: centsInLoose,
   inBudget: z.boolean().optional(),
@@ -40,6 +41,8 @@ const createSchema = z.object({
 
 const updateSchema = z.object({
   name: z.string().min(1).max(100).optional(),
+  // Short by constraint: the point is fitting where the full name does not.
+  nickname: z.string().max(40).nullish(),
   type: z.enum(ACCOUNT_TYPES).optional(),
   inBudget: z.boolean().optional(),
   inNetWorth: z.boolean().optional(),
@@ -76,6 +79,7 @@ export const accountRoutes: FastifyPluginCallback = (fastify, _options, done) =>
         groupingId: true,
         mortgageAccountId: true,
         bitcoinSats: true,
+        nickname: true,
         archivedAt: true,
       },
       // Alphabetical is the only order this system has.
@@ -86,6 +90,7 @@ export const accountRoutes: FastifyPluginCallback = (fastify, _options, done) =>
       accounts: accounts.map((account) => ({
         id: account.id,
         name: account.name,
+        nickname: account.nickname,
         type: account.type,
         source: account.source,
         balanceCents: centsOut(account.balanceCents),

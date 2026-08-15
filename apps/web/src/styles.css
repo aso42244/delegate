@@ -107,6 +107,10 @@ body {
 .money {
   font-variant-numeric: tabular-nums;
   text-align: right;
+  /* A figure is one thing. A squeezed column was breaking "+$3,527.63" after
+     the sign and putting the amount on a second line, which reads as two
+     numbers rather than one. */
+  white-space: nowrap;
 }
 
 /**

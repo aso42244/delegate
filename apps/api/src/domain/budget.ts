@@ -143,6 +143,7 @@ export async function buildBudgetView(db: Db): Promise<BudgetView> {
       select: {
         id: true,
         name: true,
+        nickname: true,
         type: true,
         source: true,
         balanceCents: true,
@@ -191,7 +192,9 @@ export async function buildBudgetView(db: Db): Promise<BudgetView> {
 
   const accountRow = (account: (typeof accounts)[number]): BudgetRow => ({
     id: account.id,
-    name: account.name,
+    // The nickname exists precisely for this page. The real name stays on
+    // Settings → Accounts, where identifying the account is the point.
+    name: account.nickname ?? account.name,
     balanceCents: account.balanceCents,
     // Assets and debts have no amount to delegate; the column is empty for them.
     amountToDelegateCents: null,

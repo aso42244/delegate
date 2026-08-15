@@ -77,6 +77,9 @@ export function buildTransactionWhere(query: TransactionQuery): Prisma.Transacti
         { description: { contains: search, mode: 'insensitive' } },
         { descriptionRaw: { contains: search, mode: 'insensitive' } },
         { account: { name: { contains: search, mode: 'insensitive' } } },
+        // Both, so searching either what is on screen or what the bank calls it
+        // finds the row.
+        { account: { nickname: { contains: search, mode: 'insensitive' } } },
         {
           allocations: {
             some: { delegation: { name: { contains: search, mode: 'insensitive' } } },
@@ -119,7 +122,7 @@ export const TRANSACTION_LIST_SELECT = {
   kind: true,
   archivedAt: true,
   pairedTransactionId: true,
-  account: { select: { id: true, name: true, type: true, archivedAt: true } },
+  account: { select: { id: true, name: true, nickname: true, type: true, archivedAt: true } },
   allocations: {
     select: {
       id: true,

@@ -1,3 +1,4 @@
+import { isInsightDisplay } from '@budget/shared';
 import type { FastifyPluginCallback } from 'fastify';
 import { z } from 'zod';
 import { prisma } from '../db/client.js';
@@ -38,12 +39,17 @@ export const insightRoutes: FastifyPluginCallback = (fastify, _options, done) =>
     const chosen = await prisma.insightLayout.findMany({
       where: { userId },
       orderBy: { position: 'asc' },
-      select: { widgetKey: true, position: true },
+      select: { widgetKey: true, position: true, display: true },
     });
 
     return {
       catalog: INSIGHT_WIDGETS,
-      chosen: chosen.map((row) => row.widgetKey),
+      // Objects rather than keys: the order, the choice and the chart are one
+      // layout, and splitting them across calls would let them disagree.
+      chosen: chosen.map((row) => ({
+        key: row.widgetKey,
+        display: row.display ?? null,
+      })),
     };
   });
 
@@ -54,18 +60,47 @@ export const insightRoutes: FastifyPluginCallback = (fastify, _options, done) =>
   fastify.put('/api/insights/layout', async (request) => {
     const userId = request.currentUser!.id;
     const { widgets } = z
-      .object({ widgets: z.array(z.string()).max(INSIGHT_WIDGETS.length) })
+      .object({
+        widgets: z
+          .array(
+            z.union([
+              // A bare key still works: it means "this widget, drawn its usual
+              // way", which is what every stored layout meant before displays
+              // existed.
+              z.string(),
+              z.object({ key: z.string(), display: z.string().nullish() }),
+            ]),
+          )
+          .max(INSIGHT_WIDGETS.length),
+      })
       .parse(request.body);
 
-    const unknown = widgets.filter((widget) => !isInsightWidget(widget));
+    const entries = widgets.map((widget) =>
+      typeof widget === 'string'
+        ? { key: widget, display: null }
+        : { key: widget.key, display: widget.display ?? null },
+    );
+
+    const unknown = entries.filter((entry) => !isInsightWidget(entry.key)).map((e) => e.key);
     if (unknown.length > 0) {
       return { ok: false, unknown };
     }
 
+    // A chart that does not suit the data is refused rather than stored and
+    // silently ignored at render time.
+    const mismatched = entries
+      .filter((entry) => entry.display !== null && !isInsightDisplay(entry.key, entry.display))
+      .map((entry) => `${entry.key}:${entry.display ?? ''}`);
+    if (mismatched.length > 0) {
+      return { ok: false, mismatched };
+    }
+
     await prisma.$transaction(async (tx) => {
       await tx.insightLayout.deleteMany({ where: { userId } });
-      for (const [position, widgetKey] of widgets.entries()) {
-        await tx.insightLayout.create({ data: { userId, widgetKey, position } });
+      for (const [position, entry] of entries.entries()) {
+        await tx.insightLayout.create({
+          data: { userId, widgetKey: entry.key, position, display: entry.display },
+        });
       }
     });
 
