@@ -45,6 +45,14 @@ const securityPlugin: FastifyPluginAsync<{ config: AppConfig }> = async (fastify
     },
   });
 
+  /**
+   * Whether anything is actually terminating TLS in front of the browser.
+   *
+   * The same signal HSTS already used, now also deciding
+   * `upgrade-insecure-requests` — see below.
+   */
+  const overHttps = config.SESSION_COOKIE_SECURE || config.TLS_CERT_PATH !== '';
+
   await fastify.register(fastifyHelmet, {
     // The application serves its own bundle from its own origin and loads
     // nothing else. Stating that explicitly means an injected script tag has
@@ -65,12 +73,28 @@ const securityPlugin: FastifyPluginAsync<{ config: AppConfig }> = async (fastify
         // Nothing here should ever be framed. Clickjacking a Delegate button
         // means clickjacking a money movement.
         frameAncestors: ["'none'"],
+
+        /**
+         * Removed unless TLS is really in play, and this is not a nicety.
+         *
+         * It is one of helmet's defaults, and our directives merge over those
+         * rather than replacing them. On a plain-http origin it tells the
+         * browser to re-request every script and stylesheet over https — which
+         * nothing is listening for — so the page loads its HTML, fails every
+         * asset, and renders blank. The title appears and nothing else.
+         *
+         * Every test missed it because browsers exempt `localhost` and
+         * `127.0.0.1` from the upgrade as potentially-trustworthy origins, and
+         * that is what the suites and CI run against. It only appears on a real
+         * address, which is to say only in the household's actual browser.
+         */
+        ...(overHttps ? {} : { upgradeInsecureRequests: null }),
       },
     },
     // HSTS is meaningless over plain http and actively harmful to enable early:
     // a browser that has seen it will refuse http afterwards, which would lock
     // the household out of their own LAN deployment. It arrives with TLS.
-    hsts: config.SESSION_COOKIE_SECURE,
+    hsts: overHttps,
     // The referrer of a budget page is nobody's business.
     referrerPolicy: { policy: 'no-referrer' },
     crossOriginEmbedderPolicy: false,
