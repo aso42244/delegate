@@ -354,23 +354,6 @@ jobs:
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 
-      # The no-credential route. Downloaded from the run, copied to the NAS, and
-      # loaded with `docker load` — nothing to authenticate, nothing left at rest
-      # on the machine afterwards.
-      - name: Save a loadable tarball
-        if: github.event_name == 'push'
-        run: |
-          docker save delegate:ci | gzip > delegate-image.tar.gz
-          ls -lh delegate-image.tar.gz
-
-      - name: Upload the tarball
-        if: github.event_name == 'push'
-        uses: actions/upload-artifact@v4
-        with:
-          name: delegate-image
-          path: delegate-image.tar.gz
-          retention-days: 14
-
       # Signed through Sigstore rather than GitHub's attestation store, which is
       # unavailable to user-owned private repositories — it asks you to make the
       # repository public, which is not a trade this project will make. Sigstore
@@ -392,3 +375,28 @@ jobs:
           # certificate records which repository, workflow and ref produced this,
           # which is exactly what deploy.sh checks before starting it.
           cosign sign --yes "${IMAGE}@${DIGEST}"
+
+      # The no-credential route. Downloaded from the run, copied to the NAS, and
+      # loaded with `docker load` — nothing to authenticate, nothing left at rest
+      # on the machine afterwards.
+      #
+      # Only on a tag. Every push to `main` used to upload 243MB with a 14-day
+      # retention, which filled the artifact quota in about a week and then took
+      # a release down with it. A release is the only time this fallback is
+      # wanted, and the registry is the durable route regardless.
+      - name: Save a loadable tarball
+        if: github.ref_type == 'tag'
+        run: |
+          docker save delegate:ci | gzip > delegate-image.tar.gz
+          ls -lh delegate-image.tar.gz
+
+      # Never fatal. This is a convenience copy of something already published
+      # and signed; if the quota is full, the release is still a release.
+      - name: Upload the tarball
+        if: github.ref_type == 'tag'
+        continue-on-error: true
+        uses: actions/upload-artifact@v4
+        with:
+          name: delegate-image
+          path: delegate-image.tar.gz
+          retention-days: 14

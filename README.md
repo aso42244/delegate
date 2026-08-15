@@ -237,7 +237,8 @@ network in clear text. Passkeys have been dropped
    offer the SFTP subsystem that modern `scp` expects.
 
    _Or skip steps 5 and 6 entirely_ by using the tarball route in step 7, which
-   needs no credential on the NAS at all.
+   needs no credential on the NAS at all. The tarball is attached to **release
+   tags only** — pushes to `main` publish to the registry and nothing else.
 
 7. **Deploy**, over SSH from the project directory:
    ```bash
