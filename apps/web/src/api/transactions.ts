@@ -1,3 +1,4 @@
+import type { TransactionKind } from '@budget/shared';
 import { api } from './client.js';
 
 /** The Transactions page's data. Cents are decimal strings — ADR 002. */
@@ -94,6 +95,14 @@ export const transactionsApi = {
 
   create: (input: CreateTransactionInput) =>
     api.post<{ transaction: { id: string } }>('/api/transactions', input),
+
+  /**
+   * Re-labels what a row *is*. Income and transfers allocate to nothing, so the
+   * server refuses the change while the row still carries a categorization —
+   * clear it first.
+   */
+  setKind: (transactionId: string, kind: TransactionKind) =>
+    api.patch<void>(`/api/transactions/${transactionId}`, { kind }),
 
   categorize: (transactionId: string, delegationId: string) =>
     api.post<{ allocationCount: number }>(`/api/transactions/${transactionId}/categorize`, {

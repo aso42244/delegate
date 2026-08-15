@@ -513,3 +513,82 @@ describe('editing', () => {
     expect(response.statusCode).toBe(409);
   });
 });
+
+/**
+ * The queue is a to-do list, so a row that needs no decision must be able to
+ * leave it. Income and confirmed transfers allocate to nothing by design, and
+ * filtering on allocations alone kept both in "waiting to be categorized"
+ * permanently — every payroll deposit and every credit card payment, for as long
+ * as the budget existed.
+ */
+describe('the uncategorized queue', () => {
+  let accountId: string;
+
+  beforeEach(async () => {
+    accountId = (
+      await makeAccount({ name: 'Everyday Checking', type: 'asset', balanceCents: 500_000n })
+    ).id;
+  });
+
+  async function queueCount(): Promise<number> {
+    const response = await app.inject({
+      method: 'GET',
+      url: '/api/transactions?uncategorized=true',
+      headers: { cookie },
+    });
+    return response.json<{ total: number }>().total;
+  }
+
+  it('lets a payroll deposit leave once it is marked income', async () => {
+    const deposit = await makeTransaction({
+      accountId,
+      amountCents: 532_467n,
+      description: 'ACH Deposit PAYROLL',
+    });
+    expect(await queueCount()).toBe(1);
+
+    const response = await app.inject({
+      method: 'PATCH',
+      url: `/api/transactions/${deposit.id}`,
+      headers: { cookie },
+      payload: { kind: 'income' },
+    });
+    expect(response.statusCode).toBe(200);
+
+    expect(await queueCount()).toBe(0);
+  });
+
+  it('lets a credit card payment leave once the pair is confirmed', async () => {
+    const cardId = (
+      await makeAccount({ name: 'Costco Visa', type: 'debt', balanceCents: -50_000n })
+    ).id;
+
+    const out = await makeTransaction({
+      accountId,
+      amountCents: -50_000n,
+      description: 'Payment to Costco Visa',
+    });
+    const inn = await makeTransaction({
+      accountId: cardId,
+      amountCents: 50_000n,
+      description: 'Payment received',
+    });
+    expect(await queueCount()).toBe(2);
+
+    const paired = await app.inject({
+      method: 'POST',
+      url: '/api/transactions/pair',
+      headers: { cookie },
+      payload: { firstId: out.id, secondId: inn.id },
+    });
+    expect(paired.statusCode).toBe(200);
+
+    // Neither is spending, and neither is waiting for anything.
+    expect(await queueCount()).toBe(0);
+  });
+
+  it('still queues ordinary spending that has no categorization', async () => {
+    await makeTransaction({ accountId, amountCents: -4_210n, description: 'Whole Foods' });
+    expect(await queueCount()).toBe(1);
+  });
+});
