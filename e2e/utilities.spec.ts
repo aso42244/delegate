@@ -74,3 +74,40 @@ test('never changes the amount to delegate', async ({ signedIn, api }) => {
     '$20.00',
   );
 });
+
+/**
+ * The bars take the grouping's colour, so a card reads as one thing rather than
+ * as a coloured dot beside an unrelated blue chart.
+ */
+test('the sparkline takes the grouping colour', async ({ signedIn, api }) => {
+  const grouping = await api.post('/api/groupings', {
+    data: { name: 'Home', section: 'delegations', color: '#8B63B8' },
+  });
+  const { grouping: home } = (await grouping.json()) as { grouping: { id: string } };
+
+  const accountId = await makeAccount('Everyday Checking', 'asset', 500000n);
+  const electricity = await makeDelegation(api, 'Electricity');
+  await api.patch(`/api/delegations/${electricity}`, {
+    data: { isUtility: true, groupingId: home.id },
+  });
+
+  const spend = await api.post('/api/transactions', {
+    data: {
+      accountId,
+      amountCents: '-6500',
+      description: 'Power company',
+      postedAt: '2026-07-05T00:00:00Z',
+    },
+  });
+  const { transaction } = (await spend.json()) as { transaction: { id: string } };
+  await api.post(`/api/transactions/${transaction.id}/categorize`, {
+    data: { delegationId: electricity },
+  });
+
+  await signedIn.goto('/utilities');
+  await expect(signedIn.getByText('Electricity')).toBeVisible();
+
+  // The purple of the grouping, not the accent blue.
+  const bar = signedIn.locator('[aria-hidden] > div').first();
+  await expect(bar).toHaveCSS('background-color', 'rgb(139, 99, 184)');
+});

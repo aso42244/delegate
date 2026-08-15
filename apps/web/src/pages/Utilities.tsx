@@ -35,7 +35,14 @@ interface UtilityDto {
  * amounts are. The month in progress is drawn faintly — it is not a full month
  * of bills and should not look like one.
  */
-function MiniChart({ months }: { readonly months: readonly MonthDto[] }): ReactNode {
+function MiniChart({
+  months,
+  color,
+}: {
+  readonly months: readonly MonthDto[];
+  /** The grouping's colour, so the bars and the dot beside the name agree. */
+  readonly color: string | null;
+}): ReactNode {
   const values = months.map((month) => BigInt(month.spendCents));
   const peak = values.reduce((max, value) => (value > max ? value : max), 0n);
 
@@ -49,10 +56,11 @@ function MiniChart({ months }: { readonly months: readonly MonthDto[] }): ReactN
         return (
           <div
             key={month.month}
-            className="flex-1 rounded-sm bg-accent"
+            className="flex-1 rounded-sm"
             style={{
               height: `${Math.max(height, value > 0n ? 4 : 0)}%`,
               opacity: month.complete ? 1 : 0.28,
+              background: color ?? 'var(--color-accent)',
             }}
           />
         );
@@ -88,7 +96,7 @@ function UtilityCard({ utility }: { readonly utility: UtilityDto }): ReactNode {
         )}
       </header>
 
-      <MiniChart months={utility.months} />
+      <MiniChart months={utility.months} color={utility.groupingColor} />
 
       <dl className="mt-3 flex flex-wrap items-baseline gap-x-6 gap-y-1">
         <div>

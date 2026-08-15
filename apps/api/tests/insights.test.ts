@@ -366,3 +366,60 @@ describe('the bitcoin series', () => {
     ).toBeNull();
   });
 });
+
+/**
+ * A Bitcoin holding in net worth.
+ *
+ * Its `balance_cents` is zero — there is no dollar balance to carry — so summing
+ * that column left a real holding out of net worth entirely, while the
+ * net-worth-over-time chart, which has valued it at each day's price since Phase
+ * 2, included it. The two disagreed and the chart was right.
+ */
+describe('net worth with a Bitcoin holding', () => {
+  async function holding(sats: bigint): Promise<void> {
+    const wallet = await makeAccount({
+      name: 'Hardware wallet',
+      type: 'asset',
+      balanceCents: 0n,
+      inBudget: false,
+      inNetWorth: true,
+    });
+    await prisma.account.update({ where: { id: wallet.id }, data: { bitcoinSats: sats } });
+  }
+
+  it('counts the holding at today s price', async () => {
+    await makeAccount({ name: 'Checking', type: 'asset', balanceCents: 100_000n });
+    await holding(165_400_000n);
+    // $60,000.00 per Bitcoin, in cents. Round numbers on purpose: the rounding
+    // rule has its own tests, and this one is about whether it is counted.
+    await prisma.bitcoinPrice.create({
+      data: { priceDate: new Date('2026-08-15'), priceCents: 6_000_000n, source: 'test' },
+    });
+
+    const composition = await buildComposition(prisma);
+
+    // 1.654 BTC at $60,000 is $99,240, plus $1,000 of checking.
+    expect(composition.totalAssetsCents).toBe(9_924_000n + 100_000n);
+    expect(composition.netCents).toBe(9_924_000n + 100_000n);
+  });
+
+  /** A quantity is not a value until something says what it is worth. */
+  it('contributes nothing while there is no price', async () => {
+    await makeAccount({ name: 'Checking', type: 'asset', balanceCents: 100_000n });
+    await holding(165_400_000n);
+
+    const composition = await buildComposition(prisma);
+    expect(composition.totalAssetsCents).toBe(100_000n);
+  });
+
+  it('agrees with the net worth series, which always valued it', async () => {
+    await holding(100_000_000n);
+    // One whole Bitcoin at $50,000.00.
+    await prisma.bitcoinPrice.create({
+      data: { priceDate: new Date('2026-08-15'), priceCents: 5_000_000n, source: 'test' },
+    });
+
+    const composition = await buildComposition(prisma);
+    expect(composition.totalAssetsCents).toBe(5_000_000n);
+  });
+});
