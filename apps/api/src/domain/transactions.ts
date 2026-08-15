@@ -45,9 +45,25 @@ export function buildTransactionWhere(query: TransactionQuery): Prisma.Transacti
     };
   }
 
-  // "Uncategorized" is the highest-traffic filter on the page: it is the working
-  // queue for the backlog.
-  if (query.uncategorized === true) where.allocations = { none: {} };
+  /**
+   * "Uncategorized" is the highest-traffic filter on the page: it is the working
+   * queue for the backlog. It means **waiting for a decision**, not merely
+   * lacking allocations.
+   *
+   * Income and confirmed transfers allocate to nothing *by design* — income
+   * arrives and is distributed by Delegate, and a movement between two owned
+   * accounts is not spending. Filtering on allocations alone left both in the
+   * queue permanently: every payroll deposit and every confirmed credit card
+   * payment, uncloseable, for as long as the budget exists.
+   *
+   * Added through `AND` rather than by assigning `kind`, so an explicit kind
+   * filter is not silently overwritten. Asking for uncategorized income is a
+   * contradiction under this definition and correctly returns nothing.
+   */
+  if (query.uncategorized === true) {
+    where.allocations = { none: {} };
+    where.AND = [...(Array.isArray(where.AND) ? where.AND : []), { kind: 'normal' }];
+  }
   if (query.uncategorized === false) where.allocations = { some: {} };
 
   // A delegation filter means "allocated to this envelope", which for a split

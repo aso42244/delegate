@@ -313,6 +313,17 @@ and the bank has not seen. Until it clears, the envelope it came from would
 otherwise show funds that are already committed — and with a chequebook, spending
 the same money twice is an easy mistake.
 
+The `⋯` menu on a transaction row also says what the row **is**: ordinary
+spending, income, or a transfer between accounts the household owns. A credit
+card payment is the common case — confirming the pair does it for both halves at
+once, and this is the manual route for when pairing had nothing to suggest,
+because the two sides were more than five days apart or the amounts differ.
+
+"Waiting to be categorized" means waiting for a **decision**, not merely lacking
+allocations. Income and transfers allocate to nothing by design, so counting
+them as uncategorized left every payroll deposit and every card payment in the
+queue permanently.
+
 Splitting a transaction and matching one to a check both live in the row's `⋯`
 menu on the Transactions page, not as buttons in the row. Categorizing is the
 frequent act there and stays a field; two permanent buttons beside every one of

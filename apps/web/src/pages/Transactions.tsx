@@ -340,13 +340,14 @@ export function Transactions(): ReactNode {
                       frequent act on this page is categorizing, which stays a
                       field in the row. */}
                   <td className="w-10 row-cell pr-3">
-                    {transaction.kind === 'normal' && (
+                    {
                       <TransactionRowMenu
                         transaction={transaction}
                         onSplit={() => setSplitting(transaction)}
                         onMatchCheck={() => setMatching(transaction)}
+                        onProblem={setProblem}
                       />
-                    )}
+                    }
                   </td>
                 </tr>
               );
