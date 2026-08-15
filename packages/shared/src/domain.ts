@@ -158,6 +158,7 @@ export const INSIGHT_DISPLAYS = {
   net_worth_over_time: ['line', 'area', 'bars'],
   credit_card_trend: ['line', 'area', 'bars'],
   home_equity_over_time: ['line', 'area', 'bars'],
+  bitcoin_value_over_time: ['line', 'area', 'bars'],
 
   // One shape each, deliberately. A donut of a single number says nothing, and
   // a list of two figures per row is already the clearest form it has. An
@@ -165,7 +166,6 @@ export const INSIGHT_DISPLAYS = {
   delegations_negative: ['list'],
   uncategorized_backlog: ['number'],
   utilities_vs_delegated: ['list'],
-  bitcoin_value_over_time: ['number'],
 } as const satisfies Record<string, readonly string[]>;
 
 export type InsightWidgetKey = keyof typeof INSIGHT_DISPLAYS;

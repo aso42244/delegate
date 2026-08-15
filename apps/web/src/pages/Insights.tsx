@@ -1,6 +1,6 @@
 import { formatCents, INSIGHT_DISPLAYS, defaultInsightDisplay } from '@budget/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useState, type ReactNode } from 'react';
+import { useState, type DragEvent, type ReactNode } from 'react';
 import { api } from '../api/client.js';
 import { Button } from '../components/ui.jsx';
 
@@ -89,6 +89,7 @@ interface SeriesResponseDto {
   readonly net_worth_over_time: SeriesDto | null;
   readonly credit_card_trend: (SeriesDto & { name: string }) | null;
   readonly home_equity_over_time: (SeriesDto & { name: string }) | null;
+  readonly bitcoin_value_over_time: (SeriesDto & { name: string }) | null;
 }
 
 interface InsightsDto {
@@ -136,6 +137,7 @@ function Card({
   displays,
   display,
   onDisplay,
+  drag,
 }: {
   readonly title: string;
   readonly onRemove: () => void;
@@ -147,11 +149,35 @@ function Card({
   readonly displays: readonly string[];
   readonly display: string;
   readonly onDisplay: (display: string) => void;
+  readonly drag: {
+    readonly onDragStart: (event: DragEvent<HTMLElement>) => void;
+    readonly onDragOver: (event: DragEvent<HTMLElement>) => void;
+    readonly onDrop: (event: DragEvent<HTMLElement>) => void;
+    readonly onDragEnd: () => void;
+    readonly isTarget: boolean;
+  };
 }): ReactNode {
   return (
-    <section className="rounded-lg border border-line bg-canvas p-4">
+    <section
+      // Dragging is an enhancement. It is not reachable by keyboard and does
+      // nothing under a thumb, so ◂ ▸ above stay the route that always works.
+      draggable
+      onDragStart={drag.onDragStart}
+      onDragOver={drag.onDragOver}
+      onDrop={drag.onDrop}
+      onDragEnd={drag.onDragEnd}
+      className={`rounded-lg border bg-canvas p-4 ${
+        drag.isTarget ? 'border-accent outline-2 outline-accent' : 'border-line'
+      }`}
+    >
       <header className="mb-3 flex items-start justify-between gap-2">
-        <h2 className="text-base font-semibold text-ink">{title}</h2>
+        {/* The handle says the card is draggable. Outside the heading, because
+            it is not part of the tile's name — putting it inside made the
+            accessible name "⠿ Spending by grouping". */}
+        <span aria-hidden className="mt-0.5 cursor-grab text-quiet text-faint">
+          ⠿
+        </span>
+        <h2 className="flex-1 text-base font-semibold text-ink">{title}</h2>
 
         <div className="flex shrink-0 items-center gap-1">
           {/* Only when there is a choice to make. A single-option switch is a
@@ -557,6 +583,9 @@ export function Insights(): ReactNode {
   const queryClient = useQueryClient();
   const [window, setWindow] = useState<string>('30d');
   const [showCatalog, setShowCatalog] = useState(false);
+  // Which tile is being dragged, and which one the pointer is currently over.
+  const [dragging, setDragging] = useState<number | null>(null);
+  const [dragTarget, setDragTarget] = useState<number | null>(null);
 
   const layout = useQuery({
     queryKey: ['insights', 'layout'],
@@ -613,6 +642,17 @@ export function Insights(): ReactNode {
     if (!moved || !displaced) return;
     next[index] = displaced;
     next[target] = moved;
+    save.mutate(next);
+  }
+
+  /** Lifts a tile out of the order and drops it in at another index. */
+  function moveTo(from: number, to: number): void {
+    if (from === to) return;
+
+    const next = [...chosen];
+    const [moved] = next.splice(from, 1);
+    if (!moved) return;
+    next.splice(to, 0, moved);
     save.mutate(next);
   }
 
@@ -793,22 +833,23 @@ export function Insights(): ReactNode {
         );
 
       case 'bitcoin_value_over_time':
-        return (
+        return series.data?.bitcoin_value_over_time ? (
           <>
-            {series.data?.net_worth_over_time ? (
-              <p className="text-quiet text-muted">
-                Bitcoin is valued at the price on each date and counted inside net worth above.
-              </p>
-            ) : (
-              <p className="text-quiet text-muted">No price history yet.</p>
-            )}
-            {/* Quantity history is not stored, so this is what today's holding
-                would have been worth — said rather than implied. */}
+            <p className="mb-1 text-quiet text-muted">{series.data.bitcoin_value_over_time.name}</p>
+            <SeriesChart series={series.data.bitcoin_value_over_time} display={display} />
+            {/* The one thing this chart cannot tell you, said rather than left
+                to be assumed from a line that looks like any other. */}
             <p className="mt-2 text-quiet text-muted">
-              Historical quantities are not recorded, so a changed holding shows what today&rsquo;s
-              quantity would have been worth.
+              Quantity history is not recorded, so this is what today&rsquo;s holding would have
+              been worth at each day&rsquo;s price. It moves with the price, not with buying or
+              selling.
             </p>
           </>
+        ) : (
+          <p className="text-quiet text-muted">
+            No holding recorded yet. Set one in Settings → Bitcoin &amp; Property, and the price
+            feed fills in the rest.
+          </p>
         );
 
       case 'income_vs_spending':
@@ -897,6 +938,32 @@ export function Insights(): ReactNode {
                 displays={options}
                 display={display}
                 onDisplay={(next) => setDisplay(index, next)}
+                drag={{
+                  isTarget: dragTarget === index && dragging !== index,
+                  onDragStart: (event) => {
+                    setDragging(index);
+                    // Some browsers refuse to start a drag without payload.
+                    event.dataTransfer.setData('text/plain', entry.key);
+                    event.dataTransfer.effectAllowed = 'move';
+                  },
+                  onDragOver: (event) => {
+                    if (dragging === null) return;
+                    // Without preventDefault the drop never fires at all.
+                    event.preventDefault();
+                    event.dataTransfer.dropEffect = 'move';
+                    setDragTarget(index);
+                  },
+                  onDrop: (event) => {
+                    event.preventDefault();
+                    if (dragging !== null) moveTo(dragging, index);
+                    setDragging(null);
+                    setDragTarget(null);
+                  },
+                  onDragEnd: () => {
+                    setDragging(null);
+                    setDragTarget(null);
+                  },
+                }}
               >
                 {render(entry.key, display)}
               </Card>

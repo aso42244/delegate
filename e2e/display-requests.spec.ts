@@ -44,6 +44,20 @@ test.describe('insights tiles', () => {
     ).toHaveAttribute('aria-pressed', 'true');
   });
 
+  test('drag a tile onto another and it takes that place', async ({ signedIn: page }) => {
+    await page.goto('/insights');
+
+    const titles = page.locator('section h2');
+    const third = (await titles.nth(2).innerText()).trim();
+
+    // HTML5 drag-and-drop: Playwright's dragTo drives the real events.
+    await page.locator('section').nth(2).dragTo(page.locator('section').first());
+
+    await expect(titles.first()).toContainText(third);
+    await page.reload();
+    await expect(page.locator('section h2').first()).toContainText(third);
+  });
+
   /** A single number has one honest shape, so no switch is offered at all. */
   test('a tile with one sensible shape offers no switch', async ({ signedIn: page }) => {
     await page.goto('/insights');

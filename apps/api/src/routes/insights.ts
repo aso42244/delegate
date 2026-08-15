@@ -119,7 +119,7 @@ export const insightRoutes: FastifyPluginCallback = (fastify, _options, done) =>
       .object({ days: z.coerce.number().int().min(7).max(730).default(180) })
       .parse(request.query ?? {});
 
-    const [card, property] = await Promise.all([
+    const [card, property, bitcoin] = await Promise.all([
       // The card with the most owed is the one worth trending.
       prisma.account.findFirst({
         where: { archivedAt: null, type: 'debt', inBudget: true },
@@ -130,12 +130,19 @@ export const insightRoutes: FastifyPluginCallback = (fastify, _options, done) =>
         where: { archivedAt: null, mortgageAccountId: { not: null } },
         select: { id: true, name: true },
       }),
+      // The holding, if there is one. Its history is a quantity against each
+      // day's price — see accountSeries, which has valued it this way all along.
+      prisma.account.findFirst({
+        where: { archivedAt: null, bitcoinSats: { not: null } },
+        select: { id: true, name: true },
+      }),
     ]);
 
-    const [netWorth, cardTrend, equity] = await Promise.all([
+    const [netWorth, cardTrend, equity, bitcoinValue] = await Promise.all([
       netWorthSeries(prisma, days),
       card ? singleAccountSeries(prisma, card.id, days) : null,
       property ? equitySeries(prisma, property.id, days) : null,
+      bitcoin ? singleAccountSeries(prisma, bitcoin.id, days) : null,
     ]);
 
     const present = (
@@ -163,6 +170,8 @@ export const insightRoutes: FastifyPluginCallback = (fastify, _options, done) =>
         cardTrend === null ? null : { name: card?.name ?? '', ...present(cardTrend)! },
       home_equity_over_time:
         equity === null ? null : { name: property?.name ?? '', ...present(equity)! },
+      bitcoin_value_over_time:
+        bitcoinValue === null ? null : { name: bitcoin?.name ?? '', ...present(bitcoinValue)! },
     };
   });
 
