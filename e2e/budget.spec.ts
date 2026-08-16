@@ -1,7 +1,7 @@
 import { expect, makeAccount, makeDelegation, test } from './fixtures.js';
 
 /**
- * The Main Budget, driven in a real browser.
+ * The Budget page, driven in a real browser.
  *
  * These cover what unit and integration tests structurally cannot: that the page
  * boots, that an edit reaches the server and comes back changed, and that the
@@ -9,7 +9,7 @@ import { expect, makeAccount, makeDelegation, test } from './fixtures.js';
  */
 
 test('signing in reaches the budget', async ({ signedIn }) => {
-  await expect(signedIn.getByRole('heading', { name: 'Main Budget' })).toBeVisible();
+  await expect(signedIn.getByRole('heading', { name: 'Budget', exact: true })).toBeVisible();
   await expect(signedIn.getByRole('navigation', { name: 'Main' })).toBeVisible();
 });
 

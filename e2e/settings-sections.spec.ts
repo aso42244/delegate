@@ -8,10 +8,7 @@ import { expect, makeAccount, makeDelegation, test } from './fixtures.js';
  * found and brought back — the whole point of never hard-deleting anything.
  */
 
-test('a delegation is edited from Settings and the Main Budget agrees', async ({
-  signedIn,
-  api,
-}) => {
+test('a delegation is edited from Settings and the Budget agrees', async ({ signedIn, api }) => {
   await makeDelegation(api, 'Grocery');
 
   await signedIn.goto('/settings/delegations');

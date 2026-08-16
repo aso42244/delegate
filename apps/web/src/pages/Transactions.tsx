@@ -245,8 +245,8 @@ export function Transactions(): ReactNode {
           <thead>
             <tr className="text-label uppercase tracking-[0.05em] text-muted">
               <th className="w-8 row-cell pl-3" />
-              <th className="row-cell text-left font-normal">Date</th>
-              <th className="row-cell text-left font-normal">Description</th>
+              <th className="row-cell text-left font-normal whitespace-nowrap">Date</th>
+              <th className="row-cell w-full text-left font-normal">Description</th>
               <th className="row-cell text-left font-normal">Account</th>
               <th className="w-32 row-cell pr-3 text-right font-normal">Amount</th>
               <th className="row-cell pr-3 text-left font-normal">Delegation</th>
@@ -280,38 +280,53 @@ export function Transactions(): ReactNode {
                     {new Date(transaction.postedAt).toLocaleDateString()}
                   </td>
 
-                  <td className="row-cell pr-3">
-                    <span className="text-ink">{transaction.description}</span>
-                    {/* Pending rows already moved the envelopes, so they are
-                        marked rather than hidden. */}
-                    {transaction.pending && (
-                      <span className="ml-2 rounded bg-warning-soft px-1.5 py-0.5 text-label font-semibold text-warning">
-                        Pending
+                  {/*
+                    One line, always. A bank description is as long as the bank
+                    feels like making it, and a wrapped row pushes every row
+                    below it down — sixty of those is a page that will not sit
+                    still. Truncated with the full text on hover and in the
+                    title, so nothing is actually lost.
+                  */}
+                  <td className="row-cell max-w-0 pr-3">
+                    <div className="flex items-baseline gap-2 overflow-hidden">
+                      {/* Only the description gives way. The badges beside it
+                          are short and fixed, and shrinking those to fit a long
+                          merchant name would hide the useful half. */}
+                      <span className="truncate text-ink" title={transaction.description}>
+                        {transaction.description}
                       </span>
-                    )}
-                    {transaction.kind !== 'normal' && (
-                      <span className="ml-2">
-                        <Tag>{transaction.kind}</Tag>
+
+                      {/* Pending rows already moved the envelopes, so they are
+                          marked rather than hidden. */}
+                      {transaction.pending && (
+                        <span className="shrink-0 rounded bg-warning-soft px-1.5 py-0.5 text-label font-semibold text-warning">
+                          Pending
+                        </span>
+                      )}
+                      {transaction.kind !== 'normal' && (
+                        <span className="shrink-0">
+                          <Tag>{transaction.kind}</Tag>
+                        </span>
+                      )}
+                      {/* A confirmed pair has to be reversible: the suggestion
+                          was a judgement, and judgements are sometimes wrong. */}
+                      {transaction.pairedTransactionId && (
+                        <button
+                          type="button"
+                          onClick={() => unpair.mutate(transaction.id)}
+                          aria-label={`Unpair ${transaction.description}`}
+                          className="shrink-0 text-quiet text-muted underline"
+                        >
+                          unpair
+                        </button>
+                      )}
+                      <span className="shrink-0 truncate">
+                        <AllocationSummary transaction={transaction} />
                       </span>
-                    )}
-                    {/* A confirmed pair has to be reversible: the suggestion was
-                        a judgement, and judgements are sometimes wrong. */}
-                    {transaction.pairedTransactionId && (
-                      <button
-                        type="button"
-                        onClick={() => unpair.mutate(transaction.id)}
-                        aria-label={`Unpair ${transaction.description}`}
-                        className="ml-2 text-quiet text-muted underline"
-                      >
-                        unpair
-                      </button>
-                    )}
-                    <div>
-                      <AllocationSummary transaction={transaction} />
                     </div>
                   </td>
 
-                  <td className="row-cell pr-3 text-quiet text-muted">
+                  <td className="row-cell pr-3 text-quiet whitespace-nowrap text-muted">
                     {transaction.account.name}
                   </td>
 

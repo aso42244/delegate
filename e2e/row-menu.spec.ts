@@ -1,7 +1,7 @@
 import { expect, makeDelegation, test } from './fixtures.js';
 
 /**
- * The per-row menu on the Main Budget.
+ * The per-row menu on the Budget page.
  *
  * The two behaviours worth protecting are the ones that are easy to get wrong
  * and expensive when they are: a manual adjustment must record a **movement**
@@ -140,7 +140,7 @@ test('a line can be moved into a grouping created on this page', async ({ signed
   await makeDelegation(api, 'Grocery');
   await signedIn.goto('/');
 
-  await signedIn.getByRole('button', { name: '+ Add grouping' }).click();
+  await signedIn.getByRole('button', { name: 'Add grouping' }).click();
   await signedIn.getByLabel('Add a grouping').fill('Essentials');
   await signedIn.getByLabel('Add a grouping').press('Enter');
 

@@ -298,7 +298,7 @@ export function MainBudget(): ReactNode {
     <div>
       <header className="mb-6 flex items-baseline justify-between">
         <div>
-          <h1 className="text-page font-bold text-ink">Main Budget</h1>
+          <h1 className="text-page font-bold text-ink">Budget</h1>
           <p className="mt-1 text-quiet text-muted">
             {view.data.cycleStartedAt
               ? `This cycle began ${new Date(view.data.cycleStartedAt).toLocaleDateString()}.`
@@ -306,7 +306,23 @@ export function MainBudget(): ReactNode {
           </p>
         </div>
 
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
+          {newGrouping ? (
+            <input
+              autoFocus
+              placeholder="Grouping name, then Enter"
+              aria-label="Add a grouping"
+              onKeyDown={(event) => {
+                if (event.key === 'Escape') setNewGrouping(false);
+                if (event.key !== 'Enter') return;
+                const name = event.currentTarget.value.trim();
+                if (name !== '') createGrouping.mutate(name);
+              }}
+              className="rounded-lg border border-line bg-canvas px-2 py-1 text-quiet"
+            />
+          ) : (
+            <Button onClick={() => setNewGrouping(true)}>Add grouping</Button>
+          )}
           <Button onClick={() => setDialog('check')}>New outstanding check</Button>
           {/* Transfer sits to the left of Delegate, per the design. */}
           <Button onClick={() => setDialog('transfer')}>Transfer</Button>
@@ -358,30 +374,6 @@ export function MainBudget(): ReactNode {
         onEditBalance={(id, cents) => editBalance.mutate({ id, cents })}
         onCreate={(name) => createDelegation.mutate(name)}
         onMoveToGrouping={(rowId, groupingId) => moveDelegation.mutate({ id: rowId, groupingId })}
-        headerActions={
-          newGrouping ? (
-            <input
-              autoFocus
-              placeholder="Grouping name, then Enter"
-              aria-label="Add a grouping"
-              onKeyDown={(event) => {
-                if (event.key === 'Escape') setNewGrouping(false);
-                if (event.key !== 'Enter') return;
-                const name = event.currentTarget.value.trim();
-                if (name !== '') createGrouping.mutate(name);
-              }}
-              className="rounded-lg border border-line bg-canvas px-2 py-1 text-quiet"
-            />
-          ) : (
-            <button
-              type="button"
-              onClick={() => setNewGrouping(true)}
-              className="text-quiet font-semibold text-accent"
-            >
-              + Add grouping
-            </button>
-          )
-        }
         rowMenu={(row) =>
           // A check is not a delegation to rename, re-file or adjust; its menu
           // offers only what the bank can decide.
