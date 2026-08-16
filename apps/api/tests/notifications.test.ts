@@ -99,6 +99,83 @@ describe('a failing sync', () => {
   });
 });
 
+describe('a sync that succeeded but complained', () => {
+  it('reports the institution the feed named', async () => {
+    // The real shape of an expired bank login: SimpleFIN reports the problem
+    // per-institution and the run still succeeds, because everything else
+    // synced. Before this, the account quietly stopped updating while the whole
+    // interface looked healthy.
+    await prisma.syncRun.create({
+      data: {
+        status: 'succeeded',
+        startedAt: new Date('2026-08-09T09:00:00Z'),
+        finishedAt: new Date('2026-08-09T09:00:05Z'),
+        error: 'Connection to Frontier Bank may need attention. Auth required',
+        correlationId: 'test-run-1',
+      },
+    });
+
+    const notifications = await buildNotifications(prisma, NOW);
+    expect(notifications[0]?.kind).toBe('sync_warning');
+    expect(notifications[0]?.severity).toBe('warning');
+    // The feed's own words: it names the bank, and paraphrasing would lose that.
+    expect(notifications[0]?.message).toBe(
+      'Connection to Frontier Bank may need attention. Auth required',
+    );
+  });
+
+  it('joins several institutions into one banner', async () => {
+    await prisma.syncRun.create({
+      data: {
+        status: 'succeeded',
+        startedAt: new Date('2026-08-09T09:00:00Z'),
+        error: 'Frontier Bank: auth required\nPlains Commerce: temporarily unavailable',
+        correlationId: 'test-run-1',
+      },
+    });
+
+    expect((await buildNotifications(prisma, NOW))[0]?.message).toBe(
+      'Frontier Bank: auth required · Plains Commerce: temporarily unavailable',
+    );
+  });
+
+  it('says nothing about a clean run', async () => {
+    await prisma.syncRun.create({
+      data: {
+        status: 'succeeded',
+        startedAt: new Date('2026-08-09T09:00:00Z'),
+        correlationId: 'test-run-1',
+      },
+    });
+
+    expect(await kinds()).not.toContain('sync_warning');
+  });
+
+  it('is superseded by an outright failure rather than shown beside it', async () => {
+    // A later failed run is the more serious reading of the same connection.
+    await prisma.syncRun.create({
+      data: {
+        status: 'succeeded',
+        startedAt: new Date('2026-08-08T03:00:00Z'),
+        error: 'Frontier Bank: auth required',
+        correlationId: 'test-run-1',
+      },
+    });
+    await prisma.syncRun.create({
+      data: {
+        status: 'failed',
+        startedAt: new Date('2026-08-09T03:00:00Z'),
+        error: 'the bridge refused',
+        correlationId: 'test-run-2',
+      },
+    });
+
+    const reported = await kinds();
+    expect(reported).toContain('sync_failing');
+    expect(reported).not.toContain('sync_warning');
+  });
+});
+
 describe('stale balances', () => {
   it('names the accounts nobody has confirmed lately', async () => {
     await makeAccount({

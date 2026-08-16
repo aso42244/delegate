@@ -22,6 +22,7 @@ export interface Notification {
   /** Stable, so the UI can key and test on it rather than on prose. */
   readonly kind:
     | 'sync_failing'
+    | 'sync_warning'
     | 'stale_balances'
     | 'uncategorized_backlog'
     | 'bitcoin_price_stale'
@@ -72,6 +73,27 @@ export async function buildNotifications(db: Db, now: Date = new Date()): Promis
         days >= 1
           ? `The last sync failed ${days === 1 ? 'yesterday' : `${days} days ago`}. Balances and transactions are not up to date.`
           : 'The last sync failed. Balances and transactions are not up to date.',
+      actionPath: '/settings/sync',
+      actionLabel: 'Sync',
+    });
+  }
+
+  /*
+   * A run that *succeeded* while carrying feed errors.
+   *
+   * SimpleFIN reports a per-institution problem — an expired login, a bank
+   * refusing the connection — without failing the whole run, because the other
+   * institutions synced fine. Recorded on the run since the beginning, but until
+   * now it was only legible on the Settings page, so an account quietly stopped
+   * updating and everything else looked healthy. The feed's own words are used:
+   * it names the institution, and paraphrasing would lose that.
+   */
+  if (latestRun?.status === 'succeeded' && latestRun.error) {
+    notifications.push({
+      kind: 'sync_warning',
+      severity: 'warning',
+      // Multiple institutions can complain in one run.
+      message: latestRun.error.split('\n').filter(Boolean).join(' · '),
       actionPath: '/settings/sync',
       actionLabel: 'Sync',
     });
