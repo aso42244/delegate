@@ -104,7 +104,7 @@ export function Transactions(): ReactNode {
 
   const refresh = async (): Promise<void> => {
     await queryClient.invalidateQueries({ queryKey: ['transactions'] });
-    // Balances moved too, so the Main Budget cache is no longer trustworthy.
+    // Balances moved too, so the Budget page cache is no longer trustworthy.
     await queryClient.invalidateQueries({ queryKey: ['budget'] });
   };
 

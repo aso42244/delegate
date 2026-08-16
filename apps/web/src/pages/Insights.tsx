@@ -43,7 +43,7 @@ const WIDGET_TITLES: Record<WidgetKey, string> = {
   spending_by_delegation: 'Spending by delegation',
   delegations_negative: 'Delegations currently negative',
   uncategorized_backlog: 'Uncategorized',
-  utilities_vs_delegated: 'Utilities: average against funded',
+  utilities_vs_delegated: 'Utilities: average against delegated',
   income_vs_spending: 'Income against spending',
   cycle_surplus: 'Cycle surplus and deficit',
   net_worth_over_time: 'Net worth over time',
@@ -752,7 +752,7 @@ export function Insights(): ReactNode {
                   {utility.amountToDelegateCents === null
                     ? '—'
                     : formatCents(BigInt(utility.amountToDelegateCents))}{' '}
-                  funded
+                  delegated
                 </span>
               </li>
             ))}

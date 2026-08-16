@@ -37,7 +37,7 @@ import { centsIn, centsOut, dateOut } from '../http/serialize.js';
 import { AUTHENTICATED } from '../plugins/auth.js';
 
 /**
- * The Main Budget page: the read model, inline creation and editing, and the
+ * The Budget page: the read model, inline creation and editing, and the
  * three buttons that move money between envelopes.
  *
  * Every mutation that writes ledger events runs inside a database transaction,

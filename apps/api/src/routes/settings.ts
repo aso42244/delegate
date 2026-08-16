@@ -13,7 +13,7 @@ import { AUTHENTICATED } from '../plugins/auth.js';
 /**
  * Settings → Budget.
  *
- * Two values with real consequences: the tolerance decides when the Main Budget
+ * Two values with real consequences: the tolerance decides when the Budget page
  * banner stops saying "Balanced", and the undo window decides how long a
  * Delegate press can be taken back.
  */

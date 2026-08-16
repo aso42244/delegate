@@ -12,7 +12,7 @@ import { NewCheckDialog } from '../components/NewCheckDialog.jsx';
 import { Alert, Button } from '../components/ui.jsx';
 
 /**
- * The Main Budget — the page that replaces the spreadsheet.
+ * The Budget page — the page that replaces the spreadsheet.
  *
  * Every mutation invalidates the whole view rather than patching a row locally.
  * The identity at the top depends on all three sections at once, so a partial

@@ -13,7 +13,7 @@ recomputed on every view:
 SUM(in-budget assets) − SUM(in-budget debts) − SUM(delegation balances)
 ```
 
-That difference is displayed at the bottom of the Main Budget page. It is not
+That difference is displayed at the bottom of the Budget page. It is not
 enforced by double-entry bookkeeping and it is not always zero. It is a reading.
 
 ## Reading the bottom row

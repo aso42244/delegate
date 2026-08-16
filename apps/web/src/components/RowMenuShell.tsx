@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { useLongPress } from '../useLongPress.js';
 
 /**
- * The mechanics shared by every row menu on the Main Budget: the `⋯` trigger,
+ * The mechanics shared by every row menu on the Budget page: the `⋯` trigger,
  * the popover, dismissal, and the "move to grouping" sub-panel.
  *
  * Delegations and accounts need different *items* but identical behaviour, and

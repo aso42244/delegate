@@ -204,13 +204,13 @@ Phase 1: everything needed to stop using the spreadsheet, on the LAN.
 - Transactions API with search across description, account, delegation and
   amount; filters for date, account, delegation, kind, uncategorized and pending;
   splits with exact amounts or an even division; and bulk categorize.
-- Main Budget API: the read model with groupings and totals, inline creation and
+- Budget API: the read model with groupings and totals, inline creation and
   editing, and Delegate with preview and 12-hour undo, Transfer, manual
   adjustment and Reconcile to Actual.
 - The web application: app shell with a collapsible sidebar, authentication
   screens, first-run Super Admin creation, and the design tokens from
   `docs/design.md`.
-- The Main Budget page — three sections, inline creation, click-to-edit money
+- The Budget page — three sections, inline creation, click-to-edit money
   cells, the identity banner, Delegate with its confirmation and undo bar, and
   Transfer.
 - The Transactions page: the uncategorized queue, a keyboard-driven delegation
@@ -219,14 +219,14 @@ Phase 1: everything needed to stop using the spreadsheet, on the LAN.
   (AES-256-GCM) and taking precedence over the environment variable.
 - Manual transaction entry, and a split editor that shows the remainder as
   amounts are typed and refuses to save until the parts sum to the whole.
-- `GET /api/accounts`, since the Main Budget read model deliberately carries only
+- `GET /api/accounts`, since the Budget page read model deliberately carries only
   in-budget accounts and a manual transaction may belong to an off-budget one.
-- The per-row menu on the Main Budget: rename, the utility toggle, a note,
+- The per-row menu on the Budget page: rename, the utility toggle, a note,
   manual adjustment, per-line history, move to grouping, and archive. A blocked
   archive offers Adjust and Transfer inline.
 - Per-delegation history — the only place `adjust` events are ever visible,
   since the transaction journal exists for categorization rather than auditing.
-- Inline grouping creation on the Main Budget.
+- Inline grouping creation on the Budget page.
 - Settings, one section per page: Sync, Accounts, Delegations, Groupings, Rules,
   Budget, Users, Reconcile and Archived.
 - **Reconcile to Actual** — every delegation with its computed balance and an

@@ -25,7 +25,7 @@ import { AUTHENTICATED } from '../plugins/auth.js';
  * The Transactions page.
  *
  * Categorization here is the highest-traffic interaction in the application
- * after the Main Budget, so the shapes are built for a keyboard-driven queue:
+ * after the Budget page, so the shapes are built for a keyboard-driven queue:
  * filter to uncategorized, assign, move on.
  */
 

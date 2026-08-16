@@ -10,7 +10,7 @@ import { SettingsCard } from './SettingsCard.jsx';
  * Settings → Budget.
  *
  * Two numbers that change how the rest of the application reads. The tolerance
- * is not cosmetic: the Main Budget's warning and danger thresholds are derived
+ * is not cosmetic: the Budget page's warning and danger thresholds are derived
  * from it, so widening it moves the point at which over-delegation is called
  * out at all.
  */

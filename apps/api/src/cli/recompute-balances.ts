@@ -2,7 +2,7 @@
  * `recompute-balances` — rebuilds every cached delegation balance from the event
  * ledger.
  *
- * The cache exists so the Main Budget can render without aggregating the whole
+ * The cache exists so the Budget page can render without aggregating the whole
  * event table on every view. The events are the truth. If the two ever disagree,
  * this command makes the cache match the events and prints what it changed; a
  * disagreement is a bug worth investigating, so it reports rather than fixing

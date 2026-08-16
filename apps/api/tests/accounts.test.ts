@@ -10,7 +10,7 @@ import { errorOf, sessionCookie } from './http.js';
  * The account list.
  *
  * It exists so a transaction can be entered by hand against any real account,
- * including the off-budget ones the Main Budget deliberately does not carry. The
+ * including the off-budget ones the Budget page deliberately does not carry. The
  * assertions below are mostly about what it must *not* leave out.
  */
 
@@ -87,7 +87,7 @@ describe('GET /api/accounts', () => {
 
   /**
    * The reason this route exists at all: an off-budget account has no row on the
-   * Main Budget, and if it were missing here too its register could never be
+   * Budget, and if it were missing here too its register could never be
    * corrected by hand.
    */
   it('includes off-budget accounts, which the budget view omits', async () => {

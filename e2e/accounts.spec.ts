@@ -1,7 +1,7 @@
 import { expect, makeAccount, test } from './fixtures.js';
 
 /**
- * Settings → Accounts, and the asset and debt row menu on the Main Budget.
+ * Settings → Accounts, and the asset and debt row menu on the Budget page.
  *
  * The two booleans carry the weight here. `in_budget` decides whether an account
  * is part of the identity at all, and `in_net_worth` decides whether it shows on
@@ -9,7 +9,7 @@ import { expect, makeAccount, test } from './fixtures.js';
  * not swamp the budget.
  */
 
-test('a manual account is added and appears on the Main Budget', async ({ signedIn }) => {
+test('a manual account is added and appears on the Budget page', async ({ signedIn }) => {
   await signedIn.goto('/settings/accounts');
   await signedIn.getByRole('button', { name: '+ Add a manual account' }).click();
 

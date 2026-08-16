@@ -9,7 +9,7 @@ import { errorOf, sessionCookie } from './http.js';
 /**
  * Settings → Budget, and the go-live stamp.
  *
- * The tolerance decides when the Main Budget stops reading "Balanced" and the
+ * The tolerance decides when the Budget page stops reading "Balanced" and the
  * undo window decides how long a Delegate press can be taken back, so both are
  * bounded rather than free. The go-live date is written once, by the first
  * Reconcile commit, and never moved by a later one.
@@ -75,7 +75,7 @@ describe('GET /api/settings', () => {
 });
 
 describe('PATCH /api/settings', () => {
-  it('changes the tolerance, and the Main Budget reads it', async () => {
+  it('changes the tolerance, and the Budget page reads it', async () => {
     const response = await app.inject({
       method: 'PATCH',
       url: '/api/settings',

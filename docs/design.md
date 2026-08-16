@@ -72,7 +72,7 @@ text and icon. Nav items 14px/500, 17px icon, 6px radius.
 padding, 24–48px side gutters. Page header is title plus a one-line grey subtitle
 on the left, primary actions on the right.
 
-## 5. Main Budget
+## 5. Budget
 
 ### Balance banner
 
@@ -341,7 +341,7 @@ A gesture with nothing on screen to suggest it is a gesture nobody finds, so the
 Transactions page carries one quiet line saying so — and only on devices where
 it applies.
 
-**New outstanding check** sits beside Transfer and Delegate on the Main Budget.
+**New outstanding check** sits beside Transfer and Delegate on the Budget page.
 It asks for the number, the amount, the date, a memo, and which delegation the
 money comes from. Recording one moves the money out of that delegation and onto a
 line of its own, filed under **Outstanding Checks** — a grouping the budget owns,
@@ -402,7 +402,7 @@ string by position.
 
 ## Account nicknames
 
-An account may carry a short name, shown on the Main Budget and in the
+An account may carry a short name, shown on the Budget page and in the
 transaction register. "Citibank Costco VISA Costco Anywhere Visa® Card by
 Citi-7459" is a column of its own on every row otherwise.
 
@@ -456,7 +456,7 @@ per-paycheck one, adjacent and looking comparable.
 
 ## The shell, revised
 
-The page is **Budget**, not Main Budget.
+The page is **Budget**, not Budget.
 
 Sidebar icons are drawn rather than typed. They were Unicode glyphs — ▤ ⇄ ◷ ◔ ⚙
 — which render at whatever weight and baseline each platform decides, so the set
@@ -465,12 +465,18 @@ grid, taking their colour from the link they sit in. The navigation is tighter:
 five entries were spaced as though there were twenty. The brand mark beside the
 app name is gone; the word carries it.
 
-## Totals sit on their heading
+## Totals sit in the column they total
 
-Each section of the Budget puts its total on the same line as its name, and the
-`Total` row at the bottom of each table is gone. That row repeated the section's
-name in the left column and put the figure furthest from the thing it totalled.
-Delegations carries both of its totals there.
+Each section's total is the first row of its own table, so the figure lands
+directly above the column it sums. The `Total` row at the bottom is gone: it
+repeated the section's name in the left column and put the figure furthest from
+the thing it totalled. Delegations carries both of its totals there.
+
+The total is inside the table rather than in a heading above it for one reason —
+a heading laid out separately has to be kept in step with the columns by hand,
+and the drift is invisible until someone reads a column of figures that does not
+add up to the number on top of it. The same table means the same layout pass. An
+e2e test measures the right edges and holds them within a pixel.
 
 Column headings survive only where there are two money columns to tell apart.
 Assets and Debts have one, under a heading that already says what it is.
@@ -490,5 +496,19 @@ short, fixed, and the useful half.
 Hovering a bar names its month and what was spent. The column is full height so
 that a month which spent nothing can still be pointed at.
 
-The two sentences under each card became one line: `$34.24/month over 26
-paychecks · $49.20 over`. They said in thirty words what these say in eight.
+Under the chart, four labelled figures in one column:
+
+|                                 |                                       |
+| ------------------------------- | ------------------------------------- |
+| Average per month               | the completed months only             |
+| Suggested per cycle             | that average spread over 26 paychecks |
+| Delegated per cycle             | what the line is actually set to      |
+| Delegated above/below suggested | the comparison the page exists for    |
+
+This was two hero numbers and two sentences underneath, which said the same four
+things at three different weights and left the reader to work out which two were
+the comparison. Colour still marks a shortfall, but the label says it too.
+
+**Delegated, never funded.** Delegate has one verb for putting money in an
+envelope. A second word for it in one corner of the application is a second
+concept as far as the reader is concerned.

@@ -5,7 +5,7 @@ hand-maintained spreadsheet and a self-hosted Sure instance.
 
 The name is the verb the whole system is built around: money sits in real
 accounts, and every dollar is _delegated_ to a named envelope.
-The health of the budget is one subtraction, shown at the bottom of the Main Budget
+The health of the budget is one subtraction, shown at the bottom of the Budget page
 page and recomputed on every view:
 
 ```
@@ -39,14 +39,14 @@ Phase 1 (MVP) in progress. Landed so far:
 - SimpleFIN sync: hourly, windowed backfill, idempotent re-runs, the full pending
   lifecycle, and run history surfaced to the UI
 - Auto-categorization rules, including the apply-to-existing bulk action
-- The API behind the Transactions page and the Main Budget page, including
+- The API behind the Transactions page and the Budget page, including
   Delegate with undo, Transfer, manual adjustment and Reconcile to Actual
-- The interface: app shell, authentication, the Main Budget page, the
+- The interface: app shell, authentication, the Budget page, the
   Transactions page, and SimpleFIN connection in Settings
 - 289 tests plus 19 end-to-end tests in a real browser, including integration
   tests asserting the identity behaves correctly after every mutating operation
 
-Not yet built: the per-row menu on the Main Budget, and the Docker deployment
+Not yet built: the per-row menu on the Budget page, and the Docker deployment
 with nightly backups.
 
 ## Requirements

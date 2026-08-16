@@ -14,7 +14,7 @@ import { MoneyCell } from './MoneyCell.jsx';
 import { Tag } from './ui.jsx';
 
 /**
- * One section of the Main Budget: Assets, Debts or Delegations.
+ * One section of the Budget page: Assets, Debts or Delegations.
  *
  * Borderless spreadsheet style per the design — a 2px rule across the top, then
  * 1px row dividers, no card. Assets and Debts show balances only; the amount to
@@ -31,7 +31,6 @@ export interface BudgetSectionProps {
   readonly onEditAmount?: (rowId: string, cents: bigint) => void;
   readonly onEditBalance?: (rowId: string, cents: bigint) => void;
   readonly onCreate?: (name: string) => void;
-  readonly headerActions?: ReactNode;
   /**
    * The per-row menu, supplied by the page. Kept as a render prop so this
    * component stays presentational and knows nothing about delegations.
@@ -58,7 +57,6 @@ export function BudgetSection({
   onEditAmount,
   onEditBalance,
   onCreate,
-  headerActions,
   rowMenu,
   onMoveToGrouping,
 }: BudgetSectionProps): ReactNode {
@@ -189,72 +187,88 @@ export function BudgetSection({
 
   return (
     <section className="mb-8">
-      {/*
-        The section's total sits on its own heading rather than in a row at the
-        bottom of the table. A "Total" row repeated the section's name in the
-        left column and put the figure furthest from the thing it totals.
-      */}
-      <header className="mb-2 flex items-baseline justify-between gap-3 border-b-2 border-ink pb-1">
-        <h2 className="text-section font-bold text-ink">{title}</h2>
-
-        <div className="flex items-baseline gap-6">
-          {headerActions}
-          {showRemaining && (
-            <span className="money text-section font-bold text-ink">
-              {formatCents(parseCents(section.totalBalanceCents) ?? 0n)}
-            </span>
-          )}
-          {showToDelegate && (
-            <span className="money w-36 text-section font-bold text-faint">
-              {section.totalAmountToDelegateCents === null
-                ? '—'
-                : formatCents(parseCents(section.totalAmountToDelegateCents) ?? 0n)}
-            </span>
-          )}
-        </div>
-      </header>
-
-      {splitColumns && (
-        <div
-          role="radiogroup"
-          aria-label="Which amount to show"
-          className="mb-2 flex gap-1 rounded-lg bg-surface-2 p-0.5"
-        >
-          {(
-            [
-              ['remaining', 'Remaining'],
-              ['toDelegate', 'To delegate'],
-            ] as const
-          ).map(([value, label]) => (
-            <button
-              key={value}
-              type="button"
-              role="radio"
-              aria-checked={mobileColumn === value}
-              onClick={() => setMobileColumn(value)}
-              className={`flex-1 rounded-md px-3 py-1.5 text-quiet font-semibold ${
-                mobileColumn === value ? 'bg-canvas text-ink shadow-sm' : 'text-muted'
-              }`}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
-      )}
-
       <table className="w-full" onTouchStart={onTouchStart} onTouchEnd={onTouchEnd}>
-        {/* Assets and debts have one money column, under a heading that already
-            says what it is. Delegations has two, which do need naming. */}
-        <thead className={showAmountToDelegate ? '' : 'sr-only'}>
-          <tr className="text-label uppercase tracking-[0.05em] text-muted">
+        {/*
+          The section's total is a row of this table rather than a heading above
+          it, so each figure lands in the same column as the figures it totals.
+          Laid out any other way the two have to be kept in step by hand, and one
+          change to a column width silently pulls them apart.
+
+          A "Total" row at the bottom is what this replaces: it repeated the
+          section's name in the left column and put the figure furthest from the
+          thing it totalled.
+        */}
+        <thead>
+          <tr className="border-b-2 border-ink">
+            <td className="pb-1 pl-3">
+              <h2 className="text-section font-bold text-ink">{title}</h2>
+            </td>
+            {showRemaining && (
+              <td className="w-40 pb-1">
+                <span className="money block px-2 text-section font-bold text-ink">
+                  {formatCents(parseCents(section.totalBalanceCents) ?? 0n)}
+                </span>
+              </td>
+            )}
+            {showToDelegate && (
+              <td className="w-36 pb-1 pr-3">
+                <span className="money block px-2 text-section font-bold text-faint">
+                  {section.totalAmountToDelegateCents === null
+                    ? '—'
+                    : formatCents(parseCents(section.totalAmountToDelegateCents) ?? 0n)}
+                </span>
+              </td>
+            )}
+            {rowMenu && <td className="w-10 pb-1 pr-3" />}
+          </tr>
+
+          {splitColumns && (
+            <tr>
+              <td colSpan={columnCount} className="pt-2 pb-1">
+                <div
+                  role="radiogroup"
+                  aria-label="Which amount to show"
+                  className="flex gap-1 rounded-lg bg-surface-2 p-0.5"
+                >
+                  {(
+                    [
+                      ['remaining', 'Remaining'],
+                      ['toDelegate', 'To delegate'],
+                    ] as const
+                  ).map(([value, label]) => (
+                    <button
+                      key={value}
+                      type="button"
+                      role="radio"
+                      aria-checked={mobileColumn === value}
+                      onClick={() => setMobileColumn(value)}
+                      className={`flex-1 rounded-md px-3 py-1.5 text-quiet font-semibold ${
+                        mobileColumn === value ? 'bg-canvas text-ink shadow-sm' : 'text-muted'
+                      }`}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              </td>
+            </tr>
+          )}
+
+          {/* Assets and debts have one money column, under a heading that already
+              says what it is. Delegations has two, which do need naming. */}
+          <tr
+            className={`text-label uppercase tracking-[0.05em] text-muted ${
+              showAmountToDelegate ? '' : 'sr-only'
+            }`}
+          >
             <th className="row-cell pl-3 text-left font-normal">Name</th>
             {showRemaining && (
-              <th className="row-cell text-right font-normal">
+              <th className="row-cell pr-2 text-right font-normal">
                 {showAmountToDelegate ? 'Remaining' : 'Balance'}
               </th>
             )}
             {showToDelegate && (
-              <th className="row-cell pr-3 text-right font-normal text-faint">To delegate</th>
+              <th className="row-cell pr-5 text-right font-normal text-faint">To delegate</th>
             )}
             {rowMenu && <th className="w-10 row-cell pr-3" />}
           </tr>

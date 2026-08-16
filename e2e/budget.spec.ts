@@ -1,3 +1,4 @@
+import type { Locator } from '@playwright/test';
 import { expect, makeAccount, makeDelegation, test } from './fixtures.js';
 
 /**
@@ -27,6 +28,48 @@ test('money that has landed reads as available to delegate, not as a fault', asy
   const banner = signedIn.getByRole('status');
   await expect(banner).toContainText('$4,890.00 to delegate');
   await expect(banner).not.toContainText('over-delegated');
+});
+
+/**
+ * The reason the totals are rows of the table rather than a heading above it.
+ * Laid out separately they have to be kept in step by hand, and drift is
+ * invisible until someone reads a column of figures that does not add up to the
+ * number on top of it.
+ */
+test('a section total sits in the column it totals', async ({ signedIn, api }) => {
+  await makeAccount('Everyday Checking', 'asset', 1379665n);
+  await makeDelegation(api, 'Grocery', '40000');
+  await signedIn.reload();
+
+  const right = async (locator: Locator): Promise<number> => {
+    const box = await locator.boundingBox();
+    if (!box) throw new Error('not rendered');
+    return box.x + box.width;
+  };
+
+  const aligned = async (total: Locator, row: Locator): Promise<void> => {
+    // Sub-pixel, because a column edge lands on a fraction at some zoom levels.
+    expect(Math.abs((await right(total)) - (await right(row)))).toBeLessThanOrEqual(1);
+  };
+
+  const sectionOf = (heading: string): Locator =>
+    signedIn
+      .getByRole('table')
+      .filter({ has: signedIn.getByRole('heading', { name: heading, exact: true }) });
+
+  // Assets: one money column, so one total to place.
+  await aligned(
+    sectionOf('Assets').locator('thead .money'),
+    signedIn.getByRole('button', { name: 'Everyday Checking balance' }),
+  );
+
+  // Delegations: two, including the quieter one on the right.
+  const delegationTotals = sectionOf('Delegations').locator('thead .money');
+  await aligned(delegationTotals.nth(0), signedIn.getByRole('button', { name: 'Grocery balance' }));
+  await aligned(
+    delegationTotals.nth(1),
+    signedIn.getByRole('button', { name: 'Grocery amount to delegate' }),
+  );
 });
 
 test('a delegation is created by typing a name and pressing Enter', async ({ signedIn }) => {

@@ -61,7 +61,7 @@ test('a categorized transaction moves its delegation', async ({ signedIn, api })
   await picker.fill('gro');
   await picker.press('Enter');
 
-  // Wait for the row to leave the queue before navigating. The Main Budget reads
+  // Wait for the row to leave the queue before navigating. The Budget page reads
   // its balances once on load, so arriving mid-write would snapshot a number
   // that never updates and the assertion would poll a stale DOM for its whole
   // timeout.

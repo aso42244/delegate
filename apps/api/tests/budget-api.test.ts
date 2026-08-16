@@ -7,7 +7,7 @@ import { delegationBalance, ledgerBalances, makeAccount, resetDatabase } from '.
 import { sessionCookie } from './http.js';
 
 /**
- * The Main Budget API.
+ * The Budget page API.
  *
  * The read model has to agree with the ledger, and every button on the page has
  * to be atomic — a half-applied Delegate or Reconcile would leave the budget in
