@@ -167,3 +167,16 @@ export async function makePendingSpend(
     },
   });
 }
+
+/** A sync run that succeeded while the feed complained about one institution. */
+export async function makeSyncWarning(message: string): Promise<void> {
+  await prisma.syncRun.create({
+    data: {
+      status: 'succeeded',
+      startedAt: new Date(),
+      finishedAt: new Date(),
+      error: message,
+      correlationId: `e2e-${Date.now()}`,
+    },
+  });
+}

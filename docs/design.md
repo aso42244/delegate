@@ -512,3 +512,18 @@ the comparison. Colour still marks a shortfall, but the label says it too.
 **Delegated, never funded.** Delegate has one verb for putting money in an
 envelope. A second word for it in one corner of the application is a second
 concept as far as the reader is concerned.
+
+## Banners can be put away, not cleared
+
+A sync that _succeeds_ while the feed complains about one institution now raises
+a banner. SimpleFIN reports an expired bank login per-institution without failing
+the run, because everything else synced fine — so the text was recorded on the
+run from the beginning but legible only on the Settings page. An account could
+quietly stop updating while the whole interface looked healthy. The feed's own
+words are used: it names the bank, and paraphrasing would lose that.
+
+Every banner now carries an X, and the X is a **snooze rather than a clear**. It
+puts the banner away for a day, keyed on the message so a second bank failing is
+news again, and brings it back afterwards if the condition still holds. A banner
+dismissed for a condition that is still true would be a lie the interface tells
+on the owner's behalf. What makes one go away for good is fixing it.
