@@ -40,3 +40,8 @@ dist-types/
 
 # Self-signed TLS material. The private key must never be committed.
 tls/
+
+# Deploy tarballs. `git archive` writes these into the working tree on the way
+# to the NAS; they are a copy of the repo, so committing one doubles it.
+delegate-*.tar.gz
+delegate-src.tar.gz
