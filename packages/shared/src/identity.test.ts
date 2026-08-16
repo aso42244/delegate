@@ -29,6 +29,49 @@ describe('computeIdentity', () => {
     expect(formatIdentityLabel(result)).toBe('$4,890.00 to delegate');
   });
 
+  it('adds back a categorized pending spend the balance has not caught up with', () => {
+    // The state the owner hits between charging a card and the charge settling:
+    // the envelope is already down $361.47, the card balance is not yet up by it.
+    // Without the pending term the page offers $361.47 that has already been spent.
+    const result = computeIdentity({
+      assetsCents: cents(15_298_29),
+      debtsCents: cents(5_015_37),
+      delegationsCents: cents(9_921_45),
+      pendingCents: cents(-361_47),
+    });
+    expect(result.differenceCents).toBe(0n);
+    expect(result.status).toBe('balanced');
+  });
+
+  it('subtracts a pending refund, which leans the other way', () => {
+    // Categorizing a pending credit puts the money back in the envelope before
+    // the account shows it, so the uncorrected reading is over-delegated.
+    const result = computeIdentity({
+      assetsCents: cents(1_000_00),
+      debtsCents: cents(0),
+      delegationsCents: cents(1_050_00),
+      pendingCents: cents(50_00),
+    });
+    expect(result.differenceCents).toBe(0n);
+    expect(result.status).toBe('balanced');
+  });
+
+  it('is unchanged when nothing is pending', () => {
+    const withZero = computeIdentity({
+      assetsCents: cents(1_000_00),
+      debtsCents: cents(200_00),
+      delegationsCents: cents(300_00),
+      pendingCents: cents(0),
+    });
+    const omitted = computeIdentity({
+      assetsCents: cents(1_000_00),
+      debtsCents: cents(200_00),
+      delegationsCents: cents(300_00),
+    });
+    expect(withZero.differenceCents).toBe(omitted.differenceCents);
+    expect(omitted.pendingCents).toBe(0n);
+  });
+
   it('treats normal drift as balanced', () => {
     const result = computeIdentity({
       assetsCents: cents(5_000_00),

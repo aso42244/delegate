@@ -28,6 +28,8 @@ const TONES: Record<Tone, { box: string }> = {
 export function BalanceBanner({ view }: { view: BudgetViewDto }): ReactNode {
   const difference = BigInt(view.identity.differenceCents);
   const tolerance = BigInt(view.identity.toleranceCents);
+  // Signed: negative for a pending spend, which is the ordinary case.
+  const pending = BigInt(view.identity.pendingCents);
   const magnitude = difference < 0n ? -difference : difference;
 
   let tone: Tone;
@@ -64,7 +66,18 @@ export function BalanceBanner({ view }: { view: BudgetViewDto }): ReactNode {
       <p className="text-base opacity-80">
         Assets {formatCents(BigInt(view.identity.assetsCents))} − Debts{' '}
         {formatCents(BigInt(view.identity.debtsCents))} − Delegations{' '}
-        {formatCents(BigInt(view.identity.delegationsCents))} = {formatCents(difference)}
+        {formatCents(BigInt(view.identity.delegationsCents))}
+        {/* Shown only when there is one. A term reading "− Pending $0.00" on the
+            ordinary day would be four words of noise on the line that has to be
+            read at a glance. The operator follows the sign so the arithmetic can
+            be checked as written — a pending refund adds rather than subtracts. */}
+        {pending !== 0n && (
+          <>
+            {' '}
+            {pending < 0n ? '−' : '+'} Pending {formatCents(pending < 0n ? -pending : pending)}
+          </>
+        )}{' '}
+        = {formatCents(difference)}
       </p>
     </div>
   );

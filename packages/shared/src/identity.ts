@@ -1,7 +1,10 @@
 /**
  * The budget identity.
  *
- *   SUM(in-budget assets) − SUM(in-budget debts) − SUM(delegation balances)
+ *   SUM(in-budget assets)
+ *     − SUM(in-budget debts)
+ *     − SUM(delegation balances)
+ *     + SUM(categorized pending transactions)
  *
  * This is a point-in-time calculation and a health indicator, not an invariant
  * enforced by double-entry bookkeeping. A positive result is money that has
@@ -11,6 +14,14 @@
  *
  * Debt balances are stored as positive magnitudes (a $500 card balance is
  * 50000, not -50000) and subtracted here. See docs/architecture.md.
+ *
+ * The pending term exists because the two sides of a pending charge move at
+ * different times. Categorizing it takes the money out of its envelope at once —
+ * deliberately, because the money is gone — while the account balance is the
+ * institution's *settled* balance and will not include it for another day or
+ * three. Without this term the first three lines are simply out of step by the
+ * amount of the charge, and the page reports money to delegate that has already
+ * been spent. See ADR 020.
  */
 
 import { type Cents, ZERO_CENTS, absCents, formatCents } from './money.js';
@@ -23,6 +34,11 @@ export interface IdentityInput {
   readonly assetsCents: Cents;
   readonly debtsCents: Cents;
   readonly delegationsCents: Cents;
+  /**
+   * Signed sum of categorized pending transactions: negative for a spend, which
+   * is the ordinary case. Defaults to zero so every existing caller is unchanged.
+   */
+  readonly pendingCents?: Cents;
   /** Difference within ±tolerance reads as "Balanced". Configurable in Settings. */
   readonly toleranceCents?: Cents;
 }
@@ -31,6 +47,7 @@ export interface IdentityResult {
   readonly assetsCents: Cents;
   readonly debtsCents: Cents;
   readonly delegationsCents: Cents;
+  readonly pendingCents: Cents;
   readonly differenceCents: Cents;
   readonly toleranceCents: Cents;
   readonly status: IdentityStatus;
@@ -41,15 +58,20 @@ export function computeIdentity(input: IdentityInput): IdentityResult {
     assetsCents,
     debtsCents,
     delegationsCents,
+    pendingCents = ZERO_CENTS,
     toleranceCents = DEFAULT_IDENTITY_TOLERANCE_CENTS,
   } = input;
 
-  const differenceCents = assetsCents - debtsCents - delegationsCents;
+  // Added, not subtracted: a pending spend is already negative. The account
+  // balance is short by exactly this, so adding it back puts the first three
+  // terms on the same footing as each other.
+  const differenceCents = assetsCents - debtsCents - delegationsCents + pendingCents;
 
   return {
     assetsCents,
     debtsCents,
     delegationsCents,
+    pendingCents,
     differenceCents,
     toleranceCents,
     status: classifyIdentity(differenceCents, toleranceCents),

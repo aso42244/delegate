@@ -155,6 +155,7 @@ export const budgetRoutes: FastifyPluginCallback = (fastify, _options, done) => 
         assetsCents: centsOut(view.identity.assetsCents),
         debtsCents: centsOut(view.identity.debtsCents),
         delegationsCents: centsOut(view.identity.delegationsCents),
+        pendingCents: centsOut(view.identity.pendingCents),
         differenceCents: centsOut(view.identity.differenceCents),
         toleranceCents: centsOut(view.identity.toleranceCents),
         status: view.identity.status,
