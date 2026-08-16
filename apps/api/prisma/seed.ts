@@ -7,7 +7,7 @@
  * README-and-LICENSE change rather than a data audit.
  *
  * The seed builds a plausible shape rather than a plausible household: enough
- * groupings, envelopes and history to exercise the Main Budget, collapse
+ * groupings, envelopes and history to exercise the Budget page, collapse
  * behaviour, negative balances and staleness flags.
  *
  * No users are created. The first account becomes Super Admin through first-run

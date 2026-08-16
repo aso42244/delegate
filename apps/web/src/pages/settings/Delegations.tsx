@@ -9,7 +9,7 @@ import { SettingsCard } from './SettingsCard.jsx';
 /**
  * Settings → Delegations.
  *
- * Every per-delegation setting, mirroring the row menu on the Main Budget —
+ * Every per-delegation setting, mirroring the row menu on the Budget page —
  * §9.5 requires that anything configurable elsewhere is configurable here too.
  * The difference is shape rather than capability: the row menu is for one line
  * in passing, this is for working down all sixty.
@@ -210,13 +210,13 @@ export function DelegationsSection(): ReactNode {
   return (
     <SettingsCard
       title="Delegations"
-      description="Every envelope and everything about it. The same settings as the row menu on the Main Budget."
+      description="Every envelope and everything about it. The same settings as the row menu on the Budget page."
     >
       {view.isLoading ? (
         <p className="text-quiet text-muted">Loading delegations…</p>
       ) : rows.length === 0 ? (
         <p className="text-quiet text-muted">
-          No delegations yet. Add them inline on the Main Budget — it is much faster for sixty of
+          No delegations yet. Add them inline on the Budget page — it is much faster for sixty of
           them.
         </p>
       ) : (

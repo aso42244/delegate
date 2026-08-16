@@ -5,7 +5,7 @@ import { ConflictError, NotFoundError, ValidationError } from './errors.js';
 /**
  * Delegations and groupings: creation, renaming, and the settings each carries.
  *
- * Inline creation on the Main Budget has to be fast — the owner types roughly
+ * Inline creation on the Budget page has to be fast — the owner types roughly
  * sixty of these by hand at go-live with no import — so these are deliberately
  * thin: a name is enough to create one.
  *

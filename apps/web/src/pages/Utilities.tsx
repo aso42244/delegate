@@ -101,7 +101,7 @@ function UtilityCard({ utility }: { readonly utility: UtilityDto }): ReactNode {
   const configured =
     utility.amountToDelegateCents === null ? null : BigInt(utility.amountToDelegateCents);
 
-  // The comparison the page exists for: is this line under- or over-funded?
+  // The comparison the page exists for: is this line under- or over-delegated?
   const gap = configured === null ? null : configured - suggested;
 
   return (
@@ -125,44 +125,46 @@ function UtilityCard({ utility }: { readonly utility: UtilityDto }): ReactNode {
       <MiniChart months={utility.months} color={utility.groupingColor} />
 
       {/*
-        The two per-cycle figures sit together, at the same weight, because they
-        are the comparison. The monthly average used to lead in hero type with
-        "Currently" beside it carrying no unit at all — a monthly figure and a
-        per-paycheck one, adjacent and looking comparable. They never were.
+        Four figures, each labelled, each in the same column. This was two hero
+        numbers and two sentences underneath, which said the same four things at
+        three different weights and left the reader to work out which two were
+        the comparison. A list of label-and-figure does not need to be read to be
+        scanned.
+
+        "Delegated", never "funded": it is the word the rest of the application
+        uses for this, and one idea should not have two names.
       */}
-      <dl className="mt-3 flex flex-wrap items-baseline gap-x-8 gap-y-1">
-        <div>
-          <dt className="text-label uppercase tracking-[0.05em] text-muted">Suggested per cycle</dt>
-          <dd className="money text-hero font-bold text-ink">{formatCents(suggested)}</dd>
-        </div>
-        <div>
-          <dt className="text-label uppercase tracking-[0.05em] text-muted">Funded per cycle</dt>
-          <dd
-            className={`money text-hero font-bold ${
-              gap !== null && gap < 0n ? 'text-warning' : 'text-ink'
-            }`}
-          >
-            {configured === null ? '—' : formatCents(configured)}
-          </dd>
-        </div>
+      <dl className="mt-3 grid grid-cols-[1fr_auto] gap-x-4 text-quiet">
+        <dt className="text-muted">Average per month</dt>
+        <dd className="money font-semibold text-ink">{formatCents(average)}</dd>
+
+        <dt className="text-muted">Suggested per cycle</dt>
+        <dd className="money font-semibold text-ink">{formatCents(suggested)}</dd>
+
+        <dt className="text-muted">Delegated per cycle</dt>
+        <dd className="money font-semibold text-ink">
+          {configured === null ? <span className="text-faint">—</span> : formatCents(configured)}
+        </dd>
+
+        {/* Only where there is something to compare. An ad-hoc line has no
+            suggestion to be above or below. */}
+        {gap !== null && (
+          <>
+            <dt className="text-muted">
+              {gap === 0n
+                ? 'Delegated against suggested'
+                : `Delegated ${gap < 0n ? 'below' : 'above'} suggested`}
+            </dt>
+            {/* Colour reinforces the label, never replaces it. */}
+            <dd className={`money font-semibold ${gap < 0n ? 'text-warning' : 'text-ink'}`}>
+              {formatCents(gap < 0n ? -gap : gap)}
+            </dd>
+          </>
+        )}
       </dl>
 
-      {/* Where the suggestion comes from, in a sentence rather than as a figure
-          that looks like it belongs in the comparison above. */}
-      <p className="mt-2 text-quiet text-muted">
-        Averages {formatCents(average)} a month, spread across {CYCLES_PER_YEAR} paychecks a year.
-      </p>
-
-      {/* Said in words rather than by colour, and never acted on automatically. */}
-      {gap !== null && gap !== 0n && (
-        <p className="text-quiet text-muted">
-          {gap < 0n
-            ? `Funded ${formatCents(-gap)} per cycle below the suggestion.`
-            : `Funded ${formatCents(gap)} per cycle above the suggestion.`}
-        </p>
-      )}
       {configured === null && (
-        <p className="text-quiet text-muted">
+        <p className="mt-2 text-quiet text-muted">
           This line is ad hoc, so Delegate adds nothing to it.
         </p>
       )}
@@ -194,7 +196,7 @@ export function Utilities(): ReactNode {
       ) : utilities.length === 0 ? (
         <p className="text-quiet text-muted">
           No delegations are marked as a utility yet. Turn on Utility in a line&rsquo;s row menu on
-          the Main Budget.
+          the Budget page.
         </p>
       ) : (
         <>
@@ -212,8 +214,9 @@ export function Utilities(): ReactNode {
           </div>
 
           <p className="mt-4 text-quiet text-muted">
-            The average covers the completed months only. Including the month in progress would make
-            it collapse on the second and recover by the thirtieth.
+            A cycle is one of {CYCLES_PER_YEAR} paychecks a year. The average covers the completed
+            months only — including the month in progress would make it collapse on the second and
+            recover by the thirtieth.
           </p>
         </>
       )}

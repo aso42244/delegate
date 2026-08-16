@@ -28,11 +28,11 @@ test('shows a card per utility, and warns that averages need history', async ({
   await expect(signedIn.getByText(/need categorized history/)).toBeVisible();
 });
 
-test('compares the suggestion against what is actually funded', async ({ signedIn, api }) => {
+test('compares the suggestion against what is actually delegated', async ({ signedIn, api }) => {
   const accountId = await makeAccount('Everyday Checking', 'asset', 500000n);
-  // Funded at $2.00 a cycle. One $130 bill averages to about $11.81 a month,
-  // which is about $5.45 a cycle — so this line is genuinely under-funded, which
-  // is the case worth showing.
+  // Delegated at $2.00 a cycle. One $130 bill averages to about $11.81 a month,
+  // which is about $5.45 a cycle — so this line genuinely has too little
+  // delegated to it, which is the case worth showing.
   const water = await makeDelegation(api, 'Water', '200');
   await api.patch(`/api/delegations/${water}`, { data: { isUtility: true } });
 
@@ -57,8 +57,8 @@ test('compares the suggestion against what is actually funded', async ({ signedI
 
   await signedIn.goto('/utilities');
 
-  // The comparison the page exists for, stated in words.
-  await expect(signedIn.getByText(/below the suggestion/)).toBeVisible();
+  // The comparison the page exists for, named rather than left to a colour.
+  await expect(signedIn.getByText('Delegated below suggested')).toBeVisible();
 });
 
 /** §9.3: suggest only, never auto-write. */
@@ -142,11 +142,14 @@ test('the card compares like with like', async ({ signedIn, api }) => {
 
   await signedIn.goto('/utilities');
 
-  // Both headline figures name their unit, and neither is a monthly one.
+  // Every figure names its unit, so a monthly one and a per-cycle one cannot be
+  // read as comparable. That was the bug: "Currently $65.00" beside a
+  // per-paycheck suggestion, carrying no unit at all.
+  await expect(signedIn.getByText('Average per month')).toBeVisible();
   await expect(signedIn.getByText('Suggested per cycle')).toBeVisible();
-  await expect(signedIn.getByText('Funded per cycle')).toBeVisible();
+  await expect(signedIn.getByText('Delegated per cycle')).toBeVisible();
   await expect(signedIn.getByText('Currently', { exact: true })).toHaveCount(0);
 
-  // The monthly average is still there, as the sentence it belongs in.
-  await expect(signedIn.getByText(/Averages .* a month, spread across 26 paychecks/)).toBeVisible();
+  // And "delegated" throughout — the application has one word for this.
+  await expect(signedIn.getByText('Funded', { exact: false })).toHaveCount(0);
 });

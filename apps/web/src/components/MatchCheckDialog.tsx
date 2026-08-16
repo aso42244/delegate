@@ -65,7 +65,7 @@ export function MatchCheckDialog({
 
         {!checks.isLoading && open.length === 0 && (
           <p className="text-quiet text-muted">
-            No checks are outstanding. Record one from the Main Budget first.
+            No checks are outstanding. Record one from the Budget page first.
           </p>
         )}
 

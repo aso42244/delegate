@@ -8,7 +8,7 @@ import type { Db } from '../db/client.js';
  *
  * A health indicator, not an enforced invariant. Positive means money has landed
  * in an account and not yet been handed to an envelope — the "available to
- * delegate" figure on the bottom row of the Main Budget.
+ * delegate" figure on the bottom row of the Budget page.
  *
  * Only `in_budget` accounts are summed, which is what keeps the house and the
  * mortgage — both net-worth-only — from swamping the number.

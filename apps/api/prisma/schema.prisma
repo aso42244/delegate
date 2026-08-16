@@ -629,7 +629,7 @@ model BudgetSettings {
   // How long Delegate stays undoable.
   undoWindowHours Int @default(12) @map("undo_window_hours")
 
-  // A difference within ±this reads as "Balanced" on the Main Budget bottom row.
+  // A difference within ±this reads as "Balanced" on the Budget page bottom row.
   identityToleranceCents BigInt @default(500) @map("identity_tolerance_cents")
 
   // Recorded when the owner commits the go-live Reconcile screen, so history

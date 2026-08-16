@@ -3,7 +3,7 @@ import type { Db } from '../db/client.js';
 import { computeBudgetIdentity } from './identity.js';
 
 /**
- * The Main Budget read model.
+ * The Budget page read model.
  *
  * One query set builds the whole page — three sections, their groupings, and the
  * identity across the bottom. It is assembled server-side so the UI never has to

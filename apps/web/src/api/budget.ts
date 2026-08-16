@@ -1,7 +1,7 @@
 import { api } from './client.js';
 
 /**
- * The Main Budget page's data.
+ * The Budget page's data.
  *
  * Every amount arrives as a decimal string of cents and is parsed to `bigint`
  * here, once, at the boundary. Nothing downstream sees a `number` — ADR 002.

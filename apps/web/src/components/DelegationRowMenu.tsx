@@ -8,7 +8,7 @@ import { ITEM_CLASS, RowMenuShell, type GroupingOption } from './RowMenuShell.js
 import { Alert, Button, Modal, TextArea, TextField, Toggle } from './ui.jsx';
 
 /**
- * The per-row menu on the Main Budget.
+ * The per-row menu on the Budget page.
  *
  * Everything a delegation needs that is not a number in a cell: its name, the
  * utility flag, a manual adjustment, its history, which grouping it sits in, and

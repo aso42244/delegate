@@ -3,7 +3,7 @@ import { useId, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } 
 /**
  * The delegation picker used to categorize a transaction.
  *
- * This is the highest-traffic control in the application after the Main Budget,
+ * This is the highest-traffic control in the application after the Budget page,
  * and at go-live it is used several hundred times in a sitting. So it is a
  * type-ahead rather than a dropdown: type a few letters, press Enter, and the
  * next uncategorized row takes focus. No mouse, no scrolling a list of sixty.

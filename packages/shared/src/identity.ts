@@ -61,7 +61,7 @@ export function classifyIdentity(differenceCents: Cents, toleranceCents: Cents):
   return differenceCents > ZERO_CENTS ? 'to_delegate' : 'over_delegated';
 }
 
-/** The label rendered on the bottom row of the Main Budget page. */
+/** The label rendered on the bottom row of the Budget page. */
 export function formatIdentityLabel(result: IdentityResult): string {
   switch (result.status) {
     case 'balanced':

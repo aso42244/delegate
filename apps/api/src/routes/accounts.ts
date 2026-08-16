@@ -16,7 +16,7 @@ import { AUTHENTICATED } from '../plugins/auth.js';
 /**
  * The account list.
  *
- * The Main Budget's read model carries only in-budget accounts, because that is
+ * The Budget page's read model carries only in-budget accounts, because that is
  * what the identity is made of. Entering a transaction by hand needs the whole
  * live set: a mortgage payment lands on an account that is deliberately
  * off-budget, and leaving it unpickable would mean the register for it could

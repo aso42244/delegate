@@ -68,8 +68,10 @@ test.describe('the budget on a phone', () => {
     // Real TouchEvents, dispatched in the page: the handler reads clientX off
     // the touch list, so anything simpler would not exercise it.
     await page.evaluate(() => {
+      // The column switcher is a row of the table it switches, so the table is
+      // the ancestor rather than a sibling.
       const group = document.querySelector('[role="radiogroup"]');
-      const table = group?.parentElement?.querySelector('table');
+      const table = group?.closest('table');
       if (!table) throw new Error('no split-column table');
       const touch = (x: number): Touch =>
         new Touch({ identifier: 1, target: table, clientX: x, clientY: 200 });
@@ -85,8 +87,10 @@ test.describe('the budget on a phone', () => {
 
     // And back the other way.
     await page.evaluate(() => {
+      // The column switcher is a row of the table it switches, so the table is
+      // the ancestor rather than a sibling.
       const group = document.querySelector('[role="radiogroup"]');
-      const table = group?.parentElement?.querySelector('table');
+      const table = group?.closest('table');
       if (!table) throw new Error('no split-column table');
       const touch = (x: number): Touch =>
         new Touch({ identifier: 1, target: table, clientX: x, clientY: 200 });
@@ -108,8 +112,10 @@ test.describe('the budget on a phone', () => {
     // Diagonal, but mostly vertical: someone scrolling with their thumb must not
     // find the column swapped underneath it.
     await page.evaluate(() => {
+      // The column switcher is a row of the table it switches, so the table is
+      // the ancestor rather than a sibling.
       const group = document.querySelector('[role="radiogroup"]');
-      const table = group?.parentElement?.querySelector('table');
+      const table = group?.closest('table');
       if (!table) throw new Error('no split-column table');
       const at = (x: number, y: number): Touch =>
         new Touch({ identifier: 1, target: table, clientX: x, clientY: y });

@@ -23,7 +23,7 @@ point-in-time calculation:
 SUM(in-budget assets) − SUM(in-budget debts) − SUM(delegation balances) ≈ $0
 ```
 
-That reading sits at the top of the Main Budget page. It is **not** enforced by
+That reading sits at the top of the Budget page. It is **not** enforced by
 double-entry bookkeeping — it is a health indicator, and a positive number is the
 "available to delegate" figure on payday rather than a fault.
 
@@ -113,10 +113,10 @@ Built and working:
 - Auto-categorization rules with apply-to-existing
 - Utilities, Insights with all twelve widgets, Bitcoin, property value and equity,
   transaction pairing, grouping colours, notification banners
-- The API behind Transactions and Main Budget, including Delegate/Transfer/
+- The API behind Transactions and Budget, including Delegate/Transfer/
   Adjust/Reconcile
 - The UI: app shell with collapsible sidebar, auth screens including the
-  second-factor step, the Main Budget page with the per-row menu and inline
+  second-factor step, the Budget page with the per-row menu and inline
   grouping creation, the Transactions page including manual entry and the split
   editor, and Settings → Sync, Accounts, Delegations, Groupings, Rules, Budget,
   Users, Security, Reconcile to Actual and Archived
@@ -278,7 +278,7 @@ does.
   text where two parts of the interface describe the same thing.
 - **Navigating straight after a mutation makes an end-to-end test lie.** Two
   specs pressed a key that fired a write and immediately went to another page.
-  The Main Budget reads its balances once on load, so arriving mid-write
+  The Budget page reads its balances once on load, so arriving mid-write
   snapshots a number that never updates — and `toContainText` then polls a static
   DOM for its whole timeout. It passed for months and failed only on the slow
   first run after a cold server start, which is exactly the run that looks like a
