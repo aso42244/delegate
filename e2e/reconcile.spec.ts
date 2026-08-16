@@ -132,7 +132,10 @@ test('the tolerance is configurable and the banner follows it', async ({ signedI
   await expect(signedIn.getByRole('status')).toContainText('$7.40 over-delegated');
 
   await signedIn.goto('/settings/budget');
-  await signedIn.getByLabel('Tolerance').fill('10.00');
+  const tolerance = signedIn.getByLabel('Tolerance');
+  // The same race as below: the stored value has to land before it is typed over.
+  await expect(tolerance).not.toHaveValue('');
+  await tolerance.fill('10.00');
   await signedIn.getByRole('button', { name: 'Save' }).click();
   await expect(signedIn.getByText('Saved.')).toBeVisible();
 
@@ -142,7 +145,15 @@ test('the tolerance is configurable and the banner follows it', async ({ signedI
 
 test('the undo window is bounded, and the refusal explains why', async ({ signedIn }) => {
   await signedIn.goto('/settings/budget');
-  await signedIn.getByLabel('Undo window (hours)').fill('0');
+
+  // Wait for the stored value to land before typing over it. The field shows the
+  // server's number until it is edited, so filling it while the query is still
+  // in flight is a race the typist always wins locally and loses on slower
+  // hardware — the load arrives second and puts 24 back.
+  const field = signedIn.getByLabel('Undo window (hours)');
+  await expect(field).not.toHaveValue('');
+
+  await field.fill('0');
   await signedIn.getByRole('button', { name: 'Save' }).click();
 
   await expect(signedIn.getByRole('alert')).toContainText('between 1 hour and 168 hours');
