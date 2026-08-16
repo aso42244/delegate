@@ -9,28 +9,6 @@ import { expect, test, makeAccount, makeDelegation } from './fixtures.js';
  */
 
 test.describe('insights tiles', () => {
-  test('move earlier and later, and the order survives a reload', async ({ signedIn: page }) => {
-    await page.goto('/insights');
-
-    const titles = page.locator('section h2');
-    const first = await titles.first().innerText();
-    const second = await titles.nth(1).innerText();
-    expect(first).not.toBe(second);
-
-    await page.getByRole('button', { name: `Move ${second} earlier` }).click();
-    await expect(titles.first()).toHaveText(second);
-
-    await page.reload();
-    await expect(page.locator('section h2').first()).toHaveText(second);
-  });
-
-  test('the first tile cannot move earlier', async ({ signedIn: page }) => {
-    await page.goto('/insights');
-    const first = await page.locator('section h2').first().innerText();
-
-    await expect(page.getByRole('button', { name: `Move ${first} earlier` })).toBeDisabled();
-  });
-
   test('a tile can be drawn a different way, and remembers it', async ({ signedIn: page }) => {
     await page.goto('/insights');
 

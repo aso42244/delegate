@@ -16,13 +16,77 @@ import { Button } from './ui.jsx';
 
 const COLLAPSE_KEY = 'budget.sidebar.collapsed';
 
+/**
+ * Drawn rather than typed.
+ *
+ * The icons were Unicode glyphs — ▤ ⇄ ◷ ◔ ⚙ — which render at whatever weight
+ * and baseline each platform decides, so the set never looked like a set. These
+ * are one stroke weight, one grid, one visual language, and they take their
+ * colour from the link they sit in.
+ */
+function Icon({ name }: { readonly name: PageIcon }): ReactNode {
+  const shapes: Record<PageIcon, ReactNode> = {
+    // A ledger: rows in a frame.
+    budget: (
+      <>
+        <rect x="2.5" y="3.5" width="15" height="13" rx="2" />
+        <path d="M2.5 8h15M7.5 8v8.5" />
+      </>
+    ),
+    // Two flows, opposite directions.
+    transactions: (
+      <>
+        <path d="M3 7h11l-3-3M17 13H6l3 3" />
+      </>
+    ),
+    // A meter, which is what a utility bill is read off.
+    utilities: (
+      <>
+        <path d="M3.5 15a7.5 7.5 0 1 1 13 0" />
+        <path d="M10 15l3.5-4" />
+      </>
+    ),
+    // Bars of unequal height: a comparison.
+    insights: (
+      <>
+        <path d="M4 16.5v-5M10 16.5v-9M16 16.5v-3" />
+      </>
+    ),
+    // Sliders. A gear turns to mush at this size.
+    settings: (
+      <>
+        <path d="M3 6h9M15 6h2M3 14h2M8 14h9" />
+        <circle cx="13.5" cy="6" r="2" />
+        <circle cx="6.5" cy="14" r="2" />
+      </>
+    ),
+  };
+
+  return (
+    <svg
+      viewBox="0 0 20 20"
+      className="h-[18px] w-[18px] shrink-0"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+    >
+      {shapes[name]}
+    </svg>
+  );
+}
+
+type PageIcon = 'budget' | 'transactions' | 'utilities' | 'insights' | 'settings';
+
 const PAGES = [
-  { to: '/', label: 'Main Budget', icon: '▤', end: true },
-  { to: '/transactions', label: 'Transactions', icon: '⇄', end: false },
-  { to: '/utilities', label: 'Utilities', icon: '◷', end: false },
-  { to: '/insights', label: 'Insights', icon: '◔', end: false },
-  { to: '/settings', label: 'Settings', icon: '⚙', end: false },
-] as const;
+  { to: '/', label: 'Budget', icon: 'budget', end: true },
+  { to: '/transactions', label: 'Transactions', icon: 'transactions', end: false },
+  { to: '/utilities', label: 'Utilities', icon: 'utilities', end: false },
+  { to: '/insights', label: 'Insights', icon: 'insights', end: false },
+  { to: '/settings', label: 'Settings', icon: 'settings', end: false },
+] as const satisfies readonly { to: string; label: string; icon: PageIcon; end: boolean }[];
 
 function useCollapsed(): [boolean, (value: boolean) => void] {
   const [collapsed, setCollapsed] = useState(() => {
@@ -105,10 +169,7 @@ export function Sidebar({ appName }: { appName: string }): ReactNode {
       aria-label="Main"
       className={`${width} flex shrink-0 flex-col border-r border-line bg-canvas transition-[width]`}
     >
-      <div className="flex items-center gap-2 px-3 py-4">
-        <span aria-hidden className="text-lg">
-          ◈
-        </span>
+      <div className="flex items-center gap-2 px-3 py-3">
         {!collapsed && <span className="truncate font-semibold text-ink">{appName}</span>}
         <button
           type="button"
@@ -121,7 +182,7 @@ export function Sidebar({ appName }: { appName: string }): ReactNode {
         </button>
       </div>
 
-      <ul className="flex flex-1 flex-col gap-0.5 px-2">
+      <ul className="flex flex-1 flex-col px-2">
         {PAGES.map((page) => (
           <li key={page.to}>
             <NavLink
@@ -129,14 +190,12 @@ export function Sidebar({ appName }: { appName: string }): ReactNode {
               end={page.end}
               title={collapsed ? page.label : undefined}
               className={({ isActive }) =>
-                `flex items-center gap-3 rounded-md px-2 py-2 text-base font-medium ${
+                `flex items-center gap-2.5 rounded-md px-2 py-1.5 text-base font-medium ${
                   isActive ? 'bg-accent-soft text-accent' : 'text-ink hover:bg-surface-2'
                 } ${collapsed ? 'justify-center' : ''}`
               }
             >
-              <span aria-hidden className="text-[17px]">
-                {page.icon}
-              </span>
+              <Icon name={page.icon} />
               {!collapsed && <span>{page.label}</span>}
             </NavLink>
           </li>

@@ -35,6 +35,13 @@ interface UtilityDto {
  * amounts are. The month in progress is drawn faintly — it is not a full month
  * of bills and should not look like one.
  */
+/** "2026-07" as "Jul 2026", which is what a bar is actually labelled by. */
+function monthLabel(month: string): string {
+  const [year, index] = month.split('-');
+  const date = new Date(Number(year), Number(index) - 1, 1);
+  return date.toLocaleDateString(undefined, { month: 'short', year: 'numeric' });
+}
+
 function MiniChart({
   months,
   color,
@@ -47,22 +54,41 @@ function MiniChart({
   const peak = values.reduce((max, value) => (value > max ? value : max), 0n);
 
   return (
-    <div className="flex h-16 items-end gap-1" aria-hidden>
+    <div className="flex h-16 items-end gap-1">
       {months.map((month, index) => {
         const value = values[index] ?? 0n;
         // Percentages as numbers only for layout — never for money.
         const height = peak <= 0n ? 0 : Number((value * 100n) / peak);
 
+        // The column is the whole height so there is something to point at
+        // even in a month that spent nothing; the bar sits inside it.
         return (
           <div
             key={month.month}
-            className="flex-1 rounded-sm"
-            style={{
-              height: `${Math.max(height, value > 0n ? 4 : 0)}%`,
-              opacity: month.complete ? 1 : 0.28,
-              background: color ?? 'var(--color-accent)',
-            }}
-          />
+            className="group/bar relative flex h-full flex-1 items-end"
+            title={`${monthLabel(month.month)}: ${formatCents(value)}${
+              month.complete ? '' : ' so far'
+            }`}
+          >
+            <div
+              className="w-full rounded-sm"
+              style={{
+                height: `${Math.max(height, value > 0n ? 4 : 0)}%`,
+                opacity: month.complete ? 1 : 0.28,
+                background: color ?? 'var(--color-accent)',
+              }}
+            />
+
+            {/* Shown on hover and on keyboard focus within, because a tooltip
+                only a mouse can reach is a tooltip half the page cannot use. */}
+            <span
+              aria-hidden
+              className="pointer-events-none absolute bottom-full left-1/2 z-10 mb-1 hidden -translate-x-1/2 rounded bg-ink px-1.5 py-0.5 text-label whitespace-nowrap text-canvas group-hover/bar:block"
+            >
+              {monthLabel(month.month)} · {formatCents(value)}
+              {month.complete ? '' : ' so far'}
+            </span>
+          </div>
         );
       })}
     </div>

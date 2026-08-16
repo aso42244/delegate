@@ -131,9 +131,6 @@ function Card({
   title,
   onRemove,
   children,
-  onMove,
-  canMoveEarlier,
-  canMoveLater,
   displays,
   display,
   onDisplay,
@@ -142,10 +139,6 @@ function Card({
   readonly title: string;
   readonly onRemove: () => void;
   readonly children: ReactNode;
-  /** Reordering, as buttons: drag is not reachable by keyboard or by thumb. */
-  readonly onMove: (direction: -1 | 1) => void;
-  readonly canMoveEarlier: boolean;
-  readonly canMoveLater: boolean;
   readonly displays: readonly string[];
   readonly display: string;
   readonly onDisplay: (display: string) => void;
@@ -201,24 +194,6 @@ function Card({
             </span>
           )}
 
-          <button
-            type="button"
-            onClick={() => onMove(-1)}
-            disabled={!canMoveEarlier}
-            aria-label={`Move ${title} earlier`}
-            className="rounded px-1 text-quiet text-muted disabled:opacity-30"
-          >
-            ◂
-          </button>
-          <button
-            type="button"
-            onClick={() => onMove(1)}
-            disabled={!canMoveLater}
-            aria-label={`Move ${title} later`}
-            className="rounded px-1 text-quiet text-muted disabled:opacity-30"
-          >
-            ▸
-          </button>
           <button
             type="button"
             onClick={onRemove}
@@ -628,23 +603,6 @@ export function Insights(): ReactNode {
     save.mutate([...chosen, { key, display: null }]);
   }
 
-  /**
-   * Moves a tile one place. Buttons rather than dragging: a drag is unreachable
-   * by keyboard and awkward with a thumb, and this page is read on both.
-   */
-  function move(index: number, direction: -1 | 1): void {
-    const target = index + direction;
-    if (target < 0 || target >= chosen.length) return;
-
-    const next = [...chosen];
-    const moved = next[index];
-    const displaced = next[target];
-    if (!moved || !displaced) return;
-    next[index] = displaced;
-    next[target] = moved;
-    save.mutate(next);
-  }
-
   /** Lifts a tile out of the order and drops it in at another index. */
   function moveTo(from: number, to: number): void {
     if (from === to) return;
@@ -932,9 +890,6 @@ export function Insights(): ReactNode {
                 key={entry.key}
                 title={WIDGET_TITLES[entry.key]}
                 onRemove={() => remove(entry.key)}
-                onMove={(direction) => move(index, direction)}
-                canMoveEarlier={index > 0}
-                canMoveLater={index < chosen.length - 1}
                 displays={options}
                 display={display}
                 onDisplay={(next) => setDisplay(index, next)}

@@ -107,8 +107,10 @@ test('the sparkline takes the grouping colour', async ({ signedIn, api }) => {
   await signedIn.goto('/utilities');
   await expect(signedIn.getByText('Electricity')).toBeVisible();
 
-  // The purple of the grouping, not the accent blue.
-  const bar = signedIn.locator('[aria-hidden] > div').first();
+  // The purple of the grouping, not the accent blue. The bar sits inside a
+  // full-height column, which is what gives a spent-nothing month something to
+  // hover over.
+  const bar = signedIn.locator('.group\\/bar > div').first();
   await expect(bar).toHaveCSS('background-color', 'rgb(139, 99, 184)');
 });
 

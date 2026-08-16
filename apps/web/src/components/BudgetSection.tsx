@@ -1,4 +1,4 @@
-import { groupingTint } from '@budget/shared';
+import { formatCents, groupingTint } from '@budget/shared';
 import {
   Fragment,
   useRef,
@@ -189,9 +189,29 @@ export function BudgetSection({
 
   return (
     <section className="mb-8">
-      <header className="mb-2 flex items-baseline justify-between">
+      {/*
+        The section's total sits on its own heading rather than in a row at the
+        bottom of the table. A "Total" row repeated the section's name in the
+        left column and put the figure furthest from the thing it totals.
+      */}
+      <header className="mb-2 flex items-baseline justify-between gap-3 border-b-2 border-ink pb-1">
         <h2 className="text-section font-bold text-ink">{title}</h2>
-        {headerActions}
+
+        <div className="flex items-baseline gap-6">
+          {headerActions}
+          {showRemaining && (
+            <span className="money text-section font-bold text-ink">
+              {formatCents(parseCents(section.totalBalanceCents) ?? 0n)}
+            </span>
+          )}
+          {showToDelegate && (
+            <span className="money w-36 text-section font-bold text-faint">
+              {section.totalAmountToDelegateCents === null
+                ? '—'
+                : formatCents(parseCents(section.totalAmountToDelegateCents) ?? 0n)}
+            </span>
+          )}
+        </div>
       </header>
 
       {splitColumns && (
@@ -222,12 +242,10 @@ export function BudgetSection({
         </div>
       )}
 
-      <table
-        className="w-full border-t-2 border-ink"
-        onTouchStart={onTouchStart}
-        onTouchEnd={onTouchEnd}
-      >
-        <thead>
+      <table className="w-full" onTouchStart={onTouchStart} onTouchEnd={onTouchEnd}>
+        {/* Assets and debts have one money column, under a heading that already
+            says what it is. Delegations has two, which do need naming. */}
+        <thead className={showAmountToDelegate ? '' : 'sr-only'}>
           <tr className="text-label uppercase tracking-[0.05em] text-muted">
             <th className="row-cell pl-3 text-left font-normal">Name</th>
             {showRemaining && (
@@ -354,32 +372,6 @@ export function BudgetSection({
             </tr>
           )}
         </tbody>
-
-        <tfoot>
-          <tr className="border-t-2 border-ink bg-surface font-bold">
-            <td className="row-cell pl-3 text-ink">Total</td>
-            {showRemaining && (
-              <td className="row-cell">
-                <MoneyCell
-                  valueCents={parseCents(section.totalBalanceCents)}
-                  redWhenNegative={redNegatives}
-                  emphasis={showAmountToDelegate ? 'hero' : 'normal'}
-                  label={`${title} total`}
-                />
-              </td>
-            )}
-            {showToDelegate && (
-              <td className="row-cell pr-3">
-                <MoneyCell
-                  valueCents={parseCents(section.totalAmountToDelegateCents)}
-                  emphasis="quiet"
-                  label={`${title} total to delegate`}
-                />
-              </td>
-            )}
-            {rowMenu && <td className="w-10 row-cell pr-3" />}
-          </tr>
-        </tfoot>
       </table>
     </section>
   );

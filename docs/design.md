@@ -453,3 +453,42 @@ and what is actually funded, which is the comparison. The monthly average sits i
 the sentence explaining where the suggestion comes from. It used to lead in hero
 type with an unlabelled "Currently" beside it: a per-month figure and a
 per-paycheck one, adjacent and looking comparable.
+
+## The shell, revised
+
+The page is **Budget**, not Main Budget.
+
+Sidebar icons are drawn rather than typed. They were Unicode glyphs — ▤ ⇄ ◷ ◔ ⚙
+— which render at whatever weight and baseline each platform decides, so the set
+never looked like a set. They are now inline SVG at one stroke weight on one
+grid, taking their colour from the link they sit in. The navigation is tighter:
+five entries were spaced as though there were twenty. The brand mark beside the
+app name is gone; the word carries it.
+
+## Totals sit on their heading
+
+Each section of the Budget puts its total on the same line as its name, and the
+`Total` row at the bottom of each table is gone. That row repeated the section's
+name in the left column and put the figure furthest from the thing it totalled.
+Delegations carries both of its totals there.
+
+Column headings survive only where there are two money columns to tell apart.
+Assets and Debts have one, under a heading that already says what it is.
+
+The identity banner reads as a statement and its working: the figure on the left,
+the equation right-aligned against it, no bullet between them.
+
+## A transaction is one line
+
+A bank description is as long as the bank feels like making it. Rows truncate
+rather than wrap, with the full text on hover — sixty wrapping rows is a page
+that will not sit still. Only the description gives way: the badges beside it are
+short, fixed, and the useful half.
+
+## Utilities, briefly
+
+Hovering a bar names its month and what was spent. The column is full height so
+that a month which spent nothing can still be pointed at.
+
+The two sentences under each card became one line: `$34.24/month over 26
+paychecks · $49.20 over`. They said in thirty words what these say in eight.
