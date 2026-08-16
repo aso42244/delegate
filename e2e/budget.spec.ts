@@ -1,5 +1,5 @@
 import type { Locator } from '@playwright/test';
-import { expect, makeAccount, makeDelegation, test } from './fixtures.js';
+import { expect, makeAccount, makeDelegation, makePendingSpend, test } from './fixtures.js';
 
 /**
  * The Budget page, driven in a real browser.
@@ -70,6 +70,35 @@ test('a section total sits in the column it totals', async ({ signedIn, api }) =
     delegationTotals.nth(1),
     signedIn.getByRole('button', { name: 'Grocery amount to delegate' }),
   );
+});
+
+/**
+ * Reported from real data: exactly balanced, then a card charge went pending.
+ * Categorizing it emptied the envelope while the card's reported balance stayed
+ * put, and the page offered that money to delegate a second time.
+ */
+test('a pending charge is not offered as money to delegate', async ({ signedIn, api }) => {
+  await makeAccount('Frontier Checking', 'asset', 100_000n);
+  const card = await makeAccount('Costco Citi VISA', 'debt', 0n, 'simplefin');
+  const grocery = await makeDelegation(api, 'Grocery');
+
+  await signedIn.reload();
+  await signedIn.getByRole('button', { name: 'Grocery balance' }).click();
+  const balance = signedIn.getByLabel('Grocery balance');
+  await balance.fill('1000.00');
+  await balance.press('Enter');
+  await expect(signedIn.getByRole('status')).toContainText('Balanced');
+
+  // No term at all while nothing is pending — it would be four words of noise on
+  // the one line that has to be read at a glance.
+  await expect(signedIn.getByRole('status')).not.toContainText('Pending');
+
+  await makePendingSpend(card, grocery, -36_147n);
+  await signedIn.reload();
+
+  const banner = signedIn.getByRole('status');
+  await expect(banner).toContainText('Balanced');
+  await expect(banner).toContainText('− Pending $361.47');
 });
 
 test('a delegation is created by typing a name and pressing Enter', async ({ signedIn }) => {

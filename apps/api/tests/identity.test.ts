@@ -643,17 +643,23 @@ describe('pending transactions', () => {
     await prisma.$transaction((tx) =>
       categorizeTransaction(tx, pending.id, grocery.id, { actorId }),
     );
-    await applyTransactionToAccountBalance(prisma, checking.id, -6_000n, new Date());
+
+    // The envelope is down; the account is not, because the institution reports
+    // its settled balance and this charge has not settled. The identity holds
+    // anyway, which is what the pending term is for.
     expect(await delegationBalance(grocery.id)).toBe(94_000n);
+    expect(await accountBalance(checking.id)).toBe(100_000n);
     expect(await identityDifference()).toBe(0n);
 
-    // The settled row arrives on the next sync as its own record.
+    // The settled row arrives on the next sync as its own record, and the
+    // institution's balance moves with it.
     const posted = await makeTransaction({
       accountId: checking.id,
       amountCents: -6_000n,
       pending: false,
       postedAt: new Date('2026-08-03T00:00:00Z'),
     });
+    await applyTransactionToAccountBalance(prisma, checking.id, -6_000n, new Date());
 
     const matches = await findPostedMatchesForPending(prisma);
     expect(matches).toHaveLength(1);
@@ -677,6 +683,70 @@ describe('pending transactions', () => {
     });
     expect(liveAllocations).toEqual([{ transactionId: posted.id }]);
     await expectCacheMatchesLedger();
+  });
+
+  it('do not offer money that a pending charge has already spent', async () => {
+    // Reported from real data: exactly balanced, then a card charge went
+    // pending. Categorizing it emptied the envelope by $361.47 while the card's
+    // reported balance stayed where it was, and the page offered that $361.47 to
+    // delegate a second time.
+    await makeAccount({ name: 'Frontier Checking', type: 'asset', balanceCents: 15_298_29n });
+    const card = await makeAccount({
+      name: 'Costco Citi VISA',
+      type: 'debt',
+      balanceCents: 5_015_37n,
+    });
+    const grocery = await makeDelegation({ name: 'Grocery' });
+    await adjustDelegationByDelta(prisma, {
+      delegationId: grocery.id,
+      deltaCents: 10_282_92n,
+      actorId,
+    });
+    expect(await identityDifference()).toBe(0n);
+
+    const pending = await makeTransaction({
+      accountId: card.id,
+      amountCents: -361_47n,
+      pending: true,
+    });
+    await prisma.$transaction((tx) =>
+      categorizeTransaction(tx, pending.id, grocery.id, { actorId }),
+    );
+
+    // Still balanced. Neither the checking balance nor the card balance moved.
+    expect(await identityDifference()).toBe(0n);
+    expect(await accountBalance(card.id)).toBe(5_015_37n);
+    await expectCacheMatchesLedger();
+  });
+
+  it('are counted only once categorized, and only on in-budget accounts', async () => {
+    const card = await makeAccount({ name: 'Card', type: 'debt', balanceCents: 0n });
+    const offBudget = await makeAccount({
+      name: 'Brokerage',
+      type: 'asset',
+      balanceCents: 0n,
+      inBudget: false,
+      inNetWorth: true,
+    });
+    const grocery = await makeDelegation({ name: 'Grocery' });
+
+    // Uncategorized: neither side has moved, so there is nothing to correct.
+    // Adjusting for it would turn a reconciliation into a forecast.
+    await makeTransaction({ accountId: card.id, amountCents: -5_000n, pending: true });
+    expect((await computeBudgetIdentity(prisma)).pendingCents).toBe(0n);
+    expect(await identityDifference()).toBe(0n);
+
+    // Off-budget: the first two terms never counted this account, so the third
+    // must not either.
+    const outside = await makeTransaction({
+      accountId: offBudget.id,
+      amountCents: -7_000n,
+      pending: true,
+    });
+    await prisma.$transaction((tx) =>
+      categorizeTransaction(tx, outside.id, grocery.id, { actorId }),
+    );
+    expect((await computeBudgetIdentity(prisma)).pendingCents).toBe(0n);
   });
 
   it('back out completely when a pending row vanishes without posting', async () => {

@@ -123,3 +123,47 @@ export async function makeAccount(
   });
   return account.id;
 }
+
+/**
+ * A pending transaction, already categorized.
+ *
+ * Seeded rather than posted through the API because only a sync creates one: a
+ * manual transaction is always entered settled, since the owner typing it in is
+ * the same act as the money leaving.
+ */
+export async function makePendingSpend(
+  accountId: string,
+  delegationId: string,
+  amountCents: bigint,
+  description = 'Pending charge',
+): Promise<void> {
+  const transaction = await prisma.transaction.create({
+    data: {
+      accountId,
+      postedAt: new Date(),
+      amountCents,
+      descriptionRaw: description,
+      description,
+      pending: true,
+      source: 'simplefin',
+      externalId: `e2e-pending-${description}`,
+      allocations: { create: { delegationId, amountCents } },
+    },
+    select: { id: true },
+  });
+
+  // The envelope moves the moment it is categorized, which is the whole reason
+  // the account balance and the delegation fall out of step.
+  await prisma.delegation.update({
+    where: { id: delegationId },
+    data: { balanceCents: { increment: amountCents } },
+  });
+  await prisma.delegationEvent.create({
+    data: {
+      delegationId,
+      transactionId: transaction.id,
+      eventType: 'categorize',
+      deltaCents: amountCents,
+    },
+  });
+}

@@ -61,6 +61,8 @@ export interface BudgetViewDto {
     readonly assetsCents: string;
     readonly debtsCents: string;
     readonly delegationsCents: string;
+    /** Categorized pending spend the account balances have not caught up with. */
+    readonly pendingCents: string;
     readonly differenceCents: string;
     readonly toleranceCents: string;
     readonly status: IdentityStatus;

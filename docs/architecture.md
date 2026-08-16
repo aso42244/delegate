@@ -13,6 +13,12 @@ recomputed on every view:
 SUM(in-budget assets) − SUM(in-budget debts) − SUM(delegation balances)
 ```
 
+A fourth term corrects for pending transactions that have been categorized: the
+envelope moves the moment one is categorized, while the account balance is the
+institution's settled balance and will not include it for another day or three.
+Without it the first three terms are out of step by the amount of the charge. See
+ADR 020.
+
 That difference is displayed at the bottom of the Budget page. It is not
 enforced by double-entry bookkeeping and it is not always zero. It is a reading.
 
