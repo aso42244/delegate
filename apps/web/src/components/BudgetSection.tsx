@@ -297,14 +297,33 @@ export function BudgetSection({
                     type="button"
                     onClick={() => onToggleGrouping?.(grouping.id, !grouping.collapsed)}
                     aria-expanded={!grouping.collapsed}
-                    className="flex items-center gap-2 font-semibold text-ink"
+                    className="group/toggle -ml-1 flex items-center gap-1 rounded font-semibold text-ink"
                   >
-                    <span aria-hidden>{grouping.collapsed ? '▸' : '▾'}</span>
-                    <span
-                      aria-hidden
-                      className="h-2.5 w-2.5 rounded-sm"
-                      style={{ background: grouping.color ?? 'var(--color-group-grey)' }}
-                    />
+                    {/*
+                      Drawn rather than typed, and sized to look like the target
+                      it is: ▸ at body size was a mark beside the name rather
+                      than a control. The box around it is the affordance — it
+                      takes a background on hover, so the whole row reads as
+                      something to press.
+
+                      The colour dot that sat between this and the name is gone.
+                      The row's own tint already says which grouping this is, and
+                      saying it twice cost the width without adding the meaning.
+                    */}
+                    <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded text-muted group-hover/toggle:bg-surface-2 group-hover/toggle:text-ink">
+                      <svg
+                        viewBox="0 0 20 20"
+                        className="h-[18px] w-[18px]"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        aria-hidden
+                      >
+                        <path d={grouping.collapsed ? 'M8 5l5 5-5 5' : 'M5 8l5 5 5-5'} />
+                      </svg>
+                    </span>
                     {grouping.name}
                     {grouping.collapsed && (
                       <span className="text-quiet font-normal text-muted">
