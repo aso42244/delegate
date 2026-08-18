@@ -5,7 +5,7 @@
 
 ## Context
 
-§10 requires TOTP on every account before any internet exposure. A two-step
+§10 requires TOTP on every account, and the requirement now defaults on. A two-step
 sign-in has a state in the middle: the password has been accepted, the code has
 not. That state has to live somewhere between the two requests.
 

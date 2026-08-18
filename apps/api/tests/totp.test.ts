@@ -61,6 +61,9 @@ async function enrol(cookie: string): Promise<Enrolment> {
     method: 'POST',
     url: '/api/auth/totp/begin',
     headers: { cookie },
+    // Binding an authenticator now asks for the password, so a stolen session
+    // cannot enrol a phone the owner never issued.
+    payload: { currentPassword: OWNER.password },
   });
   expect(begun.statusCode).toBe(200);
   const { secret } = begun.json<{ secret: string; uri: string }>();
@@ -85,6 +88,7 @@ describe('enrolment', () => {
       method: 'POST',
       url: '/api/auth/totp/begin',
       headers: { cookie },
+      payload: { currentPassword: OWNER.password },
     });
 
     const { secret, uri } = response.json<{ secret: string; uri: string }>();
@@ -96,7 +100,12 @@ describe('enrolment', () => {
 
   it('leaves sign-in alone until a code confirms the secret', async () => {
     const cookie = await setUpOwner();
-    await app.inject({ method: 'POST', url: '/api/auth/totp/begin', headers: { cookie } });
+    await app.inject({
+      method: 'POST',
+      url: '/api/auth/totp/begin',
+      headers: { cookie },
+      payload: { currentPassword: OWNER.password },
+    });
 
     // Someone who closed the tab after scanning nothing must still get in.
     const response = await app.inject({
@@ -111,7 +120,12 @@ describe('enrolment', () => {
 
   it('refuses to confirm on a wrong code', async () => {
     const cookie = await setUpOwner();
-    await app.inject({ method: 'POST', url: '/api/auth/totp/begin', headers: { cookie } });
+    await app.inject({
+      method: 'POST',
+      url: '/api/auth/totp/begin',
+      headers: { cookie },
+      payload: { currentPassword: OWNER.password },
+    });
 
     const response = await app.inject({
       method: 'POST',
@@ -169,6 +183,7 @@ describe('enrolment', () => {
       method: 'POST',
       url: '/api/auth/totp/begin',
       headers: { cookie },
+      payload: { currentPassword: OWNER.password },
     });
 
     expect(response.statusCode).toBe(409);
@@ -424,13 +439,26 @@ describe('requiring it of everyone', () => {
     expect(blocked.statusCode).toBe(403);
     expect(errorOf(blocked).code).toBe('two_factor_required');
 
-    // But the way out of the state stays open, or the account is bricked.
+    // But the way out of the state stays open, or the account is bricked. Their
+    // own password, not the owner's — the step-up proves who is at the keyboard,
+    // not that somebody with a password exists.
     const escape = await app.inject({
       method: 'POST',
       url: '/api/auth/totp/begin',
       headers: { cookie: partner },
+      payload: { currentPassword: 'partner-pass-phrase' },
     });
     expect(escape.statusCode).toBe(200);
+
+    // And a stolen session on its own is not enough, which is the point of it.
+    const withoutPassword = await app.inject({
+      method: 'POST',
+      url: '/api/auth/totp/begin',
+      headers: { cookie: partner },
+      payload: { currentPassword: 'not-the-password' },
+    });
+    expect(withoutPassword.statusCode).toBe(400);
+    expect(errorOf(withoutPassword).code).toBe('incorrect_password');
   });
 });
 

@@ -54,7 +54,8 @@ const environmentSchema = z
 
     // Optional TLS, terminated by the application itself. Both paths or neither;
     // see ADR 017. Left empty, Delegate serves plain http, which is the default
-    // and is only acceptable on a trusted LAN.
+    // and is correct when something else terminates TLS in front — a tunnel, a
+    // reverse proxy, or an onion service, where the address itself is the key.
     TLS_CERT_PATH: z.string().default(''),
     TLS_KEY_PATH: z.string().default(''),
 
@@ -76,6 +77,10 @@ const environmentSchema = z
     // times from one address — can raise it, while a dedicated test lowers it and
     // proves the limit actually bites. Ten in five minutes is generous for two
     // people and useless for a guessing loop.
+    // A ceiling on every route, far above what two people generate. The
+    // credential routes keep their own much stricter limit on top of it.
+    GLOBAL_RATE_LIMIT_MAX: z.coerce.number().int().positive().max(1_000_000).default(1_200),
+
     AUTH_RATE_LIMIT_MAX: z.coerce.number().int().positive().max(100_000).default(10),
     AUTH_RATE_LIMIT_WINDOW: z.string().default('5 minutes'),
 

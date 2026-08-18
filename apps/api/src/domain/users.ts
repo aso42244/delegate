@@ -270,6 +270,20 @@ export async function changeOwnPassword(
 
   const passwordHash = await hashPassword(newPassword);
   await db.user.update({ where: { id }, data: { passwordHash, mustChangePassword: false } });
+
+  /*
+   * Every other session for this account goes, exactly as `resetPassword` has
+   * always done. The asymmetry between the two was the bug: an administrator
+   * resetting somebody's password revoked their sessions, but somebody changing
+   * their *own* password did not.
+   *
+   * That is backwards. The commonest reason a person changes their own password
+   * is that they think somebody else may have it — and in that case the session
+   * that matters is the attacker's, which survived. The route re-establishes the
+   * caller's session immediately afterwards, so the person doing this stays
+   * signed in and everyone else is thrown out.
+   */
+  await db.session.deleteMany({ where: { userId: id } });
 }
 
 /**

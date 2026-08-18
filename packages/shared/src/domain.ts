@@ -46,6 +46,20 @@ export function canManageUsers(role: UserRole): boolean {
   return role === 'admin' || role === 'super_admin';
 }
 
+/**
+ * Who may change household-wide settings.
+ *
+ * The same answer as user management, deliberately, rather than a second role
+ * dimension to keep in step. What these settings control is not cosmetic: one of
+ * them decides whether two-factor authentication is required of everyone, and
+ * another decides whether the budget answers requests arriving from outside the
+ * house. An ordinary account being able to switch either off would make the
+ * strongest protections here worth exactly as much as the weakest session.
+ */
+export function canManageSettings(role: UserRole): boolean {
+  return canManageUsers(role);
+}
+
 export function canModifyUser(actorRole: UserRole, targetRole: UserRole): boolean {
   if (!canManageUsers(actorRole)) return false;
   if (targetRole === 'super_admin') return actorRole === 'super_admin';

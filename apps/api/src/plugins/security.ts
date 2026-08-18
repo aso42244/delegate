@@ -25,7 +25,28 @@ const securityPlugin: FastifyPluginAsync<{ config: AppConfig }> = async (fastify
   const { config } = options;
 
   await fastify.register(fastifyRateLimit, {
-    global: false,
+    /*
+     * A generous ceiling on everything, with the strict limits below overriding
+     * it per route.
+     *
+     * Only the credential routes were throttled, so `/health`, `/api/app`,
+     * `/api/auth/setup-state` and the static bundle were unlimited. None of them
+     * leaks anything, but an unlimited endpoint on an internet-reachable host is
+     * a free amplifier and a free way to spend the household's CPU. This number
+     * is far above anything two people generate and far below anything worth
+     * doing.
+     */
+    global: true,
+    max: config.GLOBAL_RATE_LIMIT_MAX,
+    timeWindow: '1 minute',
+    /*
+     * The API only. The static bundle is exempt because throttling it breaks a
+     * page load long before it stops anything worth stopping: one visit is an
+     * HTML document plus a hashed script and stylesheet, and those are cheap,
+     * cacheable, and identical for everybody. The limit exists for endpoints
+     * that do work.
+     */
+    allowList: (request) => !request.url.startsWith('/api/'),
     // Keyed on the connecting address. A household behind one NAT shares a
     // bucket, which is why the authenticated limits below are generous: the
     // point is to stop a guessing loop, not to inconvenience two people.
@@ -52,6 +73,31 @@ const securityPlugin: FastifyPluginAsync<{ config: AppConfig }> = async (fastify
    * `upgrade-insecure-requests` — see below.
    */
   const overHttps = config.SESSION_COOKIE_SECURE || config.TLS_CERT_PATH !== '';
+
+  /**
+   * Authenticated JSON does not belong in a cache.
+   *
+   * Without this a shared or borrowed browser can serve a previous reader's
+   * balances from disk after they have signed out. Set on the API only: the
+   * bundle is content-hashed and should stay cacheable, which is the whole
+   * point of hashing it.
+   */
+  fastify.addHook('onSend', (request, reply, _payload, done) => {
+    if (request.url.startsWith('/api/')) {
+      reply.header('Cache-Control', 'no-store');
+    }
+
+    /**
+     * Nothing here needs a camera, a microphone, a location or a payment
+     * handler, and helmet emits no such header of its own. Denying them applies
+     * to anything that ends up running on this origin, injected or otherwise.
+     */
+    reply.header(
+      'Permissions-Policy',
+      'camera=(), microphone=(), geolocation=(), payment=(), usb=()',
+    );
+    done();
+  });
 
   await fastify.register(fastifyHelmet, {
     // The application serves its own bundle from its own origin and loads
@@ -97,6 +143,12 @@ const securityPlugin: FastifyPluginAsync<{ config: AppConfig }> = async (fastify
     hsts: overHttps,
     // The referrer of a budget page is nobody's business.
     referrerPolicy: { policy: 'no-referrer' },
+    /**
+     * Nothing here needs a camera, a microphone, a location or a payment
+     * handler, and helmet sets no such header by default. Saying so denies them
+     * to anything that ends up running on this origin, injected or otherwise.
+     */
+
     crossOriginEmbedderPolicy: false,
   });
 };

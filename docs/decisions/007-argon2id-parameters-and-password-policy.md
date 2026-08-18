@@ -6,7 +6,7 @@
 ## Context
 
 Phase 1 authenticates with a username and a password and nothing else. That is
-acceptable only because the system is LAN-only until Phase 3 ships TLS, TOTP and
+acceptable because a password is no longer the only factor — Phase 3 shipped TOTP and
 passkeys in full. Until then the password hash is the single thing standing
 between anyone already on the network and the household's complete financial
 position, so its parameters are worth stating explicitly rather than leaving to a

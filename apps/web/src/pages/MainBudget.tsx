@@ -301,8 +301,12 @@ export function MainBudget(): ReactNode {
    * to. The cache is updated first and the request follows; a failure puts it
    * back and says so.
    *
-   * Nothing is invalidated on success, deliberately. No figure on this page can
-   * differ because a grouping is folded up.
+   * Settled rather than left alone. Nothing on this page *changes* because a
+   * grouping is folded, so the refetch is not for correctness of the figures —
+   * it is because another mutation's invalidation can land on top of an
+   * optimistic value and quietly undo it. Re-reading once the write has settled
+   * makes the server the last word without costing the instant response, which
+   * has already happened by then.
    */
   const toggleGrouping = useMutation({
     mutationFn: ({ id, collapsed }: { id: string; collapsed: boolean }) =>
@@ -321,6 +325,9 @@ export function MainBudget(): ReactNode {
     onError: (error: unknown, _variables, context) => {
       if (context?.previous) queryClient.setQueryData(['budget'], context.previous);
       onError(error);
+    },
+    onSettled: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['budget'] });
     },
   });
 

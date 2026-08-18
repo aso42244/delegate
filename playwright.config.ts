@@ -70,6 +70,9 @@ export default defineConfig({
       // proved in the integration tests, against an app configured with a low
       // one; here it would only throttle the tests.
       AUTH_RATE_LIMIT_MAX: '100000',
+      // The suite is one address making thousands of requests in two minutes,
+      // which is exactly what the limit is for and exactly not the subject here.
+      GLOBAL_RATE_LIMIT_MAX: '1000000',
     },
   },
 });

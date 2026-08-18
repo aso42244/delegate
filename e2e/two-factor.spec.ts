@@ -1,6 +1,6 @@
 import type { Page } from '@playwright/test';
 import { generate as generateOtp } from 'otplib';
-import { expect, test, OWNER } from './fixtures.js';
+import { expect, OWNER, test } from './fixtures.js';
 
 /**
  * Two-factor authentication, through the screens the household actually uses:
@@ -26,6 +26,9 @@ async function signOut(page: Page): Promise<void> {
 test('enrols, then requires a code on the next sign-in', async ({ signedIn: page }) => {
   await page.goto('/settings/security');
 
+  // The password again: binding an authenticator from a session somebody else
+  // is holding would give them a credential you never issued.
+  await page.getByLabel('Current password').fill(OWNER.password);
   await page.getByRole('button', { name: 'Set up two-factor' }).click();
 
   // The secret is offered as text beside the QR code, for anyone typing it in.
@@ -63,6 +66,9 @@ test('a recovery code gets in when the phone is gone, and is then spent', async 
   signedIn: page,
 }) => {
   await page.goto('/settings/security');
+  // The password again: binding an authenticator from a session somebody else
+  // is holding would give them a credential you never issued.
+  await page.getByLabel('Current password').fill(OWNER.password);
   await page.getByRole('button', { name: 'Set up two-factor' }).click();
 
   const secret = (await page.locator('p.font-mono').first().innerText()).trim();
@@ -91,6 +97,9 @@ test('a recovery code gets in when the phone is gone, and is then spent', async 
 
 test('refuses a wrong code without giving up the session', async ({ signedIn: page }) => {
   await page.goto('/settings/security');
+  // The password again: binding an authenticator from a session somebody else
+  // is holding would give them a credential you never issued.
+  await page.getByLabel('Current password').fill(OWNER.password);
   await page.getByRole('button', { name: 'Set up two-factor' }).click();
 
   const secret = (await page.locator('p.font-mono').first().innerText()).trim();

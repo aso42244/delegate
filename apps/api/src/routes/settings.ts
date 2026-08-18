@@ -9,7 +9,7 @@ import {
   type BudgetSettings,
 } from '../domain/settings.js';
 import { centsIn, centsOut, dateOut } from '../http/serialize.js';
-import { AUTHENTICATED } from '../plugins/auth.js';
+import { AUTHENTICATED, requireSettingsManagement } from '../plugins/auth.js';
 
 /**
  * Settings → Budget.
@@ -66,11 +66,39 @@ export const settingsRoutes: FastifyPluginCallback = (fastify, _options, done) =
 
   fastify.get('/api/settings', async () => present(await getBudgetSettings(prisma)));
 
-  fastify.patch('/api/settings', async (request) => {
+  /**
+   * Reading is for everyone; changing is not.
+   *
+   * These are not cosmetic preferences. `requireTotp` decides whether two-factor
+   * is demanded of the whole household, and `remoteOverTorEnabled` decides
+   * whether the budget answers anything arriving from outside the house. An
+   * ordinary account able to switch either off would make every other protection
+   * worth what the weakest session is worth.
+   */
+  fastify.patch('/api/settings', { preHandler: [requireSettingsManagement] }, async (request) => {
     const body = updateSchema.parse(request.body);
+    const before = await getBudgetSettings(prisma);
     const settings = await updateBudgetSettings(prisma, body);
 
-    request.log.info({ actorId: request.currentUser?.id }, 'budget settings updated');
+    // Old and new, for the two that decide who gets in. A log line saying only
+    // "settings updated" cannot answer the question anybody would ask later.
+    request.log.info(
+      {
+        actorId: request.currentUser?.id,
+        ...(body.requireTotp === undefined
+          ? {}
+          : { requireTotp: { from: before.requireTotp, to: settings.requireTotp } }),
+        ...(body.remoteOverTorEnabled === undefined
+          ? {}
+          : {
+              remoteOverTorEnabled: {
+                from: before.remoteOverTorEnabled,
+                to: settings.remoteOverTorEnabled,
+              },
+            }),
+      },
+      'budget settings updated',
+    );
     return present(settings);
   });
 

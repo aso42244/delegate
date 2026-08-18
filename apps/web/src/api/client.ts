@@ -136,7 +136,8 @@ export const authApi = {
     api.post<void>('/api/auth/change-password', { currentPassword, newPassword }),
 
   totpStatus: () => api.get<TotpStatusDto>('/api/auth/totp'),
-  totpBegin: () => api.post<TotpEnrolmentDto>('/api/auth/totp/begin'),
+  totpBegin: (currentPassword: string) =>
+    api.post<TotpEnrolmentDto>('/api/auth/totp/begin', { currentPassword }),
   totpConfirm: (code: string) =>
     api.post<{ recoveryCodes: string[] }>('/api/auth/totp/confirm', { code }),
   totpDisable: (currentPassword: string) =>

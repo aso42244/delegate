@@ -1,6 +1,6 @@
 # 017 — Plain http is the default; TLS is optional and operator-configured
 
-**Status:** accepted
+**Status:** accepted, amended 2026-08-18 (see the addendum)
 **Date:** 2026-08-09
 
 ## Context
@@ -80,3 +80,29 @@ Supporting rules, each because its absence fails quietly:
   something different.
 - If the household ever adds devices it does not fully trust — a guest network is
   not the same network, but an IoT device usually is — this should be revisited.
+
+## Addendum, 2026-08-18: this is no longer a LAN-only application
+
+The consequences above were written when Delegate had no route in from outside
+the house, and several of them read as if that were still true. It is not. There
+are now three ways in, and the operator picks:
+
+- **A tunnel or reverse proxy**, which terminates TLS somewhere else and speaks
+  plain http to this origin. That is what the default is _for_, and it is why
+  `SESSION_COOKIE_SECURE` and `TRUST_PROXY` exist.
+- **A Tor onion service** (ADR 027), where the address is itself an ed25519
+  public key. The connection is encrypted and authenticated end to end with no
+  certificate anywhere, which is why plain http inside that tunnel is correct
+  rather than a compromise.
+- **Nothing at all** — the original case, unchanged.
+
+What has _not_ changed is the last line of defence, and it got stronger rather
+than weaker: two-factor authentication is required of every account by default,
+a TOTP code can be spent only once (ADR 028), and remote access over Tor is
+refused until somebody switches it on from the home network.
+
+The remaining honest statement is narrow: **at the origin, on the local network,
+Delegate speaks plain http by default.** Anyone already inside the house can read
+a password crossing it. `scripts/make-tls-cert.sh` closes that, at the cost of a
+self-signed certificate on every device. That trade is unchanged; the claim that
+the application "must not leave the LAN" is retired.

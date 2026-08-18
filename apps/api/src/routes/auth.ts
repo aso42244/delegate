@@ -2,6 +2,8 @@ import type { UserRole } from '@budget/shared';
 import type { FastifyPluginCallback, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { prisma } from '../db/client.js';
+import { verifyPassword } from '../domain/passwords.js';
+import { ValidationError } from '../domain/errors.js';
 import { MAX_PASSWORD_LENGTH } from '../domain/passwords.js';
 import {
   authenticate,
@@ -24,6 +26,12 @@ import { authRateLimit } from '../plugins/security.js';
 import { pruneExpiredSessions } from '../plugins/session-store.js';
 
 /** Sign-in, sign-out, and first-run setup. */
+
+/**
+ * The password, asked for again on an action a stolen session must not be able
+ * to take on its own.
+ */
+const stepUpSchema = z.object({ currentPassword: z.string().min(1).max(200) });
 
 const credentialsSchema = z.object({
   username: z.string().min(1).max(254),
@@ -77,6 +85,17 @@ async function establishSession(
 }
 
 export const authRoutes: FastifyPluginCallback = (fastify, _options, done) => {
+  /** Re-verifies the password. Same failure whatever the reason, as elsewhere. */
+  async function assertPassword(userId: string, password: string): Promise<void> {
+    const row = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { passwordHash: true },
+    });
+    if (!row || !(await verifyPassword(row.passwordHash, password))) {
+      throw new ValidationError('incorrect_password', 'Current password is incorrect.');
+    }
+  }
+
   // Built at registration from configuration rather than a constant, so the
   // limit can be raised for a test suite that signs in hundreds of times.
   const rateLimit = authRateLimit(fastify.config);
@@ -107,7 +126,9 @@ export const authRoutes: FastifyPluginCallback = (fastify, _options, done) => {
   /**
    * The route the rate limit exists for. Nothing else throttled password
    * guessing beyond the ~50 ms an argon2id hash costs — ADR 007 names that as
-   * the strongest reason this application must not leave the LAN.
+   * the strongest reason a password alone was never enough here. A second
+   * factor is required of every account now, and this limit still matters:
+   * it is what keeps a guessing loop from being free.
    */
   fastify.post('/api/auth/login', { config: { rateLimit } }, async (request, reply) => {
     const { username, password } = credentialsSchema.parse(request.body);
@@ -259,11 +280,20 @@ export const authRoutes: FastifyPluginCallback = (fastify, _options, done) => {
    * Starts enrolment. The secret is stored unconfirmed — a secret that gated
    * sign-in the moment it was generated would lock out anyone who closed the
    * tab before scanning it.
+   *
+   * The current password is required, and turning it off already required one.
+   * Binding an authenticator was the asymmetry: somebody holding a stolen
+   * session on an account with no second factor could enrol *their own* phone,
+   * and from then on hold a credential the owner never issued. Asking for the
+   * password makes a stolen session insufficient on its own.
    */
   fastify.post(
     '/api/auth/totp/begin',
     { preHandler: [requireSession], config: { rateLimit } },
     async (request) => {
+      const { currentPassword } = stepUpSchema.parse(request.body);
+      await assertPassword(request.currentUser!.id, currentPassword);
+
       const offer = await beginEnrolment(
         prisma,
         request.currentUser!.id,

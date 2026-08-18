@@ -7,6 +7,9 @@
 
 services:
   postgres:
+    # Floating, like the app's base image, and the same known gap. Pin at the
+    # next deliberate bump:
+    #   docker image inspect --format '{{index .RepoDigests 0}}' postgres:16-alpine
     image: postgres:16-alpine
     restart: unless-stopped
     environment:
@@ -101,9 +104,11 @@ services:
   # Nothing routes through it unless a node is configured to. It publishes no
   # ports; only the app container reaches it, over the compose network.
   tor:
-    image: dperson/torproxy:latest
+    # Built here rather than pulled: see tor/Dockerfile for why a third-party
+    # `latest` tag was the wrong thing to put on this particular traffic.
+    build:
+      context: ./tor
     restart: unless-stopped
-    command: ['tor', '-f', '/etc/tor/torrc']
     volumes:
       # The configuration, read-only: it is part of the release, not state.
       - ./tor/torrc:/etc/tor/torrc:ro

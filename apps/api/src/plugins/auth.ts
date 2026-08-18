@@ -1,6 +1,6 @@
 import fastifyCookie from '@fastify/cookie';
 import fastifySession from '@fastify/session';
-import { canManageUsers, type UserRole } from '@budget/shared';
+import { canManageSettings, canManageUsers, type UserRole } from '@budget/shared';
 import type { FastifyPluginAsync, FastifyReply, FastifyRequest } from 'fastify';
 import fp from 'fastify-plugin';
 import type { AppConfig } from '../config.js';
@@ -11,9 +11,11 @@ import { PrismaSessionStore } from './session-store.js';
 /**
  * Session cookies and the request guards built on them.
  *
- * Passwords, a second factor, rate limiting and CSRF are all in place. Passkeys
- * and TLS termination remain outstanding, and the system stays LAN-only until
- * they land.
+ * Passwords, a second factor, rate limiting and CSRF are all in place, and a
+ * second factor is required of every account. Passkeys are deliberately out of
+ * scope (ADR 016). How this is reached from outside the house is the operator's
+ * decision — see ADR 027 for the onion service, and ADR 017 for why plain http
+ * is still the default at the origin.
  */
 
 /** The authenticated user attached to a request by `requireSession`. */
@@ -174,6 +176,25 @@ export async function requireUserManagement(
  * The guard chain every authenticated route wants: a live session, and a
  * password that is no longer temporary.
  */
+/**
+ * Household-wide settings, which decide who gets in at all — see
+ * `canManageSettings`. Applied per route rather than to the whole module,
+ * because reading them is for everyone and changing them is not.
+ */
+export async function requireSettingsManagement(
+  request: FastifyRequest,
+  reply: FastifyReply,
+): Promise<void> {
+  if (request.currentUser && canManageSettings(request.currentUser.role)) return;
+
+  await reply.code(403).send({
+    error: {
+      code: 'settings_management_required',
+      message: 'Only an administrator can change these.',
+    },
+  });
+}
+
 export const AUTHENTICATED = [requireSession, requirePasswordChanged, requireTwoFactor] as const;
 
 /** As above, plus the user-management capability. */

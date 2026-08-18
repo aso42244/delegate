@@ -18,9 +18,12 @@ over-delegated. See [docs/architecture.md](docs/architecture.md) for the domain
 model, [docs/design.md](docs/design.md) for the visual language, and
 [docs/handoff.md](docs/handoff.md) for the current state of play.
 
-> **LAN only.** This application has no internet exposure and must not be given
-> any until the Phase 3 security work ships in full. See
-> [docs/architecture.md](docs/architecture.md) and the phase plan below.
+> **Reachable from away.** Two-factor authentication is required of every
+> account, TOTP codes are single-use, and remote access over a Tor onion service
+> is available and off until switched on from the home network. How the front
+> door is arranged is the operator's decision: a tunnel, a reverse proxy, the
+> onion service, or nothing at all. See
+> [docs/architecture.md](docs/architecture.md) and ADRs 017, 024, 026 and 027.
 
 ## Status
 

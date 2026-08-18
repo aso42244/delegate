@@ -26,11 +26,13 @@ export function SecuritySection(): ReactNode {
   const [recoveryCodes, setRecoveryCodes] = useState<string[] | null>(null);
   const [password, setPassword] = useState('');
   const [problem, setProblem] = useState<string | null>(null);
+  const [enrolPassword, setEnrolPassword] = useState('');
 
   const begin = useMutation({
-    mutationFn: authApi.totpBegin,
+    mutationFn: () => authApi.totpBegin(enrolPassword),
     onSuccess: (offer) => {
       setProblem(null);
+      setEnrolPassword('');
       setEnrolment(offer);
     },
     onError: (error: unknown) => setProblem(messageOf(error)),
@@ -92,16 +94,33 @@ export function SecuritySection(): ReactNode {
         )}
 
         {!enrolled && !enrolment && !recoveryCodes && (
-          <div className="flex flex-col gap-3">
+          <form
+            onSubmit={(event: FormEvent) => {
+              event.preventDefault();
+              begin.mutate();
+            }}
+            className="flex flex-col gap-3"
+          >
             <p className="text-quiet text-muted">
               Not set up. Your password is the only thing protecting this budget.
             </p>
+            {/* Asked for here as well as to turn it off. Binding an
+                authenticator from a session somebody else is holding would give
+                them a credential you never issued. */}
+            <TextField
+              label="Current password"
+              type="password"
+              value={enrolPassword}
+              onChange={(event) => setEnrolPassword(event.target.value)}
+              autoComplete="current-password"
+              required
+            />
             <div>
-              <Button variant="primary" onClick={() => begin.mutate()} disabled={begin.isPending}>
+              <Button type="submit" variant="primary" disabled={begin.isPending}>
                 {begin.isPending ? 'Working…' : 'Set up two-factor'}
               </Button>
             </div>
-          </div>
+          </form>
         )}
 
         {enrolment && (

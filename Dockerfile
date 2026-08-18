@@ -6,6 +6,14 @@
 # ---------------------------------------------------------------------------
 # Build
 # ---------------------------------------------------------------------------
+# A floating tag, and a known gap rather than an oversight: a rebuild in six
+# months picks up a base nobody tested. Pinning needs a digest, and a digest has
+# to be read from a registry rather than guessed:
+#
+#   docker image inspect --format '{{index .RepoDigests 0}}' node:22-alpine
+#
+# Worth doing at the next deliberate base bump. Recorded here so it is a decision
+# with a date on it rather than something nobody noticed.
 FROM node:22-alpine AS build
 WORKDIR /app
 

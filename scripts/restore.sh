@@ -17,6 +17,37 @@ if [ ! -f "$DUMP" ]; then
   exit 1
 fi
 
+# The checksum written beside the dump, if there is one.
+#
+# Checked before anything is dropped. A truncated or corrupted dump restores
+# *cleanly* as far as pg_restore is concerned — it stops early and reports
+# success on what it read — so the moment to catch it is before the existing
+# database has been thrown away, not after.
+#
+# A missing sidecar is not an error: dumps taken before this existed have none.
+if [ -f "$DUMP.sha256" ]; then
+  if command -v sha256sum >/dev/null 2>&1; then
+    ACTUAL=$(sha256sum "$DUMP" | awk '{print $1}')
+  elif command -v shasum >/dev/null 2>&1; then
+    ACTUAL=$(shasum -a 256 "$DUMP" | awk '{print $1}')
+  else
+    ACTUAL=''
+  fi
+
+  EXPECTED=$(cat "$DUMP.sha256")
+
+  if [ -n "$ACTUAL" ] && [ -n "$EXPECTED" ] && [ "$ACTUAL" != "$EXPECTED" ]; then
+    echo "Checksum mismatch on $DUMP." >&2
+    echo "  expected $EXPECTED" >&2
+    echo "  actual   $ACTUAL" >&2
+    echo 'Refusing to restore. This dump is not the one that was taken.' >&2
+    exit 1
+  fi
+  [ -n "$ACTUAL" ] && echo "Checksum matches."
+else
+  echo "No checksum beside this dump; restoring without that check."
+fi
+
 if [ "${RESTORE_CONFIRM:-}" != "yes" ]; then
   echo "Refusing to restore over $DATABASE_URL." >&2
   echo "This replaces the contents of that database. Re-run with RESTORE_CONFIRM=yes." >&2

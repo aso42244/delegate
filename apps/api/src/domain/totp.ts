@@ -8,10 +8,10 @@ import { decryptSecret, encryptSecret } from './secrets.js';
 /**
  * Time-based one-time passwords, and the recovery codes that go with them.
  *
- * §10 makes TOTP mandatory on every account before any internet exposure. This
- * is the mechanism; whether it is *required* is a setting, so that shipping it
- * cannot lock the household out of a running deployment between the code
- * landing and them enrolling. Turning it on is part of Phase 3 completing.
+ * §10 makes TOTP mandatory on every account, and it now is: the requirement
+ * defaults on. It stays a setting because an operator may have a reason to turn
+ * it off, not because it should start off — and an account that has not enrolled
+ * is sent to enrolment rather than locked out (ADR 027).
  *
  * Two storage decisions, both for the same reason — the nightly `pg_dump` is
  * the copy most likely to leave the device:
