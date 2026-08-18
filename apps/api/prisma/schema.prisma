@@ -39,6 +39,21 @@ enum AccountSource {
   @@map("account_source")
 }
 
+/// Who owns an account's lifecycle.
+///
+/// A Bitcoin holding and a property are still ordinary accounts — the identity,
+/// the budget read model and the net worth chart all read the same table, and
+/// giving them their own home would mean reimplementing every one of those. What
+/// this changes is who creates and retires the row: their own Settings tab does,
+/// so neither is ever typed into Settings → Accounts by hand.
+enum AccountManagement {
+  none
+  bitcoin
+  property
+
+  @@map("account_management")
+}
+
 enum GroupingSection {
   assets
   debts
@@ -250,6 +265,18 @@ model Account {
   // displayed balance is quantity × the price on the date being displayed.
   bitcoinSats BigInt? @map("bitcoin_sats")
 
+  // Which Settings tab owns this row's lifecycle. `none` is an ordinary account.
+  managedAs AccountManagement @default(none) @map("managed_as")
+
+  /// When a Bitcoin holding's `balance_cents` was last set from the price.
+  ///
+  /// Only in-budget holdings carry one: the identity sums `balance_cents`, so a
+  /// holding that counts towards the budget has to have a dollar figure there,
+  /// and it is refreshed daily rather than hourly. The banner is a reading of
+  /// the household's spending, and one that moved with the market all day would
+  /// be a reading of the market instead.
+  bitcoinRevaluedAt DateTime? @map("bitcoin_revalued_at")
+
   archivedAt DateTime? @map("archived_at")
   createdAt  DateTime  @default(now()) @map("created_at")
   updatedAt  DateTime  @updatedAt @map("updated_at")
@@ -263,6 +290,7 @@ model Account {
 
   @@unique([source, externalId], name: "account_source_external_id")
   @@index([archivedAt])
+  @@index([managedAs])
   @@index([inBudget])
   @@index([inNetWorth])
   @@index([groupingId])
@@ -647,6 +675,11 @@ model BudgetSettings {
   // SIMPLEFIN_ACCESS_URL environment variable is then used instead.
   simplefinAccessUrlEncrypted String?   @map("simplefin_access_url_encrypted")
   simplefinConnectedAt        DateTime? @map("simplefin_connected_at")
+
+  /// When someone first accepted what putting Bitcoin in the budget does to the
+  /// banner. Shown once, not every time: a warning repeated on every toggle is
+  /// one nobody reads. Household-wide, because the consequence is.
+  bitcoinInBudgetAckAt DateTime? @map("bitcoin_in_budget_ack_at")
 
   updatedAt DateTime @updatedAt @map("updated_at")
 

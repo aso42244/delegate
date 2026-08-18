@@ -9,6 +9,7 @@ import {
   restoreAccount,
   updateAccount,
 } from '../domain/accounts.js';
+import { ConflictError } from '../domain/errors.js';
 import { equityFor, listValuations, recordValuation } from '../domain/valuations.js';
 import { centsInLoose, centsOut, dateOut } from '../http/serialize.js';
 import { AUTHENTICATED } from '../plugins/auth.js';
@@ -61,6 +62,21 @@ export const accountRoutes: FastifyPluginCallback = (fastify, _options, done) =>
     fastify.addHook('preHandler', guard);
   }
 
+  async function refuseIfManaged(id: string): Promise<void> {
+    const account = await prisma.account.findUnique({
+      where: { id },
+      select: { managedAs: true },
+    });
+    if (!account || account.managedAs === 'none') return;
+
+    throw new ConflictError(
+      'account_managed_elsewhere',
+      account.managedAs === 'bitcoin'
+        ? 'This is a Bitcoin holding. Edit it under Settings → Bitcoin.'
+        : 'This is a property. Edit it under Settings → Properties.',
+    );
+  }
+
   fastify.get('/api/accounts', async (request) => {
     const query = listQuerySchema.parse(request.query ?? {});
 
@@ -80,6 +96,7 @@ export const accountRoutes: FastifyPluginCallback = (fastify, _options, done) =>
         groupingId: true,
         mortgageAccountId: true,
         bitcoinSats: true,
+        managedAs: true,
         nickname: true,
         archivedAt: true,
       },
@@ -115,6 +132,8 @@ export const accountRoutes: FastifyPluginCallback = (fastify, _options, done) =>
         mortgageAccountId: account.mortgageAccountId,
         // Satoshis as a decimal string, the same reasoning as cents.
         bitcoinSats: account.bitcoinSats?.toString() ?? null,
+        // Which Settings tab owns this row. `none` is an ordinary account.
+        managedAs: account.managedAs,
         archivedAt: dateOut(account.archivedAt),
       })),
     };
@@ -132,8 +151,19 @@ export const accountRoutes: FastifyPluginCallback = (fastify, _options, done) =>
     return reply.code(201).send({ account: created });
   });
 
+  /**
+   * Ordinary accounts only.
+   *
+   * A Bitcoin holding and a property are edited on their own tabs, and this is
+   * the guard for the other direction: putting a holding in the budget from here
+   * would flip the flag without writing the dollar figure the identity reads, so
+   * the holding would silently count as zero. That was the bug this whole change
+   * exists to close, and leaving one route that could still cause it would be
+   * closing it by convention rather than by construction.
+   */
   fastify.patch('/api/accounts/:id', async (request) => {
     const { id } = idParamsSchema.parse(request.params);
+    await refuseIfManaged(id);
     await updateAccount(prisma, id, updateSchema.parse(request.body));
     return { ok: true };
   });

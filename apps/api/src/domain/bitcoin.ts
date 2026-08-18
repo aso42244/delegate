@@ -1,4 +1,4 @@
-import type { Cents } from '@budget/shared';
+import { bitcoinValueCents, type Cents } from '@budget/shared';
 import type { Db } from '../db/client.js';
 import { ValidationError } from './errors.js';
 
@@ -268,4 +268,88 @@ export async function priceOnDate(db: Db, date: Date): Promise<PriceReading | nu
   if (!earlier) return null;
 
   return { ...earlier, stale: true };
+}
+
+/**
+ * How long an in-budget holding's dollar figure is allowed to stand.
+ *
+ * The price is fetched hourly, but `balance_cents` is only rewritten daily. The
+ * banner is a reading of the household's spending; one that moved with the
+ * market all day would be a reading of the market instead, and "Balanced" would
+ * stop meaning anything. The trade is stated in the warning shown the first time
+ * a holding is put in the budget: the identity is balanced against a price up to
+ * a day old.
+ */
+export const REVALUE_AFTER_MS = 24 * 60 * 60 * 1000;
+
+export interface RevalueResult {
+  readonly revalued: number;
+}
+
+/**
+ * Writes the dollar value of in-budget Bitcoin holdings into `balance_cents`.
+ *
+ * Only in-budget ones, and this is the whole reason the column is touched at
+ * all. The identity sums `balance_cents` directly, so a holding that counts
+ * towards the budget must carry a figure there or it contributes zero — which
+ * is what it used to do, silently, while every other screen showed the holding
+ * at its real worth.
+ *
+ * A net-worth-only holding is left alone. Nothing sums `balance_cents` for those
+ * — the net worth chart and the composition tile both derive quantity × price on
+ * read — so writing one would be a second copy of a number that is already
+ * computed correctly elsewhere.
+ *
+ * `force` is for the moments where a day-old figure would be visibly wrong: the
+ * quantity just changed, or the holding was only now put in the budget.
+ */
+export async function revalueBitcoinHoldings(
+  db: Db,
+  options: { readonly force?: boolean; readonly accountId?: string } = {},
+  now: Date = new Date(),
+): Promise<RevalueResult> {
+  const price = await latestPrice(db, now);
+  // No price has ever been fetched. Leaving the previous figure in place is the
+  // same rule the rest of this file follows: never a zero, never a blank.
+  if (!price) return { revalued: 0 };
+
+  const due = new Date(now.getTime() - REVALUE_AFTER_MS);
+
+  const holdings = await db.account.findMany({
+    where: {
+      managedAs: 'bitcoin',
+      inBudget: true,
+      archivedAt: null,
+      ...(options.accountId ? { id: options.accountId } : {}),
+      ...(options.force
+        ? {}
+        : { OR: [{ bitcoinRevaluedAt: null }, { bitcoinRevaluedAt: { lt: due } }] }),
+    },
+    select: { id: true, bitcoinSats: true },
+  });
+
+  for (const holding of holdings) {
+    await db.account.update({
+      where: { id: holding.id },
+      data: {
+        balanceCents: bitcoinValueCents(holding.bitcoinSats ?? 0n, price.priceCents),
+        bitcoinRevaluedAt: now,
+      },
+    });
+  }
+
+  return { revalued: holdings.length };
+}
+
+/**
+ * Clears the dollar figure on a holding that no longer counts towards the budget.
+ *
+ * Left behind, it would keep contributing to the identity through
+ * `balance_cents` after the toggle said it should not.
+ */
+export async function clearBudgetValue(db: Db, accountId: string): Promise<void> {
+  await db.account.update({
+    where: { id: accountId },
+    data: { balanceCents: 0n, bitcoinRevaluedAt: null },
+  });
 }

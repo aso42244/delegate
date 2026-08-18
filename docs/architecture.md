@@ -324,3 +324,16 @@ apps/api/tests     Integration tests against a real PostgreSQL.
 Domain functions take a `Db` — either the Prisma client or a transaction client —
 so the **caller** decides the transaction boundary. Anything that writes an event
 and a cached balance must run inside one transaction.
+
+## Bitcoin and property are managed where they live
+
+Both are ordinary rows in `accounts` — the identity, the budget read model, the
+net worth series and the equity netting all read that table. What is separate is
+who owns their lifecycle: `managed_as` marks a row as `bitcoin` or `property`,
+and its own Settings tab creates, renames and retires it. Settings → Accounts
+lists them read-only.
+
+For a Bitcoin holding the quantity is the fact and the value is derived. The one
+exception is a holding marked in-budget: the identity sums `balance_cents`
+directly, so that column is written for those, once a day. See ADR 021 for why
+daily rather than hourly, and for the bug the whole arrangement closes.

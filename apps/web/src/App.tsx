@@ -9,7 +9,8 @@ import { ChangePassword } from './pages/ChangePassword.jsx';
 import { MainBudget } from './pages/MainBudget.jsx';
 import { AccountsSection } from './pages/settings/Accounts.jsx';
 import { ArchivedSection } from './pages/settings/Archived.jsx';
-import { BitcoinAndPropertySection } from './pages/settings/BitcoinAndProperty.jsx';
+import { BitcoinSection } from './pages/settings/Bitcoin.jsx';
+import { PropertiesSection } from './pages/settings/Properties.jsx';
 import { BudgetSection } from './pages/settings/Budget.jsx';
 import { DelegationsSection } from './pages/settings/Delegations.jsx';
 import { GroupingsSection } from './pages/settings/Groupings.jsx';
@@ -105,7 +106,8 @@ export function App(): ReactNode {
             <Route path="delegations" element={<DelegationsSection />} />
             <Route path="groupings" element={<GroupingsSection />} />
             <Route path="rules" element={<RulesSection />} />
-            <Route path="bitcoin" element={<BitcoinAndPropertySection />} />
+            <Route path="bitcoin" element={<BitcoinSection />} />
+            <Route path="properties" element={<PropertiesSection />} />
             <Route path="budget" element={<BudgetSection />} />
             <Route path="users" element={<UsersSection />} />
             <Route path="security" element={<SecuritySection />} />

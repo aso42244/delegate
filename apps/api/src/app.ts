@@ -19,6 +19,7 @@ import { accountRoutes } from './routes/accounts.js';
 import { appInfoRoutes } from './routes/app-info.js';
 import { bitcoinRoutes } from './routes/bitcoin.js';
 import { budgetRoutes } from './routes/budget.js';
+import { propertyRoutes } from './routes/properties.js';
 import { checkRoutes } from './routes/checks.js';
 import { transactionRoutes } from './routes/transactions.js';
 import { userRoutes } from './routes/users.js';
@@ -142,6 +143,7 @@ export async function buildApp(config: AppConfig = getConfig()): Promise<Fastify
   await app.register(settingsRoutes);
   await app.register(accountRoutes);
   await app.register(bitcoinRoutes);
+  await app.register(propertyRoutes);
   await app.register(notificationRoutes);
   await app.register(utilityRoutes);
   await app.register(insightRoutes);

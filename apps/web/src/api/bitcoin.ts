@@ -20,6 +20,31 @@ export interface BitcoinHoldingDto {
   readonly inNetWorth: boolean;
   /** Null before any price has ever been fetched — never a zero. */
   readonly valueCents: string | null;
+  readonly balanceAsOf: string | null;
+  readonly stalenessIntervalDays: number | null;
+  /** When the budget figure was last written. Only in-budget holdings have one. */
+  readonly revaluedAt: string | null;
+}
+
+export interface PropertyDto {
+  readonly id: string;
+  readonly name: string;
+  readonly valueCents: string;
+  readonly inBudget: boolean;
+  readonly inNetWorth: boolean;
+  /** The date the current figure is for. */
+  readonly valuedAt: string | null;
+  /** When someone last confirmed it, which is what staleness counts from. */
+  readonly confirmedAt: string | null;
+  readonly stalenessIntervalDays: number | null;
+  readonly mortgage: {
+    readonly id: string;
+    readonly name: string;
+    readonly balanceCents: string;
+  } | null;
+  /** Value minus what is owed on it. Computed on read, never stored. */
+  readonly equityCents: string | null;
+  readonly valuations: readonly ValuationDto[];
 }
 
 export interface ValuationDto {
@@ -37,15 +62,49 @@ export interface EquityDto {
 
 export const bitcoinApi = {
   get: () =>
-    api.get<{ price: BitcoinPriceDto | null; holdings: readonly BitcoinHoldingDto[] }>(
-      '/api/bitcoin',
-    ),
+    api.get<{
+      price: BitcoinPriceDto | null;
+      holdings: readonly BitcoinHoldingDto[];
+      /** False once someone has read what an in-budget holding does to the banner. */
+      inBudgetWarningDue: boolean;
+    }>('/api/bitcoin'),
 
-  setHolding: (accountId: string, sats: string | null) =>
-    api.patch<{ ok: boolean }>(`/api/accounts/${accountId}/bitcoin`, { sats }),
+  /** No account has to exist first — that is the point of this route. */
+  create: (input: { name: string; sats?: string; inBudget?: boolean; inNetWorth?: boolean }) =>
+    api.post<{ holding: { id: string } }>('/api/bitcoin/holdings', input),
+
+  update: (
+    id: string,
+    input: { name?: string; sats?: string; inBudget?: boolean; inNetWorth?: boolean },
+  ) => api.patch<{ ok: boolean }>(`/api/bitcoin/holdings/${id}`, input),
+
+  acknowledgeInBudget: () => api.post<{ ok: boolean }>('/api/bitcoin/in-budget-acknowledgement'),
 
   refresh: () =>
     api.post<{ updated: boolean; priceCents?: string; source?: string }>('/api/bitcoin/refresh'),
+};
+
+export const propertiesApi = {
+  list: () => api.get<{ properties: readonly PropertyDto[] }>('/api/properties'),
+
+  create: (input: {
+    name: string;
+    valueCents: string;
+    asOf: string;
+    inBudget?: boolean;
+    inNetWorth?: boolean;
+    mortgageAccountId?: string | null;
+  }) => api.post<{ property: { id: string } }>('/api/properties', input),
+
+  update: (
+    id: string,
+    input: {
+      name?: string;
+      inBudget?: boolean;
+      inNetWorth?: boolean;
+      mortgageAccountId?: string | null;
+    },
+  ) => api.patch<{ ok: boolean }>(`/api/properties/${id}`, input),
 };
 
 export const valuationsApi = {
