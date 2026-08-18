@@ -72,3 +72,34 @@ does not authenticate _which household member_ is asking. Tor's own client
 authorization would add a per-device key at the network layer, before the login
 page is reachable at all — not built here, and the obvious next step if this is
 wanted.
+
+## Addendum, 2026-08-18: it runs itself, and the first version did not run at all
+
+Two corrections, both found by the address never appearing.
+
+**The third-party image ignored the configuration.** `dperson/torproxy` ships its
+own entrypoint script, so the `command:` in compose became arguments _to_ that
+script rather than a replacement _for_ it. The mounted `torrc` — the file that
+defines the hidden service — was never read. The proxy worked, which is why
+nothing looked wrong, and no onion address was ever created. Owning the image is
+what makes the configuration apply, which is a better reason to own it than the
+supply-chain one.
+
+**An existing volume keeps its ownership.** Docker copies ownership from the
+image only when it _creates_ a named volume. `tor-keys` had already been created
+by that earlier image running as root, so a container running as `tor` could not
+write to it — and tor refuses to touch a `HiddenServiceDir` it does not own,
+correctly, because the key in there is the entire identity of the address. The
+entrypoint now chowns and drops privileges, which handles both a fresh volume and
+one inherited from the older version.
+
+**Nothing is started by hand.** Tor is an ordinary compose service and comes up
+with everything else; the setting in the interface decides whether requests
+arriving on the address are _answered_, which is a different question from
+whether the service exists. The interface said "start the tor service on the
+NAS", which was wrong twice over — it starts itself, and saying otherwise is how
+somebody concludes a working system is broken.
+
+**The health check tests the hostname file** rather than the SOCKS port. The port
+answered throughout the failure above; the thing that was missing was the hidden
+service, and that is what the file's existence proves.

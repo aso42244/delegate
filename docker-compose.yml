@@ -115,16 +115,20 @@ services:
       # The hidden service's key, which *is* state and is the whole identity of
       # the address. Losing this volume changes the onion address and breaks
       # every device that had it. Back it up.
+      # The app mounts this same volume read-only at /tor, to read the address.
       - tor-keys:/var/lib/tor
-      # Shared read-only with the app, which reads the hostname file to show the
-      # address in Settings rather than making somebody shell in for it.
-      - tor-keys:/tor-shared
     healthcheck:
-      test: ['CMD', 'sh', '-c', 'nc -z 127.0.0.1 9050']
+      # The hostname file existing is the thing that actually matters: it means
+      # the hidden service was created and the address can be read. A port check
+      # would pass while the service silently failed to come up, which is the
+      # failure that has already happened once here.
+      test: ['CMD', 'test', '-f', '/var/lib/tor/delegate/hostname']
       interval: 30s
       timeout: 5s
       retries: 3
-      start_period: 30s
+      # First run generates a key and publishes a descriptor. A minute is
+      # generous and costs nothing.
+      start_period: 60s
 
 volumes:
   postgres-data:

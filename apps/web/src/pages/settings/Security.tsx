@@ -205,10 +205,26 @@ export function SecuritySection(): ReactNode {
             </p>
           </div>
         ) : (
-          <p className="text-quiet text-muted">
-            No onion address yet. Start the <code>tor</code> service on the NAS and reload — it
-            makes one the first time it runs.
-          </p>
+          <div className="flex flex-col gap-2">
+            <p className="text-quiet text-muted">
+              No onion address yet. Nothing to start — Tor runs alongside Delegate and makes one the
+              first time it comes up, usually within a minute of a deploy.
+            </p>
+            {/* Instructions only for the case where it has not appeared, rather
+                than as the ordinary path. Being told to start something that
+                starts itself is how somebody concludes it is broken. */}
+            <details>
+              <summary className="cursor-pointer text-quiet text-muted">
+                Still nothing after a minute?
+              </summary>
+              <p className="mt-2 text-label text-muted">
+                On the NAS, <code>sudo docker compose ps tor</code> shows whether it is running and{' '}
+                <code>sudo docker compose logs tor</code> says why not. The commonest cause is a key
+                directory left behind by an older version, which{' '}
+                <code>sudo docker compose up -d --build tor</code> repairs.
+              </p>
+            </details>
+          </div>
         )}
       </SettingsCard>
 

@@ -1,4 +1,5 @@
 import { createHmac, randomBytes } from 'node:crypto';
+import { Prisma } from '@prisma/client';
 import { generateSecret, generateURI, verify as verifyOtp } from 'otplib';
 import type { Db } from '../db/client.js';
 import { ConflictError, NotFoundError, ValidationError } from './errors.js';
@@ -224,10 +225,16 @@ async function claimCode(
     await db.totpUsedCode.create({
       data: { userId, codeHash, expiresAt: new Date(now.getTime() + REPLAY_WINDOW_MS) },
     });
-  } catch {
-    // The only way the insert fails is the unique index, which means this exact
-    // code has already been accepted for this account.
-    return false;
+  } catch (error) {
+    // P2002 is the unique index, and only that means "this code has already been
+    // accepted for this account". Swallowing everything else would turn a
+    // database blip into "your code is wrong", which is the single most
+    // confusing thing this route can say — the code *is* right, and the person
+    // holding it would try again forever.
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+      return false;
+    }
+    throw error;
   }
 
   // Swept here rather than on a schedule: the rows are only interesting for four
