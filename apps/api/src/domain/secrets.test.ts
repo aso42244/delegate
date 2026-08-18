@@ -38,12 +38,12 @@ describe('encrypting a secret', () => {
     );
   });
 
-  it('explains that rotating SESSION_SECRET is the likely cause', () => {
+  it('explains that a changed key is the likely cause', () => {
     const stored = encryptSecret(ACCESS_URL, SECRET);
 
     // The actionable case, so the message names it rather than saying "failed".
     expect(() => decryptSecret(stored, 'another-secret-of-thirty-two-chars-yz')).toThrow(
-      /SESSION_SECRET/,
+      /encryption key changed/,
     );
   });
 

@@ -14,10 +14,18 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      # Handed to the init script below, which runs only when the data directory
+      # is empty. Set on a fresh install to get a least-privilege application
+      # role; leave empty and the application stays on the superuser, which is
+      # what every existing deployment does.
+      APP_DB_USER: ${APP_DB_USER:-delegate_app}
+      APP_DB_PASSWORD: ${APP_DB_PASSWORD:-}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
       POSTGRES_DB: ${POSTGRES_DB:-delegate}
     volumes:
       - postgres-data:/var/lib/postgresql/data
+      # Runs once, on an empty data directory. Existing deployments never see it.
+      - ./postgres/init:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-delegate}']
       interval: 10s

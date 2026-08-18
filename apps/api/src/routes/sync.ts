@@ -45,7 +45,7 @@ export const syncRoutes: FastifyPluginCallback = (fastify, _options, done) => {
     const connection = await resolveConnection(
       prisma,
       fastify.config.SIMPLEFIN_ACCESS_URL,
-      fastify.config.SESSION_SECRET,
+      fastify.config.dataKey,
     );
     const runs = await prisma.syncRun.findMany({
       orderBy: { startedAt: 'desc' },
@@ -82,11 +82,7 @@ export const syncRoutes: FastifyPluginCallback = (fastify, _options, done) => {
 
   fastify.post('/api/sync', async (request) => {
     const config = fastify.config;
-    const connection = await resolveConnection(
-      prisma,
-      config.SIMPLEFIN_ACCESS_URL,
-      config.SESSION_SECRET,
-    );
+    const connection = await resolveConnection(prisma, config.SIMPLEFIN_ACCESS_URL, config.dataKey);
 
     if (!connection.accessUrl) {
       throw new ConflictError(
@@ -120,8 +116,8 @@ export const syncRoutes: FastifyPluginCallback = (fastify, _options, done) => {
 
     const result =
       'setupToken' in body
-        ? await connectWithSetupToken(prisma, body.setupToken, fastify.config.SESSION_SECRET)
-        : await connectWithAccessUrl(prisma, body.accessUrl, fastify.config.SESSION_SECRET);
+        ? await connectWithSetupToken(prisma, body.setupToken, fastify.config.dataKey)
+        : await connectWithAccessUrl(prisma, body.accessUrl, fastify.config.dataKey);
 
     // The credential itself is never logged, only that one was stored.
     request.log.info({ actorId: request.currentUser?.id }, 'SimpleFIN connected');

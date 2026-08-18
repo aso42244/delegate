@@ -1,6 +1,6 @@
 # 011 — The SimpleFIN credential is stored encrypted in the database
 
-**Status:** accepted
+**Status:** accepted, amended by ADR 029
 **Date:** 2026-08-08
 
 ## Context
@@ -51,3 +51,10 @@ recognisably equal.
 - Anyone who can sign in can connect or disconnect SimpleFIN. That matches the
   permission model in §10, where only user management is gated — this is a
   single-household application and every account is trusted with the budget.
+
+## Amendment, 2026-08-18
+
+The key is no longer necessarily derived from `SESSION_SECRET`. See ADR 029:
+`DATA_ENCRYPTION_KEY` separates the two, with the derivation kept as the fallback
+so existing deployments are unaffected, and `npm run secrets:rekey` to move
+across. The reasoning here about _what_ is encrypted and _why_ is unchanged.

@@ -12,11 +12,17 @@ import { createCipheriv, createDecipheriv, randomBytes, scryptSync } from 'node:
  * AES-256-GCM: authenticated, so a tampered ciphertext fails loudly rather than
  * decrypting to rubbish. A fresh random IV per encryption, stored alongside.
  *
- * The key is derived from `SESSION_SECRET` with scrypt. That avoids a second
- * mandatory environment variable at the cost of one real consequence, documented
- * in the README: **rotating `SESSION_SECRET` makes the stored value
- * undecryptable**, and SimpleFIN has to be reconnected. That is a paste-a-token
- * recovery, not a data loss, and rotation is rare.
+ * The key comes from `config.dataKey`, which is `DATA_ENCRYPTION_KEY` when one
+ * is set and `SESSION_SECRET` otherwise. The fallback is what every deployment
+ * made before the split does, and it has to stay: the ciphertext already in
+ * those databases was written that way.
+ *
+ * The split exists because one secret doing both jobs meant rotating
+ * `SESSION_SECRET` — after a suspected compromise, exactly when you would want
+ * to — also made every TOTP secret, the bank credential and every wallet
+ * descriptor unreadable in the same moment. That is pressure never to rotate
+ * either, which is the opposite of what a secret wants. `npm run secrets:rekey`
+ * moves an existing deployment across in one transaction. See ADR 029.
  */
 
 const ALGORITHM = 'aes-256-gcm';
@@ -31,8 +37,8 @@ const IV_LENGTH = 12;
  */
 const KEY_SALT = 'household-budget:secret-key:v1';
 
-function deriveKey(sessionSecret: string): Buffer {
-  return scryptSync(sessionSecret, KEY_SALT, KEY_LENGTH);
+function deriveKey(key: string): Buffer {
+  return scryptSync(key, KEY_SALT, KEY_LENGTH);
 }
 
 /** Returns `iv.authTag.ciphertext`, all base64url, safe to store as text. */
@@ -74,10 +80,10 @@ export function decryptSecret(stored: string, sessionSecret: string): string {
       decipher.final(),
     ]).toString('utf8');
   } catch {
-    // Almost always a rotated SESSION_SECRET rather than tampering, and the
+    // Almost always a changed key rather than tampering, and the
     // message says so because that is the actionable case.
     throw new SecretDecryptionError(
-      'Could not decrypt the stored credential. If SESSION_SECRET was changed, reconnect SimpleFIN to store it again.',
+      'Could not decrypt the stored credential. If the encryption key changed without `npm run secrets:rekey`, put the previous one back — or reconnect SimpleFIN to store it again.',
     );
   }
 }

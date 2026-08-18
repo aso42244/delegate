@@ -189,7 +189,7 @@ export const authRoutes: FastifyPluginCallback = (fastify, _options, done) => {
     const ok =
       user !== null &&
       user.archivedAt === null &&
-      (await verifySecondFactor(prisma, userId, code, fastify.config.SESSION_SECRET));
+      (await verifySecondFactor(prisma, userId, code, fastify.config.dataKey));
 
     if (!ok) {
       request.log.warn({ userId }, 'failed second factor');
@@ -321,7 +321,7 @@ export const authRoutes: FastifyPluginCallback = (fastify, _options, done) => {
       const offer = await beginEnrolment(
         prisma,
         request.currentUser!.id,
-        fastify.config.SESSION_SECRET,
+        fastify.config.dataKey,
         fastify.config.APP_NAME,
       );
       return offer;
@@ -338,7 +338,7 @@ export const authRoutes: FastifyPluginCallback = (fastify, _options, done) => {
         prisma,
         request.currentUser!.id,
         code,
-        fastify.config.SESSION_SECRET,
+        fastify.config.dataKey,
       );
 
       request.log.info({ userId: request.currentUser!.id }, 'two-factor enrolled');

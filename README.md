@@ -443,3 +443,54 @@ Dependency policy and the update process are in
 ## Licence
 
 MIT. See [LICENSE](LICENSE).
+
+## Rotating the encryption key
+
+Delegate encrypts three things at rest: each account's TOTP secret, the SimpleFIN
+access URL, and every watched wallet's descriptors. By default that key is
+derived from `SESSION_SECRET`, which means rotating the session secret would make
+all of them unreadable at the same moment — see ADR 029.
+
+To separate them, on the machine running Delegate:
+
+```sh
+# 1. Prove everything can be read as it stands. Writes nothing.
+sudo docker compose exec app npm run secrets:rekey --workspace @budget/api -- --check
+
+# 2. Re-encrypt under a new key, in one transaction.
+sudo docker compose exec -e DATA_ENCRYPTION_KEY_NEW='<a long random string>' \
+  app npm run secrets:rekey --workspace @budget/api
+
+# 3. Put that same value in .env as DATA_ENCRYPTION_KEY, then restart.
+sudo docker compose up -d
+```
+
+**The order matters.** Between steps 2 and 3 the application is still reading with
+the old key and will fail; setting `DATA_ENCRYPTION_KEY` without running step 2
+makes the stored secrets unreadable. Neither is destructive — the fix in both
+cases is to finish the sequence — but do not stop in the middle.
+
+Afterwards, `SESSION_SECRET` can be rotated on its own. It invalidates live
+sessions, which is the point, and touches nothing at rest.
+
+## A least-privilege database role
+
+New deployments get one automatically: set `APP_DB_PASSWORD` in `.env` before the
+first start and point `DATABASE_URL` at `delegate_app` rather than the superuser.
+The role owns its own database — migrations need that — but cannot reach any
+other database in the cluster, create roles, or read files off the host.
+
+An **existing** deployment is not touched, because the init script only runs on an
+empty data directory. To move one over, with the application stopped:
+
+```sh
+sudo docker compose exec postgres psql -U postgres -d delegate -c \
+  "CREATE ROLE delegate_app LOGIN PASSWORD '<a long random string>';
+   ALTER DATABASE delegate OWNER TO delegate_app;
+   ALTER SCHEMA public OWNER TO delegate_app;
+   ALTER ROLE delegate_app NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION;"
+```
+
+Then change the user in `DATABASE_URL` and `sudo docker compose up -d`. If it
+fails to start, putting the old `DATABASE_URL` back is the whole rollback — the
+superuser role is untouched.

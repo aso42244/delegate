@@ -102,7 +102,7 @@ async function runScheduledPriceFetch(config: AppConfig, logger: FastifyBaseLogg
   // whole way down: a node that is unreachable must not stop the price being
   // recorded, and neither must stop the revaluation below.
   try {
-    const scanned = await scanAllWallets(prisma, config.SESSION_SECRET, logger, {
+    const scanned = await scanAllWallets(prisma, config.dataKey, logger, {
       torSocksUrl: config.TOR_SOCKS_URL,
     });
     if (scanned > 0) logger.info({ wallets: scanned }, 'Bitcoin wallets scanned');
@@ -153,11 +153,7 @@ async function runScheduledSync(config: AppConfig, logger: FastifyBaseLogger): P
   try {
     // Resolved per run rather than at startup: the owner can connect SimpleFIN
     // from Settings at any time, and the job must pick that up without a restart.
-    const connection = await resolveConnection(
-      prisma,
-      config.SIMPLEFIN_ACCESS_URL,
-      config.SESSION_SECRET,
-    );
+    const connection = await resolveConnection(prisma, config.SIMPLEFIN_ACCESS_URL, config.dataKey);
 
     if (!connection.accessUrl) {
       logger.debug(

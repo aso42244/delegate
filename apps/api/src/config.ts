@@ -40,6 +40,25 @@ const environmentSchema = z
     // than loudly.
     SESSION_COOKIE_SECURE: booleanFromString.default(false),
 
+    /**
+     * The key protecting secrets at rest, kept apart from the one that signs
+     * sessions.
+     *
+     * Empty — the default — derives it from `SESSION_SECRET`, which is what
+     * every existing deployment does and must keep doing, because the stored
+     * ciphertext was written that way. Setting it separates the two, so
+     * `SESSION_SECRET` can be rotated after a suspected compromise without also
+     * making every TOTP secret, the bank credential and every wallet descriptor
+     * undecryptable at the same moment. That coupling was the reason never to
+     * rotate either.
+     *
+     * Moving an existing deployment onto one is `npm run secrets:rekey`, which
+     * re-encrypts everything in a single transaction. Setting this without
+     * running that leaves the data unreadable — the command refuses to leave it
+     * that way, and the README says so.
+     */
+    DATA_ENCRYPTION_KEY: z.string().default(''),
+
     // Whether to believe `X-Forwarded-For`, and from whom.
     //
     // Empty (the default) means the connecting socket is the client, which is
@@ -113,6 +132,12 @@ const environmentSchema = z
 
 export type AppConfig = Readonly<z.infer<typeof environmentSchema>> & {
   readonly isProduction: boolean;
+  /**
+   * The key secrets at rest are encrypted with: `DATA_ENCRYPTION_KEY` when one
+   * is set, and `SESSION_SECRET` otherwise. Never read the two environment
+   * variables directly for encryption — this is the only correct answer.
+   */
+  readonly dataKey: string;
 };
 
 let cached: AppConfig | undefined;
@@ -127,7 +152,16 @@ export function loadConfig(source: NodeJS.ProcessEnv = process.env): AppConfig {
     throw new Error(`Invalid environment configuration:\n${problems}`);
   }
 
-  return { ...parsed.data, isProduction: parsed.data.NODE_ENV === 'production' };
+  return {
+    ...parsed.data,
+    isProduction: parsed.data.NODE_ENV === 'production',
+    // Resolved once here rather than at each call site, so nothing can encrypt
+    // with one key and try to decrypt with the other.
+    dataKey:
+      parsed.data.DATA_ENCRYPTION_KEY === ''
+        ? parsed.data.SESSION_SECRET
+        : parsed.data.DATA_ENCRYPTION_KEY,
+  };
 }
 
 /** The process-wide config, parsed on first use. */

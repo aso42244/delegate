@@ -330,7 +330,7 @@ export const bitcoinRoutes: FastifyPluginCallback = (fastify, _options, done) =>
     const created = await addWallet(
       prisma,
       { accountId: id, label: body.label, key: body.key, gapLimit: body.gapLimit },
-      request.server.config.SESSION_SECRET,
+      request.server.config.dataKey,
     );
 
     // The key is deliberately absent from this line. It is not a spending
@@ -344,7 +344,7 @@ export const bitcoinRoutes: FastifyPluginCallback = (fastify, _options, done) =>
 
   fastify.post('/api/bitcoin/wallets/:id/scan', async (request) => {
     const { id } = idParamsSchema.parse(request.params);
-    const result = await scanWallet(prisma, id, request.server.config.SESSION_SECRET, {
+    const result = await scanWallet(prisma, id, request.server.config.dataKey, {
       torSocksUrl: request.server.config.TOR_SOCKS_URL,
     });
     return {
