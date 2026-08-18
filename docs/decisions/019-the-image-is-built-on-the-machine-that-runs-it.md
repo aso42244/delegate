@@ -89,3 +89,19 @@ something is wrong before it reaches the NAS.
   10GB-per-repository allowance and is unaffected.
 - Rolling back means naming an earlier `delegate:local-…` tag, which is why the
   build stamps one per build rather than reusing `latest`.
+
+## Addendum, 2026-08-18: unpacking has to remove, not just extract
+
+`tar xzf` over a live directory extracts files but never removes them. A source
+file deleted between two releases therefore survived the upgrade, and the build
+compiled a file that no longer existed in the release. v0.4.0 failed on the NAS
+exactly this way: `BitcoinAndProperty.tsx` had been split into two pages and
+deleted, and the copy left behind from v0.3.9 still referenced an API method that
+no longer exists.
+
+`deploy.sh --unpack TARBALL` now removes what the tarball owns before extracting
+it. The list of what it owns comes from the tarball itself rather than being
+written down anywhere, so it cannot drift from reality. Anything the tarball does
+not contain is untouched, and it refuses outright if a tarball ever claims
+`.env`, `backups` or `tls` — the three things on that machine that could not be
+recovered.

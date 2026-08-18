@@ -31,8 +31,15 @@ OIDC_ISSUER='https://token.actions.githubusercontent.com'
 
 usage() {
   cat <<'USAGE'
-Usage: deploy.sh [--build | --tag TAG | --digest sha256:… | --image-file PATH]
-                 [--skip-verify]
+Usage: deploy.sh [--unpack TARBALL] [--build | --tag TAG | --digest sha256:… |
+                 --image-file PATH] [--skip-verify]
+
+  --unpack TARBALL    Replace the source in this directory with the contents of
+                      a `git archive` tarball, then carry on. Removes what the
+                      tarball owns before extracting, so a file deleted between
+                      versions actually goes away. Plain `tar xzf` never removes
+                      anything, which is how a deleted source file survived a
+                      release and broke the build.
 
   --build             Build the image here, from the source in this directory.
                       The ordinary route: this machine is x86_64, so the build
@@ -50,6 +57,7 @@ USAGE
 TAG='latest'
 DIGEST=''
 IMAGE_FILE=''
+UNPACK=''
 BUILD='no'
 VERIFY='yes'
 
@@ -64,6 +72,9 @@ while [ $# -gt 0 ]; do
     --image-file)
       [ $# -ge 2 ] || { echo 'error: --image-file needs a path' >&2; exit 2; }
       IMAGE_FILE="$2"; shift 2 ;;
+    --unpack)
+      [ $# -ge 2 ] || { echo 'error: --unpack needs a tarball' >&2; exit 2; }
+      UNPACK="$2"; shift 2 ;;
     --build)
       BUILD='yes'; shift ;;
     --skip-verify)
@@ -74,6 +85,43 @@ while [ $# -gt 0 ]; do
       echo "error: unknown argument '$1'" >&2; usage >&2; exit 2 ;;
   esac
 done
+
+# --- Unpack a release ------------------------------------------------------
+#
+# `tar xzf` over a live directory extracts, but never removes. A source file
+# deleted between two versions therefore survives the upgrade, and the build
+# compiles a file that no longer exists in the release — which is exactly how
+# v0.4.0 failed here.
+#
+# So: work out what the tarball owns, remove precisely that, then extract. The
+# list comes from the tarball itself rather than being written down, so it cannot
+# drift. Anything the tarball does not contain — .env, backups/, tls/ — is not
+# touched, and .env is the one that could not be recovered.
+
+if [ -n "$UNPACK" ]; then
+  [ -f "$UNPACK" ] || { echo "error: no such tarball: $UNPACK" >&2; exit 1; }
+
+  OWNED=$(tar tzf "$UNPACK" | cut -d/ -f1 | sort -u)
+
+  # Refuse rather than guess if the tarball claims anything that holds live
+  # state. Nothing in `git archive` should, and if that ever changes this is
+  # where it must be noticed rather than after the fact.
+  for entry in $OWNED; do
+    case "$entry" in
+      .env | backups | tls)
+        echo "error: that tarball contains '$entry', which holds live state." >&2
+        echo '       Refusing to replace it.' >&2
+        exit 1 ;;
+    esac
+  done
+
+  echo 'Replacing the source in this directory …'
+  for entry in $OWNED; do
+    rm -rf "./${entry}"
+  done
+  tar xzf "$UNPACK"
+  echo "  → unpacked $UNPACK"
+fi
 
 # --- Preflight -------------------------------------------------------------
 
