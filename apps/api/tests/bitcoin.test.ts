@@ -189,6 +189,23 @@ describe('reading a price for a date', () => {
   });
 });
 
+/** Creates a holding the way the Bitcoin tab does: no account beforehand. */
+async function addHolding(payload: {
+  name: string;
+  sats?: string;
+  inBudget?: boolean;
+  inNetWorth?: boolean;
+}): Promise<string> {
+  const response = await app.inject({
+    method: 'POST',
+    url: '/api/bitcoin/holdings',
+    headers: { cookie },
+    payload,
+  });
+  expect(response.statusCode).toBe(201);
+  return response.json<{ holding: { id: string } }>().holding.id;
+}
+
 describe('GET /api/bitcoin', () => {
   it('requires a session', async () => {
     const response = await app.inject({ method: 'GET', url: '/api/bitcoin' });
@@ -196,18 +213,10 @@ describe('GET /api/bitcoin', () => {
   });
 
   it('values the holding at the current price', async () => {
-    const account = await makeAccount({
-      name: 'Hardware wallet',
-      type: 'asset',
-      balanceCents: 0n,
-      inBudget: false,
-    });
-    // 0.5 BTC
-    await prisma.account.update({
-      where: { id: account.id },
-      data: { bitcoinSats: 50_000_000n },
-    });
     await recordSpotPrice(prisma, { priceCents: 10_000_000n, source: 'coingecko' }, new Date());
+    // Created where it is managed, which is the only way a holding exists now.
+    // 0.5 BTC.
+    await addHolding({ name: 'Hardware wallet', sats: '50000000' });
 
     const response = await app.inject({ method: 'GET', url: '/api/bitcoin', headers: { cookie } });
     expect(response.statusCode).toBe(200);
@@ -225,15 +234,7 @@ describe('GET /api/bitcoin', () => {
 
   /** Never a zero: a holding worth nothing and a price nobody has are different. */
   it('reports no value rather than zero before any price exists', async () => {
-    const account = await makeAccount({
-      name: 'Hardware wallet',
-      type: 'asset',
-      balanceCents: 0n,
-    });
-    await prisma.account.update({
-      where: { id: account.id },
-      data: { bitcoinSats: 50_000_000n },
-    });
+    await addHolding({ name: 'Hardware wallet', sats: '50000000' });
 
     const response = await app.inject({ method: 'GET', url: '/api/bitcoin', headers: { cookie } });
     const body = response.json<{

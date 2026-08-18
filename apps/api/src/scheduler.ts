@@ -4,7 +4,7 @@ import type { AppConfig } from './config.js';
 import { prisma } from './db/client.js';
 import { ConflictError } from './domain/errors.js';
 import { runBackup } from './domain/backup.js';
-import { fetchAndRecordPrice, providerByName } from './domain/bitcoin.js';
+import { fetchAndRecordPrice, providerByName, revalueBitcoinHoldings } from './domain/bitcoin.js';
 import { resolveConnection } from './domain/simplefin-config.js';
 import { runSync } from './domain/sync.js';
 import { HttpSimpleFinClient } from './simplefin/client.js';
@@ -95,6 +95,19 @@ async function runScheduledPriceFetch(config: AppConfig, logger: FastifyBaseLogg
     }
   } catch (error) {
     logger.warn({ err: error }, 'Bitcoin price fetch failed; holding the last known price');
+  }
+
+  // Separately from the fetch, and deliberately outside its try: a holding whose
+  // dollar figure is a day old should be brought forward on the last price we
+  // have even when today's fetch failed. Only in-budget holdings have one at
+  // all, and it moves once a day rather than hourly — see
+  // `revalueBitcoinHoldings` for why the banner is not allowed to track the
+  // market.
+  try {
+    const { revalued } = await revalueBitcoinHoldings(prisma);
+    if (revalued > 0) logger.info({ revalued }, 'in-budget Bitcoin holdings revalued');
+  } catch (error) {
+    logger.warn({ err: error }, 'Bitcoin revaluation failed; the previous figure stands');
   }
 }
 

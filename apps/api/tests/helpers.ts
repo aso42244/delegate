@@ -35,11 +35,16 @@ export async function resetDatabase(): Promise<void> {
   await prisma.budgetSettings.upsert({
     where: { id: 1 },
     create: { id: 1, undoWindowHours: 12, identityToleranceCents: 500n },
+    // Every column, not only the ones a test happens to read: this row survives
+    // the truncate, so anything left out of here leaks into the next run.
     update: {
       undoWindowHours: 12,
       identityToleranceCents: 500n,
       goLiveAt: null,
       requireTotp: false,
+      bitcoinInBudgetAckAt: null,
+      simplefinAccessUrlEncrypted: null,
+      simplefinConnectedAt: null,
     },
   });
 }

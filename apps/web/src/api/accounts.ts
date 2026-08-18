@@ -20,6 +20,8 @@ export interface AccountDto {
   readonly mortgageAccountId: string | null;
   /** Satoshis as a decimal string, or null when this account holds none. */
   readonly bitcoinSats: string | null;
+  /** Which Settings tab owns this row. `none` is an ordinary account. */
+  readonly managedAs: 'none' | 'bitcoin' | 'property';
   readonly archivedAt: string | null;
 }
 

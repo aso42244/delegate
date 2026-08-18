@@ -1,6 +1,7 @@
 import { formatCents, formatCentsForInput, isBalanceStale, tryParseMoney } from '@budget/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState, type FormEvent, type ReactNode } from 'react';
+import { Link } from 'react-router-dom';
 import { accountsApi, type AccountDto } from '../../api/accounts.js';
 import { ApiError } from '../../api/client.js';
 import { Alert, Button, SelectField, TextField, Toggle } from '../../components/ui.jsx';
@@ -198,6 +199,33 @@ function AccountRow({ account }: { readonly account: AccountDto }): ReactNode {
     setEditingBalance(false);
     const magnitude = parsed.value < 0n ? -parsed.value : parsed.value;
     update.mutate({ balanceCents: magnitude.toString() });
+  }
+
+  /*
+   * A Bitcoin holding and a property are still accounts, and belong on this
+   * list — leaving them off would make the list a lie about what the budget is
+   * made of. They are not editable here, though: their own tab owns their
+   * lifecycle, and it is where a quantity or a dated valuation is understood.
+   * The API refuses the edit too, so this is the courtesy rather than the guard.
+   */
+  if (account.managedAs !== 'none') {
+    return (
+      <div className="flex flex-wrap items-center gap-3 border-b border-line py-3 last:border-0">
+        <div className="min-w-48 flex-1">
+          <span className="text-ink">{account.name}</span>
+          <span className="ml-1 rounded bg-surface-2 px-1.5 py-0.5 text-label font-semibold text-muted">
+            {account.managedAs}
+          </span>
+        </div>
+        <span className="money text-ink">{formatCents(BigInt(account.balanceCents))}</span>
+        <Link
+          to={account.managedAs === 'bitcoin' ? '/settings/bitcoin' : '/settings/properties'}
+          className="rounded border border-line px-2 py-0.5 text-quiet font-semibold text-accent"
+        >
+          {account.managedAs === 'bitcoin' ? 'Manage in Bitcoin' : 'Manage in Properties'}
+        </Link>
+      </div>
+    );
   }
 
   return (
