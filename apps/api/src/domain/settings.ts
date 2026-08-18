@@ -20,12 +20,13 @@ export interface BudgetSettings {
   readonly identityToleranceCents: Cents;
   readonly goLiveAt: Date | null;
   /**
-   * Whether every account must carry a second factor. §10 makes this mandatory
-   * before any internet exposure, but it defaults off so that shipping the
-   * mechanism cannot lock the household out of a running deployment in the gap
-   * between the code landing and them enrolling.
+   * Whether every account must carry a second factor. Default on: the reason it
+   * was optional — that turning it on could lock an un-enrolled account out —
+   * expired once the interface gained a way back (`/set-up-two-factor`).
    */
   readonly requireTotp: boolean;
+  readonly remoteOverTorEnabled: boolean;
+  readonly remoteOverTorEnabledAt: Date | null;
 }
 
 export async function getBudgetSettings(db: Db): Promise<BudgetSettings> {
@@ -36,6 +37,8 @@ export async function getBudgetSettings(db: Db): Promise<BudgetSettings> {
       identityToleranceCents: true,
       goLiveAt: true,
       requireTotp: true,
+      remoteOverTorEnabled: true,
+      remoteOverTorEnabledAt: true,
     },
   });
 
@@ -43,7 +46,11 @@ export async function getBudgetSettings(db: Db): Promise<BudgetSettings> {
     undoWindowHours: settings?.undoWindowHours ?? DEFAULT_UNDO_WINDOW_HOURS,
     identityToleranceCents: settings?.identityToleranceCents ?? DEFAULT_IDENTITY_TOLERANCE_CENTS,
     goLiveAt: settings?.goLiveAt ?? null,
-    requireTotp: settings?.requireTotp ?? false,
+    requireTotp: settings?.requireTotp ?? true,
+    // Off unless a row says otherwise. A missing settings row must not be a way
+    // in from the internet.
+    remoteOverTorEnabled: settings?.remoteOverTorEnabled ?? false,
+    remoteOverTorEnabledAt: settings?.remoteOverTorEnabledAt ?? null,
   };
 }
 
@@ -51,6 +58,7 @@ export interface UpdateBudgetSettingsInput {
   readonly undoWindowHours?: number | undefined;
   readonly identityToleranceCents?: Cents | undefined;
   readonly requireTotp?: boolean | undefined;
+  readonly remoteOverTorEnabled?: boolean | undefined;
 }
 
 /**
@@ -89,19 +97,12 @@ export async function updateBudgetSettings(
    * household member's access at the moment it is saved, recoverable only from
    * a database prompt.
    */
-  if (input.requireTotp === true) {
-    const unenrolled = await db.user.count({
-      where: { archivedAt: null, totpConfirmedAt: null },
-    });
-    if (unenrolled > 0) {
-      throw new ValidationError(
-        'totp_not_universal',
-        unenrolled === 1
-          ? 'One account has not set up two-factor yet. It would be locked out.'
-          : `${unenrolled} accounts have not set up two-factor yet. They would be locked out.`,
-      );
-    }
-  }
+  // Turning the requirement on used to be refused while any active account
+  // lacked a second factor, because it locked that account out of every route
+  // — including the settings page offering enrolment. It no longer does: an
+  // un-enrolled account is routed to `/set-up-two-factor`, which is reachable
+  // precisely because `/api/auth/me` sits outside the guard. So this is now a
+  // requirement to enrol rather than a door closing, and it is allowed.
 
   const updated = await db.budgetSettings.upsert({
     where: { id: 1 },
@@ -109,7 +110,8 @@ export async function updateBudgetSettings(
       id: 1,
       undoWindowHours: input.undoWindowHours ?? DEFAULT_UNDO_WINDOW_HOURS,
       identityToleranceCents: input.identityToleranceCents ?? DEFAULT_IDENTITY_TOLERANCE_CENTS,
-      requireTotp: input.requireTotp ?? false,
+      requireTotp: input.requireTotp ?? true,
+      remoteOverTorEnabled: input.remoteOverTorEnabled ?? false,
     },
     update: {
       ...(input.undoWindowHours === undefined ? {} : { undoWindowHours: input.undoWindowHours }),
@@ -117,12 +119,21 @@ export async function updateBudgetSettings(
         ? {}
         : { identityToleranceCents: input.identityToleranceCents }),
       ...(input.requireTotp === undefined ? {} : { requireTotp: input.requireTotp }),
+      ...(input.remoteOverTorEnabled === undefined
+        ? {}
+        : {
+            remoteOverTorEnabled: input.remoteOverTorEnabled,
+            // Stamped only when switched on, so the interface can say since when.
+            remoteOverTorEnabledAt: input.remoteOverTorEnabled ? new Date() : null,
+          }),
     },
     select: {
       undoWindowHours: true,
       identityToleranceCents: true,
       goLiveAt: true,
       requireTotp: true,
+      remoteOverTorEnabled: true,
+      remoteOverTorEnabledAt: true,
     },
   });
 

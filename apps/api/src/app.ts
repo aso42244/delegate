@@ -6,6 +6,7 @@ import { errorHandler } from './http/errors.js';
 import { auth } from './plugins/auth.js';
 import { configPlugin } from './plugins/config.js';
 import { csrf } from './plugins/csrf.js';
+import { remoteAccess } from './plugins/remote-access.js';
 import { security } from './plugins/security.js';
 import { spa } from './plugins/spa.js';
 import { authRoutes } from './routes/auth.js';
@@ -133,6 +134,9 @@ export async function buildApp(config: AppConfig = getConfig()): Promise<Fastify
   // Ahead of the session plugin: a forged request should be refused before it
   // costs a session lookup.
   await app.register(csrf, { config });
+  // Before every route: an onion request is refused outright unless remote
+  // access has been turned on from the LAN.
+  await app.register(remoteAccess);
   await app.register(auth, { config });
   await app.register(healthRoutes);
   await app.register(appInfoRoutes);

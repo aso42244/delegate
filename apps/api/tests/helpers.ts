@@ -41,7 +41,13 @@ export async function resetDatabase(): Promise<void> {
       undoWindowHours: 12,
       identityToleranceCents: 500n,
       goLiveAt: null,
+      // Off here even though the product default is on: almost every test signs
+      // in without a second factor, and the requirement would 403 them out of
+      // the subject under test. The tests that are *about* the requirement turn
+      // it on themselves.
       requireTotp: false,
+      remoteOverTorEnabled: false,
+      remoteOverTorEnabledAt: null,
       bitcoinInBudgetAckAt: null,
       simplefinAccessUrlEncrypted: null,
       simplefinConnectedAt: null,

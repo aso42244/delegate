@@ -59,6 +59,14 @@ export function SecuritySection(): ReactNode {
     onError: (error: unknown) => setProblem(messageOf(error)),
   });
 
+  const setRemote = useMutation({
+    mutationFn: (remoteOverTorEnabled: boolean) => settingsApi.update({ remoteOverTorEnabled }),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['settings'] });
+    },
+    onError: (error: unknown) => setProblem(messageOf(error)),
+  });
+
   const setRequirement = useMutation({
     mutationFn: (requireTotp: boolean) => settingsApi.update({ requireTotp }),
     onSuccess: async () => {
@@ -140,6 +148,48 @@ export function SecuritySection(): ReactNode {
               </div>
             </form>
           </div>
+        )}
+      </SettingsCard>
+
+      <SettingsCard
+        title="Reaching the budget from away"
+        description="Over Tor, with no port forwarded, no domain name, and nobody in the middle holding your data."
+      >
+        {settings.data?.onionAddress ? (
+          <div className="flex flex-col gap-3">
+            {/* The address is not a secret exactly — it is a public key — but it
+                is the only thing an attacker would need to find this at all, so
+                it is shown here and nowhere else. */}
+            <div>
+              <p className="text-label uppercase tracking-[0.05em] text-muted">Address</p>
+              <p className="mt-1 font-mono text-quiet break-all text-ink">
+                {settings.data.onionAddress}
+              </p>
+            </div>
+
+            <Toggle
+              checked={settings.data.remoteOverTorEnabled}
+              onChange={(next) => setRemote.mutate(next)}
+              label="Answer requests to this address"
+            />
+
+            <p className="text-quiet text-muted">
+              {settings.data.remoteOverTorEnabled
+                ? 'On. Open Tor Browser — or Onion Browser on iPhone — and go to the address above.'
+                : 'Off. The address exists but the budget will refuse anything arriving on it. Turning it on can only be done from here, on the home network.'}
+            </p>
+
+            <p className="text-label text-muted">
+              An onion address is itself a public key, so the connection is encrypted and
+              authenticated end to end. Nothing decrypts it on the way — which is the difference
+              between this and a tunnel provider.
+            </p>
+          </div>
+        ) : (
+          <p className="text-quiet text-muted">
+            No onion address yet. Start the <code>tor</code> service on the NAS and reload — it
+            makes one the first time it runs.
+          </p>
         )}
       </SettingsCard>
 

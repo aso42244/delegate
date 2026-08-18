@@ -9,6 +9,11 @@ export interface BudgetSettingsDto {
   readonly goLiveAt: string | null;
   /** Whether every account must have a second factor before it can be used. */
   readonly requireTotp: boolean;
+  /** Whether a request over the onion address is answered at all. */
+  readonly remoteOverTorEnabled: boolean;
+  readonly remoteOverTorEnabledAt: string | null;
+  /** Null until the Tor service has been started and made one. */
+  readonly onionAddress: string | null;
 }
 
 export interface ReconcileResultDto {
@@ -45,6 +50,7 @@ export const settingsApi = {
     undoWindowHours?: number;
     identityToleranceCents?: string;
     requireTotp?: boolean;
+    remoteOverTorEnabled?: boolean;
   }) => api.patch<BudgetSettingsDto>('/api/settings', input),
 
   /** Every correction in one commit, sharing a batch. Not sixty separate writes. */

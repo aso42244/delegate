@@ -6,6 +6,7 @@ import { useSession } from './auth/SessionProvider.jsx';
 import { NotificationBanners } from './components/NotificationBanners.jsx';
 import { Sidebar } from './components/Sidebar.jsx';
 import { ChangePassword } from './pages/ChangePassword.jsx';
+import { SetUpTwoFactor } from './pages/SetUpTwoFactor.jsx';
 import { MainBudget } from './pages/MainBudget.jsx';
 import { AccountsSection } from './pages/settings/Accounts.jsx';
 import { ArchivedSection } from './pages/settings/Archived.jsx';
@@ -76,6 +77,12 @@ function RequireSession(): ReactNode {
   if (user.mustChangePassword) {
     return <Navigate to="/change-password" replace />;
   }
+  // So does an account that owes the household a second factor. Without this the
+  // requirement is a trap: every route answers 403, including the settings page
+  // that offers enrolment.
+  if (user.needsTwoFactor) {
+    return <Navigate to="/set-up-two-factor" replace />;
+  }
   return <Outlet />;
 }
 
@@ -90,6 +97,7 @@ export function App(): ReactNode {
         element={user ? <Navigate to="/" replace /> : <SignIn appName={appName} />}
       />
       <Route path="/change-password" element={<ChangePassword />} />
+      <Route path="/set-up-two-factor" element={<SetUpTwoFactor />} />
 
       <Route element={<RequireSession />}>
         <Route element={<AppShell appName={appName} />}>

@@ -154,6 +154,7 @@ model User {
   updatedAt          DateTime  @updatedAt @map("updated_at")
 
   sessions            Session[]
+  totpUsedCodes       TotpUsedCode[]
   bitcoinEvents       BitcoinHoldingEvent[]
   delegationEvents    DelegationEvent[]
   delegateRuns        DelegateRun[]
@@ -823,6 +824,33 @@ model BitcoinPrice {
 
 // Single-row settings table. The id is pinned to 1 by a check constraint in the
 // migration so a second row cannot exist.
+/// A TOTP code that has been spent.
+///
+/// The verifier accepts a code for one period either side of now, so a code is
+/// good for about ninety seconds. Without this, anybody who saw one inside that
+/// window could use it again — and with TLS terminated by a tunnel provider,
+/// "saw one" is not hypothetical. Recovery codes were already single-use; this
+/// gives TOTP the same property.
+model TotpUsedCode {
+  id     String @id @default(uuid()) @db.Uuid
+  userId String @map("user_id") @db.Uuid
+
+  /// HMAC of the code, not the code. Worthless after ninety seconds either way,
+  /// but there is no reason to write one into the nightly dump.
+  codeHash String @map("code_hash")
+
+  expiresAt DateTime @map("expires_at")
+  usedAt    DateTime @default(now()) @map("used_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  /// The uniqueness *is* the mechanism: a replay is a failed insert rather than
+  /// a read-then-write two simultaneous requests could both pass.
+  @@unique([userId, codeHash], name: "totp_used_code")
+  @@index([expiresAt])
+  @@map("totp_used_codes")
+}
+
 model BudgetSettings {
   id Int @id @default(1)
 
@@ -836,10 +864,14 @@ model BudgetSettings {
   // before this date can be understood as backfill.
   goLiveAt DateTime? @map("go_live_at")
 
-  /// Whether every account must carry a second factor. §10 requires it before
-  /// any internet exposure; it is a setting so that shipping the code cannot
-  /// lock a running deployment out between release and enrolment.
-  requireTotp Boolean @default(false) @map("require_totp")
+  /// Whether every account must carry a second factor.
+  ///
+  /// Default on. It was optional so that shipping the mechanism could not lock a
+  /// household out between the code landing and them enrolling; that reason
+  /// expired once the interface gained a way back for an un-enrolled account
+  /// (`/set-up-two-factor`). It stays a setting because an operator may have a
+  /// reason to turn it off, not because it should start off.
+  requireTotp Boolean @default(true) @map("require_totp")
 
   // The SimpleFIN access URL, encrypted at rest (AES-256-GCM). It is a bearer
   // credential for the household's bank data and the database is dumped nightly,
@@ -847,6 +879,15 @@ model BudgetSettings {
   // SIMPLEFIN_ACCESS_URL environment variable is then used instead.
   simplefinAccessUrlEncrypted String?   @map("simplefin_access_url_encrypted")
   simplefinConnectedAt        DateTime? @map("simplefin_connected_at")
+
+  /// Whether a request arriving over the Tor onion address is answered.
+  ///
+  /// Off until somebody turns it on, and turning it on is a deliberate act from
+  /// the LAN. An onion address is unguessable, but "unguessable" and "closed"
+  /// are different properties, and only one of them survives the address being
+  /// written down somewhere.
+  remoteOverTorEnabled   Boolean   @default(false) @map("remote_over_tor_enabled")
+  remoteOverTorEnabledAt DateTime? @map("remote_over_tor_enabled_at")
 
   /// When someone first accepted what putting Bitcoin in the budget does to the
   /// banner. Shown once, not every time: a warning repeated on every toggle is

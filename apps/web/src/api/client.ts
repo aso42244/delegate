@@ -75,6 +75,8 @@ export interface SessionUser {
   readonly username: string;
   readonly role: UserRole;
   readonly mustChangePassword: boolean;
+  /** The household requires a second factor and this account has none. */
+  readonly needsTwoFactor?: boolean;
 }
 
 export interface SetupState {

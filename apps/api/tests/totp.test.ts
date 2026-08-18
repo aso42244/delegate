@@ -344,7 +344,18 @@ describe('turning it off', () => {
 });
 
 describe('requiring it of everyone', () => {
-  it('will not be turned on while an account would be locked out', async () => {
+  /**
+   * This used to be refused, and the refusal was right at the time: turning the
+   * requirement on 403'd an un-enrolled account out of every route, including
+   * the settings page that offers enrolment, recoverable only from a database
+   * prompt.
+   *
+   * It is allowed now because that is no longer true. `/api/auth/me` sits
+   * outside the guard and reports the state, so the interface sends such an
+   * account to enrolment instead. The requirement is a demand to enrol rather
+   * than a door closing.
+   */
+  it('can be turned on while an account has not enrolled, and tells that account to', async () => {
     const cookie = await setUpOwner();
 
     const response = await app.inject({
@@ -353,9 +364,17 @@ describe('requiring it of everyone', () => {
       headers: { cookie },
       payload: { requireTotp: true },
     });
+    expect(response.statusCode).toBe(200);
 
-    expect(response.statusCode).toBe(400);
-    expect(errorOf(response).code).toBe('totp_not_universal');
+    // The one route that still answers, carrying the reason.
+    const me = await app.inject({ method: 'GET', url: '/api/auth/me', headers: { cookie } });
+    expect(me.statusCode).toBe(200);
+    expect(me.json<{ user: { needsTwoFactor: boolean } }>().user.needsTwoFactor).toBe(true);
+
+    // And everything else is shut until they do.
+    const budget = await app.inject({ method: 'GET', url: '/api/budget', headers: { cookie } });
+    expect(budget.statusCode).toBe(403);
+    expect(errorOf(budget).code).toBe('two_factor_required');
   });
 
   it('blocks the budget for an unenrolled account once required', async () => {
@@ -433,5 +452,70 @@ describe('the challenge token itself', () => {
     for (const bad of ['', 'a', 'a.b', '...', 'not-base64.signature']) {
       expect(() => readChallenge(bad, SESSION_SECRET)).toThrowError(/expired/);
     }
+  });
+});
+
+describe('a code cannot be used twice', () => {
+  /**
+   * The verifier accepts a code for one period either side of now, so a correct
+   * code is good for about ninety seconds. Nothing recorded that one had been
+   * spent — and with TLS terminated by a tunnel provider, somebody else having
+   * seen the code inside that window is not hypothetical.
+   */
+  it('refuses a replayed TOTP code within its own validity window', async () => {
+    const cookie = await setUpOwner();
+    const { secret } = await enrol(cookie);
+
+    const code = await generateOtp({ secret });
+
+    const first = await app.inject({
+      method: 'POST',
+      url: '/api/auth/login',
+      payload: OWNER,
+    });
+    const firstBody = first.json<{ challenge: string }>();
+
+    const signedIn = await app.inject({
+      method: 'POST',
+      url: '/api/auth/second-factor',
+      payload: { challenge: firstBody.challenge, code },
+    });
+    expect(signedIn.statusCode).toBe(200);
+
+    // Same code, seconds later, still inside the window it would otherwise be
+    // accepted in.
+    const second = await app.inject({
+      method: 'POST',
+      url: '/api/auth/login',
+      payload: OWNER,
+    });
+    const secondBody = second.json<{ challenge: string }>();
+
+    const replayed = await app.inject({
+      method: 'POST',
+      url: '/api/auth/second-factor',
+      payload: { challenge: secondBody.challenge, code },
+    });
+    expect(replayed.statusCode).toBe(401);
+  });
+
+  it('remembers the spent code against the account that spent it', async () => {
+    const cookie = await setUpOwner();
+    const { secret } = await enrol(cookie);
+    const code = await generateOtp({ secret });
+
+    const login = await app.inject({ method: 'POST', url: '/api/auth/login', payload: OWNER });
+    await app.inject({
+      method: 'POST',
+      url: '/api/auth/second-factor',
+      payload: { challenge: login.json<{ challenge: string }>().challenge, code },
+    });
+
+    const spent = await prisma.totpUsedCode.findMany();
+    expect(spent).toHaveLength(1);
+    // The code itself is never written down, only an HMAC of it.
+    expect(spent[0]?.codeHash).not.toContain(code);
+    // And the row expires on its own rather than needing a sweeper.
+    expect(spent[0]?.expiresAt.getTime()).toBeGreaterThan(Date.now());
   });
 });

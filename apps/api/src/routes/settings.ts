@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import type { FastifyPluginCallback } from 'fastify';
 import { z } from 'zod';
 import { prisma } from '../db/client.js';
@@ -22,6 +23,7 @@ const updateSchema = z.object({
   undoWindowHours: z.number().int().optional(),
   identityToleranceCents: centsIn.optional(),
   requireTotp: z.boolean().optional(),
+  remoteOverTorEnabled: z.boolean().optional(),
 });
 
 function present(settings: BudgetSettings): Record<string, unknown> {
@@ -30,7 +32,31 @@ function present(settings: BudgetSettings): Record<string, unknown> {
     identityToleranceCents: centsOut(settings.identityToleranceCents),
     goLiveAt: dateOut(settings.goLiveAt),
     requireTotp: settings.requireTotp,
+    remoteOverTorEnabled: settings.remoteOverTorEnabled,
+    remoteOverTorEnabledAt: dateOut(settings.remoteOverTorEnabledAt),
+    // The address itself, when the onion service has been started. Read from
+    // the file Tor writes; absent means nobody has started it.
+    onionAddress: readOnionAddress(),
   };
+}
+
+/**
+ * The onion address, if there is one.
+ *
+ * Tor writes it to a `hostname` file when it first creates the service. Read on
+ * every request rather than cached at boot: the service can be started long
+ * after the application, and an operator who has just started it should not have
+ * to restart Delegate to see the address.
+ *
+ * A missing file is the ordinary state — it means the Tor service has not been
+ * started, which is the default.
+ */
+function readOnionAddress(): string | null {
+  try {
+    return readFileSync('/tor/delegate/hostname', 'utf8').trim() || null;
+  } catch {
+    return null;
+  }
 }
 
 export const settingsRoutes: FastifyPluginCallback = (fastify, _options, done) => {

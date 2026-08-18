@@ -87,6 +87,9 @@ services:
       # Read-only, and only meaningful when TLS_CERT_PATH is set. The directory
       # is harmless when empty.
       - ${TLS_DIR:-./tls}:/tls:ro
+      # The onion address, so Settings can show it. Read-only, and the app never
+      # writes here — the private key alongside it is the service's identity.
+      - tor-keys:/tor:ro
 
   # A SOCKS proxy, so an onion address can be reached at all.
   #
@@ -100,6 +103,17 @@ services:
   tor:
     image: dperson/torproxy:latest
     restart: unless-stopped
+    command: ['tor', '-f', '/etc/tor/torrc']
+    volumes:
+      # The configuration, read-only: it is part of the release, not state.
+      - ./tor/torrc:/etc/tor/torrc:ro
+      # The hidden service's key, which *is* state and is the whole identity of
+      # the address. Losing this volume changes the onion address and breaks
+      # every device that had it. Back it up.
+      - tor-keys:/var/lib/tor
+      # Shared read-only with the app, which reads the hostname file to show the
+      # address in Settings rather than making somebody shell in for it.
+      - tor-keys:/tor-shared
     healthcheck:
       test: ['CMD', 'sh', '-c', 'nc -z 127.0.0.1 9050']
       interval: 30s
@@ -109,3 +123,6 @@ services:
 
 volumes:
   postgres-data:
+  # The hidden service's identity. Worth including in whatever backs up the NAS:
+  # without it the onion address cannot be recovered, only replaced.
+  tor-keys:

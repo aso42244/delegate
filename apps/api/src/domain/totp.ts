@@ -1,4 +1,4 @@
-import { randomBytes } from 'node:crypto';
+import { createHmac, randomBytes } from 'node:crypto';
 import { generateSecret, generateURI, verify as verifyOtp } from 'otplib';
 import type { Db } from '../db/client.js';
 import { ConflictError, NotFoundError, ValidationError } from './errors.js';
@@ -162,7 +162,10 @@ export async function verifySecondFactor(
   const candidate = normalize(code);
 
   const secret = decryptSecret(user.totpSecretEncrypted, sessionSecret);
-  if (await codeMatches(secret, candidate)) return true;
+  if (await codeMatches(secret, candidate)) {
+    // Correct, but not necessarily unused. See `claimCode`.
+    return claimCode(db, userId, candidate, sessionSecret);
+  }
 
   // Not a TOTP code. It may be a recovery code, which is checked against every
   // unused one — there is no identifier on a recovery code to look it up by.
@@ -181,6 +184,57 @@ export async function verifySecondFactor(
   }
 
   return false;
+}
+
+/**
+ * How long a used code has to be remembered.
+ *
+ * One period either side of now is ninety seconds of validity; a little over
+ * twice that is comfortably past the point where the code could be accepted
+ * again, and keeps the table from having to be precise about clock skew.
+ */
+const REPLAY_WINDOW_MS = 4 * 60 * 1000;
+
+/**
+ * Spends a code, or refuses it because it has already been spent.
+ *
+ * A correct TOTP code is valid for about ninety seconds, and until now nothing
+ * recorded that one had been used. Anybody who saw a code inside that window
+ * could use it a second time — and with TLS terminated by a tunnel provider,
+ * "saw a code" is not a hypothetical. Recovery codes were already single-use;
+ * this gives TOTP the same property.
+ *
+ * The unique index does the work rather than a read-then-write. Two requests
+ * arriving with the same code at the same moment would both pass a check-then-
+ * insert; only one of them can win an insert.
+ */
+async function claimCode(
+  db: Db,
+  userId: string,
+  code: string,
+  sessionSecret: string,
+  now: Date = new Date(),
+): Promise<boolean> {
+  // Domain-separated, like every other use of this secret.
+  const codeHash = createHmac('sha256', sessionSecret)
+    .update(`totp-used:${userId}:${code}`)
+    .digest('base64url');
+
+  try {
+    await db.totpUsedCode.create({
+      data: { userId, codeHash, expiresAt: new Date(now.getTime() + REPLAY_WINDOW_MS) },
+    });
+  } catch {
+    // The only way the insert fails is the unique index, which means this exact
+    // code has already been accepted for this account.
+    return false;
+  }
+
+  // Swept here rather than on a schedule: the rows are only interesting for four
+  // minutes, and a sign-in is exactly when there is one worth removing.
+  await db.totpUsedCode.deleteMany({ where: { userId, expiresAt: { lt: now } } });
+
+  return true;
 }
 
 export interface TotpStatus {

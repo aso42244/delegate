@@ -199,8 +199,26 @@ export const authRoutes: FastifyPluginCallback = (fastify, _options, done) => {
    * still be able to see who they are in order to render the change-password
    * screen.
    */
-  fastify.get('/api/auth/me', { preHandler: [requireSession] }, (request) => {
-    return { user: presentUser(request.currentUser!) };
+  /**
+   * Deliberately outside `requireTwoFactor`, like logout and the enrolment pair.
+   *
+   * With the requirement on and no second factor enrolled, every other route
+   * answers 403 — so if this one did too, the interface would have no way to
+   * learn *why* it was locked out, and would read it as signed out. It reports
+   * the state instead, and the client routes to enrolment.
+   */
+  fastify.get('/api/auth/me', { preHandler: [requireSession] }, async (request) => {
+    const user = request.currentUser!;
+    const { requireTotp } = await getBudgetSettings(prisma);
+
+    return {
+      user: {
+        ...presentUser(user),
+        // True when the household requires a second factor and this account has
+        // not set one up. The one screen that account can reach.
+        needsTwoFactor: requireTotp && !user.hasTotp,
+      },
+    };
   });
 
   /**

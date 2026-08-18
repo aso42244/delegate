@@ -1,0 +1,36 @@
+# Tor, doing two unrelated jobs for Delegate.
+#
+# 1. A SOCKS proxy, so a Bitcoin node can be reached over Tor (ADR 026). This is
+#    outbound and is always available; nothing uses it unless a node is
+#    configured to.
+#
+# 2. A hidden service, so the budget can be reached from a phone without a port
+#    forward, a domain name, a certificate, or a tunnel provider who terminates
+#    TLS and therefore sees every balance in the clear. This is inbound, and it
+#    is the one that needs thinking about.
+#
+# The address the service gets is derived from a key in HiddenServiceDir. That
+# directory is a named volume: lose it and the address changes, and every device
+# that had it bookmarked stops working. It is worth backing up, and worth
+# guarding — anyone holding that key can impersonate this service.
+
+SocksPort 0.0.0.0:9050
+
+# Only the compose network can reach the proxy; it publishes no ports.
+SocksPolicy accept 172.16.0.0/12
+SocksPolicy accept 192.168.0.0/16
+SocksPolicy accept 10.0.0.0/8
+SocksPolicy reject *
+
+HiddenServiceDir /var/lib/tor/delegate
+# Onion port 80 → the app. Plain http inside the tunnel is correct rather than a
+# compromise: a v3 onion address *is* a public key, so the connection is already
+# encrypted and authenticated end to end, and no certificate authority issues
+# for .onion anyway.
+HiddenServicePort 80 app:3000
+
+# v3 is the only version that still exists, and this states it rather than
+# relying on the default.
+HiddenServiceVersion 3
+
+Log notice stdout
