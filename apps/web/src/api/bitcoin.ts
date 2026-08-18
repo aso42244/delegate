@@ -138,6 +138,29 @@ export const holdingEventsApi = {
     api.post<{ reversed: boolean }>(`/api/bitcoin/events/${eventId}/reverse`),
 };
 
+export interface NodeSettingsDto {
+  readonly mode: 'none' | 'esplora';
+  readonly baseUrl: string | null;
+  readonly useTor: boolean;
+  readonly reach: 'public' | 'lan' | 'tor' | null;
+  readonly lastCheckedAt: string | null;
+  readonly lastHeight: number | null;
+  readonly lastError: string | null;
+  readonly suggestions: readonly { label: string; url: string; note: string }[];
+}
+
+export const nodeApi = {
+  get: () => api.get<NodeSettingsDto>('/api/bitcoin/node'),
+
+  save: (input: { mode: 'none' | 'esplora'; baseUrl?: string | null; useTor?: boolean }) =>
+    api.put<{ ok: boolean }>('/api/bitcoin/node', input),
+
+  check: () =>
+    api.post<{ ok: boolean; height: number | null; error: string | null }>(
+      '/api/bitcoin/node/check',
+    ),
+};
+
 export const propertiesApi = {
   list: () => api.get<{ properties: readonly PropertyDto[] }>('/api/properties'),
 

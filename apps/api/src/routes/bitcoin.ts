@@ -2,7 +2,9 @@ import { bitcoinValueCents } from '@budget/shared';
 import type { FastifyPluginCallback } from 'fastify';
 import { z } from 'zod';
 import { prisma } from '../db/client.js';
+import { NODE_MODES, SUGGESTED_NODES, reachOf } from '@budget/shared';
 import { fetchAndRecordPrice, latestPrice, providerByName } from '../domain/bitcoin.js';
+import { checkNode, readNodeSettings, saveNodeSettings } from '../domain/bitcoin-node.js';
 import { createHolding, updateHolding } from '../domain/managed-accounts.js';
 import {
   costBasis,
@@ -291,6 +293,49 @@ export const bitcoinRoutes: FastifyPluginCallback = (fastify, _options, done) =>
     const result = await prisma.$transaction((tx) => reverseHoldingEvent(tx, id));
     return result;
   });
+
+  // --- The node -----------------------------------------------------------
+
+  fastify.get('/api/bitcoin/node', async () => {
+    const settings = await readNodeSettings(prisma);
+    return {
+      mode: settings.mode,
+      baseUrl: settings.baseUrl,
+      useTor: settings.useTor,
+      reach: settings.baseUrl === null ? null : reachOf(settings.baseUrl),
+      lastCheckedAt: dateOut(settings.lastCheckedAt),
+      lastHeight: settings.lastHeight,
+      lastError: settings.lastError,
+      suggestions: SUGGESTED_NODES,
+    };
+  });
+
+  /**
+   * Stores where to ask. The URL is checked here rather than when it is used —
+   * a public endpoint saved over plain http would sit looking fine and then send
+   * every address lookup across the internet in the clear.
+   */
+  fastify.put('/api/bitcoin/node', async (request) => {
+    const body = z
+      .object({
+        mode: z.enum(NODE_MODES),
+        baseUrl: z.string().max(500).nullish(),
+        useTor: z.boolean().optional(),
+      })
+      .parse(request.body);
+
+    await saveNodeSettings(prisma, body);
+    request.log.info(
+      // The URL is not a secret, but it is not logged either: on Tor it names
+      // which onion service the household talks to.
+      { mode: body.mode, actorId: request.currentUser?.id },
+      'Bitcoin node configured',
+    );
+    return { ok: true };
+  });
+
+  /** Asks for the chain tip, which is the cheapest proof a node is answering. */
+  fastify.post('/api/bitcoin/node/check', async () => checkNode(prisma));
 
   /** Fetch now, rather than waiting for the hour. */
   fastify.post('/api/bitcoin/refresh', async (request) => {

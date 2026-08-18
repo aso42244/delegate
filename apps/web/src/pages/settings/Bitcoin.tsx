@@ -4,6 +4,7 @@ import { useState, type FormEvent, type ReactNode } from 'react';
 import { bitcoinApi, type BitcoinHoldingDto } from '../../api/bitcoin.js';
 import { ApiError } from '../../api/client.js';
 import { Alert, Button, TextField } from '../../components/ui.jsx';
+import { BitcoinNodeSection } from './BitcoinNode.jsx';
 import { HoldingHistory } from './HoldingHistory.jsx';
 import { SettingsCard } from './SettingsCard.jsx';
 
@@ -349,6 +350,8 @@ export function BitcoinSection(): ReactNode {
           </div>
         )}
       </SettingsCard>
+
+      <BitcoinNodeSection />
     </>
   );
 }

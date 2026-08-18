@@ -705,6 +705,34 @@ model BitcoinHoldingEvent {
   @@map("bitcoin_holding_events")
 }
 
+/// Where address data is asked for. A pinned singleton, like BudgetSettings.
+///
+/// The URL is checked before it is stored: plaintext is permitted only to an
+/// onion address or a private one, and refused anywhere else. See ADR 024 and
+/// `nodeUrlProblem`.
+model BitcoinNodeConfig {
+  id Int @id @default(1)
+
+  /// `none` until one is configured. Nothing derives addresses without it.
+  mode String @default("none")
+
+  /// e.g. https://mempool.space/api, or http://192.168.1.50:3002
+  baseUrl String? @map("base_url")
+
+  /// Route requests through a SOCKS proxy. Required for an onion address.
+  useTor Boolean @default(false) @map("use_tor")
+
+  /// When it last answered, and what it said. A node that has never been
+  /// reached is a different state from one that is failing now.
+  lastCheckedAt DateTime? @map("last_checked_at")
+  lastHeight    Int?      @map("last_height")
+  lastError     String?   @map("last_error")
+
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("bitcoin_node_config")
+}
+
 model BitcoinPrice {
   id         String   @id @default(uuid()) @db.Uuid
   priceDate  DateTime @map("price_date") @db.Date
