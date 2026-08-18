@@ -17,13 +17,44 @@ export const OWNER = { username: 'e2e-owner@example.test', password: 'end-to-end
 
 /** Order matters: children before parents, because these are real foreign keys. */
 async function resetDatabase(): Promise<void> {
-  await prisma.$executeRawUnsafe(`
-    TRUNCATE TABLE
-      delegation_events, transaction_allocations, delegation_transfers, delegate_runs,
-      transactions, categorization_rules, account_valuations, accounts, delegations,
-      groupings, sessions, users, sync_runs, bitcoin_prices
-    RESTART IDENTITY CASCADE
-  `);
+  /*
+   * Every table, discovered rather than listed.
+   *
+   * This was a hand-maintained list, and a new table left off it leaked rows
+   * from one test into the next — four separate times, each found as a
+   * confusing failure somewhere unrelated rather than as a missing name here.
+   * Asking the database what tables exist cannot fall behind the schema.
+   *
+   * The exclusions are Prisma's migration table, which is not test data, and the
+   * two pinned singletons — rows the application updates by id and never
+   * creates. Truncating those turns every write into "no record was found".
+   * They are reset in place below instead.
+   */
+  const tables = await prisma.$queryRaw<{ tablename: string }[]>`
+    SELECT tablename FROM pg_tables
+    WHERE schemaname = 'public'
+      AND tablename NOT IN ('_prisma_migrations', 'budget_settings', 'bitcoin_node_config')
+  `;
+
+  if (tables.length > 0) {
+    const quoted = tables.map((table) => `"${table.tablename}"`).join(', ');
+    await prisma.$executeRawUnsafe(`TRUNCATE TABLE ${quoted} RESTART IDENTITY CASCADE`);
+  }
+
+  await prisma.bitcoinNodeConfig.upsert({
+    where: { id: 1 },
+    create: { id: 1, mode: 'none' },
+    update: {
+      mode: 'none',
+      baseUrl: null,
+      useTor: false,
+      lastCheckedAt: null,
+      lastHeight: null,
+      lastError: null,
+      lastRoute: null,
+    },
+  });
+
   await prisma.budgetSettings.upsert({
     where: { id: 1 },
     create: { id: 1, undoWindowHours: 12, identityToleranceCents: 500n },

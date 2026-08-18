@@ -1,4 +1,6 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
+import { Prisma } from '@prisma/client';
+import type { Db } from '../db/client.js';
 import { ValidationError } from './errors.js';
 
 /**
@@ -75,4 +77,50 @@ export function readChallenge(token: string, secret: string, now: Date = new Dat
   if (payload.exp * 1000 <= now.getTime()) reject();
 
   return payload.userId;
+}
+
+/** How long a spent challenge is remembered: its own life, and a little past it. */
+const USED_WINDOW_MS = (TTL_SECONDS + 60) * 1000;
+
+/**
+ * Spends a challenge, or refuses it because it has already been spent.
+ *
+ * The challenge is signed and short-lived and reaches exactly one route, so this
+ * was never the way in — but it *was* the last replayable thing in the sign-in
+ * path. Anybody who saw one could present it again inside its five minutes with
+ * a fresh code from a stolen authenticator.
+ *
+ * The unique index is the mechanism rather than a read-then-write, for the same
+ * reason as `totp_used_codes`: two requests arriving with one challenge at the
+ * same moment would both pass a check, and only one can win an insert.
+ */
+export async function claimChallenge(
+  db: Db,
+  challenge: string,
+  secret: string,
+  now: Date = new Date(),
+): Promise<boolean> {
+  // Domain-separated from every other use of this secret, like the signature.
+  const challengeHash = createHmac('sha256', secret)
+    .update(`second-factor-used:${challenge}`)
+    .digest('base64url');
+
+  try {
+    await db.usedChallenge.create({
+      data: { challengeHash, expiresAt: new Date(now.getTime() + USED_WINDOW_MS) },
+    });
+  } catch (error) {
+    // Only the unique index means "already spent". Anything else is a real
+    // failure and must not be reported as a bad sign-in.
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+      return false;
+    }
+    throw error;
+  }
+
+  // Swept on use rather than on a schedule: the rows matter for six minutes, and
+  // a sign-in is when there is an expired one worth removing.
+  await db.usedChallenge.deleteMany({ where: { expiresAt: { lt: now } } });
+
+  return true;
 }

@@ -851,6 +851,28 @@ model TotpUsedCode {
   @@map("totp_used_codes")
 }
 
+/// A second-factor challenge that has been spent.
+///
+/// The challenge proves a password was accepted moments ago and is accepted by
+/// exactly one route, but it was replayable inside its five minutes: anybody who
+/// saw one could re-present it with a fresh TOTP code. Single-use closes that,
+/// with the same unique-insert trick as `totp_used_codes` — a replay is a failed
+/// insert rather than a check two simultaneous requests could both pass.
+model UsedChallenge {
+  id String @id @default(uuid()) @db.Uuid
+
+  /// HMAC of the challenge, not the challenge. It is already signed and
+  /// short-lived; there is still no reason to write one into a nightly dump.
+  challengeHash String @unique @map("challenge_hash")
+
+  /// Matches the challenge's own TTL, after which the row means nothing.
+  expiresAt DateTime @map("expires_at")
+  usedAt    DateTime @default(now()) @map("used_at")
+
+  @@index([expiresAt])
+  @@map("used_challenges")
+}
+
 model BudgetSettings {
   id Int @id @default(1)
 

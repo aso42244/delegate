@@ -12,7 +12,7 @@ import {
   needsFirstRunSetup,
   recordLogin,
 } from '../domain/users.js';
-import { issueChallenge, readChallenge } from '../domain/challenge.js';
+import { claimChallenge, issueChallenge, readChallenge } from '../domain/challenge.js';
 import {
   beginEnrolment,
   confirmEnrolment,
@@ -195,6 +195,30 @@ export const authRoutes: FastifyPluginCallback = (fastify, _options, done) => {
       request.log.warn({ userId }, 'failed second factor');
       return reply.code(401).send({
         error: { code: 'invalid_code', message: 'That code is not correct.' },
+      });
+    }
+
+    /*
+     * Spent on success, not on arrival.
+     *
+     * Spending it before checking the code would mean a typo in six digits costs
+     * the password as well — and buys almost nothing, because the rate limit
+     * already caps a stolen challenge at ten guesses against a million
+     * possibilities. What is worth preventing is the same challenge being used
+     * *again after it worked*, which is what this does.
+     *
+     * Between the check and the claim, a second request holding the same
+     * challenge could pass the check too — and then lose the insert, which is
+     * exactly the right outcome and the reason the unique index does this rather
+     * than a read.
+     */
+    if (!(await claimChallenge(prisma, challenge, fastify.config.SESSION_SECRET))) {
+      request.log.warn({ userId }, 'second-factor challenge replayed after a successful use');
+      return reply.code(401).send({
+        error: {
+          code: 'challenge_spent',
+          message: 'That sign-in attempt has already been used. Enter your password again.',
+        },
       });
     }
 

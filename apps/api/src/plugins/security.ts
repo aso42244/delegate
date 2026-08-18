@@ -50,7 +50,22 @@ const securityPlugin: FastifyPluginAsync<{ config: AppConfig }> = async (fastify
     // Keyed on the connecting address. A household behind one NAT shares a
     // bucket, which is why the authenticated limits below are generous: the
     // point is to stop a guessing loop, not to inconvenience two people.
-    keyGenerator: (request) => request.ip,
+    /**
+     * The connecting address, except over Tor.
+     *
+     * A hidden service hands every visitor to the app from the tor container's
+     * own address — by design; Tor does not tell the destination who connected,
+     * which is the point of it. So onion traffic cannot be told apart, and
+     * keying it on `request.ip` would put a stranger probing the onion address
+     * into the *same bucket* as the household on the local network. Ten wrong
+     * guesses from outside would lock the kitchen laptop out.
+     *
+     * They get their own bucket instead. Remote visitors still share one between
+     * them, which cannot be helped and is the lesser problem: it costs
+     * availability from away, not availability at home.
+     */
+    keyGenerator: (request) =>
+      /\.onion(:\d+)?$/i.test(request.headers.host ?? '') ? 'onion' : request.ip,
     /**
      * Returns a real `Error` carrying its own status, not a plain object.
      *

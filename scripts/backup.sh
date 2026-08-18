@@ -23,7 +23,8 @@ TARGET="$BACKUP_DIR/delegate-$STAMP.dump"
 
 # Written to a temporary name first and moved into place only on success, so an
 # interrupted dump can never be mistaken for a complete one.
-pg_dump --format=custom --no-owner --no-acl --file="$TARGET.partial" "$(pg_url "$DATABASE_URL")"
+pg_env_from_url "$DATABASE_URL"
+pg_dump --format=custom --no-owner --no-acl --file="$TARGET.partial"
 
 # A checksum beside the dump, written before the rename so a dump only ever
 # appears complete with one.

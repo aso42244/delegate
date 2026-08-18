@@ -28,8 +28,18 @@ trap 'rm -rf "$WORKDIR"' EXIT
 export DATABASE_URL="$TEST_DATABASE_URL"
 export BACKUP_DIR="$WORKDIR"
 
+# After the swap above, never before it. Deriving these from DATABASE_URL while
+# it still pointed at the real database sent every psql in this script at the
+# household's own data — it truncated it — while the restore, which re-derives
+# them in its own process, went to the test database. The counts then compared
+# one database against the other and reported a failed restore.
+#
+# Connection details go in the environment rather than on a command line, where
+# `ps` can read them for as long as the dump runs.
+pg_env_from_url "$DATABASE_URL"
+
 echo '→ Seeding a known state'
-psql "$(pg_url "$DATABASE_URL")" -v ON_ERROR_STOP=1 -q <<'SQL'
+psql -v ON_ERROR_STOP=1 -q <<'SQL'
 TRUNCATE TABLE delegation_events, transaction_allocations, delegation_transfers,
   delegate_runs, transactions, categorization_rules, account_valuations, accounts,
   delegations, groupings, sessions, users, sync_runs, bitcoin_prices
@@ -42,7 +52,7 @@ INSERT INTO delegations (id, name, balance_cents, created_at, updated_at)
 VALUES (gen_random_uuid(), 'Restore Test Grocery', 72500, now(), now());
 SQL
 
-BEFORE=$(psql "$(pg_url "$DATABASE_URL")" -tAc \
+BEFORE=$(psql -tAc \
   "SELECT (SELECT count(*) FROM accounts) || ':' || (SELECT count(*) FROM delegations) || ':' || (SELECT coalesce(sum(balance_cents),0) FROM delegations)")
 echo "  state before: $BEFORE"
 
@@ -51,10 +61,10 @@ DUMP=$(sh "$(dirname "$0")/backup.sh" | awk '{print $1}')
 echo "  dumped to $DUMP"
 
 echo '→ Destroying the data'
-psql "$(pg_url "$DATABASE_URL")" -v ON_ERROR_STOP=1 -q -c \
+psql -v ON_ERROR_STOP=1 -q -c \
   'TRUNCATE TABLE delegation_events, transaction_allocations, transactions, accounts, delegations RESTART IDENTITY CASCADE;'
 
-EMPTIED=$(psql "$(pg_url "$DATABASE_URL")" -tAc 'SELECT count(*) FROM accounts')
+EMPTIED=$(psql -tAc 'SELECT count(*) FROM accounts')
 if [ "$EMPTIED" != "0" ]; then
   echo "Expected the table to be empty before restoring, found $EMPTIED rows." >&2
   exit 1
@@ -63,7 +73,7 @@ fi
 echo '→ Restoring'
 RESTORE_CONFIRM=yes sh "$(dirname "$0")/restore.sh" "$DUMP" > /dev/null
 
-AFTER=$(psql "$(pg_url "$DATABASE_URL")" -tAc \
+AFTER=$(psql -tAc \
   "SELECT (SELECT count(*) FROM accounts) || ':' || (SELECT count(*) FROM delegations) || ':' || (SELECT coalesce(sum(balance_cents),0) FROM delegations)")
 echo "  state after:  $AFTER"
 

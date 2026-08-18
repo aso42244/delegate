@@ -58,8 +58,11 @@ fi
 # that already has a schema does not fail on every CREATE.
 # --exit-on-error because a partial restore is the worst outcome: it looks like
 # it worked and is missing rows.
+# The connection details are in the environment; only the database *name* is
+# passed, because pg_restore requires -d explicitly and a name is not a secret.
+pg_env_from_url "$DATABASE_URL"
 pg_restore \
-  --dbname="$(pg_url "$DATABASE_URL")" \
+  --dbname="$PGDATABASE" \
   --clean \
   --if-exists \
   --no-owner \

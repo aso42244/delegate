@@ -65,10 +65,73 @@ export function assertPatternAcceptable(matchMode: RuleMatchMode, matchValue: st
       'That pattern nests repeats (for example "(a+)+"), which can hang while matching. Rewrite it more simply, or use "contains".',
     );
   }
+  let pattern: RegExp;
   try {
-    new RegExp(matchValue, 'i');
+    pattern = new RegExp(matchValue, 'i');
   } catch {
     throw new ValidationError('invalid_pattern', 'That is not a valid regular expression.');
+  }
+
+  assertNotCatastrophic(pattern);
+}
+
+/**
+ * The work a pattern may do against hostile input before it is refused.
+ *
+ * A sane pattern finishes every rung of the ladder below in microseconds; a
+ * catastrophic one blows past this on one of them. Twenty-five milliseconds is
+ * far above the first and far below the second, so a slow machine cannot move a
+ * pattern from one class to the other.
+ */
+const BACKTRACK_BUDGET_MS = 25;
+
+/**
+ * Input lengths to try, shortest first.
+ *
+ * Escalating rather than one long string, and this is the whole trick. Measuring
+ * catastrophic backtracking means *causing* it, and a single 120-character probe
+ * against `(a|a)+$` takes three and a half minutes — the check would be a worse
+ * denial of service than the pattern it was looking for. Climbing and stopping
+ * at the budget bounds the damage to roughly one rung's overshoot, while still
+ * reaching lengths where slower-growing patterns like `(a|aa)+$` show
+ * themselves.
+ */
+const PROBE_LENGTHS = [14, 18, 22, 26, 30, 34, 38] as const;
+
+/**
+ * Refuses a pattern that backtracks catastrophically, by timing it rather than
+ * reading it.
+ *
+ * The shape check above catches `(a+)+` and its relatives, and it is worth
+ * keeping because it explains itself in the refusal. But it is a heuristic over
+ * syntax, and plenty of catastrophic patterns do not have that shape:
+ * `(a|a)+$` is the standard counter-example — no nested quantifier, and still
+ * exponential. Deciding this by reading a pattern is the sort of question that
+ * wants a non-backtracking engine like RE2; asking the engine is what can be
+ * done without one.
+ *
+ * A regex cannot be interrupted once it starts. It blocks the whole process,
+ * which is exactly the danger, so this runs at save time — where the worst case
+ * is a slow save by the person who was about to hang every sync from then on.
+ */
+function assertNotCatastrophic(pattern: RegExp): void {
+  let spentMs = 0;
+
+  for (const length of PROBE_LENGTHS) {
+    // A run of one character then something that cannot match: the shape that
+    // makes a backtracking engine try every partition of the run.
+    const input = `${'a'.repeat(length)}!`;
+
+    const started = process.hrtime.bigint();
+    pattern.test(input);
+    spentMs += Number(process.hrtime.bigint() - started) / 1e6;
+
+    if (spentMs > BACKTRACK_BUDGET_MS) {
+      throw new ValidationError(
+        'unsafe_pattern',
+        'That pattern takes far too long to match against ordinary text — it would hang the next sync. Rewrite it more simply, or use "contains".',
+      );
+    }
   }
 }
 

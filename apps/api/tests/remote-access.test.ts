@@ -129,3 +129,54 @@ describe('with remote access on', () => {
     expect(response.json<{ error: { code: string } }>().error.code).toBe('cross_origin_refused');
   });
 });
+
+describe('the rate-limit bucket', () => {
+  /**
+   * Tor does not tell the destination who connected — that is the point of it —
+   * so every onion visitor arrives from the tor container's own address. Keyed
+   * on that address, ten wrong guesses from a stranger probing the onion would
+   * lock out the laptop in the kitchen.
+   */
+  it('separates onion visitors from the local network', async () => {
+    const strict = await buildApp(
+      loadConfig({
+        ...process.env,
+        NODE_ENV: 'test',
+        LOG_LEVEL: 'fatal',
+        SESSION_SECRET: 'test-session-secret-at-least-32-characters-long',
+        SESSION_COOKIE_SECURE: 'false',
+        // Small enough to exhaust deliberately.
+        AUTH_RATE_LIMIT_MAX: '3',
+        GLOBAL_RATE_LIMIT_MAX: '100000',
+      }),
+    );
+    await strict.ready();
+
+    // Remote access on, or the gate refuses these before the limiter counts them.
+    await prisma.budgetSettings.update({
+      where: { id: 1 },
+      data: { remoteOverTorEnabled: true },
+    });
+
+    try {
+      const guess = (host: string): Promise<{ statusCode: number }> =>
+        strict.inject({
+          method: 'POST',
+          url: '/api/auth/login',
+          headers: { host },
+          payload: { username: 'owner', password: 'wrong-password-entirely' },
+        });
+
+      // A stranger burns the onion allowance.
+      for (let attempt = 0; attempt < 4; attempt += 1) {
+        await guess(ONION);
+      }
+      expect((await guess(ONION)).statusCode).toBe(429);
+
+      // The household, on the local network, is unaffected.
+      expect((await guess('10.0.3.4:8088')).statusCode).toBe(401);
+    } finally {
+      await strict.close();
+    }
+  });
+});

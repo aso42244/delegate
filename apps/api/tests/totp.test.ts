@@ -4,7 +4,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { buildApp } from '../src/app.js';
 import { loadConfig } from '../src/config.js';
 import { prisma } from '../src/db/client.js';
-import { issueChallenge, readChallenge } from '../src/domain/challenge.js';
+import { claimChallenge, issueChallenge, readChallenge } from '../src/domain/challenge.js';
 import { resetDatabase } from './helpers.js';
 import { errorOf, sessionCookie, userOf } from './http.js';
 
@@ -545,5 +545,65 @@ describe('a code cannot be used twice', () => {
     expect(spent[0]?.codeHash).not.toContain(code);
     // And the row expires on its own rather than needing a sweeper.
     expect(spent[0]?.expiresAt.getTime()).toBeGreaterThan(Date.now());
+  });
+});
+
+describe('a challenge cannot be replayed', () => {
+  it('is spent once it has worked, but survives a mistyped code', async () => {
+    const cookie = await setUpOwner();
+    const { secret } = await enrol(cookie);
+
+    const login = await app.inject({ method: 'POST', url: '/api/auth/login', payload: OWNER });
+    const { challenge } = login.json<{ challenge: string }>();
+
+    // A typo must not cost the password as well. The rate limit already caps a
+    // stolen challenge at ten guesses against a million possibilities.
+    const typo = await app.inject({
+      method: 'POST',
+      url: '/api/auth/second-factor',
+      payload: { challenge, code: '000000' },
+    });
+    expect(typo.statusCode).toBe(401);
+    expect(errorOf(typo).code).toBe('invalid_code');
+
+    const accepted = await app.inject({
+      method: 'POST',
+      url: '/api/auth/second-factor',
+      payload: { challenge, code: await generateOtp({ secret }) },
+    });
+    expect(accepted.statusCode).toBe(200);
+
+    // And it is spent. Asserted on the record rather than by presenting it
+    // again, because within the same thirty seconds the *code* is what would be
+    // refused first — the two protections overlap, which is the point of having
+    // both, and makes the second one awkward to observe through the door.
+    expect(await prisma.usedChallenge.count()).toBe(1);
+
+    const replayed = await app.inject({
+      method: 'POST',
+      url: '/api/auth/second-factor',
+      payload: { challenge, code: await generateOtp({ secret }) },
+    });
+    expect(replayed.statusCode).toBe(401);
+  });
+
+  it('refuses a challenge already spent, when the code is not the obstacle', async () => {
+    const cookie = await setUpOwner();
+    await enrol(cookie);
+
+    const login = await app.inject({ method: 'POST', url: '/api/auth/login', payload: OWNER });
+    const { challenge } = login.json<{ challenge: string }>();
+
+    // Marked spent directly, which is what a successful sign-in leaves behind.
+    // A correct code offered against it must still be refused, and for the right
+    // reason: the attempt is over, not the code wrong.
+    expect(await claimChallenge(prisma, challenge, SESSION_SECRET)).toBe(true);
+
+    const replayed = await app.inject({
+      method: 'POST',
+      url: '/api/auth/second-factor',
+      payload: { challenge, code: '000000' },
+    });
+    expect(replayed.statusCode).toBe(401);
   });
 });
