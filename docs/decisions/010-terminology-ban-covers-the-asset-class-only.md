@@ -36,7 +36,7 @@ The ban covers the **asset class** and nothing else.
 
 - The generic asset-class noun, singular or plural, is forbidden outright in any
   casing anywhere — code, comments, column names, commit messages, UI copy. It is
-  not written in this document either; the check in `.github/workflows/ci.yml`
+  not written in this document either; the check in `scripts/verify.sh`
   carries the exact pattern.
 - Its short form is still forbidden as a standalone word, since that is how the
   asset class is usually abbreviated — **unless** it appears as one of the

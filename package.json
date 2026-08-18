@@ -31,7 +31,9 @@
     "db:generate": "npm run db:generate --workspace @budget/api",
     "simplefin:claim": "npm run --silent simplefin:claim --workspace @budget/api --",
     "test:e2e": "playwright test",
-    "test:e2e:ui": "playwright test --ui"
+    "test:e2e:ui": "playwright test --ui",
+    "verify": "./scripts/verify.sh",
+    "verify:quick": "./scripts/verify.sh --quick"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.1",

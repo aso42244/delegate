@@ -1,6 +1,6 @@
 # 005 — Container images are built on x86_64 CI runners, not locally
 
-**Status:** accepted
+**Status:** superseded by ADR 019 (publishing) and ADR 022 (checks)
 **Date:** 2026-08-08
 
 ## Context

@@ -37,7 +37,7 @@ double-entry bookkeeping — it is a health indicator, and a positive number is 
 
 The owner has delegated architecture and expects you to act, not ask.
 
-- **Merge and deploy without asking each time.** If CI passes and the work is
+- **Merge and deploy without asking each time.** If `npm run verify` passes and the work is
   complete, merge it. Do not ask "shall I merge this?"
 - **You own the repository**: branches, PRs, merges, tags, via `gh` and `git`.
 - **You may work on the local machine** — build, run, test, restart the server.
