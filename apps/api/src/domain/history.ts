@@ -2,6 +2,7 @@ import { bitcoinValueCents, sumCents, type Cents } from '@budget/shared';
 import type { Db } from '../db/client.js';
 import { accountBalanceDelta } from './accounts.js';
 import { priceOnDate } from './bitcoin.js';
+import { earliestHoldingDate, satsOnDate } from './bitcoin-holdings.js';
 import { valueOnDate } from './valuations.js';
 
 /**
@@ -73,16 +74,33 @@ async function accountSeries(
   if (account.bitcoinSats !== null) {
     const values: Cents[] = [];
     for (const date of dates) {
-      const price = await priceOnDate(db, date);
-      // Today's quantity against each historical price — quantity history is
-      // not stored, and the widget says so.
-      values.push(price === null ? 0n : bitcoinValueCents(account.bitcoinSats, price.priceCents));
+      // The quantity held *on that date* against the price *on that date*.
+      // This used to be today's quantity against each historical price, for
+      // want of anywhere to read the quantity from — so a Bitcoin bought last
+      // week appeared to have been held all year. The holdings ledger is where
+      // it is read from now.
+      const [price, sats] = await Promise.all([
+        priceOnDate(db, date),
+        satsOnDate(db, date, { accountId: account.id }),
+      ]);
+      values.push(price === null ? 0n : bitcoinValueCents(sats, price.priceCents));
     }
-    const firstPrice = await db.bitcoinPrice.findFirst({
-      orderBy: { priceDate: 'asc' },
-      select: { priceDate: true },
-    });
-    return { values, earliest: firstPrice?.priceDate ?? null };
+
+    // History starts at the later of the two things it needs: a quantity to
+    // value, and a price to value it at. Claiming to know either before the
+    // other would draw a line through nothing.
+    const [firstPrice, firstHolding] = await Promise.all([
+      db.bitcoinPrice.findFirst({ orderBy: { priceDate: 'asc' }, select: { priceDate: true } }),
+      earliestHoldingDate(db, { accountId: account.id }),
+    ]);
+    const earliest =
+      firstPrice && firstHolding
+        ? firstPrice.priceDate > firstHolding
+          ? firstPrice.priceDate
+          : firstHolding
+        : (firstPrice?.priceDate ?? firstHolding);
+
+    return { values, earliest };
   }
 
   const valuationCount = await db.accountValuation.count({ where: { accountId: account.id } });

@@ -130,10 +130,11 @@ export const insightRoutes: FastifyPluginCallback = (fastify, _options, done) =>
         where: { archivedAt: null, mortgageAccountId: { not: null } },
         select: { id: true, name: true },
       }),
-      // The holding, if there is one. Its history is a quantity against each
-      // day's price — see accountSeries, which has valued it this way all along.
+      // The holding, if there is one. Its history is the quantity held on each
+      // day against that day's price — both read from their own ledgers, so a
+      // Bitcoin bought last week no longer appears to have been held all year.
       prisma.account.findFirst({
-        where: { archivedAt: null, bitcoinSats: { not: null } },
+        where: { archivedAt: null, managedAs: 'bitcoin' },
         select: { id: true, name: true },
       }),
     ]);

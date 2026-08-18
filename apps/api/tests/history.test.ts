@@ -3,7 +3,7 @@ import { prisma } from '../src/db/client.js';
 import { recordSpotPrice } from '../src/domain/bitcoin.js';
 import { equitySeries, netWorthSeries, singleAccountSeries } from '../src/domain/history.js';
 import { recordValuation } from '../src/domain/valuations.js';
-import { makeAccount, makeTransaction, resetDatabase } from './helpers.js';
+import { makeAccount, makeHolding, makeTransaction, resetDatabase } from './helpers.js';
 
 /**
  * Balances reconstructed from the ledger — ADR 013.
@@ -164,17 +164,9 @@ describe('net worth', () => {
 
 describe('a Bitcoin holding', () => {
   it('is valued at the price on each date, not at today"s price', async () => {
-    const wallet = await makeAccount({
-      name: 'Hardware wallet',
-      type: 'asset',
-      balanceCents: 0n,
-      inNetWorth: true,
-    });
-    await prisma.account.update({
-      where: { id: wallet.id },
-      // 0.5 BTC
-      data: { bitcoinSats: 50_000_000n },
-    });
+    // 0.5 BTC, held since long before this window — so the question under test
+    // is the price on each date rather than the quantity on each date.
+    await makeHolding({ name: 'Hardware wallet', sats: 50_000_000n, inNetWorth: true });
 
     await recordSpotPrice(
       prisma,

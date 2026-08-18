@@ -12,7 +12,13 @@ import {
   buildNegativeDelegations,
   buildSpending,
 } from '../src/domain/insights.js';
-import { makeAccount, makeDelegation, makeTransaction, resetDatabase } from './helpers.js';
+import {
+  makeAccount,
+  makeHolding,
+  makeDelegation,
+  makeTransaction,
+  resetDatabase,
+} from './helpers.js';
 import { sessionCookie } from './http.js';
 
 /**
@@ -306,16 +312,8 @@ describe('the layout', () => {
  */
 describe('the bitcoin series', () => {
   it('values the holding at each day s price', async () => {
-    const wallet = await makeAccount({
-      name: 'Hardware wallet',
-      type: 'asset',
-      balanceCents: 0n,
-    });
-    await prisma.account.update({
-      where: { id: wallet.id },
-      // Half a bitcoin, in satoshis.
-      data: { bitcoinSats: 50_000_000n },
-    });
+    // Half a bitcoin, held since long before this window.
+    await makeHolding({ name: 'Hardware wallet', sats: 50_000_000n });
 
     for (const [daysAgo, dollars] of [
       [3, 60_000],

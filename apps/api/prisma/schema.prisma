@@ -46,6 +46,22 @@ enum AccountSource {
 /// giving them their own home would mean reimplementing every one of those. What
 /// this changes is who creates and retires the row: their own Settings tab does,
 /// so neither is ever typed into Settings → Accounts by hand.
+/// Why a quantity of Bitcoin changed.
+///
+/// `opening` is the balance the ledger starts from — what was held before
+/// anybody recorded how it got there. Everything after it is an event with a
+/// date, which is what makes holdings answerable for any past day.
+enum BitcoinEventType {
+  opening
+  purchase
+  sale
+  transfer_in
+  transfer_out
+  adjustment
+
+  @@map("bitcoin_event_type")
+}
+
 enum AccountManagement {
   none
   bitcoin
@@ -138,6 +154,7 @@ model User {
   updatedAt          DateTime  @updatedAt @map("updated_at")
 
   sessions            Session[]
+  bitcoinEvents       BitcoinHoldingEvent[]
   delegationEvents    DelegationEvent[]
   delegateRuns        DelegateRun[]
   delegationTransfers DelegationTransfer[]
@@ -261,8 +278,15 @@ model Account {
   // computed on read as property balance − mortgage balance; never stored.
   mortgageAccountId String? @map("mortgage_account_id") @db.Uuid
 
-  // Bitcoin is held as a quantity, in satoshis, never as a dollar value. The
-  // displayed balance is quantity × the price on the date being displayed.
+  /// Bitcoin held, in satoshis, never as a dollar value. The displayed balance
+  /// is quantity × the price on the date being displayed.
+  ///
+  /// A **cache** of the sum of un-reversed `bitcoin_holding_events`, kept the
+  /// same way `delegations.balance_cents` is: written inside the same
+  /// transaction as the event, rebuildable and checkable by
+  /// `recompute-balances`. The events are the truth, and they are what let the
+  /// net worth chart answer what was held on a date rather than applying
+  /// today's quantity backwards.
   bitcoinSats BigInt? @map("bitcoin_sats")
 
   // Which Settings tab owns this row's lifecycle. `none` is an ordinary account.
@@ -287,6 +311,7 @@ model Account {
   transactions      Transaction[]
   rules             CategorizationRule[]
   valuations        AccountValuation[]
+  bitcoinEvents     BitcoinHoldingEvent[]
 
   @@unique([source, externalId], name: "account_source_external_id")
   @@index([archivedAt])
@@ -634,6 +659,50 @@ model InsightLayout {
   @@unique([userId, widgetKey])
   @@index([userId, position])
   @@map("insight_layouts")
+}
+
+/// A dated change in how much Bitcoin is held.
+///
+/// The quantity used to be one number on the account, so the net worth chart had
+/// no choice but to apply *today's* quantity to every past date — it said so in a
+/// comment. This is the ledger that fixes it, and it is the same shape as
+/// `delegation_events`: append-only, reversal by stamping rather than deleting,
+/// with a cached sum on the parent row that `recompute-balances` can rebuild and
+/// check.
+model BitcoinHoldingEvent {
+  id        String @id @default(uuid()) @db.Uuid
+  accountId String @map("account_id") @db.Uuid
+
+  /// The date the quantity changed, not the date it was typed in. A purchase
+  /// remembered three weeks late belongs on the day it happened, or every point
+  /// on the chart between the two is wrong.
+  occurredAt DateTime @map("occurred_at") @db.Date
+
+  /// Signed satoshis: negative for a sale or a transfer out.
+  deltaSats BigInt @map("delta_sats")
+
+  eventType BitcoinEventType @map("event_type")
+
+  /// What one whole Bitcoin cost in cents at the time, for cost basis. Null when
+  /// it does not apply or is not known — a transfer between your own wallets
+  /// buys nothing, and guessing a price would invent a gain.
+  priceCents BigInt? @map("price_cents")
+
+  note    String?
+  actorId String? @map("actor_id") @db.Uuid
+
+  /// Stamped rather than deleted, so a correction cannot silently rewrite what
+  /// the chart showed yesterday.
+  reversedAt DateTime? @map("reversed_at")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  account Account @relation(fields: [accountId], references: [id])
+  actor   User?   @relation(fields: [actorId], references: [id])
+
+  @@index([accountId, occurredAt])
+  @@index([reversedAt])
+  @@map("bitcoin_holding_events")
 }
 
 model BitcoinPrice {

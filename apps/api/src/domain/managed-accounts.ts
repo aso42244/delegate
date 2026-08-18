@@ -1,6 +1,7 @@
 import type { Db } from '../db/client.js';
 import { ConflictError, NotFoundError, ValidationError } from './errors.js';
 import { clearBudgetValue, revalueBitcoinHoldings } from './bitcoin.js';
+import { setHoldingQuantity } from './bitcoin-holdings.js';
 import { recordValuation } from './valuations.js';
 
 /**
@@ -68,7 +69,9 @@ export async function createHolding(
       type: 'asset',
       source: 'manual',
       managedAs: 'bitcoin',
-      bitcoinSats: input.sats ?? 0n,
+      // Zero here and moved by an event below: the ledger is the truth, and a
+      // quantity written straight onto the row would start the two out of step.
+      bitcoinSats: 0n,
       balanceCents: 0n,
       inBudget: input.inBudget ?? false,
       inNetWorth: input.inNetWorth ?? true,
@@ -77,6 +80,10 @@ export async function createHolding(
     },
     select: { id: true },
   });
+
+  if (input.sats !== undefined && input.sats > 0n) {
+    await setHoldingQuantity(db, created.id, input.sats, {}, now);
+  }
 
   // Valued immediately rather than at the next daily pass: a holding that read
   // $0.00 for its first day would look like a bug, and would be one.
@@ -103,12 +110,16 @@ export async function updateHolding(
     throw new ConflictError('account_archived', 'That holding is archived. Restore it first.');
   }
 
+  // Through the ledger, never straight onto the row: the difference becomes a
+  // dated event, so what changed and when stays answerable.
+  if (input.sats !== undefined) {
+    await setHoldingQuantity(db, id, input.sats, {}, now);
+  }
+
   await db.account.update({
     where: { id },
     data: {
       ...(input.name === undefined ? {} : { name: cleanName(input.name, 'holding') }),
-      // Typing a quantity is confirming it, which is what staleness counts from.
-      ...(input.sats === undefined ? {} : { bitcoinSats: input.sats, balanceAsOf: now }),
       ...(input.inBudget === undefined ? {} : { inBudget: input.inBudget }),
       ...(input.inNetWorth === undefined ? {} : { inNetWorth: input.inNetWorth }),
       ...(input.stalenessIntervalDays === undefined

@@ -4,7 +4,13 @@ import { z } from 'zod';
 import { prisma } from '../db/client.js';
 import { fetchAndRecordPrice, latestPrice, providerByName } from '../domain/bitcoin.js';
 import { createHolding, updateHolding } from '../domain/managed-accounts.js';
-import { centsOut, dateOut } from '../http/serialize.js';
+import {
+  costBasis,
+  recordHoldingEvent,
+  reverseHoldingEvent,
+  setHoldingQuantity,
+} from '../domain/bitcoin-holdings.js';
+import { centsInLoose, centsOut, dateOut } from '../http/serialize.js';
 import { AUTHENTICATED } from '../plugins/auth.js';
 
 /**
@@ -166,17 +172,124 @@ export const bitcoinRoutes: FastifyPluginCallback = (fastify, _options, done) =>
     const { id } = idParamsSchema.parse(request.params);
     const { sats } = z.object({ sats: z.union([satsIn, z.null()]) }).parse(request.body);
 
-    await prisma.account.update({
-      where: { id },
-      data: {
-        bitcoinSats: sats,
-        // Typing a quantity is confirming it, which is what staleness counts from.
-        balanceAsOf: new Date(),
-      },
-    });
+    // Through the ledger: writing the column directly would put the cache and
+    // the events out of step, and the net worth chart would go back to guessing.
+    await prisma.$transaction((tx) =>
+      setHoldingQuantity(tx, id, sats ?? 0n, { actorId: request.currentUser?.id ?? null }),
+    );
 
     request.log.info({ accountId: id, actorId: request.currentUser?.id }, 'Bitcoin holding set');
     return { ok: true };
+  });
+
+  // --- The holdings ledger ------------------------------------------------
+
+  /**
+   * The dated history behind a holding, newest first, with what it cost.
+   *
+   * Reversed events are carried rather than hidden: a correction is part of the
+   * story of what the chart showed, and dropping it would make the history read
+   * as though nobody ever got anything wrong.
+   */
+  fastify.get('/api/bitcoin/holdings/:id/events', async (request) => {
+    const { id } = idParamsSchema.parse(request.params);
+
+    const [events, basis, account, price] = await Promise.all([
+      prisma.bitcoinHoldingEvent.findMany({
+        where: { accountId: id },
+        orderBy: [{ occurredAt: 'desc' }, { createdAt: 'desc' }],
+        select: {
+          id: true,
+          occurredAt: true,
+          deltaSats: true,
+          eventType: true,
+          priceCents: true,
+          note: true,
+          reversedAt: true,
+        },
+      }),
+      costBasis(prisma, { accountId: id }),
+      prisma.account.findUnique({ where: { id }, select: { bitcoinSats: true } }),
+      latestPrice(prisma),
+    ]);
+
+    const heldSats = account?.bitcoinSats ?? 0n;
+    const worthCents = price === null ? null : bitcoinValueCents(heldSats, price.priceCents);
+
+    return {
+      events: events.map((event) => ({
+        id: event.id,
+        occurredAt: dateOut(event.occurredAt),
+        deltaSats: event.deltaSats.toString(),
+        eventType: event.eventType,
+        priceCents: event.priceCents === null ? null : centsOut(event.priceCents),
+        // What this event's Bitcoin cost, so a row can be read on its own.
+        costCents:
+          event.priceCents === null
+            ? null
+            : centsOut(
+                bitcoinValueCents(
+                  event.deltaSats < 0n ? -event.deltaSats : event.deltaSats,
+                  event.priceCents,
+                ),
+              ),
+        note: event.note,
+        reversedAt: dateOut(event.reversedAt),
+      })),
+      costBasis: {
+        costCents: centsOut(basis.costCents),
+        basisSats: basis.basisSats.toString(),
+        // Held Bitcoin whose cost nobody knows — an opening balance, a transfer
+        // in. Reported rather than valued at zero, which would read as "free".
+        unpricedSats: basis.unpricedSats.toString(),
+      },
+      // Only against the priced portion, because that is the only part a gain
+      // can honestly be computed for.
+      unrealizedCents:
+        price === null || basis.basisSats === 0n
+          ? null
+          : centsOut(bitcoinValueCents(basis.basisSats, price.priceCents) - basis.costCents),
+      worthCents: worthCents === null ? null : centsOut(worthCents),
+    };
+  });
+
+  /** A dated purchase, sale, transfer or correction. */
+  fastify.post('/api/bitcoin/holdings/:id/events', async (request, reply) => {
+    const { id } = idParamsSchema.parse(request.params);
+    const body = z
+      .object({
+        eventType: z.enum(['opening', 'purchase', 'sale', 'transfer_in', 'transfer_out']),
+        sats: satsIn,
+        occurredAt: z.coerce.date(),
+        priceCents: centsInLoose.nullish(),
+        note: z.string().max(500).nullish(),
+      })
+      .parse(request.body);
+
+    const result = await prisma.$transaction((tx) =>
+      recordHoldingEvent(tx, {
+        accountId: id,
+        eventType: body.eventType,
+        sats: body.sats,
+        occurredAt: body.occurredAt,
+        priceCents: body.priceCents ?? null,
+        note: body.note ?? null,
+        actorId: request.currentUser?.id ?? null,
+      }),
+    );
+
+    request.log.info(
+      { accountId: id, eventId: result.id, actorId: request.currentUser?.id },
+      'Bitcoin holding event recorded',
+    );
+    return reply.code(201).send({ id: result.id, balanceSats: result.balanceSats.toString() });
+  });
+
+  /** Backs one out. Stamped, never deleted — see the domain header. */
+  fastify.post('/api/bitcoin/events/:id/reverse', async (request) => {
+    const { id } = idParamsSchema.parse(request.params);
+    const result = await prisma.$transaction((tx) => reverseHoldingEvent(tx, id));
+    return result;
   });
 
   /** Fetch now, rather than waiting for the hour. */

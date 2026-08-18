@@ -4,6 +4,7 @@ import { useState, type FormEvent, type ReactNode } from 'react';
 import { bitcoinApi, type BitcoinHoldingDto } from '../../api/bitcoin.js';
 import { ApiError } from '../../api/client.js';
 import { Alert, Button, TextField } from '../../components/ui.jsx';
+import { HoldingHistory } from './HoldingHistory.jsx';
 import { SettingsCard } from './SettingsCard.jsx';
 
 /**
@@ -29,12 +30,15 @@ const IN_BUDGET_WARNING = [
 function HoldingRow({
   holding,
   onProblem,
+  columns,
 }: {
   readonly holding: BitcoinHoldingDto;
   readonly onProblem: (message: string) => void;
+  readonly columns: number;
 }): ReactNode {
   const queryClient = useQueryClient();
   const [draft, setDraft] = useState<string | null>(null);
+  const [open, setOpen] = useState(false);
 
   const refresh = async (): Promise<void> => {
     await queryClient.invalidateQueries({ queryKey: ['bitcoin'] });
@@ -64,52 +68,77 @@ function HoldingRow({
   }
 
   return (
-    <tr className="border-b border-line last:border-0">
-      <td className="row-cell pl-3 text-ink">{holding.name}</td>
+    <>
+      <tr className="border-b border-line">
+        <td className="row-cell pl-3">
+          <button
+            type="button"
+            onClick={() => setOpen(!open)}
+            aria-expanded={open}
+            className="flex items-center gap-2 text-ink"
+          >
+            <span aria-hidden className="text-muted">
+              {open ? '▾' : '▸'}
+            </span>
+            {holding.name}
+          </button>
+        </td>
 
-      <td className="w-48 row-cell">
-        <input
-          value={draft ?? formatBitcoinForInput(BigInt(holding.sats))}
-          onChange={(event) => setDraft(event.target.value)}
-          onBlur={commit}
-          onKeyDown={(event) => {
-            if (event.key === 'Enter') commit();
-            if (event.key === 'Escape') setDraft(null);
-          }}
-          inputMode="decimal"
-          aria-label={`${holding.name} quantity`}
-          className="money w-full rounded border border-line bg-canvas px-2 py-0.5"
-        />
-      </td>
+        <td className="w-48 row-cell">
+          <input
+            value={draft ?? formatBitcoinForInput(BigInt(holding.sats))}
+            onChange={(event) => setDraft(event.target.value)}
+            onBlur={commit}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') commit();
+              if (event.key === 'Escape') setDraft(null);
+            }}
+            inputMode="decimal"
+            aria-label={`${holding.name} quantity`}
+            className="money w-full rounded border border-line bg-canvas px-2 py-0.5"
+          />
+        </td>
 
-      <td className="w-36 row-cell">
-        <span className="money block px-2 text-ink">
-          {holding.valueCents === null ? (
-            <span className="text-faint">—</span>
-          ) : (
-            formatCents(BigInt(holding.valueCents))
-          )}
-        </span>
-      </td>
+        <td className="w-36 row-cell">
+          <span className="money block px-2 text-ink">
+            {holding.valueCents === null ? (
+              <span className="text-faint">—</span>
+            ) : (
+              formatCents(BigInt(holding.valueCents))
+            )}
+          </span>
+        </td>
 
-      <td className="w-28 row-cell text-center">
-        <input
-          type="checkbox"
-          checked={holding.inNetWorth}
-          onChange={(event) => update.mutate({ inNetWorth: event.target.checked })}
-          aria-label={`${holding.name} counts towards net worth`}
-        />
-      </td>
+        <td className="w-28 row-cell text-center">
+          <input
+            type="checkbox"
+            checked={holding.inNetWorth}
+            onChange={(event) => update.mutate({ inNetWorth: event.target.checked })}
+            aria-label={`${holding.name} counts towards net worth`}
+          />
+        </td>
 
-      <td className="w-28 row-cell text-center">
-        <input
-          type="checkbox"
-          checked={holding.inBudget}
-          onChange={(event) => update.mutate({ inBudget: event.target.checked })}
-          aria-label={`${holding.name} counts towards the budget`}
-        />
-      </td>
-    </tr>
+        <td className="w-28 row-cell text-center">
+          <input
+            type="checkbox"
+            checked={holding.inBudget}
+            onChange={(event) => update.mutate({ inBudget: event.target.checked })}
+            aria-label={`${holding.name} counts towards the budget`}
+          />
+        </td>
+      </tr>
+
+      {/* The dated history, which is where a purchase actually belongs. The
+          quantity field above stays for a quick correction, and records the
+          difference as an event rather than writing the total. */}
+      {open && (
+        <tr>
+          <td colSpan={columns} className="p-0">
+            <HoldingHistory accountId={holding.id} name={holding.name} />
+          </td>
+        </tr>
+      )}
+    </>
   );
 }
 
@@ -241,7 +270,7 @@ export function BitcoinSection(): ReactNode {
             </thead>
             <tbody>
               {holdings.map((holding) => (
-                <HoldingRow key={holding.id} holding={holding} onProblem={setProblem} />
+                <HoldingRow key={holding.id} holding={holding} onProblem={setProblem} columns={5} />
               ))}
             </tbody>
           </table>

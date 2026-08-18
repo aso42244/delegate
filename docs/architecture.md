@@ -337,3 +337,13 @@ For a Bitcoin holding the quantity is the fact and the value is derived. The one
 exception is a holding marked in-budget: the identity sums `balance_cents`
 directly, so that column is written for those, once a day. See ADR 021 for why
 daily rather than hourly, and for the bug the whole arrangement closes.
+
+## Bitcoin quantities are a ledger, like delegation balances
+
+`bitcoin_holding_events` is dated, signed and append-only, and
+`accounts.bitcoin_sats` is a cache of its un-reversed sum —
+`recompute-balances` rebuilds and checks both ledgers in one pass.
+
+This is what lets the net worth chart value the quantity held _on a date_ rather
+than applying today's quantity backwards, and what makes cost basis a
+consequence of recording purchases rather than a number kept by hand. See ADR 023.

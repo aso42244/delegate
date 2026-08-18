@@ -105,3 +105,67 @@ test('equity follows the mortgage down without anything being restated', async (
 
   await expect(signedIn.getByText(/Equity is/)).toContainText('$200,000.00');
 });
+
+/**
+ * The reason the ledger exists: a quantity used to be one number, so the net
+ * worth chart applied today's quantity to every past date. Recording when
+ * Bitcoin was actually bought is what fixes that, and recording what was paid
+ * makes cost basis fall out rather than being kept by hand.
+ */
+test('a historic purchase is recorded with what it cost', async ({ signedIn }) => {
+  await signedIn.goto('/settings/bitcoin');
+  await signedIn.getByLabel('Name').fill('Hardware wallet');
+  await signedIn.getByRole('button', { name: 'Add' }).click();
+  await expect(signedIn.getByLabel('Hardware wallet quantity')).toBeVisible();
+
+  // The history hangs off the holding rather than sitting beside it.
+  await signedIn.getByRole('button', { name: 'Hardware wallet' }).click();
+
+  await signedIn.getByLabel('What happened').selectOption({ label: 'Bought' });
+  await signedIn.getByLabel('How much').fill('0.5');
+  await signedIn.getByLabel('When').fill('2026-06-15');
+  await signedIn.getByLabel('Price of one Bitcoin').fill('60000.00');
+  await signedIn.getByRole('button', { name: 'Record' }).click();
+
+  // Half of $60,000 is what it cost, and the row says so on its own. Scoped to
+  // a cell: the kind picker carries the same words as an option.
+  await expect(signedIn.getByRole('cell', { name: 'Bought', exact: true })).toBeVisible();
+  await expect(signedIn.getByRole('cell', { name: '$30,000.00', exact: true })).toBeVisible();
+
+  // And the quantity followed, because the cache is a sum of the ledger.
+  await expect(signedIn.getByLabel('Hardware wallet quantity')).toHaveValue('0.50000000');
+});
+
+test('moving Bitcoin between your own wallets asks for no price', async ({ signedIn }) => {
+  await signedIn.goto('/settings/bitcoin');
+  await signedIn.getByLabel('Name').fill('Hardware wallet');
+  await signedIn.getByRole('button', { name: 'Add' }).click();
+  await signedIn.getByRole('button', { name: 'Hardware wallet' }).click();
+
+  await signedIn
+    .getByLabel('What happened')
+    .selectOption({ label: 'Moved in from another wallet' });
+
+  // A price here would invent a gain out of moving your own money, so the field
+  // is not offered rather than being offered and refused.
+  await expect(signedIn.getByLabel('Price of one Bitcoin')).toBeHidden();
+});
+
+test('a mistake is backed out rather than deleted', async ({ signedIn }) => {
+  await signedIn.goto('/settings/bitcoin');
+  await signedIn.getByLabel('Name').fill('Hardware wallet');
+  await signedIn.getByRole('button', { name: 'Add' }).click();
+  await signedIn.getByRole('button', { name: 'Hardware wallet' }).click();
+
+  await signedIn.getByLabel('How much').fill('0.5');
+  await signedIn.getByLabel('When').fill('2026-06-15');
+  await signedIn.getByRole('button', { name: 'Record' }).click();
+  await expect(signedIn.getByLabel('Hardware wallet quantity')).toHaveValue('0.50000000');
+
+  await signedIn.getByRole('button', { name: /Back out the bought/ }).click();
+
+  // The quantity goes back, and the row stays on screen struck through: it is
+  // part of the history of what the chart showed.
+  await expect(signedIn.getByLabel('Hardware wallet quantity')).toHaveValue('0.00000000');
+  await expect(signedIn.getByRole('cell', { name: 'Bought', exact: true })).toBeVisible();
+});

@@ -165,3 +165,54 @@ export async function ledgerBalances(): Promise<Map<string, bigint>> {
   });
   return new Map(rows.map((row) => [row.delegationId, row._sum.deltaCents ?? 0n]));
 }
+
+export interface MakeHoldingOptions {
+  readonly name: string;
+  readonly sats: bigint;
+  /** When it started being held. Defaults to well before any test window. */
+  readonly heldSince?: Date;
+  readonly inBudget?: boolean;
+  readonly inNetWorth?: boolean;
+  /** What one whole Bitcoin cost, for cost-basis assertions. */
+  readonly priceCents?: bigint;
+}
+
+/**
+ * A Bitcoin holding with its opening event, which is the only way one exists.
+ *
+ * Writing `bitcoin_sats` straight onto an account leaves the cache and the
+ * ledger disagreeing, and the net worth chart reads the ledger — so a holding
+ * made that way is held on no date at all.
+ */
+export async function makeHolding(options: MakeHoldingOptions): Promise<{ id: string }> {
+  const heldSince = options.heldSince ?? new Date('2020-01-01T00:00:00Z');
+
+  const account = await prisma.account.create({
+    data: {
+      name: options.name,
+      type: 'asset',
+      source: 'manual',
+      managedAs: 'bitcoin',
+      bitcoinSats: options.sats,
+      balanceCents: 0n,
+      inBudget: options.inBudget ?? false,
+      inNetWorth: options.inNetWorth ?? true,
+      balanceAsOf: heldSince,
+    },
+    select: { id: true },
+  });
+
+  await prisma.bitcoinHoldingEvent.create({
+    data: {
+      accountId: account.id,
+      occurredAt: new Date(
+        Date.UTC(heldSince.getUTCFullYear(), heldSince.getUTCMonth(), heldSince.getUTCDate()),
+      ),
+      deltaSats: options.sats,
+      eventType: options.priceCents === undefined ? 'opening' : 'purchase',
+      priceCents: options.priceCents ?? null,
+    },
+  });
+
+  return account;
+}

@@ -84,6 +84,60 @@ export const bitcoinApi = {
     api.post<{ updated: boolean; priceCents?: string; source?: string }>('/api/bitcoin/refresh'),
 };
 
+export type BitcoinEventType =
+  'opening' | 'purchase' | 'sale' | 'transfer_in' | 'transfer_out' | 'adjustment';
+
+export interface HoldingEventDto {
+  readonly id: string;
+  readonly occurredAt: string;
+  /** Signed satoshis, as a decimal string. */
+  readonly deltaSats: string;
+  readonly eventType: BitcoinEventType;
+  /** What one whole Bitcoin cost at the time. Null where it does not apply. */
+  readonly priceCents: string | null;
+  /** What this event's Bitcoin cost, so a row reads on its own. */
+  readonly costCents: string | null;
+  readonly note: string | null;
+  /** Stamped rather than deleted, so a correction stays part of the history. */
+  readonly reversedAt: string | null;
+}
+
+export interface HoldingHistoryDto {
+  readonly events: readonly HoldingEventDto[];
+  readonly costBasis: {
+    readonly costCents: string;
+    readonly basisSats: string;
+    /** Held Bitcoin whose cost nobody knows. Not valued at zero. */
+    readonly unpricedSats: string;
+  };
+  /** Against the priced portion only. Null before any price exists. */
+  readonly unrealizedCents: string | null;
+  readonly worthCents: string | null;
+}
+
+export const holdingEventsApi = {
+  list: (accountId: string) =>
+    api.get<HoldingHistoryDto>(`/api/bitcoin/holdings/${accountId}/events`),
+
+  record: (
+    accountId: string,
+    input: {
+      eventType: Exclude<BitcoinEventType, 'adjustment'>;
+      sats: string;
+      occurredAt: string;
+      priceCents?: string | null;
+      note?: string | null;
+    },
+  ) =>
+    api.post<{ id: string; balanceSats: string }>(
+      `/api/bitcoin/holdings/${accountId}/events`,
+      input,
+    ),
+
+  reverse: (eventId: string) =>
+    api.post<{ reversed: boolean }>(`/api/bitcoin/events/${eventId}/reverse`),
+};
+
 export const propertiesApi = {
   list: () => api.get<{ properties: readonly PropertyDto[] }>('/api/properties'),
 
