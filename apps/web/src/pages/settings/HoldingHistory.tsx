@@ -177,7 +177,7 @@ export function HoldingHistory({
         </dl>
       )}
 
-      <form onSubmit={submit} className="flex flex-wrap items-end gap-3">
+      <form onSubmit={submit} className="flex flex-wrap items-end gap-3 [&>*]:mb-0">
         <SelectField
           label="What happened"
           value={kind}
@@ -215,7 +215,6 @@ export function HoldingHistory({
             onChange={(event) => setPrice(event.target.value)}
             placeholder="62500.00"
             inputMode="decimal"
-            hint="Leave blank if you do not know it."
           />
         )}
 
@@ -226,12 +225,22 @@ export function HoldingHistory({
           placeholder="Exchange, DCA…"
         />
 
-        <div className="pb-1">
+        <div>
           <Button type="submit" disabled={record.isPending}>
             Record
           </Button>
         </div>
       </form>
+
+      {/* Below the row rather than under one field: a hint inside a field makes
+          that field taller than its neighbours, and every label in the row goes
+          out of line with it. */}
+      {priced && (
+        <p className="mt-1 text-label text-muted">
+          Leave the price blank if you do not know it — the Bitcoin is then counted as held at an
+          unknown cost rather than as free.
+        </p>
+      )}
 
       <WatchedWallets accountId={accountId} />
 

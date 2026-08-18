@@ -58,14 +58,12 @@ export async function saveNodeSettings(db: Db, input: SaveNodeInput): Promise<vo
   if (problem) throw new ValidationError(problem.code, problem.message);
 
   // An onion address has no DNS entry and no route except through the proxy, so
-  // saving one with Tor off would be saving a node that can never answer.
-  const useTor = input.useTor ?? false;
-  if (isOnionHost(new URL(baseUrl).hostname) && !useTor) {
-    throw new ValidationError(
-      'tor_required_for_onion',
-      'An onion address can only be reached over Tor. Turn Tor on, or use a different URL.',
-    );
-  }
+  // Tor is not a question about one — it is a fact about it. Inferred rather
+  // than asked for, so pasting the address is the whole of the setup.
+  //
+  // Everywhere else it stays a choice: reaching a clearnet node through Tor
+  // hides which household is asking, which is a reason to want it.
+  const useTor = isOnionHost(new URL(baseUrl).hostname) ? true : (input.useTor ?? false);
 
   await db.bitcoinNodeConfig.update({
     where: { id: 1 },
@@ -130,7 +128,16 @@ export async function checkNode(
     });
     return { ok: true, height, error: null };
   } catch (error) {
-    const message = error instanceof Error ? error.message : 'The node did not answer.';
+    const raw = error instanceof Error ? error.message : 'The node did not answer.';
+
+    // A failure to reach the proxy and a failure to reach the node read almost
+    // identically at this level, and the fix for each is completely different.
+    const settings = await readNodeSettings(db);
+    const message =
+      settings.useTor && /socks|proxy|ECONNREFUSED|EHOSTUNREACH/i.test(raw)
+        ? `Could not reach Tor itself, so the node was never asked. On the NAS: ${'`'}sudo docker compose up -d tor${'`'}. (${raw})`
+        : raw;
+
     await db.bitcoinNodeConfig.update({
       where: { id: 1 },
       data: { lastCheckedAt: now, lastError: message },

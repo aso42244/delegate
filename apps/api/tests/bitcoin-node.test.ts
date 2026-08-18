@@ -70,18 +70,18 @@ describe('storing a node', () => {
   });
 
   it('accepts https, a private address and an onion', async () => {
-    // The onion needs Tor on, because it has no route without it — see ADR 026
-    // and bitcoin-tor.test.ts, where that refusal is the subject.
-    for (const [baseUrl, useTor] of [
-      ['https://mempool.space/api', false],
-      ['http://192.168.1.50:3002', false],
-      ['http://abcdefghijklmnop.onion/api', true],
-    ] as const) {
+    // The onion needs no extra flag: Tor is inferred from the address, because
+    // it is the only way one can be reached. See ADR 026.
+    for (const baseUrl of [
+      'https://mempool.space/api',
+      'http://192.168.1.50:3002',
+      'http://abcdefghijklmnop.onion/api',
+    ]) {
       const response = await app.inject({
         method: 'PUT',
         url: '/api/bitcoin/node',
         headers: { cookie },
-        payload: { mode: 'esplora', baseUrl, useTor },
+        payload: { mode: 'esplora', baseUrl },
       });
       expect(response.statusCode, baseUrl).toBe(200);
       expect((await readNodeSettings(prisma)).baseUrl).toBe(baseUrl);

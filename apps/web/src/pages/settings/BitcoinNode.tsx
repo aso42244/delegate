@@ -97,10 +97,9 @@ export function BitcoinNodeSection(): ReactNode {
             value={value}
             onChange={(event) => setUrl(event.target.value)}
             placeholder="https://mempool.space/api"
-            hint="Leave blank to use no node at all."
           />
         </div>
-        <div className="pb-1 flex gap-2">
+        <div className="flex gap-2">
           <Button type="submit" variant="primary" disabled={save.isPending}>
             Save
           </Button>
@@ -118,20 +117,31 @@ export function BitcoinNodeSection(): ReactNode {
 
       {reach && <p className="mt-2 text-quiet text-muted">{REACH_NOTE[reach]}</p>}
 
-      <label className="mt-2 flex items-center gap-2 text-quiet text-ink">
-        <input
-          type="checkbox"
-          checked={tor}
-          disabled={reach === 'tor'}
-          onChange={(event) => setTorChoice(event.target.checked)}
-        />
-        Reach it over Tor
-        {reach === 'tor' && <span className="text-muted">— required for an onion address</span>}
-      </label>
-      <p className="text-label text-muted">
-        Needs a Tor proxy alongside Delegate. The bundled <code>tor</code> service provides one; see
-        the deployment notes.
-      </p>
+      {/*
+        No question for an onion address. It has no DNS entry and no route
+        except through Tor, so asking whether to use Tor is asking the owner to
+        restate what he has already typed — and the only wrong answer breaks it.
+        Tor runs alongside Delegate for exactly this, so there is nothing to
+        turn on.
+      */}
+      {reach === 'tor' ? (
+        <p className="mt-2 text-quiet text-muted">Reached over Tor, because it has to be.</p>
+      ) : (
+        <>
+          <label className="mt-2 flex items-center gap-2 text-quiet text-ink">
+            <input
+              type="checkbox"
+              checked={tor}
+              onChange={(event) => setTorChoice(event.target.checked)}
+            />
+            Reach it over Tor anyway
+          </label>
+          <p className="text-label text-muted">
+            Optional here. It hides which household is asking — though not which addresses are being
+            asked about, which the node sees either way.
+          </p>
+        </>
+      )}
 
       {checked && <Alert tone={check.data?.ok ? 'positive' : 'danger'}>{checked}</Alert>}
 

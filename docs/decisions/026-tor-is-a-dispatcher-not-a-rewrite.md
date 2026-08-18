@@ -28,18 +28,28 @@ resolved here, and that is not a preference:
 Tor stays end-to-end encrypted to the node, and the proxy carries a stream it
 cannot read. The certificate is checked against the node.
 
-**An onion address cannot be saved with Tor off.** It has no route except through
-the proxy, so storing that combination would store a node that can never answer —
-and the owner would discover it as a scan failure days later rather than as a
-refusal while the URL is still on screen.
+**Tor is inferred from the address, not asked about.** An onion address has no
+DNS entry and no route except through the proxy, so whether to use Tor is not a
+question about one — it is a fact about one. Asking would be asking the owner to
+restate what he has already typed, and only one of the two answers works.
 
-**The Tor container is opt-in.** It sits behind a compose profile:
+This was first built as a checkbox with a refusal behind it, which was wrong in a
+way worth recording: it turned "paste the address of my node" into "paste the
+address, know what a SOCKS proxy is, tick the right box, and start a second
+container first". Everywhere other than an onion address Tor stays a genuine
+choice, because reaching a clearnet node through it hides which household is
+asking.
 
-    docker compose --profile tor up -d
+**The Tor container runs by default.** It was behind a compose profile at first,
+for the sake of not running a small idle daemon on a household that has no use
+for one. That is the wrong trade: it meant pasting an onion address silently did
+nothing until the deployment notes had been read. Nothing routes through the
+proxy unless a node is configured to, it publishes no ports, and only the app
+container reaches it over the compose network.
 
-A household that has no use for Tor should not run a Tor daemon, and `docker
-compose up -d` on its own does not start one. It publishes no ports; only the app
-container reaches it, over the compose network, which is the whole of its job.
+When the proxy is missing, the check says so specifically — a failure to reach
+Tor and a failure to reach the node read almost identically at that level, and
+the fix for each is entirely different.
 
 ## Consequences
 

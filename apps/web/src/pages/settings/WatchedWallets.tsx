@@ -152,15 +152,19 @@ export function WatchedWallets({ accountId }: { readonly accountId: string }): R
             value={key}
             onChange={(event) => setKey(event.target.value)}
             placeholder="zpub… or wsh(sortedmulti(2,…))"
-            hint="xpub, ypub, zpub, or a descriptor for a multisig. It is stored encrypted and never shown again."
           />
         </div>
-        <div className="pb-1">
+        <div>
           <Button type="submit" disabled={add.isPending}>
             Watch
           </Button>
         </div>
       </form>
+
+      <p className="mt-1 text-label text-muted">
+        xpub, ypub, zpub, or a descriptor for a multisig. It is stored encrypted and never shown
+        again.
+      </p>
     </div>
   );
 }

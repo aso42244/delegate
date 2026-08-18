@@ -47,10 +47,11 @@ beforeEach(async () => {
 });
 
 describe('an onion address', () => {
-  it('cannot be saved with Tor off', async () => {
-    // It has no DNS entry and no route except through the proxy, so saving one
-    // without Tor would be saving a node that can never answer — and the owner
-    // would find out as a scan failure days later rather than now.
+  it('turns Tor on by itself, without being asked to', async () => {
+    // It has no DNS entry and no route except through the proxy, so Tor is not
+    // a question about an onion address — it is a fact about one. Asking would
+    // be asking the owner to restate what he has already typed, and the only
+    // wrong answer breaks it.
     const response = await app.inject({
       method: 'PUT',
       url: '/api/bitcoin/node',
@@ -58,11 +59,11 @@ describe('an onion address', () => {
       payload: { mode: 'esplora', baseUrl: ONION, useTor: false },
     });
 
-    expect(response.statusCode).toBe(400);
-    expect(response.json<{ error: { code: string } }>().error.code).toBe('tor_required_for_onion');
+    expect(response.statusCode).toBe(200);
+    expect((await readNodeSettings(prisma)).useTor).toBe(true);
   });
 
-  it('is accepted with Tor on', async () => {
+  it('is accepted when Tor is asked for explicitly too', async () => {
     const response = await app.inject({
       method: 'PUT',
       url: '/api/bitcoin/node',

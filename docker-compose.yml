@@ -88,20 +88,17 @@ services:
       # is harmless when empty.
       - ${TLS_DIR:-./tls}:/tls:ro
 
-  # A SOCKS proxy for reaching a Bitcoin node over Tor.
+  # A SOCKS proxy, so an onion address can be reached at all.
   #
-  # Optional, and off unless asked for: nothing routes through it until the node
-  # setting says to, and an onion address is the only thing that *requires* it.
-  # Started under a profile so `docker compose up -d` does not run a Tor daemon
-  # for a household that has no use for one:
+  # Runs by default. It was behind a profile at first, which meant pasting the
+  # onion address of your own node did nothing until you had also read the
+  # deployment notes and started a second container — friction in exchange for
+  # not running a small idle daemon, which is the wrong way round.
   #
-  #     docker compose --profile tor up -d
-  #
-  # It has no ports published. Only the app container can reach it, over the
-  # compose network, which is the whole of its job.
+  # Nothing routes through it unless a node is configured to. It publishes no
+  # ports; only the app container reaches it, over the compose network.
   tor:
     image: dperson/torproxy:latest
-    profiles: ['tor']
     restart: unless-stopped
     healthcheck:
       test: ['CMD', 'sh', '-c', 'nc -z 127.0.0.1 9050']
