@@ -5,6 +5,7 @@ import { prisma } from '../db/client.js';
 import { NODE_MODES, SUGGESTED_NODES, reachOf } from '@budget/shared';
 import { fetchAndRecordPrice, latestPrice, providerByName } from '../domain/bitcoin.js';
 import { checkNode, readNodeSettings, saveNodeSettings } from '../domain/bitcoin-node.js';
+import { addWallet, archiveWallet, listWallets, scanWallet } from '../domain/bitcoin-wallets.js';
 import { createHolding, updateHolding } from '../domain/managed-accounts.js';
 import {
   costBasis,
@@ -292,6 +293,70 @@ export const bitcoinRoutes: FastifyPluginCallback = (fastify, _options, done) =>
     const { id } = idParamsSchema.parse(request.params);
     const result = await prisma.$transaction((tx) => reverseHoldingEvent(tx, id));
     return result;
+  });
+
+  // --- Watched wallets ----------------------------------------------------
+
+  fastify.get('/api/bitcoin/holdings/:id/wallets', async (request) => {
+    const { id } = idParamsSchema.parse(request.params);
+    const wallets = await listWallets(prisma, id);
+    return {
+      wallets: wallets.map((wallet) => ({
+        id: wallet.id,
+        label: wallet.label,
+        kind: wallet.kind,
+        // The key itself is never returned. This is enough to recognise the
+        // wallet and nothing more.
+        firstAddress: wallet.firstAddress,
+        gapLimit: wallet.gapLimit,
+        lastScannedAt: dateOut(wallet.lastScannedAt),
+        lastError: wallet.lastError,
+        lastBalanceSats: wallet.lastBalanceSats?.toString() ?? null,
+        addressesSeen: wallet.addressesSeen,
+      })),
+    };
+  });
+
+  fastify.post('/api/bitcoin/holdings/:id/wallets', async (request, reply) => {
+    const { id } = idParamsSchema.parse(request.params);
+    const body = z
+      .object({
+        label: z.string().min(1).max(100),
+        key: z.string().min(1).max(2000),
+        gapLimit: z.number().int().min(1).max(200).optional(),
+      })
+      .parse(request.body);
+
+    const created = await addWallet(
+      prisma,
+      { accountId: id, label: body.label, key: body.key, gapLimit: body.gapLimit },
+      request.server.config.SESSION_SECRET,
+    );
+
+    // The key is deliberately absent from this line. It is not a spending
+    // credential, but it is every address the wallet will ever use.
+    request.log.info(
+      { accountId: id, walletId: created.id, actorId: request.currentUser?.id },
+      'Bitcoin wallet watched',
+    );
+    return reply.code(201).send({ wallet: created });
+  });
+
+  fastify.post('/api/bitcoin/wallets/:id/scan', async (request) => {
+    const { id } = idParamsSchema.parse(request.params);
+    const result = await scanWallet(prisma, id, request.server.config.SESSION_SECRET);
+    return {
+      balanceSats: result.balanceSats.toString(),
+      addressesChecked: result.addressesChecked,
+      used: result.used,
+      recorded: result.eventId !== null,
+    };
+  });
+
+  fastify.post('/api/bitcoin/wallets/:id/archive', async (request) => {
+    const { id } = idParamsSchema.parse(request.params);
+    await archiveWallet(prisma, id);
+    return { ok: true };
   });
 
   // --- The node -----------------------------------------------------------

@@ -138,6 +138,41 @@ export const holdingEventsApi = {
     api.post<{ reversed: boolean }>(`/api/bitcoin/events/${eventId}/reverse`),
 };
 
+export interface WatchedWalletDto {
+  readonly id: string;
+  readonly label: string;
+  readonly kind: string;
+  /** The first receive address. The key itself is never returned. */
+  readonly firstAddress: string;
+  readonly gapLimit: number;
+  readonly lastScannedAt: string | null;
+  readonly lastError: string | null;
+  readonly lastBalanceSats: string | null;
+  readonly addressesSeen: number;
+}
+
+export const walletsApi = {
+  list: (accountId: string) =>
+    api.get<{ wallets: readonly WatchedWalletDto[] }>(`/api/bitcoin/holdings/${accountId}/wallets`),
+
+  add: (accountId: string, input: { label: string; key: string; gapLimit?: number }) =>
+    api.post<{ wallet: { id: string; firstAddress: string } }>(
+      `/api/bitcoin/holdings/${accountId}/wallets`,
+      input,
+    ),
+
+  scan: (walletId: string) =>
+    api.post<{
+      balanceSats: string;
+      addressesChecked: number;
+      used: number;
+      recorded: boolean;
+    }>(`/api/bitcoin/wallets/${walletId}/scan`),
+
+  archive: (walletId: string) =>
+    api.post<{ ok: boolean }>(`/api/bitcoin/wallets/${walletId}/archive`),
+};
+
 export interface NodeSettingsDto {
   readonly mode: 'none' | 'esplora';
   readonly baseUrl: string | null;

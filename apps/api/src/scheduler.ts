@@ -5,6 +5,7 @@ import { prisma } from './db/client.js';
 import { ConflictError } from './domain/errors.js';
 import { runBackup } from './domain/backup.js';
 import { fetchAndRecordPrice, providerByName, revalueBitcoinHoldings } from './domain/bitcoin.js';
+import { scanAllWallets } from './domain/bitcoin-wallets.js';
 import { resolveConnection } from './domain/simplefin-config.js';
 import { runSync } from './domain/sync.js';
 import { HttpSimpleFinClient } from './simplefin/client.js';
@@ -95,6 +96,16 @@ async function runScheduledPriceFetch(config: AppConfig, logger: FastifyBaseLogg
     }
   } catch (error) {
     logger.warn({ err: error }, 'Bitcoin price fetch failed; holding the last known price');
+  }
+
+  // Wallets, on the same hourly beat as the price. Separate try blocks the
+  // whole way down: a node that is unreachable must not stop the price being
+  // recorded, and neither must stop the revaluation below.
+  try {
+    const scanned = await scanAllWallets(prisma, config.SESSION_SECRET, logger);
+    if (scanned > 0) logger.info({ wallets: scanned }, 'Bitcoin wallets scanned');
+  } catch (error) {
+    logger.warn({ err: error }, 'Bitcoin wallet scan failed; the last known holding stands');
   }
 
   // Separately from the fetch, and deliberately outside its try: a holding whose

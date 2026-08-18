@@ -4,6 +4,7 @@ import { useState, type FormEvent, type ReactNode } from 'react';
 import { holdingEventsApi, type BitcoinEventType } from '../../api/bitcoin.js';
 import { ApiError } from '../../api/client.js';
 import { Alert, Button, SelectField, TextField } from '../../components/ui.jsx';
+import { WatchedWallets } from './WatchedWallets.jsx';
 
 /**
  * The dated history behind one holding.
@@ -231,6 +232,8 @@ export function HoldingHistory({
           </Button>
         </div>
       </form>
+
+      <WatchedWallets accountId={accountId} />
 
       {data && data.events.length > 0 && (
         <table className="mt-3 w-full">

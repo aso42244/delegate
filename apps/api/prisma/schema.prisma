@@ -312,6 +312,7 @@ model Account {
   rules             CategorizationRule[]
   valuations        AccountValuation[]
   bitcoinEvents     BitcoinHoldingEvent[]
+  bitcoinWallets    BitcoinWallet[]
 
   @@unique([source, externalId], name: "account_source_external_id")
   @@index([archivedAt])
@@ -731,6 +732,75 @@ model BitcoinNodeConfig {
   updatedAt DateTime @updatedAt @map("updated_at")
 
   @@map("bitcoin_node_config")
+}
+
+/// A wallet watched by its extended public key or descriptor.
+///
+/// The descriptor is **encrypted at rest**. It cannot spend, so the risk is not
+/// theft — but it reveals every address the wallet will ever use, permanently,
+/// which is a far more durable loss than a balance. The database is dumped
+/// nightly, so it is treated exactly like the SimpleFIN credential.
+model BitcoinWallet {
+  id        String @id @default(uuid()) @db.Uuid
+  accountId String @map("account_id") @db.Uuid
+
+  label String
+
+  /// xpub | ypub | zpub | descriptor — what was pasted, for the interface to
+  /// describe it. The stored form is always a descriptor either way.
+  kind String
+
+  receiveDescriptorEncrypted String @map("receive_descriptor_encrypted")
+  changeDescriptorEncrypted  String @map("change_descriptor_encrypted")
+
+  /// The first receive address, shown so the owner can confirm this is the
+  /// right wallet without the key being displayed.
+  firstAddress String @map("first_address")
+
+  /// How many unused addresses in a row end a scan. Twenty is the convention
+  /// every wallet uses.
+  gapLimit Int @default(20) @map("gap_limit")
+
+  lastScannedAt DateTime? @map("last_scanned_at")
+  lastError     String?   @map("last_error")
+  /// What the last scan found, so a scan that changes nothing is still visible.
+  lastBalanceSats BigInt? @map("last_balance_sats")
+
+  archivedAt DateTime? @map("archived_at")
+  createdAt  DateTime  @default(now()) @map("created_at")
+  updatedAt  DateTime  @updatedAt @map("updated_at")
+
+  account   Account                @relation(fields: [accountId], references: [id])
+  addresses BitcoinWalletAddress[]
+
+  @@index([accountId])
+  @@map("bitcoin_wallets")
+}
+
+/// The derived addresses a scan has looked at, and what each held.
+///
+/// Cached so a rescan asks a node about addresses it already knows rather than
+/// re-deriving and re-querying from zero, and so the interface can show what was
+/// actually found rather than only a total.
+model BitcoinWalletAddress {
+  id       String @id @default(uuid()) @db.Uuid
+  walletId String @map("wallet_id") @db.Uuid
+
+  /// 0 = receive, 1 = change.
+  chain Int
+  index Int
+
+  address     String
+  balanceSats BigInt @default(0) @map("balance_sats")
+  txCount     Int    @default(0) @map("tx_count")
+
+  lastSeenAt DateTime? @map("last_seen_at")
+
+  wallet BitcoinWallet @relation(fields: [walletId], references: [id], onDelete: Cascade)
+
+  @@unique([walletId, chain, index])
+  @@index([walletId])
+  @@map("bitcoin_wallet_addresses")
 }
 
 model BitcoinPrice {
