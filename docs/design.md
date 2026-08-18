@@ -547,3 +547,22 @@ nothing.
 
 The risk that trade introduces is an optimistic update that never reaches the
 server — perfect on screen until the page is reloaded. So the test reloads.
+
+## Two things the rows stopped saying
+
+**"(collapsed — 8 lines)" is gone.** It restated what the chevron already showed,
+in more words than the grouping's own name, on a page where the eye is meant to
+travel down a column of figures. The count was never actionable: nobody expands a
+grouping _because_ it holds eight lines. The chevron carries the state, and
+`aria-expanded` carries it for anyone not looking at the chevron — which is what
+the end-to-end tests read now, rather than the prose.
+
+**The `simplefin` tag is gone; `manual` became `m`.** Nearly every account comes
+from the feed, so labelling those said nothing while spending a word of width on
+every row. What is worth knowing at a glance is the opposite: which balances
+somebody has to keep true by hand, because those are the ones that go stale
+without anybody being told. One faint letter, with the full word still on
+Settings → Accounts where there is room for it.
+
+Both are the same edit really: a row of a financial table should carry the
+figures and the name, and make everything else earn its place.

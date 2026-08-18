@@ -11,7 +11,6 @@ import {
 import type { BudgetRowDto, BudgetSectionDto } from '../api/budget.js';
 import { NARROW, useMediaQuery } from '../useMediaQuery.js';
 import { MoneyCell } from './MoneyCell.jsx';
-import { Tag } from './ui.jsx';
 
 /**
  * One section of the Budget page: Assets, Debts or Delegations.
@@ -142,9 +141,21 @@ export function BudgetSection({
       >
         <td className={`row-cell pr-3 ${inGrouping ? 'pl-8' : 'pl-3'}`}>
           <span className="text-ink">{row.name}</span>
-          {row.source && (
-            <span className="ml-2">
-              <Tag>{row.source}</Tag>
+          {/*
+            Only the accounts kept by hand are marked, and only with an `m`.
+            Nearly everything here comes from the feed, so labelling those said
+            nothing while taking a word of width on every row; what is worth
+            knowing at a glance is the opposite — which balances somebody has to
+            keep true themselves. The full word is on Settings → Accounts, where
+            there is room for it.
+          */}
+          {row.source === 'manual' && (
+            <span
+              aria-label="kept by hand"
+              title="Kept by hand"
+              className="ml-2 text-label font-semibold text-faint"
+            >
+              m
             </span>
           )}
           {/* A discovered account's type is a guess until the owner confirms it. */}
@@ -325,12 +336,6 @@ export function BudgetSection({
                       </svg>
                     </span>
                     {grouping.name}
-                    {grouping.collapsed && (
-                      <span className="text-quiet font-normal text-muted">
-                        (collapsed — {grouping.rows.length}{' '}
-                        {grouping.rows.length === 1 ? 'line' : 'lines'})
-                      </span>
-                    )}
                   </button>
                 </td>
 

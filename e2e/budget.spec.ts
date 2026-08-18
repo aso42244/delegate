@@ -283,13 +283,15 @@ test('a collapsed grouping folds at once and is still folded after a reload', as
 
   await toggle.click();
 
-  // Folded, and the row it was holding is gone from the table.
-  await expect(signedIn.getByText('(collapsed — 1 line)')).toBeVisible();
+  // Folded, and the row it was holding is gone from the table. The chevron is
+  // the only thing that says so now, so the state is read from `aria-expanded`
+  // rather than from prose that is no longer there.
+  await expect(toggle).toHaveAttribute('aria-expanded', 'false');
   await expect(signedIn.getByRole('cell', { name: 'Grocery', exact: true })).toBeHidden();
 
   // And it actually reached the server, which the optimistic update would hide.
   await signedIn.reload();
-  await expect(signedIn.getByText('(collapsed — 1 line)')).toBeVisible();
+  await expect(signedIn.getByRole('cell', { name: 'Grocery', exact: true })).toBeHidden();
 
   // Unfolding is the same trip in reverse.
   await signedIn

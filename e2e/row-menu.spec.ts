@@ -150,11 +150,11 @@ test('a line can be moved into a grouping created on this page', async ({ signed
   await signedIn.getByRole('menuitem', { name: 'Move to grouping' }).click();
   await signedIn.getByRole('menuitem', { name: 'Essentials' }).click();
 
-  // Collapsing the grouping proves the row is inside it: the total appears on
-  // the grouping row and the child row goes away.
+  // Collapsing the grouping proves the row is inside it: the child row goes
+  // away with it, which it would not if it were still outside.
   await expect(signedIn.getByRole('menu')).toHaveCount(0);
   await signedIn.getByRole('button', { name: /Essentials/ }).click();
-  await expect(signedIn.getByText('(collapsed — 1 line)')).toBeVisible();
+  await expect(signedIn.getByRole('cell', { name: 'Grocery', exact: true })).toBeHidden();
 });
 
 test('the utility toggle sticks', async ({ signedIn, api }) => {

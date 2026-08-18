@@ -90,9 +90,10 @@ test('dragging a delegation into a grouping moves it', async ({ signedIn, api })
   const target = signedIn.getByRole('row').filter({ hasText: 'Essentials' });
   await row.dragTo(target);
 
-  // Collapsing proves it landed inside: the child count is on the grouping row.
+  // Collapsing proves it landed inside: the row disappears with the grouping,
+  // which it would not do if it were still sitting outside one.
   await signedIn.getByRole('button', { name: /Essentials/ }).click();
-  await expect(signedIn.getByText('(collapsed — 1 line)')).toBeVisible();
+  await expect(signedIn.getByRole('cell', { name: 'Grocery', exact: true })).toBeHidden();
 });
 
 test('the row menu remains the route that works without a mouse', async ({ signedIn, api }) => {
@@ -106,5 +107,5 @@ test('the row menu remains the route that works without a mouse', async ({ signe
   await signedIn.getByRole('menuitem', { name: 'Essentials' }).click();
 
   await signedIn.getByRole('button', { name: /Essentials/ }).click();
-  await expect(signedIn.getByText('(collapsed — 1 line)')).toBeVisible();
+  await expect(signedIn.getByRole('cell', { name: 'Grocery', exact: true })).toBeHidden();
 });
