@@ -26,6 +26,7 @@ export function BitcoinNodeSection(): ReactNode {
   const [url, setUrl] = useState<string | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
   const [checked, setChecked] = useState<string | null>(null);
+  const [torChoice, setTorChoice] = useState<boolean | null>(null);
 
   const node = useQuery({ queryKey: ['bitcoin', 'node'], queryFn: nodeApi.get });
 
@@ -34,7 +35,7 @@ export function BitcoinNodeSection(): ReactNode {
   };
 
   const save = useMutation({
-    mutationFn: (input: { mode: 'none' | 'esplora'; baseUrl?: string | null }) =>
+    mutationFn: (input: { mode: 'none' | 'esplora'; baseUrl?: string | null; useTor?: boolean }) =>
       nodeApi.save(input),
     onSuccess: async () => {
       setProblem(null);
@@ -64,6 +65,9 @@ export function BitcoinNodeSection(): ReactNode {
   // Checked as it is typed, so the reason arrives before the save is attempted.
   const typedProblem = value.trim() === '' ? null : nodeUrlProblem(value);
   const reach = typedProblem ? null : reachOf(value);
+  // An onion address has no route except through the proxy, so the choice is
+  // made for it rather than offered and then refused on save.
+  const tor = reach === 'tor' ? true : (torChoice ?? data?.useTor ?? false);
 
   function submit(event: FormEvent): void {
     event.preventDefault();
@@ -76,7 +80,7 @@ export function BitcoinNodeSection(): ReactNode {
       setProblem(found.message);
       return;
     }
-    save.mutate({ mode: 'esplora', baseUrl: value.trim() });
+    save.mutate({ mode: 'esplora', baseUrl: value.trim(), useTor: tor });
   }
 
   return (
@@ -113,6 +117,21 @@ export function BitcoinNodeSection(): ReactNode {
       {typedProblem && <Alert tone="warning">{typedProblem.message}</Alert>}
 
       {reach && <p className="mt-2 text-quiet text-muted">{REACH_NOTE[reach]}</p>}
+
+      <label className="mt-2 flex items-center gap-2 text-quiet text-ink">
+        <input
+          type="checkbox"
+          checked={tor}
+          disabled={reach === 'tor'}
+          onChange={(event) => setTorChoice(event.target.checked)}
+        />
+        Reach it over Tor
+        {reach === 'tor' && <span className="text-muted">— required for an onion address</span>}
+      </label>
+      <p className="text-label text-muted">
+        Needs a Tor proxy alongside Delegate. The bundled <code>tor</code> service provides one; see
+        the deployment notes.
+      </p>
 
       {checked && <Alert tone={check.data?.ok ? 'positive' : 'danger'}>{checked}</Alert>}
 

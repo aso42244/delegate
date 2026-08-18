@@ -344,7 +344,9 @@ export const bitcoinRoutes: FastifyPluginCallback = (fastify, _options, done) =>
 
   fastify.post('/api/bitcoin/wallets/:id/scan', async (request) => {
     const { id } = idParamsSchema.parse(request.params);
-    const result = await scanWallet(prisma, id, request.server.config.SESSION_SECRET);
+    const result = await scanWallet(prisma, id, request.server.config.SESSION_SECRET, {
+      torSocksUrl: request.server.config.TOR_SOCKS_URL,
+    });
     return {
       balanceSats: result.balanceSats.toString(),
       addressesChecked: result.addressesChecked,
@@ -400,7 +402,9 @@ export const bitcoinRoutes: FastifyPluginCallback = (fastify, _options, done) =>
   });
 
   /** Asks for the chain tip, which is the cheapest proof a node is answering. */
-  fastify.post('/api/bitcoin/node/check', async () => checkNode(prisma));
+  fastify.post('/api/bitcoin/node/check', async (request) =>
+    checkNode(prisma, { torSocksUrl: request.server.config.TOR_SOCKS_URL }),
+  );
 
   /** Fetch now, rather than waiting for the hour. */
   fastify.post('/api/bitcoin/refresh', async (request) => {

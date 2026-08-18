@@ -102,7 +102,9 @@ async function runScheduledPriceFetch(config: AppConfig, logger: FastifyBaseLogg
   // whole way down: a node that is unreachable must not stop the price being
   // recorded, and neither must stop the revaluation below.
   try {
-    const scanned = await scanAllWallets(prisma, config.SESSION_SECRET, logger);
+    const scanned = await scanAllWallets(prisma, config.SESSION_SECRET, logger, {
+      torSocksUrl: config.TOR_SOCKS_URL,
+    });
     if (scanned > 0) logger.info({ wallets: scanned }, 'Bitcoin wallets scanned');
   } catch (error) {
     logger.warn({ err: error }, 'Bitcoin wallet scan failed; the last known holding stands');

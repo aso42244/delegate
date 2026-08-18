@@ -159,7 +159,7 @@ export async function scanWallet(
   db: Db,
   walletId: string,
   sessionSecret: string,
-  options: { readonly node?: BitcoinNode } = {},
+  options: { readonly node?: BitcoinNode; readonly torSocksUrl?: string | undefined } = {},
   now: Date = new Date(),
 ): Promise<ScanResult> {
   const wallet = await db.bitcoinWallet.findUnique({
@@ -178,7 +178,7 @@ export async function scanWallet(
     throw new ConflictError('wallet_archived', 'That wallet is archived.');
   }
 
-  const node = options.node ?? (await nodeClient(db));
+  const node = options.node ?? (await nodeClient(db, { torSocksUrl: options.torSocksUrl }));
   if (!node) {
     throw new ValidationError(
       'node_not_configured',
@@ -326,8 +326,9 @@ export async function scanAllWallets(
   db: Db,
   sessionSecret: string,
   logger: ScanLogger,
+  options: { readonly torSocksUrl?: string | undefined } = {},
 ): Promise<number> {
-  const node = await nodeClient(db);
+  const node = await nodeClient(db, options);
   // Not an error: no node configured is the ordinary state until one is.
   if (!node) return 0;
 

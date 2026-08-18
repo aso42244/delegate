@@ -87,6 +87,11 @@ const environmentSchema = z
     BITCOIN_PRICE_PRIMARY: z.enum(['coingecko', 'coinbase']).default('coingecko'),
     BITCOIN_PRICE_FALLBACK: z.enum(['coingecko', 'coinbase']).default('coinbase'),
 
+    // Where to find a SOCKS proxy when a node is reached over Tor. The default
+    // is the compose service name, so the container next door works with no
+    // configuration at all. Only used when the node setting says to.
+    TOR_SOCKS_URL: z.string().default('socks5h://tor:9050'),
+
     // Nightly pg_dump. §14 puts this in Phase 1 rather than Phase 3, because data
     // loss during the move off the spreadsheet would be unrecoverable.
     BACKUP_DIR: z.string().default('./backups'),

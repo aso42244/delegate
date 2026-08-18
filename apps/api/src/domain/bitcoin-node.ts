@@ -1,6 +1,7 @@
-import { nodeUrlProblem, type NodeMode } from '@budget/shared';
+import { isOnionHost, nodeUrlProblem, type NodeMode } from '@budget/shared';
 import type { Db } from '../db/client.js';
 import { EsploraNode, type BitcoinNode } from '../bitcoin/esplora.js';
+import { torFetch } from '../bitcoin/tor.js';
 import { ValidationError } from './errors.js';
 
 /**
@@ -56,12 +57,22 @@ export async function saveNodeSettings(db: Db, input: SaveNodeInput): Promise<vo
   const problem = nodeUrlProblem(baseUrl);
   if (problem) throw new ValidationError(problem.code, problem.message);
 
+  // An onion address has no DNS entry and no route except through the proxy, so
+  // saving one with Tor off would be saving a node that can never answer.
+  const useTor = input.useTor ?? false;
+  if (isOnionHost(new URL(baseUrl).hostname) && !useTor) {
+    throw new ValidationError(
+      'tor_required_for_onion',
+      'An onion address can only be reached over Tor. Turn Tor on, or use a different URL.',
+    );
+  }
+
   await db.bitcoinNodeConfig.update({
     where: { id: 1 },
     data: {
       mode: input.mode,
       baseUrl,
-      useTor: input.useTor ?? false,
+      useTor,
       // A new URL has not been reached yet, and saying it was would be a lie the
       // first time it fails.
       lastCheckedAt: null,
@@ -77,9 +88,20 @@ export async function saveNodeSettings(db: Db, input: SaveNodeInput): Promise<vo
  * Built per call rather than held, because the owner can change the setting at
  * any time and a cached client would go on talking to the old one.
  */
-export async function nodeClient(db: Db): Promise<BitcoinNode | null> {
+export async function nodeClient(
+  db: Db,
+  options: { readonly torSocksUrl?: string | undefined } = {},
+): Promise<BitcoinNode | null> {
   const settings = await readNodeSettings(db);
   if (settings.mode === 'none' || !settings.baseUrl) return null;
+
+  // Only the transport changes. The client is the same one either way, which is
+  // why Tor was a later phase rather than a rewrite.
+  if (settings.useTor) {
+    const proxy = options.torSocksUrl ?? 'socks5h://tor:9050';
+    return new EsploraNode(settings.baseUrl, torFetch(proxy));
+  }
+
   return new EsploraNode(settings.baseUrl);
 }
 
@@ -92,9 +114,10 @@ export async function nodeClient(db: Db): Promise<BitcoinNode | null> {
  */
 export async function checkNode(
   db: Db,
+  options: { readonly torSocksUrl?: string | undefined } = {},
   now: Date = new Date(),
 ): Promise<{ ok: boolean; height: number | null; error: string | null }> {
-  const client = await nodeClient(db);
+  const client = await nodeClient(db, options);
   if (!client) {
     throw new ValidationError('node_not_configured', 'No node is configured.');
   }
