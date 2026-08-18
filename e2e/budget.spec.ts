@@ -250,3 +250,55 @@ test('the sidebar collapses and stays collapsed across a reload', async ({ signe
   // Persisted per device, so it survives a refresh.
   await expect(signedIn.getByRole('button', { name: 'Expand sidebar' })).toBeVisible();
 });
+
+/**
+ * Collapsing a grouping moves rows, not money.
+ *
+ * It used to send the change, refetch the entire budget, and only then move
+ * anything — one to two seconds of nothing happening, for a preference the
+ * browser already knew the answer to. The cache is updated first now, which is
+ * what makes the risk worth a test: an optimistic update that never reaches the
+ * server looks perfect until the page is reloaded.
+ */
+test('a collapsed grouping folds at once and is still folded after a reload', async ({
+  signedIn,
+  api,
+}) => {
+  await makeDelegation(api, 'Grocery');
+  await api.post('/api/groupings', { data: { name: 'Essentials', section: 'delegations' } });
+  await signedIn.goto('/');
+
+  await signedIn.getByRole('button', { name: 'Options for Grocery' }).click();
+  await signedIn.getByRole('menuitem', { name: 'Move to grouping' }).click();
+  await signedIn.getByRole('menuitem', { name: 'Essentials' }).click();
+  await expect(signedIn.getByRole('cell', { name: 'Grocery', exact: true })).toBeVisible();
+
+  // Scoped to the grouping's own row: the row menu still carries an "Essentials"
+  // item, so the bare name matches more than one control.
+  const toggle = signedIn
+    .getByRole('row')
+    .filter({ hasText: 'Essentials' })
+    .getByRole('button')
+    .first();
+
+  await toggle.click();
+
+  // Folded, and the row it was holding is gone from the table.
+  await expect(signedIn.getByText('(collapsed — 1 line)')).toBeVisible();
+  await expect(signedIn.getByRole('cell', { name: 'Grocery', exact: true })).toBeHidden();
+
+  // And it actually reached the server, which the optimistic update would hide.
+  await signedIn.reload();
+  await expect(signedIn.getByText('(collapsed — 1 line)')).toBeVisible();
+
+  // Unfolding is the same trip in reverse.
+  await signedIn
+    .getByRole('row')
+    .filter({ hasText: 'Essentials' })
+    .getByRole('button')
+    .first()
+    .click();
+  await expect(signedIn.getByRole('cell', { name: 'Grocery', exact: true })).toBeVisible();
+  await signedIn.reload();
+  await expect(signedIn.getByRole('cell', { name: 'Grocery', exact: true })).toBeVisible();
+});

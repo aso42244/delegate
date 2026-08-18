@@ -527,3 +527,23 @@ puts the banner away for a day, keyed on the message so a second bank failing is
 news again, and brings it back afterwards if the condition still holds. A banner
 dismissed for a condition that is still true would be a lie the interface tells
 on the owner's behalf. What makes one go away for good is fixing it.
+
+## A display preference does not wait for the network
+
+Collapsing a grouping used to send the change, refetch the whole budget, and only
+then move anything on screen — a second or two of nothing happening after the
+click. The read model itself takes about 2.5ms; the wait was entirely the round
+trip plus a blanket `invalidateQueries()` refetching every query on the page.
+
+The cache is updated first now and the request follows. A failure puts it back
+and says so. Nothing is invalidated on success, deliberately: no figure on that
+page can differ because a grouping is folded up.
+
+The rule this is an instance of: **a change that moves rows can be optimistic; a
+change that moves money cannot.** Editing a balance still waits, because the
+identity, the section totals and the banner are all derived from it and showing a
+guess at any of them would be showing a wrong number. Folding a grouping derives
+nothing.
+
+The risk that trade introduces is an optimistic update that never reaches the
+server — perfect on screen until the page is reloaded. So the test reloads.

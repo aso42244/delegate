@@ -1,7 +1,7 @@
 import { formatCents } from '@budget/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState, type ReactNode } from 'react';
-import { budgetApi } from '../api/budget.js';
+import { budgetApi, type BudgetSectionDto, type BudgetViewDto } from '../api/budget.js';
 import { ApiError } from '../api/client.js';
 import { AccountRowMenu } from '../components/AccountRowMenu.jsx';
 import { BalanceBanner } from '../components/BalanceBanner.jsx';
@@ -230,6 +230,27 @@ export function MainBudget(): ReactNode {
     await queryClient.invalidateQueries();
   };
 
+  /** The same view with one grouping folded or unfolded, and nothing else touched. */
+  const withGroupingCollapsed = (
+    view: BudgetViewDto,
+    groupingId: string,
+    collapsed: boolean,
+  ): BudgetViewDto => {
+    const inSection = (section: BudgetSectionDto): BudgetSectionDto => ({
+      ...section,
+      groupings: section.groupings.map((grouping) =>
+        grouping.id === groupingId ? { ...grouping, collapsed } : grouping,
+      ),
+    });
+
+    return {
+      ...view,
+      assets: inSection(view.assets),
+      debts: inSection(view.debts),
+      delegations: inSection(view.delegations),
+    };
+  };
+
   const onError = (error: unknown): void =>
     setProblem(error instanceof ApiError ? error.message : 'Something went wrong.');
 
@@ -271,11 +292,36 @@ export function MainBudget(): ReactNode {
     onError,
   });
 
+  /**
+   * Collapsing a grouping moves rows, not money.
+   *
+   * It used to wait for the round trip and then refetch the whole budget before
+   * anything on screen changed, which put one to two seconds between the click
+   * and the rows moving — for a preference the browser already knows the answer
+   * to. The cache is updated first and the request follows; a failure puts it
+   * back and says so.
+   *
+   * Nothing is invalidated on success, deliberately. No figure on this page can
+   * differ because a grouping is folded up.
+   */
   const toggleGrouping = useMutation({
     mutationFn: ({ id, collapsed }: { id: string; collapsed: boolean }) =>
       budgetApi.setGroupingCollapsed(id, collapsed),
-    onSuccess: refresh,
-    onError,
+    onMutate: async ({ id, collapsed }: { id: string; collapsed: boolean }) => {
+      // An in-flight refetch would land on top of this and undo it.
+      await queryClient.cancelQueries({ queryKey: ['budget'] });
+      const previous = queryClient.getQueryData<BudgetViewDto>(['budget']);
+
+      queryClient.setQueryData<BudgetViewDto>(['budget'], (current) =>
+        current ? withGroupingCollapsed(current, id, collapsed) : current,
+      );
+
+      return { previous };
+    },
+    onError: (error: unknown, _variables, context) => {
+      if (context?.previous) queryClient.setQueryData(['budget'], context.previous);
+      onError(error);
+    },
   });
 
   if (view.isLoading) return <p className="text-quiet text-muted">Loading the budget…</p>;
