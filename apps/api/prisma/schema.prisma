@@ -720,8 +720,13 @@ model BitcoinNodeConfig {
   /// e.g. https://mempool.space/api, or http://192.168.1.50:3002
   baseUrl String? @map("base_url")
 
-  /// Route requests through a SOCKS proxy. Required for an onion address.
+  /// Superseded by `routeFor`, which decides from the address. Kept for one
+  /// release so a rollback has somewhere to land.
   useTor Boolean @default(false) @map("use_tor")
+
+  /// Which way the last request actually went: `tor` or `direct`. A public node
+  /// prefers Tor and falls back, and that fallback must never be silent.
+  lastRoute String? @map("last_route")
 
   /// When it last answered, and what it said. A node that has never been
   /// reached is a different state from one that is failing now.

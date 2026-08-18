@@ -89,6 +89,83 @@ export function nodeUrlProblem(raw: string): NodeUrlProblem | null {
   return null;
 }
 
+/**
+ * How a node should be reached, decided by the address rather than by asking.
+ *
+ *  * `direct` — a node on your own network. Tor would route around the house to
+ *    get back into it, and hide nothing from anybody who is already inside.
+ *  * `tor` — an onion address, which has no other route in existence.
+ *  * `prefer-tor` — anything on the public internet. Tor hides which household
+ *    is asking, so it is tried first; if Tor is not reachable the request goes
+ *    directly rather than failing, because a working balance is worth more than
+ *    a hidden IP address. Which route was actually used is recorded and shown,
+ *    so the fallback is never silent.
+ */
+export type NodeRoute = 'direct' | 'tor' | 'prefer-tor';
+
+export function routeFor(raw: string): NodeRoute {
+  let url: URL;
+  try {
+    url = new URL(raw.trim());
+  } catch {
+    return 'direct';
+  }
+  if (isOnionHost(url.hostname)) return 'tor';
+  if (isPrivateHost(url.hostname)) return 'direct';
+  return 'prefer-tor';
+}
+
+/**
+ * Works out what somebody meant by what they typed.
+ *
+ * The box takes a LAN address, a domain name or an onion address, with or
+ * without a scheme and with or without the API path. Requiring all three to be
+ * right is asking someone to know that mempool.space serves Esplora under `/api`
+ * while their own `electrs` might not — which is exactly the sort of thing a
+ * program can find out by asking.
+ *
+ * Returns the candidates worth trying, in order. The caller probes them and
+ * keeps whichever answers, so the stored URL is one that has been proved rather
+ * than one that looked plausible.
+ */
+export function nodeCandidates(raw: string): {
+  candidates: string[];
+  problem: NodeUrlProblem | null;
+} {
+  const text = raw.trim().replace(/\/+$/, '');
+  if (text === '') {
+    return {
+      candidates: [],
+      problem: {
+        code: 'node_url_missing',
+        message: 'Give the node an address, or leave it blank.',
+      },
+    };
+  }
+
+  // A scheme is added rather than demanded. Which one is not a preference: an
+  // onion address and a private address cannot use https, and everything else
+  // must.
+  const withScheme = /^https?:\/\//i.test(text)
+    ? text
+    : (() => {
+        const host = text.split('/')[0]?.split(':')[0] ?? '';
+        return isOnionHost(host) || isPrivateHost(host) ? `http://${text}` : `https://${text}`;
+      })();
+
+  const problem = nodeUrlProblem(withScheme);
+  if (problem) return { candidates: [], problem };
+
+  const url = new URL(withScheme);
+  const base = withScheme.replace(/\/+$/, '');
+
+  // As typed first, because somebody who wrote the path meant it. Then `/api`,
+  // which is where every Esplora-compatible server puts itself by convention.
+  const candidates = url.pathname === '/' ? [base, `${base}/api`] : [base, `${base}/api`];
+
+  return { candidates: [...new Set(candidates)], problem: null };
+}
+
 /** How a configured URL should be described in the interface. */
 export type NodeReach = 'public' | 'lan' | 'tor';
 
@@ -114,12 +191,12 @@ export function reachOf(raw: string): NodeReach | null {
 export const SUGGESTED_NODES = [
   {
     label: 'mempool.space',
-    url: 'https://mempool.space/api',
+    url: 'mempool.space',
     note: 'Well maintained, no sign-up. It will see every address you look up.',
   },
   {
     label: 'blockstream.info',
-    url: 'https://blockstream.info/api',
+    url: 'blockstream.info',
     note: 'The original Esplora. Same trade as above.',
   },
 ] as const;

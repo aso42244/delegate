@@ -4,7 +4,12 @@ import { buildApp } from '../src/app.js';
 import { loadConfig } from '../src/config.js';
 import { prisma } from '../src/db/client.js';
 import { EsploraNode } from '../src/bitcoin/esplora.js';
-import { checkNode, readNodeSettings, saveNodeSettings } from '../src/domain/bitcoin-node.js';
+import {
+  checkNode,
+  readNodeSettings,
+  saveNodeSettings,
+  type ClientFactory,
+} from '../src/domain/bitcoin-node.js';
 import { resetDatabase } from './helpers.js';
 import { sessionCookie } from './http.js';
 
@@ -45,6 +50,27 @@ beforeEach(async () => {
   cookie = sessionCookie(response.headers);
 });
 
+/**
+ * A client factory that answers without a network.
+ *
+ * Saving probes the candidates, so without this the suite would ask
+ * mempool.space and blockstream.info on every run — flaky, slow, and somebody
+ * else's bandwidth spent on our tests.
+ */
+function offline(answers: Record<string, number> = {}): ClientFactory {
+  return (baseUrl: string) => ({
+    node: {
+      tipHeight: () =>
+        baseUrl in answers
+          ? Promise.resolve(answers[baseUrl] as number)
+          : Promise.reject(new Error(`nothing at ${baseUrl}`)),
+      addressStats: () => Promise.reject(new Error('not used')),
+      addressStatsMany: () => Promise.reject(new Error('not used')),
+    },
+    routeUsed: () => 'direct',
+  });
+}
+
 /** A fetch that answers from a table rather than a network. */
 function stubFetch(routes: Record<string, { status?: number; body: string }>) {
   return (url: string): Promise<Response> => {
@@ -77,19 +103,21 @@ describe('storing a node', () => {
       'http://192.168.1.50:3002',
       'http://abcdefghijklmnop.onion/api',
     ]) {
-      const response = await app.inject({
-        method: 'PUT',
-        url: '/api/bitcoin/node',
-        headers: { cookie },
-        payload: { mode: 'esplora', baseUrl },
-      });
-      expect(response.statusCode, baseUrl).toBe(200);
-      expect((await readNodeSettings(prisma)).baseUrl).toBe(baseUrl);
+      await saveNodeSettings(
+        prisma,
+        { mode: 'esplora', baseUrl },
+        { clientFor: offline({ [baseUrl]: 912_000 }) },
+      );
+      expect((await readNodeSettings(prisma)).baseUrl, baseUrl).toBe(baseUrl);
     }
   });
 
   it('clears everything when the node is turned off', async () => {
-    await saveNodeSettings(prisma, { mode: 'esplora', baseUrl: 'https://mempool.space/api' });
+    await saveNodeSettings(
+      prisma,
+      { mode: 'esplora', baseUrl: 'https://mempool.space/api' },
+      { clientFor: offline({ 'https://mempool.space/api': 912_000 }) },
+    );
     await saveNodeSettings(prisma, { mode: 'none' });
 
     const settings = await readNodeSettings(prisma);
@@ -97,19 +125,52 @@ describe('storing a node', () => {
     expect(settings.baseUrl).toBeNull();
   });
 
-  it('forgets the last result when the URL changes', async () => {
-    await saveNodeSettings(prisma, { mode: 'esplora', baseUrl: 'https://mempool.space/api' });
-    await prisma.bitcoinNodeConfig.update({
-      where: { id: 1 },
-      data: { lastCheckedAt: new Date(), lastHeight: 900_000 },
-    });
+  it('proves the new URL rather than carrying the old result forward', async () => {
+    await saveNodeSettings(
+      prisma,
+      { mode: 'esplora', baseUrl: 'https://mempool.space/api' },
+      { clientFor: offline({ 'https://mempool.space/api': 900_000 }) },
+    );
+    expect((await readNodeSettings(prisma)).lastHeight).toBe(900_000);
 
-    await saveNodeSettings(prisma, { mode: 'esplora', baseUrl: 'https://blockstream.info/api' });
+    // A different URL is asked for itself. Keeping the old height would claim
+    // this one had answered when it never has.
+    await saveNodeSettings(
+      prisma,
+      { mode: 'esplora', baseUrl: 'https://blockstream.info/api' },
+      { clientFor: offline({ 'https://blockstream.info/api': 912_345 }) },
+    );
 
-    // Carrying it forward would claim the new URL had answered when it never has.
     const settings = await readNodeSettings(prisma);
-    expect(settings.lastHeight).toBeNull();
-    expect(settings.lastCheckedAt).toBeNull();
+    expect(settings.baseUrl).toBe('https://blockstream.info/api');
+    expect(settings.lastHeight).toBe(912_345);
+  });
+
+  it('keeps the candidate that answered, not the one that was typed', async () => {
+    // mempool.space serves Esplora under /api. Somebody typing the bare domain
+    // should not have to know that.
+    const saved = await saveNodeSettings(
+      prisma,
+      { mode: 'esplora', baseUrl: 'mempool.space' },
+      { clientFor: offline({ 'https://mempool.space/api': 912_000 }) },
+    );
+
+    expect(saved.baseUrl).toBe('https://mempool.space/api');
+    expect(saved.reached).toBe(true);
+  });
+
+  it('saves a node that did not answer, and records why', async () => {
+    // Being unable to configure a node because it happens to be down would be
+    // worse than saying so.
+    const saved = await saveNodeSettings(
+      prisma,
+      { mode: 'esplora', baseUrl: 'http://192.168.9.9:3002' },
+      { clientFor: offline() },
+    );
+
+    expect(saved.reached).toBe(false);
+    expect(saved.error).not.toBeNull();
+    expect((await readNodeSettings(prisma)).baseUrl).toBe('http://192.168.9.9:3002');
   });
 });
 
@@ -154,7 +215,11 @@ describe('asking a node', () => {
   });
 
   it('records a failure rather than throwing it away', async () => {
-    await saveNodeSettings(prisma, { mode: 'esplora', baseUrl: 'https://127.0.0.2:1/api' });
+    await saveNodeSettings(
+      prisma,
+      { mode: 'esplora', baseUrl: 'https://127.0.0.2:1/api' },
+      { clientFor: offline() },
+    );
 
     const result = await checkNode(prisma);
     expect(result.ok).toBe(false);

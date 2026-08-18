@@ -1,7 +1,8 @@
-import { isOnionHost, nodeUrlProblem, type NodeMode } from '@budget/shared';
+import { nodeCandidates, routeFor, type NodeMode, type NodeRoute } from '@budget/shared';
 import type { Db } from '../db/client.js';
 import { EsploraNode, type BitcoinNode } from '../bitcoin/esplora.js';
 import { torFetch } from '../bitcoin/tor.js';
+import { PreferTorNode } from '../bitcoin/prefer-tor.js';
 import { ValidationError } from './errors.js';
 
 /**
@@ -20,6 +21,10 @@ export interface NodeSettings {
   readonly lastCheckedAt: Date | null;
   readonly lastHeight: number | null;
   readonly lastError: string | null;
+  /** Which way the last request went. Null before any has been made. */
+  readonly lastRoute: string | null;
+  /** How this address will be reached, decided by the address itself. */
+  readonly route: NodeRoute | null;
 }
 
 export async function readNodeSettings(db: Db): Promise<NodeSettings> {
@@ -31,6 +36,8 @@ export async function readNodeSettings(db: Db): Promise<NodeSettings> {
     lastCheckedAt: row?.lastCheckedAt ?? null,
     lastHeight: row?.lastHeight ?? null,
     lastError: row?.lastError ?? null,
+    lastRoute: row?.lastRoute ?? null,
+    route: row?.baseUrl ? routeFor(row.baseUrl) : null,
   };
 }
 
@@ -40,44 +47,134 @@ export interface SaveNodeInput {
   readonly useTor?: boolean | undefined;
 }
 
-export async function saveNodeSettings(db: Db, input: SaveNodeInput): Promise<void> {
-  if (input.mode === 'none') {
+export interface SaveNodeResult {
+  readonly baseUrl: string | null;
+  readonly route: NodeRoute | null;
+  readonly reached: boolean;
+  readonly height: number | null;
+  readonly error: string | null;
+}
+
+/**
+ * Stores where to ask, having worked out what was meant and proved it.
+ *
+ * The box takes a LAN address, a domain name or an onion address, with or
+ * without a scheme and with or without the API path. Demanding all three be
+ * right means demanding somebody know that mempool.space serves Esplora under
+ * `/api` while their own electrs might not — which a program can simply find
+ * out. Each candidate is tried and the one that answers is what gets stored, so
+ * the setting is a URL that has been proved rather than one that looked
+ * plausible.
+ *
+ * A node that does not answer is still saved, with the failure recorded. Being
+ * unable to configure a node because it happens to be down would be worse than
+ * saying so.
+ */
+export async function saveNodeSettings(
+  db: Db,
+  input: SaveNodeInput,
+  options: {
+    readonly torSocksUrl?: string | undefined;
+    /**
+     * How to build a client for a candidate. Injected so tests can prove the
+     * probing without reaching a real node — a test suite that quietly asks
+     * mempool.space forty times is flaky, slow, and somebody else's traffic.
+     */
+    readonly clientFor?: ClientFactory | undefined;
+  } = {},
+  now: Date = new Date(),
+): Promise<SaveNodeResult> {
+  if (input.mode === 'none' || (input.baseUrl ?? '').trim() === '') {
     await db.bitcoinNodeConfig.update({
       where: { id: 1 },
-      data: { mode: 'none', baseUrl: null, useTor: false, lastHeight: null, lastError: null },
+      data: {
+        mode: 'none',
+        baseUrl: null,
+        useTor: false,
+        lastHeight: null,
+        lastError: null,
+        lastRoute: null,
+        lastCheckedAt: null,
+      },
     });
-    return;
+    return { baseUrl: null, route: null, reached: false, height: null, error: null };
   }
 
-  const baseUrl = (input.baseUrl ?? '').trim();
-  if (baseUrl === '') {
-    throw new ValidationError('node_url_missing', 'Give the node a URL, or choose no node.');
-  }
-
-  const problem = nodeUrlProblem(baseUrl);
+  const { candidates, problem } = nodeCandidates(input.baseUrl ?? '');
   if (problem) throw new ValidationError(problem.code, problem.message);
 
-  // An onion address has no DNS entry and no route except through the proxy, so
-  // Tor is not a question about one — it is a fact about it. Inferred rather
-  // than asked for, so pasting the address is the whole of the setup.
-  //
-  // Everywhere else it stays a choice: reaching a clearnet node through Tor
-  // hides which household is asking, which is a reason to want it.
-  const useTor = isOnionHost(new URL(baseUrl).hostname) ? true : (input.useTor ?? false);
+  let chosen = candidates[0] ?? '';
+  let height: number | null = null;
+  let route: 'tor' | 'direct' | null = null;
+  let failure: string | null = null;
+
+  const factory = options.clientFor ?? ((url: string) => buildClient(url, options.torSocksUrl));
+
+  for (const candidate of candidates) {
+    const client = factory(candidate);
+    try {
+      height = await client.node.tipHeight();
+      chosen = candidate;
+      route = client.routeUsed() ?? (routeFor(candidate) === 'tor' ? 'tor' : 'direct');
+      failure = null;
+      break;
+    } catch (error) {
+      failure = error instanceof Error ? error.message : 'It did not answer.';
+    }
+  }
 
   await db.bitcoinNodeConfig.update({
     where: { id: 1 },
     data: {
       mode: input.mode,
-      baseUrl,
-      useTor,
-      // A new URL has not been reached yet, and saying it was would be a lie the
-      // first time it fails.
-      lastCheckedAt: null,
-      lastHeight: null,
-      lastError: null,
+      baseUrl: chosen,
+      // Retained only so a rollback finds something sensible; nothing reads it.
+      useTor: routeFor(chosen) !== 'direct',
+      lastCheckedAt: now,
+      lastHeight: height,
+      lastError: failure,
+      lastRoute: route,
     },
   });
+
+  return {
+    baseUrl: chosen,
+    route: routeFor(chosen),
+    reached: height !== null,
+    height,
+    error: failure,
+  };
+}
+
+export interface BuiltClient {
+  readonly node: BitcoinNode;
+  readonly routeUsed: () => 'tor' | 'direct' | null;
+}
+
+export type ClientFactory = (baseUrl: string) => BuiltClient;
+
+/** The right client for an address, and a way to ask which route it took. */
+function buildClient(baseUrl: string, torSocksUrl: string | undefined): BuiltClient {
+  const proxy = torSocksUrl ?? 'socks5h://tor:9050';
+
+  switch (routeFor(baseUrl)) {
+    case 'direct': {
+      const node = new EsploraNode(baseUrl);
+      return { node, routeUsed: () => 'direct' };
+    }
+    case 'tor': {
+      const node = new EsploraNode(baseUrl, torFetch(proxy));
+      return { node, routeUsed: () => 'tor' };
+    }
+    case 'prefer-tor':
+    default: {
+      const node = new PreferTorNode(
+        new EsploraNode(baseUrl, torFetch(proxy)),
+        new EsploraNode(baseUrl),
+      );
+      return { node, routeUsed: () => node.chosenRoute };
+    }
+  }
 }
 
 /**
@@ -93,14 +190,9 @@ export async function nodeClient(
   const settings = await readNodeSettings(db);
   if (settings.mode === 'none' || !settings.baseUrl) return null;
 
-  // Only the transport changes. The client is the same one either way, which is
+  // Only the transport differs. The client is the same one every way, which is
   // why Tor was a later phase rather than a rewrite.
-  if (settings.useTor) {
-    const proxy = options.torSocksUrl ?? 'socks5h://tor:9050';
-    return new EsploraNode(settings.baseUrl, torFetch(proxy));
-  }
-
-  return new EsploraNode(settings.baseUrl);
+  return buildClient(settings.baseUrl, options.torSocksUrl).node;
 }
 
 /**
@@ -114,34 +206,37 @@ export async function checkNode(
   db: Db,
   options: { readonly torSocksUrl?: string | undefined } = {},
   now: Date = new Date(),
-): Promise<{ ok: boolean; height: number | null; error: string | null }> {
-  const client = await nodeClient(db, options);
-  if (!client) {
+): Promise<{ ok: boolean; height: number | null; error: string | null; route: string | null }> {
+  const settings = await readNodeSettings(db);
+  if (settings.mode === 'none' || !settings.baseUrl) {
     throw new ValidationError('node_not_configured', 'No node is configured.');
   }
 
+  const built = buildClient(settings.baseUrl, options.torSocksUrl);
+
   try {
-    const height = await client.tipHeight();
+    const height = await built.node.tipHeight();
+    const route = built.routeUsed();
     await db.bitcoinNodeConfig.update({
       where: { id: 1 },
-      data: { lastCheckedAt: now, lastHeight: height, lastError: null },
+      data: { lastCheckedAt: now, lastHeight: height, lastError: null, lastRoute: route },
     });
-    return { ok: true, height, error: null };
+    return { ok: true, height, error: null, route };
   } catch (error) {
     const raw = error instanceof Error ? error.message : 'The node did not answer.';
 
-    // A failure to reach the proxy and a failure to reach the node read almost
-    // identically at this level, and the fix for each is completely different.
-    const settings = await readNodeSettings(db);
+    // An onion address has no route except Tor, so a failure there is worth
+    // naming: the proxy being down and the node being down read identically at
+    // this level, and the fix for each is entirely different.
     const message =
-      settings.useTor && /socks|proxy|ECONNREFUSED|EHOSTUNREACH/i.test(raw)
+      routeFor(settings.baseUrl) === 'tor' && /socks|proxy|ECONNREFUSED|EHOSTUNREACH/i.test(raw)
         ? `Could not reach Tor itself, so the node was never asked. On the NAS: ${'`'}sudo docker compose up -d tor${'`'}. (${raw})`
         : raw;
 
     await db.bitcoinNodeConfig.update({
       where: { id: 1 },
-      data: { lastCheckedAt: now, lastError: message },
+      data: { lastCheckedAt: now, lastError: message, lastRoute: null },
     });
-    return { ok: false, height: null, error: message };
+    return { ok: false, height: null, error: message, route: null };
   }
 }

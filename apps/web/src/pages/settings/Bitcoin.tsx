@@ -282,7 +282,9 @@ export function BitcoinSection(): ReactNode {
         title="Add a holding"
         description="One per wallet or exchange you keep track of."
       >
-        <form onSubmit={submit} className="flex flex-wrap items-end gap-3">
+        {/* items-center, not items-end: a checkbox has no label above it, so
+            aligning bottoms put it below the fields rather than beside them. */}
+        <form onSubmit={submit} className="flex flex-wrap items-center gap-3">
           <TextField
             label="Name"
             value={name}
@@ -296,10 +298,9 @@ export function BitcoinSection(): ReactNode {
             onChange={(event) => setQuantity(event.target.value)}
             placeholder="0.05"
             inputMode="decimal"
-            hint="Leave blank to fill in later."
           />
 
-          <label className="flex items-center gap-2 pb-2 text-quiet text-ink">
+          <label className="flex items-center gap-2 text-quiet text-ink">
             <input
               type="checkbox"
               checked={inNetWorth}
@@ -308,7 +309,7 @@ export function BitcoinSection(): ReactNode {
             Net worth
           </label>
 
-          <label className="flex items-center gap-2 pb-2 text-quiet text-ink">
+          <label className="flex items-center gap-2 text-quiet text-ink">
             <input
               type="checkbox"
               checked={inBudget}
@@ -317,7 +318,7 @@ export function BitcoinSection(): ReactNode {
             Budget
           </label>
 
-          <div className="pb-1">
+          <div>
             <Button type="submit" variant="primary" disabled={create.isPending}>
               Add
             </Button>

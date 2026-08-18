@@ -1,4 +1,4 @@
-import { nodeUrlProblem, reachOf } from '@budget/shared';
+import { routeFor } from '@budget/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState, type FormEvent, type ReactNode } from 'react';
 import { nodeApi } from '../../api/bitcoin.js';
@@ -9,24 +9,33 @@ import { SettingsCard } from './SettingsCard.jsx';
 /**
  * Settings → Bitcoin → where address data comes from.
  *
- * The choice that matters here is not which endpoint is fastest. It is that a
- * public one learns every address in the wallet, permanently, and that fact
- * belongs beside the choice rather than in a footnote somewhere.
+ * One box, and the address decides everything else. A scheme, the `/api` path
+ * and whether to use Tor were three separate things to get right, and every one
+ * of them is something the program can work out from what was typed:
+ *
+ *  * a LAN address goes direct — Tor would route around the house to get back
+ *    into it, and hide nothing from anybody already inside;
+ *  * an onion address goes over Tor, which is its only route in existence;
+ *  * anything else prefers Tor and falls back to a direct connection, so a
+ *    hidden IP address is not paid for with a missing balance.
+ *
+ * The fallback is reported rather than assumed. "Reached directly, Tor was not
+ * available" is a different fact from "reached over Tor", and only one of them
+ * is what was wanted.
  */
 
-const REACH_NOTE: Record<'public' | 'lan' | 'tor', string> = {
-  public:
-    'A public server. It will see every address Delegate asks about, and can keep them — which is the whole of your wallet, forever. Your own node is the only real answer to that.',
-  lan: 'A node on your own network. Nothing leaves the house.',
-  tor: 'An onion service. The address is itself a public key, so the connection is already encrypted and authenticated — plain http here is correct rather than a downgrade.',
+const ROUTE_NOTE: Record<'direct' | 'tor' | 'prefer-tor', string> = {
+  direct: 'On your own network, so it is reached directly. Nothing leaves the house.',
+  tor: 'An onion address, so it goes over Tor. That is its only route.',
+  'prefer-tor':
+    'On the public internet. Delegate will try Tor first to hide which household is asking, and connect directly if Tor is unavailable — it says which happened.',
 };
 
 export function BitcoinNodeSection(): ReactNode {
   const queryClient = useQueryClient();
-  const [url, setUrl] = useState<string | null>(null);
+  const [typed, setTyped] = useState<string | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
-  const [checked, setChecked] = useState<string | null>(null);
-  const [torChoice, setTorChoice] = useState<boolean | null>(null);
+  const [result, setResult] = useState<{ tone: 'positive' | 'danger'; text: string } | null>(null);
 
   const node = useQuery({ queryKey: ['bitcoin', 'node'], queryFn: nodeApi.get });
 
@@ -34,12 +43,32 @@ export function BitcoinNodeSection(): ReactNode {
     await queryClient.invalidateQueries({ queryKey: ['bitcoin', 'node'] });
   };
 
+  const describe = (route: string | null, height: number | null): string => {
+    const where = route === 'tor' ? 'over Tor' : 'directly';
+    return `Answered ${where}. The chain is at block ${height?.toLocaleString() ?? '—'}.`;
+  };
+
   const save = useMutation({
-    mutationFn: (input: { mode: 'none' | 'esplora'; baseUrl?: string | null; useTor?: boolean }) =>
-      nodeApi.save(input),
-    onSuccess: async () => {
+    mutationFn: (baseUrl: string) =>
+      nodeApi.save(baseUrl === '' ? { mode: 'none' } : { mode: 'esplora', baseUrl }),
+    onSuccess: async (saved) => {
       setProblem(null);
-      setChecked(null);
+      setTyped(null);
+      setResult(
+        saved.baseUrl === null
+          ? null
+          : saved.reached
+            ? {
+                tone: 'positive',
+                text: `${describe(saved.route, saved.height)} Using ${saved.baseUrl}.`,
+              }
+            : {
+                tone: 'danger',
+                // Saved anyway: being unable to configure a node because it
+                // happens to be down would be worse than saying so.
+                text: `Saved, but it did not answer: ${saved.error ?? 'no reason given'}`,
+              },
+      );
       await refresh();
     },
     onError: (error: unknown) =>
@@ -48,11 +77,11 @@ export function BitcoinNodeSection(): ReactNode {
 
   const check = useMutation({
     mutationFn: nodeApi.check,
-    onSuccess: async (result) => {
-      setChecked(
-        result.ok
-          ? `Answered. The chain is at block ${result.height?.toLocaleString() ?? '—'}.`
-          : (result.error ?? 'It did not answer.'),
+    onSuccess: async (checked) => {
+      setResult(
+        checked.ok
+          ? { tone: 'positive', text: describe(checked.route, checked.height) }
+          : { tone: 'danger', text: checked.error ?? 'It did not answer.' },
       );
       await refresh();
     },
@@ -61,26 +90,14 @@ export function BitcoinNodeSection(): ReactNode {
   });
 
   const data = node.data;
-  const value = url ?? data?.baseUrl ?? '';
-  // Checked as it is typed, so the reason arrives before the save is attempted.
-  const typedProblem = value.trim() === '' ? null : nodeUrlProblem(value);
-  const reach = typedProblem ? null : reachOf(value);
-  // An onion address has no route except through the proxy, so the choice is
-  // made for it rather than offered and then refused on save.
-  const tor = reach === 'tor' ? true : (torChoice ?? data?.useTor ?? false);
+  const value = typed ?? data?.baseUrl ?? '';
+  // Worked out as it is typed, so what will happen is visible before saving.
+  const route =
+    value.trim() === '' ? null : routeFor(value.includes('://') ? value : `https://${value}`);
 
   function submit(event: FormEvent): void {
     event.preventDefault();
-    if (value.trim() === '') {
-      save.mutate({ mode: 'none' });
-      return;
-    }
-    const found = nodeUrlProblem(value);
-    if (found) {
-      setProblem(found.message);
-      return;
-    }
-    save.mutate({ mode: 'esplora', baseUrl: value.trim(), useTor: tor });
+    save.mutate(value.trim());
   }
 
   return (
@@ -91,17 +108,17 @@ export function BitcoinNodeSection(): ReactNode {
       {problem && <Alert tone="danger">{problem}</Alert>}
 
       <form onSubmit={submit} className="flex flex-wrap items-end gap-3">
-        <div className="min-w-80 flex-1">
+        <div className="min-w-96 flex-1">
           <TextField
-            label="Node URL"
+            label="Node address"
             value={value}
-            onChange={(event) => setUrl(event.target.value)}
-            placeholder="https://mempool.space/api"
+            onChange={(event) => setTyped(event.target.value)}
+            placeholder="192.168.1.50:3002 · mempool.space · abc…xyz.onion"
           />
         </div>
         <div className="flex gap-2">
           <Button type="submit" variant="primary" disabled={save.isPending}>
-            Save
+            {save.isPending ? 'Checking…' : 'Save'}
           </Button>
           <Button
             onClick={() => check.mutate()}
@@ -112,46 +129,32 @@ export function BitcoinNodeSection(): ReactNode {
         </div>
       </form>
 
-      {/* The refusal explains itself as it is typed, rather than after a save. */}
-      {typedProblem && <Alert tone="warning">{typedProblem.message}</Alert>}
+      <p className="mt-1 text-label text-muted">
+        A LAN address, a domain name, or an onion address. The scheme and the API path are worked
+        out for you, and saving tries it.
+      </p>
 
-      {reach && <p className="mt-2 text-quiet text-muted">{REACH_NOTE[reach]}</p>}
+      {route && <p className="mt-2 text-quiet text-muted">{ROUTE_NOTE[route]}</p>}
 
-      {/*
-        No question for an onion address. It has no DNS entry and no route
-        except through Tor, so asking whether to use Tor is asking the owner to
-        restate what he has already typed — and the only wrong answer breaks it.
-        Tor runs alongside Delegate for exactly this, so there is nothing to
-        turn on.
-      */}
-      {reach === 'tor' ? (
-        <p className="mt-2 text-quiet text-muted">Reached over Tor, because it has to be.</p>
-      ) : (
-        <>
-          <label className="mt-2 flex items-center gap-2 text-quiet text-ink">
-            <input
-              type="checkbox"
-              checked={tor}
-              onChange={(event) => setTorChoice(event.target.checked)}
-            />
-            Reach it over Tor anyway
-          </label>
-          <p className="text-label text-muted">
-            Optional here. It hides which household is asking — though not which addresses are being
-            asked about, which the node sees either way.
-          </p>
-        </>
+      {/* Said where the endpoint is chosen, not in a footnote: this is the
+          decision that costs something, and it is not reversible afterwards. */}
+      {route === 'prefer-tor' && (
+        <p className="mt-1 text-quiet text-muted">
+          A public server sees every address Delegate asks about and can keep them, which over time
+          is the whole of your wallet. Tor hides who is asking, not what is being asked about — your
+          own node is the only answer to that.
+        </p>
       )}
 
-      {checked && <Alert tone={check.data?.ok ? 'positive' : 'danger'}>{checked}</Alert>}
+      {result && <Alert tone={result.tone}>{result.text}</Alert>}
 
-      {data && data.mode !== 'none' && !checked && (
+      {data && data.mode !== 'none' && !result && (
         <p className="mt-2 text-quiet text-muted">
           {data.lastCheckedAt === null
             ? 'Not tried yet.'
             : data.lastError
               ? `Last tried ${data.lastCheckedAt.slice(0, 10)} and failed: ${data.lastError}`
-              : `Last answered at block ${data.lastHeight?.toLocaleString() ?? '—'}.`}
+              : `Last answered ${data.lastRoute === 'tor' ? 'over Tor' : 'directly'}, at block ${data.lastHeight?.toLocaleString() ?? '—'}.`}
         </p>
       )}
 
@@ -163,7 +166,7 @@ export function BitcoinNodeSection(): ReactNode {
               <li key={suggestion.url} className="text-quiet">
                 <button
                   type="button"
-                  onClick={() => setUrl(suggestion.url)}
+                  onClick={() => setTyped(suggestion.url)}
                   className="font-semibold text-accent underline"
                 >
                   {suggestion.label}

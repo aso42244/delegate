@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { isOnionHost, isPrivateHost, nodeUrlProblem, reachOf } from './bitcoin-node.js';
+import {
+  isOnionHost,
+  isPrivateHost,
+  nodeCandidates,
+  nodeUrlProblem,
+  reachOf,
+  routeFor,
+} from './bitcoin-node.js';
 
 /**
  * The rule is "WAN over HTTPS, never HTTP", written as something a program
@@ -76,5 +83,54 @@ describe('how a node is described', () => {
     expect(isOnionHost('onion.example.com')).toBe(false);
     expect(isPrivateHost('192.168.0.1')).toBe(true);
     expect(isPrivateHost('8.8.8.8')).toBe(false);
+  });
+});
+
+describe('working out what was typed', () => {
+  it('adds https to a bare domain name', () => {
+    // Demanding a scheme means demanding somebody type boilerplate that has
+    // exactly one correct value for a public host.
+    expect(nodeCandidates('mempool.space').candidates).toEqual([
+      'https://mempool.space',
+      'https://mempool.space/api',
+    ]);
+  });
+
+  it('adds http to a LAN address and to an onion, because https cannot work there', () => {
+    expect(nodeCandidates('192.168.1.50:3002').candidates[0]).toBe('http://192.168.1.50:3002');
+    expect(nodeCandidates('abcdef.onion').candidates[0]).toBe('http://abcdef.onion');
+  });
+
+  it('offers the API path as well as what was typed', () => {
+    // mempool.space serves Esplora under /api and a self-hosted electrs might
+    // not. The caller tries both and keeps the one that answers, rather than
+    // the owner having to know.
+    const { candidates } = nodeCandidates('https://mempool.space');
+    expect(candidates).toContain('https://mempool.space/api');
+  });
+
+  it('keeps a path somebody wrote deliberately, and tries it first', () => {
+    expect(nodeCandidates('https://node.example/esplora').candidates[0]).toBe(
+      'https://node.example/esplora',
+    );
+  });
+
+  it('still refuses plain http to a public host', () => {
+    expect(nodeCandidates('http://mempool.space').problem?.code).toBe('node_url_insecure');
+  });
+
+  it('says so when nothing was typed', () => {
+    expect(nodeCandidates('   ').problem?.code).toBe('node_url_missing');
+  });
+});
+
+describe('how an address will be reached', () => {
+  it('decides from the address rather than from a setting', () => {
+    // Every one of these has exactly one sensible answer, which is why it was
+    // wrong to ask.
+    expect(routeFor('http://192.168.1.50:3002')).toBe('direct');
+    expect(routeFor('http://localhost:3002')).toBe('direct');
+    expect(routeFor('http://abcdef.onion/api')).toBe('tor');
+    expect(routeFor('https://mempool.space/api')).toBe('prefer-tor');
   });
 });

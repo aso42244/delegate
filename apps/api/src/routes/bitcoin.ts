@@ -368,11 +368,14 @@ export const bitcoinRoutes: FastifyPluginCallback = (fastify, _options, done) =>
     return {
       mode: settings.mode,
       baseUrl: settings.baseUrl,
-      useTor: settings.useTor,
+      // How it will be reached, decided by the address rather than asked about.
+      route: settings.route,
       reach: settings.baseUrl === null ? null : reachOf(settings.baseUrl),
       lastCheckedAt: dateOut(settings.lastCheckedAt),
       lastHeight: settings.lastHeight,
       lastError: settings.lastError,
+      // Which way it actually went, so a fall back to clearnet is never silent.
+      lastRoute: settings.lastRoute,
       suggestions: SUGGESTED_NODES,
     };
   });
@@ -387,18 +390,20 @@ export const bitcoinRoutes: FastifyPluginCallback = (fastify, _options, done) =>
       .object({
         mode: z.enum(NODE_MODES),
         baseUrl: z.string().max(500).nullish(),
-        useTor: z.boolean().optional(),
       })
       .parse(request.body);
 
-    await saveNodeSettings(prisma, body);
+    const result = await saveNodeSettings(prisma, body, {
+      torSocksUrl: request.server.config.TOR_SOCKS_URL,
+    });
+
     request.log.info(
       // The URL is not a secret, but it is not logged either: on Tor it names
       // which onion service the household talks to.
-      { mode: body.mode, actorId: request.currentUser?.id },
+      { mode: body.mode, route: result.route, actorId: request.currentUser?.id },
       'Bitcoin node configured',
     );
-    return { ok: true };
+    return result;
   });
 
   /** Asks for the chain tip, which is the cheapest proof a node is answering. */

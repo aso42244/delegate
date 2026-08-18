@@ -166,7 +166,7 @@ function PropertyCard({
             onChange={(event) => setNote(event.target.value)}
             placeholder="Appraisal, comparable sale…"
           />
-          <div className="pb-1">
+          <div>
             <Button type="submit" disabled={record.isPending}>
               Record
             </Button>
@@ -268,7 +268,7 @@ export function PropertiesSection(): ReactNode {
         title="Add a property"
         description="Its opening value comes with it. Adding one here makes it an asset — there is nothing to add under Accounts."
       >
-        <form onSubmit={submit} className="flex flex-wrap items-end gap-3">
+        <form onSubmit={submit} className="flex flex-wrap items-center gap-3">
           <TextField
             label="Name"
             value={name}
@@ -304,7 +304,7 @@ export function PropertiesSection(): ReactNode {
             ))}
           </SelectField>
 
-          <label className="flex items-center gap-2 pb-2 text-quiet text-ink">
+          <label className="flex items-center gap-2 text-quiet text-ink">
             <input
               type="checkbox"
               checked={inNetWorth}
@@ -315,7 +315,7 @@ export function PropertiesSection(): ReactNode {
 
           {/* Off by default. A house is not spendable, so counting it as budget
               money has to be a decision rather than the path of least resistance. */}
-          <label className="flex items-center gap-2 pb-2 text-quiet text-ink">
+          <label className="flex items-center gap-2 text-quiet text-ink">
             <input
               type="checkbox"
               checked={inBudget}
@@ -324,7 +324,7 @@ export function PropertiesSection(): ReactNode {
             Budget
           </label>
 
-          <div className="pb-1">
+          <div>
             <Button type="submit" variant="primary" disabled={create.isPending}>
               Add
             </Button>

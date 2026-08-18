@@ -173,25 +173,39 @@ export const walletsApi = {
     api.post<{ ok: boolean }>(`/api/bitcoin/wallets/${walletId}/archive`),
 };
 
+export type NodeRouteDto = 'direct' | 'tor' | 'prefer-tor';
+
 export interface NodeSettingsDto {
   readonly mode: 'none' | 'esplora';
+  /** What was stored: the candidate that actually answered. */
   readonly baseUrl: string | null;
-  readonly useTor: boolean;
+  /** How it will be reached, decided by the address. */
+  readonly route: NodeRouteDto | null;
   readonly reach: 'public' | 'lan' | 'tor' | null;
   readonly lastCheckedAt: string | null;
   readonly lastHeight: number | null;
   readonly lastError: string | null;
+  /** Which way the last request actually went: `tor` or `direct`. */
+  readonly lastRoute: string | null;
   readonly suggestions: readonly { label: string; url: string; note: string }[];
+}
+
+export interface SaveNodeResultDto {
+  readonly baseUrl: string | null;
+  readonly route: NodeRouteDto | null;
+  readonly reached: boolean;
+  readonly height: number | null;
+  readonly error: string | null;
 }
 
 export const nodeApi = {
   get: () => api.get<NodeSettingsDto>('/api/bitcoin/node'),
 
-  save: (input: { mode: 'none' | 'esplora'; baseUrl?: string | null; useTor?: boolean }) =>
-    api.put<{ ok: boolean }>('/api/bitcoin/node', input),
+  save: (input: { mode: 'none' | 'esplora'; baseUrl?: string | null }) =>
+    api.put<SaveNodeResultDto>('/api/bitcoin/node', input),
 
   check: () =>
-    api.post<{ ok: boolean; height: number | null; error: string | null }>(
+    api.post<{ ok: boolean; height: number | null; error: string | null; route: string | null }>(
       '/api/bitcoin/node/check',
     ),
 };

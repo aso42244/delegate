@@ -56,11 +56,11 @@ describe('an onion address', () => {
       method: 'PUT',
       url: '/api/bitcoin/node',
       headers: { cookie },
-      payload: { mode: 'esplora', baseUrl: ONION, useTor: false },
+      payload: { mode: 'esplora', baseUrl: ONION },
     });
 
     expect(response.statusCode).toBe(200);
-    expect((await readNodeSettings(prisma)).useTor).toBe(true);
+    expect((await readNodeSettings(prisma)).route).toBe('tor');
   });
 
   it('is accepted when Tor is asked for explicitly too', async () => {
@@ -68,7 +68,7 @@ describe('an onion address', () => {
       method: 'PUT',
       url: '/api/bitcoin/node',
       headers: { cookie },
-      payload: { mode: 'esplora', baseUrl: ONION, useTor: true },
+      payload: { mode: 'esplora', baseUrl: ONION },
     });
 
     expect(response.statusCode).toBe(200);
@@ -81,9 +81,11 @@ describe('an onion address', () => {
     // A v3 onion name is a public key: the transport is already encrypted and
     // authenticated by the address. This is the one place the https rule bends,
     // and it bends on purpose.
-    await expect(
-      saveNodeSettings(prisma, { mode: 'esplora', baseUrl: ONION, useTor: true }),
-    ).resolves.toBeUndefined();
+    // Nothing is reachable from a test, so this proves it was *accepted* rather
+    // than that it answered.
+    const saved = await saveNodeSettings(prisma, { mode: 'esplora', baseUrl: ONION });
+    expect(saved.baseUrl).toBe(ONION);
+    expect(saved.route).toBe('tor');
   });
 });
 
@@ -91,18 +93,18 @@ describe('an ordinary node', () => {
   it('can use Tor without being an onion', async () => {
     // Reaching a clearnet node through Tor hides which household is asking,
     // which is a reason to do it even where the address resolves normally.
-    await saveNodeSettings(prisma, {
+    const saved = await saveNodeSettings(prisma, {
       mode: 'esplora',
       baseUrl: 'https://mempool.space/api',
-      useTor: true,
     });
-    expect((await readNodeSettings(prisma)).useTor).toBe(true);
+    // Tor first, clearnet if the proxy is not there — decided by the address.
+    expect(saved.route).toBe('prefer-tor');
   });
 
   it('drops Tor when the node is turned off', async () => {
-    await saveNodeSettings(prisma, { mode: 'esplora', baseUrl: ONION, useTor: true });
+    await saveNodeSettings(prisma, { mode: 'esplora', baseUrl: ONION });
     await saveNodeSettings(prisma, { mode: 'none' });
-    expect((await readNodeSettings(prisma)).useTor).toBe(false);
+    expect((await readNodeSettings(prisma)).route).toBeNull();
   });
 });
 

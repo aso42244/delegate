@@ -28,17 +28,41 @@ resolved here, and that is not a preference:
 Tor stays end-to-end encrypted to the node, and the proxy carries a stream it
 cannot read. The certificate is checked against the node.
 
-**Tor is inferred from the address, not asked about.** An onion address has no
-DNS entry and no route except through the proxy, so whether to use Tor is not a
-question about one — it is a fact about one. Asking would be asking the owner to
-restate what he has already typed, and only one of the two answers works.
+**The address decides the route. There is no setting.**
 
-This was first built as a checkbox with a refusal behind it, which was wrong in a
-way worth recording: it turned "paste the address of my node" into "paste the
-address, know what a SOCKS proxy is, tick the right box, and start a second
-container first". Everywhere other than an onion address Tor stays a genuine
-choice, because reaching a clearnet node through it hides which household is
-asking.
+| what is typed     | route                                   | why there is no choice to make                                                                    |
+| ----------------- | --------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| a private address | direct                                  | Tor would route around the house to get back into it, and hide nothing from anyone already inside |
+| an onion address  | Tor                                     | it has no other route in existence                                                                |
+| anything else     | Tor first, direct if Tor is unreachable | Tor hides which household is asking; a hidden IP address is not worth a missing balance           |
+
+This was first built as a checkbox — twice. First as "reach it over Tor" with a
+refusal behind it, then as "reach it over Tor anyway" for public nodes. Both were
+the same mistake: asking the owner to answer a question the address had already
+answered, in vocabulary (_SOCKS proxy_) that belongs to the implementation.
+
+**The fallback is never silent.** Which route a request actually took is recorded
+and shown — "answered over Tor" and "answered directly" are different facts, and
+only one of them is what asking for Tor meant. Without that the interface would
+report success while having no idea whether the household's IP address was hidden
+or handed over.
+
+**Only a transport failure falls back.** A node that answered and said no — a 404,
+a 500 — is reported as it is. Retrying that directly would take a request Tor
+completed perfectly well and send it again over the open internet, which is the
+exact opposite of what choosing Tor meant. The route is also decided once per
+client and then kept: a gap-limit scan makes dozens of requests, and retrying Tor
+on each would double every one.
+
+**The address is worked out, not demanded.** The box takes a LAN address, a
+domain name or an onion address, with or without a scheme and with or without the
+API path. Requiring all three means requiring somebody to know that mempool.space
+serves Esplora under `/api` while their own `electrs` might not — which a program
+can simply find out. Candidates are probed on save and the one that answers is
+what gets stored, so the setting is a URL that has been proved rather than one
+that looked plausible. A node that does not answer is still saved, with the
+failure recorded: being unable to configure a node because it happens to be down
+would be worse than saying so.
 
 **The Tor container runs by default.** It was behind a compose profile at first,
 for the sake of not running a small idle daemon on a household that has no use

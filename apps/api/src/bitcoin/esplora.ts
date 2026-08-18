@@ -18,6 +18,16 @@ import { ValidationError } from '../domain/errors.js';
 
 const TIMEOUT_MS = 15_000;
 
+/**
+ * The connection never happened — refused, timed out, no route, DNS failed.
+ *
+ * Separate from a node that answered and said no. Only this one is worth trying
+ * a different route for.
+ */
+export class TransportError extends Error {
+  readonly code = 'node_transport_failed';
+}
+
 /** How many addresses may be in flight at once. */
 const CONCURRENCY = 4;
 
@@ -76,10 +86,23 @@ export class EsploraNode implements BitcoinNode {
   }
 
   private async get(path: string): Promise<Response> {
-    const response = await this.doFetch(`${this.base}${path}`, {
-      signal: AbortSignal.timeout(TIMEOUT_MS),
-      headers: { accept: 'application/json' },
-    });
+    let response: Response;
+    try {
+      response = await this.doFetch(`${this.base}${path}`, {
+        signal: AbortSignal.timeout(TIMEOUT_MS),
+        headers: { accept: 'application/json' },
+      });
+    } catch (error) {
+      // Distinguished from an HTTP error on purpose, and it matters more than it
+      // looks: the Tor-first route falls back to clearnet on a *transport*
+      // failure only. Falling back on a 404 would take a request Tor completed
+      // perfectly well and send it again over the open internet, which is the
+      // opposite of what asking for Tor meant.
+      throw new TransportError(
+        `Could not reach ${this.base}: ${error instanceof Error ? error.message : 'no answer'}`,
+      );
+    }
+
     if (!response.ok) {
       throw new ValidationError(
         'node_unreachable',
