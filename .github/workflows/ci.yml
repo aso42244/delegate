@@ -67,7 +67,7 @@ jobs:
       # runtime dependency is a reason to stop; one in a test runner is a reason
       # to read, which is what the second step is for.
       - name: Audit runtime dependencies
-        run: npm audit --omit=dev --audit-level=high
+        run: node scripts/audit.mjs
 
       - name: Audit everything, for the record
         run: npm audit || true

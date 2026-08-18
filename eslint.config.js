@@ -67,6 +67,9 @@ export default tseslint.config(
       'vitest.config.ts',
       'playwright.config.ts',
       'apps/web/vite.config.ts',
+      // Build and CI scripts are plain modules with no tsconfig, and the
+      // type-aware rules on untyped JSON can only report false positives.
+      'scripts/**/*.mjs',
       // End-to-end specs belong to their own tsconfig, which the project service
       // does not pick up; they are typechecked by apps/web/tsconfig.e2e.json.
       'e2e/**/*.ts',
@@ -75,9 +78,14 @@ export default tseslint.config(
   },
   {
     // Scripts and CLI entrypoints are the one place stdout is the interface.
-    files: ['**/scripts/**/*.ts', '**/cli/**/*.ts', '**/prisma/seed.ts'],
+    files: ['**/scripts/**/*.ts', '**/scripts/**/*.mjs', '**/cli/**/*.ts', '**/prisma/seed.ts'],
+    languageOptions: {
+      globals: { console: 'readonly', process: 'readonly' },
+    },
     rules: {
       'no-console': 'off',
+      // Plain JavaScript has nowhere to write a return type.
+      '@typescript-eslint/explicit-function-return-type': 'off',
     },
   },
   prettier,
