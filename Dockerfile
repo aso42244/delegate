@@ -23,20 +23,10 @@ COPY package.json package-lock.json ./
 COPY packages/shared/package.json packages/shared/
 COPY apps/api/package.json apps/api/
 COPY apps/web/package.json apps/web/
-# The MCP server never runs here — it is a stdio process started by a client on
-# somebody's own machine (ADR 031). Its manifest is still needed, because
-# `npm ci` reads every workspace the lockfile names and fails on a missing one.
-COPY apps/mcp/package.json apps/mcp/
 RUN npm ci
 
 COPY . .
 RUN npx prisma generate --schema apps/api/prisma/schema.prisma && npm run build
-
-# The Claude Desktop connector, packed here so the running application can hand
-# it to somebody as a download. It needs the MCPB tooling, which is a
-# devDependency and is gone after the production install below — so it happens
-# now rather than later.
-RUN node scripts/build-connector.mjs
 
 # Reinstalled without dev dependencies rather than pruned, so the runtime layer
 # carries no build toolchain. The Prisma client is regenerated afterwards because
@@ -44,18 +34,7 @@ RUN node scripts/build-connector.mjs
 #
 # `npx prisma` directly, not `npm run db:generate`: that script routes through
 # dotenv-cli, which is a devDependency and is gone by this point.
-#
-# Scoped to the workspaces that actually run here. Without the filter this pulls
-# the MCP server's dependencies in — express, hono, jose, ajv — none of which
-# ever execute on the NAS, because that server is a stdio process started on
-# somebody's own machine. Verified against the real lockfile: the resulting tree
-# is byte-for-byte the previous one minus that subtree.
-RUN npm ci --omit=dev \
-      --workspace packages/shared \
-      --workspace apps/api \
-      --workspace apps/web \
-      --include-workspace-root \
-  && npx prisma generate --schema apps/api/prisma/schema.prisma
+RUN npm ci --omit=dev && npx prisma generate --schema apps/api/prisma/schema.prisma
 
 # ---------------------------------------------------------------------------
 # Runtime
@@ -78,7 +57,6 @@ COPY --from=build /app/apps/api/dist ./apps/api/dist
 COPY --from=build /app/apps/api/package.json ./apps/api/package.json
 COPY --from=build /app/apps/api/prisma ./apps/api/prisma
 COPY --from=build /app/apps/web/dist ./apps/web/dist
-COPY --from=build /app/apps/mcp/delegate.mcpb ./apps/mcp/delegate.mcpb
 COPY scripts ./scripts
 
 # Runs unprivileged. The node image ships a `node` user for exactly this.

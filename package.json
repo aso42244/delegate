@@ -2,7 +2,7 @@
   "name": "household-budget",
   "version": "0.0.0",
   "private": true,
-  "description": "Delegate — a self-hosted envelope budgeting application for a single household",
+  "description": "Delegate \u2014 a self-hosted envelope budgeting application for a single household",
   "license": "MIT",
   "type": "module",
   "engines": {
@@ -36,7 +36,6 @@
     "verify:quick": "./scripts/verify.sh --quick"
   },
   "devDependencies": {
-    "@anthropic-ai/mcpb": "^2.1.2",
     "@eslint/js": "^9.39.1",
     "@playwright/test": "^1.62.1",
     "@types/node": "^22.20.0",

@@ -82,26 +82,6 @@ step 'Backup restores'
 step 'Web build'
 npm run build --workspace @budget/web >/dev/null || fail 'web build'
 
-# Same reasoning as the CLI step below: importing a module is not starting a
-# process. This spawns the built MCP entrypoint, speaks the protocol to it over
-# a real pipe and reads a real budget number back — and a single stray write to
-# stdout in that server corrupts the stream in a way nothing else would catch.
-step 'MCP server starts and answers'
-npm run build --workspace @budget/mcp >/dev/null || fail 'mcp build'
-node scripts/verify-mcp.mjs || fail 'mcp server'
-
-# And again against the artefact somebody actually installs. The workspace build
-# cannot reveal a missing dependency, because npm hoists everything to the
-# repository root and the import resolves from there; inside a bundle on
-# somebody else's machine there is no root to fall back to.
-step 'Connector bundle packs and runs'
-node scripts/build-connector.mjs >/dev/null || fail 'connector bundle'
-rm -rf apps/mcp/bundle-check
-npx mcpb unpack apps/mcp/delegate.mcpb apps/mcp/bundle-check >/dev/null || fail 'bundle unpack'
-MCP_SERVER_ENTRY="$PWD/apps/mcp/bundle-check/server/server.js" node scripts/verify-mcp.mjs \
-  || fail 'the packed connector did not run'
-rm -rf apps/mcp/bundle-check
-
 step 'End-to-end tests'
 npm run test:e2e || fail 'end-to-end tests'
 

@@ -425,35 +425,6 @@ negotiable by a request, whoever wrote it.
 Dependency policy and the update process are in
 [docs/dependencies.md](docs/dependencies.md).
 
-## Connecting an AI assistant
-
-Delegate speaks the Model Context Protocol, so Claude can read the budget — and,
-if you allow it, sort transactions into envelopes — from an ordinary
-conversation. Full setup in [docs/mcp.md](docs/mcp.md).
-
-The shape of it: `apps/mcp` is a small process started by the assistant on your
-own machine, talking to Delegate over its HTTP API with a scoped token issued
-from **Settings → Connections**. Nothing new listens on a port and nothing is
-added to the tunnel.
-
-**Setting it up involves no terminal.** Settings → Connections issues the key and
-hands you `delegate.mcpb`, a bundle packed into the container image; Claude
-Desktop installs it by drag and drop and asks for the key and the address in a
-form. Other clients can run the same server from a command line — see
-[docs/mcp.md](docs/mcp.md).
-
-A connection can always read. It can sort transactions and write categorization
-rules only if it was issued with **Allow changes**. It can never move money,
-archive anything, apply a rule across past transactions, touch a setting, or
-issue another token — those are refused by the server, not by the assistant's
-good behaviour. The reasoning is in
-[ADR 030](docs/decisions/030-a-program-authenticates-with-a-scoped-token.md) and
-[ADR 031](docs/decisions/031-the-mcp-server-is-a-client-of-the-http-api.md).
-
-Reaching Notion AI needs the remote transport, which is deliberately not built:
-it would make Delegate an OAuth authorization server and put a `/mcp` endpoint
-on the public internet. That is its own decision.
-
 ## Repository conventions
 
 - `main` is always deployable. Work happens on `feat/`, `fix/`, `chore/`, `docs/`

@@ -1,17 +1,8 @@
 {
   "files": [],
   "references": [
-    {
-      "path": "./packages/shared"
-    },
-    {
-      "path": "./apps/api"
-    },
-    {
-      "path": "./apps/web"
-    },
-    {
-      "path": "./apps/mcp"
-    }
+    { "path": "./packages/shared" },
+    { "path": "./apps/api" },
+    { "path": "./apps/web" }
   ]
 }
