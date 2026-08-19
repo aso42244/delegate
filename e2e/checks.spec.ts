@@ -21,10 +21,10 @@ async function fundPianoLessons(page: Page): Promise<void> {
 
 /** Records check 1062 for $120 against Piano Lessons. */
 async function writeCheck(page: Page, memo?: string): Promise<void> {
-  await page.getByRole('button', { name: 'New outstanding check' }).click();
+  await page.getByRole('button', { name: 'New check' }).click();
 
   // Scoped to the dialog: "Amount" also names a column on the page behind it.
-  const dialog = page.getByRole('dialog', { name: 'New outstanding check' });
+  const dialog = page.getByRole('dialog', { name: 'New check' });
   await dialog.getByLabel('Check number').fill('1062');
   await dialog.getByLabel('Amount').fill('120.00');
   await dialog.getByLabel('Money comes from').selectOption({ label: 'Piano Lessons' });

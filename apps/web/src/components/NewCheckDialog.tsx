@@ -85,7 +85,12 @@ export function NewCheckDialog({
   }
 
   return (
-    <Modal label="New outstanding check" title="New outstanding check" onClose={onClose}>
+    <Modal
+      label="New check"
+      title="New check"
+      description="A check written but not yet cashed. The money leaves its delegation now and sits on a line of its own until it clears."
+      onClose={onClose}
+    >
       <form onSubmit={onSubmit} className="flex flex-col gap-4">
         <p className="text-quiet text-muted">
           The amount moves out of the delegation now and waits on its own line until the check is

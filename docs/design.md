@@ -341,7 +341,10 @@ A gesture with nothing on screen to suggest it is a gesture nobody finds, so the
 Transactions page carries one quiet line saying so — and only on devices where
 it applies.
 
-**New outstanding check** sits beside Transfer and Delegate on the Budget page.
+**New check** sits beside Transfer and Delegate on the Budget page. It read
+"New outstanding check" until the owner shortened it; the dialog carries the
+word "outstanding" in its description instead, where it explains rather than
+just lengthens.
 It asks for the number, the amount, the date, a memo, and which delegation the
 money comes from. Recording one moves the money out of that delegation and onto a
 line of its own, filed under **Outstanding Checks** — a grouping the budget owns,
