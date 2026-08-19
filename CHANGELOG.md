@@ -8,6 +8,36 @@ phase (`v0.1.0-phase1`, and so on).
 
 Nothing yet.
 
+## [0.16.0] — 2026-08-19
+
+Connecting Claude no longer involves a terminal.
+
+### Added
+
+- **The connector as a downloadable bundle.** `delegate.mcpb` is an MCP Bundle —
+  the server, its dependencies and a manifest describing what it needs to be
+  told — packed into the container image and served from **Settings →
+  Connections**. Claude Desktop installs it by drag and drop, carries its own
+  Node runtime, and collects the connection key and the address in a form of its
+  own. Create a key, download, drag, paste twice.
+- **The address to paste, shown on the page.** `window.location.origin` rather
+  than a guess at a LAN address: whatever reached the page reaches the budget.
+- **`verify` drives the packed bundle**, not only the workspace build. npm
+  hoists, so a missing transitive dependency resolves fine from the repository
+  root and is fatal inside a bundle on somebody else's machine.
+- **The container image step now starts the image** and asks it for `/health`.
+  Building alone was half of what the step's name claimed, and a container that
+  builds and then exits on boot is a failure this project has had twice.
+
+### Fixed
+
+- **`.dockerignore` was anchored at the root**, so `packages/shared/tsconfig.tsbuildinfo`
+  was copied into the build context. A stale one is a lie `tsc --build`
+  believes: it concludes the project is already built, emits nothing, and every
+  workspace importing `@budget/shared` then fails to resolve it. Only ever
+  visible locally — the NAS builds from a `git archive` tarball, which carries
+  no ignored file at all.
+
 ## [0.15.0] — 2026-08-19
 
 Delegate can be connected to an AI assistant. Setup is [docs/mcp.md](docs/mcp.md).
