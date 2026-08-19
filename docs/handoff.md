@@ -229,9 +229,18 @@ are not negotiable by a request, whoever wrote it.
 - **Homebrew PostgreSQL 16.** `household_budget_dev` and `household_budget_test`
   (names predate the rename; harmless).
 - `gh` is installed and authenticated as `aso42244`.
-- **Docker is not installed locally** and is not needed — CI builds the image on
-  x86_64, which is the point (ADR 005: a Mac would produce an arm64 image the
-  Celeron cannot start).
+- **Docker is not installed locally, and this has a consequence worth knowing.**
+  The NAS builds the image from source now, so nothing here needs to (ADR 019) —
+  but it means `npm run verify` cannot complete its last step. Use
+  `npm run verify:quick`, which skips exactly that.
+
+  So the Dockerfile, `docker-compose.yml` and `tor/` are the one part of this
+  repository that is reasoned about rather than executed before it ships. When
+  changing any of them, say so plainly rather than reporting them as verified.
+  The Tor image and its entrypoint went out on that basis; if the onion address
+  never appears, `sudo docker compose logs tor` on the NAS is the first thing to
+  read.
+
 - Playwright with Chromium is installed.
 - Put `/opt/homebrew/opt/postgresql@16/bin` and `/opt/homebrew/bin` on `PATH` in
   shell commands; they are not there by default.
