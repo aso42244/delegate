@@ -8,6 +8,51 @@ phase (`v0.1.0-phase1`, and so on).
 
 Nothing yet.
 
+## [0.15.0] — 2026-08-19
+
+Delegate can be connected to an AI assistant. Setup is [docs/mcp.md](docs/mcp.md).
+
+### Added
+
+- **API tokens.** A credential for a program, because everything else here
+  assumes a browser: a session cookie, a password, a code from an authenticator,
+  an origin check. A public selector and a hashed secret half, issued and revoked
+  from **Settings → Connections** and shown exactly once. Scope is an
+  **allowlist of registered route patterns** rather than a rule about HTTP
+  methods — `GET /api/settings` carries the onion address and `GET /api/users` is
+  the household, and both are correct for a browser —
+  [ADR 030](docs/decisions/030-a-program-authenticates-with-a-scoped-token.md).
+- **A Model Context Protocol server**, `apps/mcp`, running over stdio on
+  somebody's own machine and talking to Delegate over its HTTP API. Twelve tools:
+  the budget, accounts, transactions, spending, one envelope's full history, the
+  rules, the sync status — and, only where the token allows it, categorizing,
+  splitting, bulk categorizing and writing a rule. It is a client of the API
+  rather than of the database, so it can never do more than a person could do
+  through the interface —
+  [ADR 031](docs/decisions/031-the-mcp-server-is-a-client-of-the-http-api.md).
+- **A verify step that speaks the protocol** to the built entrypoint. Importing a
+  module does not catch a stray write to stdout corrupting the stream, which is
+  the failure mode where the client simply never starts.
+
+### Fixed
+
+- **A flag in a query string is text, not a truthy value.**
+  `z.coerce.boolean()` is `Boolean(value)`, and `Boolean("false")` is `true` — so
+  `GET /api/transactions?uncategorized=false` returned the uncategorized queue,
+  and the Transactions page's Categorized filter had been showing the wrong list.
+  `pending` and `includeArchived` had the same fault, on transactions and on
+  accounts. This is the fault that was found once on `/api/rules/preview` and
+  patched at that call site; the parse now lives in `http/serialize.ts` so there
+  is one place to reach for.
+
+### Not built, by decision
+
+- **Remote MCP** — a `/mcp` endpoint on the public internet, which is what
+  claude.ai and Notion AI would need. It makes Delegate an OAuth 2.1
+  authorization server and puts the household's finances into a third party's
+  infrastructure on every tool call. Both deserve their own decision rather than
+  arriving as a consequence of this one.
+
 ## [0.3.0-phase3] — 2026-08-10
 
 Phase 3 as re-scoped, plus outstanding checks and the first pass of Phase 4.
