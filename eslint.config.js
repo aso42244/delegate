@@ -11,6 +11,10 @@ export default tseslint.config(
       '**/node_modules/**',
       '**/*.timestamp-*.mjs',
       '**/generated/**',
+      // Staging and output for the connector bundle: a copy of dist plus an
+      // installed dependency tree, none of it authored here.
+      'apps/mcp/bundle/**',
+      'apps/mcp/bundle-check/**',
     ],
   },
   js.configs.recommended,

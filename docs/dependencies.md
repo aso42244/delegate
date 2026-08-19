@@ -23,6 +23,13 @@ unreasonable to write by hand — a database driver, a password hash, a QR encod
 | `tailwindcss`                            | Styling.                                                                                                                                                                                                                                                                                                                        |
 | `@modelcontextprotocol/sdk`              | The protocol implementation behind `apps/mcp`. Hand-rolling a JSON-RPC framing layer to somebody else's specification is exactly the kind of package this list is for. **Not in the container image** — that server runs on somebody's own machine, and the production install is scoped to the workspaces that run on the NAS. |
 
+`@anthropic-ai/mcpb` is a build tool — it packs the Claude Desktop connector —
+but note that what it produces _does_ ship: `delegate.mcpb` is copied into the
+image so the application can offer it as a download. That bundle carries its own
+copy of the MCP SDK and its dependencies. They are a static file the NAS serves,
+never code it runs, and `npm audit` does not see them; a security advisory in
+that subtree is fixed by repacking the bundle in a new release.
+
 Everything else in `package.json` is a build or test tool and never reaches the
 running container.
 

@@ -18,6 +18,16 @@ import { PrismaClient } from '@prisma/client';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 
+/**
+ * Which build to drive.
+ *
+ * Defaults to the compiled workspace. `npm run verify` also points this at the
+ * *unpacked bundle*, because that is the artefact somebody actually installs —
+ * and the way a bundle fails is a missing transitive dependency, which the
+ * workspace build cannot reveal since npm hoists everything to the root.
+ */
+const SERVER_ENTRY = process.env['MCP_SERVER_ENTRY'] ?? 'apps/mcp/dist/server.js';
+
 const PORT = 4199;
 const BASE = `http://127.0.0.1:${PORT}`;
 const OWNER = { username: 'mcp-verify@example.test', password: 'verify-passphrase-long' };
@@ -32,6 +42,8 @@ const prisma = new PrismaClient({ datasources: { db: { url: databaseUrl } } });
 function ok(message) {
   process.stdout.write(`  ✓ ${message}\n`);
 }
+
+process.stdout.write(`  driving ${SERVER_ENTRY}\n`);
 
 function fail(message) {
   process.stderr.write(`  ✘ ${message}\n`);
@@ -130,7 +142,7 @@ async function connect(token) {
   await client.connect(
     new StdioClientTransport({
       command: process.execPath,
-      args: ['apps/mcp/dist/server.js'],
+      args: [SERVER_ENTRY],
       env: { ...process.env, DELEGATE_URL: BASE, DELEGATE_TOKEN: token },
       stderr: 'pipe',
     }),

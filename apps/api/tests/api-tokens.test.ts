@@ -317,6 +317,29 @@ describe('the scope allowlist', () => {
   });
 
   /**
+   * The connector is an installer. There is nothing secret inside it, but a
+   * program that can hand out an installer is a program that can hand out an
+   * installer, so it is not on either list.
+   */
+  it('refuses to hand the connector to a token', async () => {
+    const cookie = await setUpOwner();
+    const { secret } = await issueToken(cookie, 'read_write');
+
+    const response = await app.inject({
+      method: 'GET',
+      url: '/api/connector',
+      headers: bearer(secret),
+    });
+    expect(response.statusCode).toBe(403);
+    expect(errorOf(response).code).toBe('token_scope');
+  });
+
+  it('refuses to hand the connector to nobody at all', async () => {
+    const response = await app.inject({ method: 'GET', url: '/api/connector' });
+    expect(response.statusCode).toBe(401);
+  });
+
+  /**
    * A rename in a routes file would otherwise silently drop an entry from the
    * allowlist. That fails closed, which is safe — and invisible, which is not:
    * the tool that used it starts answering 403 with no clue why.

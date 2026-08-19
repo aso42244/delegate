@@ -436,6 +436,12 @@ own machine, talking to Delegate over its HTTP API with a scoped token issued
 from **Settings → Connections**. Nothing new listens on a port and nothing is
 added to the tunnel.
 
+**Setting it up involves no terminal.** Settings → Connections issues the key and
+hands you `delegate.mcpb`, a bundle packed into the container image; Claude
+Desktop installs it by drag and drop and asks for the key and the address in a
+form. Other clients can run the same server from a command line — see
+[docs/mcp.md](docs/mcp.md).
+
 A connection can always read. It can sort transactions and write categorization
 rules only if it was issued with **Allow changes**. It can never move money,
 archive anything, apply a rule across past transactions, touch a setting, or

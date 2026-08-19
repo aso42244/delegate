@@ -1,7 +1,12 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { ApiError } from '../../api/client.js';
-import { tokensApi, type ApiTokenDto, type TokenScope } from '../../api/tokens.js';
+import {
+  downloadConnector,
+  tokensApi,
+  type ApiTokenDto,
+  type TokenScope,
+} from '../../api/tokens.js';
 import { Alert, Button, SelectField, Tag, TextField, Toggle } from '../../components/ui.jsx';
 import { SettingsCard } from './SettingsCard.jsx';
 
@@ -140,6 +145,8 @@ export function ConnectionsSection(): ReactNode {
         </ul>
       </SettingsCard>
 
+      <ConnectorCard />
+
       <SettingsCard
         title="Connections"
         description="Everything that has ever been issued, including what has been switched off."
@@ -160,6 +167,82 @@ export function ConnectionsSection(): ReactNode {
         )}
       </SettingsCard>
     </>
+  );
+}
+
+/**
+ * Installing the connector, without a terminal anywhere in it.
+ *
+ * The address is shown rather than assumed. Whatever this page was reached on
+ * is, by definition, an address that reaches the budget from this machine — so
+ * it is the right thing to paste, and guessing at a LAN IP would not be.
+ */
+function ConnectorCard(): ReactNode {
+  const [problem, setProblem] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+  const address = window.location.origin;
+
+  const download = useMutation({
+    mutationFn: downloadConnector,
+    onSuccess: () => setProblem(null),
+    onError: (error: unknown) =>
+      setProblem(error instanceof Error ? error.message : 'The connector could not be downloaded.'),
+  });
+
+  async function copyAddress(): Promise<void> {
+    try {
+      await navigator.clipboard?.writeText(address);
+      setCopied(true);
+    } catch {
+      setCopied(false);
+    }
+  }
+
+  return (
+    <SettingsCard
+      title="Set up Claude Desktop"
+      description="Install the connector, then paste the two things it asks for."
+    >
+      {problem && <Alert>{problem}</Alert>}
+
+      <ol className="flex list-decimal flex-col gap-3 pl-5 text-quiet text-muted">
+        <li>Create a connection above and copy the key.</li>
+        <li>
+          Download the connector.
+          <div className="mt-2">
+            <Button
+              type="button"
+              variant="primary"
+              onClick={() => download.mutate()}
+              disabled={download.isPending}
+            >
+              {download.isPending ? 'Preparing…' : 'Download connector'}
+            </Button>
+          </div>
+        </li>
+        <li>
+          In Claude Desktop, open <strong>Settings → Extensions</strong> and drag{' '}
+          <code className="font-mono">delegate.mcpb</code> onto the page.
+        </li>
+        <li>
+          It will ask for two things. The key you copied, and this address:
+          <div className="mt-2 flex items-center gap-2">
+            <code className="rounded border border-line bg-surface-2 px-2 py-1 font-mono text-quiet text-ink">
+              {address}
+            </code>
+            <Button type="button" onClick={() => void copyAddress()}>
+              {copied ? 'Copied' : 'Copy'}
+            </Button>
+          </div>
+        </li>
+      </ol>
+
+      <p className="mt-4 text-quiet text-muted">
+        Then ask Claude what the balance on your budget is. If nothing happens, the address above
+        has to be one the computer running Claude can reach — the same one you are reading this page
+        on will do.
+      </p>
+    </SettingsCard>
   );
 }
 

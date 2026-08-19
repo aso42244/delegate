@@ -108,3 +108,27 @@ test('the key is shown once and never again', async ({ signedIn }) => {
   await expect(signedIn.getByText('Shown once')).toBeVisible();
   await expect(signedIn.getByText(secret)).toHaveCount(0);
 });
+
+/**
+ * The whole point of the connector: an install path with no terminal in it.
+ *
+ * The bundle is built into the image, so this also proves the file survived the
+ * trip — a download button that 404s is worse than no download button, because
+ * it looks like the feature exists.
+ */
+test('the connector downloads as a file Claude Desktop can install', async ({ signedIn }) => {
+  await signedIn.goto('/settings/connections');
+
+  const started = signedIn.waitForEvent('download');
+  await signedIn.getByRole('button', { name: 'Download connector' }).click();
+
+  const download = await started;
+  expect(download.suggestedFilename()).toBe('delegate.mcpb');
+});
+
+test('the address to paste is the one this page was reached on', async ({ signedIn, baseURL }) => {
+  await signedIn.goto('/settings/connections');
+
+  // Not a guess at a LAN address: whatever reached this page reaches the budget.
+  await expect(signedIn.getByText(baseURL!, { exact: true })).toBeVisible();
+});

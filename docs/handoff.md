@@ -134,6 +134,12 @@ recorded in the ADRs, and the short version is:
   ([ADR 031](decisions/031-the-mcp-server-is-a-client-of-the-http-api.md)). It
   runs on somebody's own machine; nothing new listens on a port and nothing was
   added to the tunnel. Setup is [docs/mcp.md](mcp.md)
+- **Setting it up involves no terminal**, which the owner asked for explicitly.
+  `delegate.mcpb` is packed into the container image and served from Settings →
+  Connections; Claude Desktop installs it by drag and drop and collects the key
+  and the address in a form of its own. `verify` packs the bundle, unpacks it and
+  drives _that_ copy over the protocol — npm hoists, so a missing transitive
+  dependency is invisible in the workspace build and fatal in a bundle
 - A write-scoped connection can sort transactions and write rules. It can never
   move money, archive, apply a rule across history, or touch a setting — refused
   by the server, and asserted route by route in the test suite
@@ -314,7 +320,8 @@ npm run test              # 158 unit
 npm run test:integration  # 459 integration
 npm run test:e2e          # 141 end-to-end, needs a build first
 
-node scripts/verify-mcp.mjs   # spawns the built MCP server and speaks to it
+node scripts/verify-mcp.mjs      # spawns the built MCP server and speaks to it
+node scripts/build-connector.mjs # packs delegate.mcpb for Claude Desktop
 ```
 
 `npm run verify` is the gate. It runs migrations, typecheck, lint, formatting,

@@ -1,3 +1,5 @@
+import { readFile } from 'node:fs/promises';
+import { fileURLToPath } from 'node:url';
 import type { FastifyPluginCallback } from 'fastify';
 import { z } from 'zod';
 import { prisma } from '../db/client.js';
@@ -59,10 +61,58 @@ function present(token: ApiTokenSummary): TokenView {
   };
 }
 
+/**
+ * The connector bundle, built at image build time and shipped inside it.
+ *
+ * Resolved from this module rather than from the working directory: the
+ * container starts in `/app`, `npm run dev` starts in `apps/api`, and a path
+ * that only works in one of them is a download button that is broken in
+ * development and nobody notices.
+ *
+ * Four levels up from either `dist/routes/` or `src/routes/` is the repository
+ * root, which is the same shape in both.
+ */
+const CONNECTOR_PATH = fileURLToPath(
+  new URL('../../../../apps/mcp/delegate.mcpb', import.meta.url),
+);
+
 export const apiTokenRoutes: FastifyPluginCallback = (fastify, _options, done) => {
   for (const guard of [...AUTHENTICATED, requireSettingsManagement]) {
     fastify.addHook('preHandler', guard);
   }
+
+  /**
+   * The Claude Desktop connector, as a file to drag into it.
+   *
+   * This exists so the whole path — issue a key, install the connector, tell it
+   * where the budget is — happens in two interfaces the owner already has open,
+   * and never in a terminal. The bundle carries no credential of its own; Claude
+   * Desktop asks for the key in a form and keeps it.
+   *
+   * Not in the token allowlist, deliberately. There is nothing secret in here,
+   * but a program that can hand out an installer is a program that can hand out
+   * an installer.
+   */
+  fastify.get('/api/connector', async (request, reply) => {
+    let bundle: Buffer;
+    try {
+      bundle = await readFile(CONNECTOR_PATH);
+    } catch {
+      request.log.error({ path: CONNECTOR_PATH }, 'the connector bundle is not on disk');
+      return reply.code(404).send({
+        error: {
+          code: 'connector_unavailable',
+          message:
+            'The connector was not built into this deployment. Run scripts/build-connector.mjs, or upgrade to a release that ships it.',
+        },
+      });
+    }
+
+    return reply
+      .header('content-type', 'application/octet-stream')
+      .header('content-disposition', 'attachment; filename="delegate.mcpb"')
+      .send(bundle);
+  });
 
   fastify.get('/api/api-tokens', async () => ({
     tokens: (await listApiTokens(prisma)).map(present),
