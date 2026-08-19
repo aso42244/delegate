@@ -80,7 +80,9 @@ export default tseslint.config(
     // Scripts and CLI entrypoints are the one place stdout is the interface.
     files: ['**/scripts/**/*.ts', '**/scripts/**/*.mjs', '**/cli/**/*.ts', '**/prisma/seed.ts'],
     languageOptions: {
-      globals: { console: 'readonly', process: 'readonly' },
+      // `fetch` is a global on Node 18 and later; the shared config predates
+      // any script here making an HTTP request.
+      globals: { console: 'readonly', process: 'readonly', fetch: 'readonly' },
     },
     rules: {
       'no-console': 'off',
