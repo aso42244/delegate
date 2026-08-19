@@ -82,6 +82,14 @@ step 'Backup restores'
 step 'Web build'
 npm run build --workspace @budget/web >/dev/null || fail 'web build'
 
+# Same reasoning as the CLI step below: importing a module is not starting a
+# process. This spawns the built MCP entrypoint, speaks the protocol to it over
+# a real pipe and reads a real budget number back — and a single stray write to
+# stdout in that server corrupts the stream in a way nothing else would catch.
+step 'MCP server starts and answers'
+npm run build --workspace @budget/mcp >/dev/null || fail 'mcp build'
+node scripts/verify-mcp.mjs || fail 'mcp server'
+
 step 'End-to-end tests'
 npm run test:e2e || fail 'end-to-end tests'
 

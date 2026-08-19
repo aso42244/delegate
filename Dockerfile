@@ -23,6 +23,10 @@ COPY package.json package-lock.json ./
 COPY packages/shared/package.json packages/shared/
 COPY apps/api/package.json apps/api/
 COPY apps/web/package.json apps/web/
+# The MCP server never runs here — it is a stdio process started by a client on
+# somebody's own machine (ADR 031). Its manifest is still needed, because
+# `npm ci` reads every workspace the lockfile names and fails on a missing one.
+COPY apps/mcp/package.json apps/mcp/
 RUN npm ci
 
 COPY . .
@@ -34,7 +38,18 @@ RUN npx prisma generate --schema apps/api/prisma/schema.prisma && npm run build
 #
 # `npx prisma` directly, not `npm run db:generate`: that script routes through
 # dotenv-cli, which is a devDependency and is gone by this point.
-RUN npm ci --omit=dev && npx prisma generate --schema apps/api/prisma/schema.prisma
+#
+# Scoped to the workspaces that actually run here. Without the filter this pulls
+# the MCP server's dependencies in — express, hono, jose, ajv — none of which
+# ever execute on the NAS, because that server is a stdio process started on
+# somebody's own machine. Verified against the real lockfile: the resulting tree
+# is byte-for-byte the previous one minus that subtree.
+RUN npm ci --omit=dev \
+      --workspace packages/shared \
+      --workspace apps/api \
+      --workspace apps/web \
+      --include-workspace-root \
+  && npx prisma generate --schema apps/api/prisma/schema.prisma
 
 # ---------------------------------------------------------------------------
 # Runtime

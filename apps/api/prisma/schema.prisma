@@ -111,6 +111,16 @@ enum RuleDirection {
   @@map("rule_direction")
 }
 
+/// What an API token may do. `read` is every safe method and nothing else;
+/// `read_write` adds an explicit allowlist of reversible routes, enforced in
+/// `plugins/api-token.ts` rather than implied by the method.
+enum ApiTokenScope {
+  read
+  read_write
+
+  @@map("api_token_scope")
+}
+
 enum UserRole {
   user
   admin
@@ -165,6 +175,7 @@ model User {
   @@map("users")
   insightLayouts InsightLayout[]
   recoveryCodes  RecoveryCode[]
+  apiTokens      ApiToken[]
 }
 
 /// A single-use code that bypasses the second factor when the authenticator is
@@ -201,6 +212,50 @@ model Session {
   @@index([userId])
   @@index([expiresAt])
   @@map("sessions")
+}
+
+/// A credential a program uses, where a browser session cannot exist.
+///
+/// The Model Context Protocol server authenticates with one of these: it has no
+/// cookie jar and cannot be shown a TOTP prompt. The token acts as the user who
+/// created it, so archiving that account disables every token it made.
+///
+/// Split into a public selector and a secret half. The selector is the index
+/// lookup; only the secret is hashed. Verifying by hashing every stored row
+/// would make the cost of a request grow with the number of tokens, and a
+/// unique index cannot be built over a salted hash. See ADR 030 for why the
+/// hash here is SHA-256 rather than the argon2id used for passwords.
+model ApiToken {
+  id   String @id @default(uuid()) @db.Uuid
+  /// Names the client, so a revocation decision can be made from the list.
+  name String
+
+  /// The public half. Unique, indexed, and useless without the secret.
+  selector   String @unique
+  /// SHA-256 of the secret half, hex. Never the token itself.
+  secretHash String @map("secret_hash")
+
+  scope ApiTokenScope @default(read)
+
+  /// Whose authority the token carries. Cascades, so deleting a user cannot
+  /// leave a working credential behind.
+  userId String @map("user_id") @db.Uuid
+
+  /// Updated at most every few minutes rather than on every call — see
+  /// `touchApiToken`. A write per request would make an idle read cost a
+  /// transaction.
+  lastUsedAt DateTime? @map("last_used_at")
+  /// Null means it never expires, which is a deliberate choice at creation.
+  expiresAt  DateTime? @map("expires_at")
+  /// Revocation is immediate and permanent. Unlike everything else in this
+  /// schema the row is kept only as a record; it can never be restored.
+  revokedAt  DateTime? @map("revoked_at")
+  createdAt  DateTime  @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("api_tokens")
 }
 
 // ---------------------------------------------------------------------------

@@ -88,8 +88,8 @@ These are non-negotiable. Violating one is a build failure.
 
 ## Where things stand
 
-**Live on the NAS, currently at `v0.14.0`.** 158 unit, 459 integration and 137
-end-to-end tests. There is no CI: GitHub stores the code and nothing else
+**Live on the NAS, currently at `v0.14.0`.** 170 unit, 488 integration and 141
+end-to-end tests, plus a live MCP handshake. There is no CI: GitHub stores the code and nothing else
 ([ADR 022](decisions/022-the-checks-run-here-not-on-github.md)), and every gate
 runs locally through `npm run verify`.
 
@@ -122,6 +122,22 @@ recorded in the ADRs, and the short version is:
   ([ADR 025](decisions/025-a-descriptor-is-the-one-wallet-representation.md)).
   Descriptors are encrypted at rest and never returned by the API
 
+**An AI assistant can reach the budget**, which is the newest body of work
+
+- API tokens: a credential for a program, since everything else here assumes a
+  browser ([ADR 030](decisions/030-a-program-authenticates-with-a-scoped-token.md)).
+  A public selector and a hashed secret; scope is an **allowlist of route
+  patterns**, not a rule about methods, because `GET /api/settings` carries the
+  onion address. Issued from Settings → Connections, shown once
+- `apps/mcp`, a stdio Model Context Protocol server that is a client of the HTTP
+  API rather than of the database
+  ([ADR 031](decisions/031-the-mcp-server-is-a-client-of-the-http-api.md)). It
+  runs on somebody's own machine; nothing new listens on a port and nothing was
+  added to the tunnel. Setup is [docs/mcp.md](mcp.md)
+- A write-scoped connection can sort transactions and write rules. It can never
+  move money, archive, apply a rule across history, or touch a setting — refused
+  by the server, and asserted route by route in the test suite
+
 **Security**, after two external OWASP reviews — see
 [docs/security-review-2026-08.md](security-review-2026-08.md) for what was fixed
 and, more usefully, what was _not_ and why
@@ -145,7 +161,14 @@ service; ADR 017 carries the amendment.
 
 ### Known gaps to fix
 
-None outstanding. The one that stood here — an account's type could not be
+None outstanding. A boolean in a query string was being read with
+`z.coerce.boolean()`, and `Boolean("false")` is `true` — so the Transactions
+page's Categorized filter had been showing the uncategorized queue instead. It
+is the same fault that was found once on `/api/rules/preview` and patched at the
+call site, leaving four more; the parse now lives in `http/serialize.ts` as
+`booleanQuery` and there is one place to reach for.
+
+The one that stood here — an account's type could not be
 corrected from the UI, found by the owner on his first real sync — shipped in
 [#41](https://github.com/aso42244/delegate/pull/41) and is available from both
 Settings → Accounts and the asset or debt row menu.
@@ -214,6 +237,13 @@ Cloudflare Access was declined. A Tor onion service is the alternative path and
 is off until switched on from the LAN — see ADR 027, and note that running both
 means the weaker door sets the security level.
 
+**Remote MCP** — a `/mcp` endpoint on the public internet, which is what
+claude.ai and Notion AI would need — is not built and needs an ADR before it
+needs code. It makes Delegate an OAuth 2.1 authorization server and it puts the
+household's finances into a third party's infrastructure on every tool call.
+Notion additionally requires a Business or Enterprise plan and a Custom Agent.
+ADR 031 records why the stdio transport was the right first step.
+
 **Phase 5** — feature requests arriving from a Notion database and built
 automatically — was removed from the plan at the owner's direction and is not on
 the roadmap. If it ever returns it needs an ADR before it needs code: it would
@@ -237,6 +267,14 @@ are not negotiable by a request, whoever wrote it.
   So the Dockerfile, `docker-compose.yml` and `tor/` are the one part of this
   repository that is reasoned about rather than executed before it ships. When
   changing any of them, say so plainly rather than reporting them as verified.
+
+  **The Dockerfile changed when `apps/mcp` landed and has not been built.**
+  `npm ci` reads every workspace the lockfile names and fails on a missing one,
+  so its manifest is copied in; the production install is then scoped with
+  `--workspace` so the MCP server's dependencies — express, hono, jose — do not
+  reach a machine that never runs it. The resulting dependency tree _was_
+  verified, against the real lockfile in a scratch directory: it is the previous
+  one minus that subtree. The image itself was not built.
   The Tor image and its entrypoint went out on that basis; if the onion address
   never appears, `sudo docker compose logs tor` on the NAS is the first thing to
   read.
@@ -260,13 +298,15 @@ npm run verify:quick      # the same, minus the container image build
 
 npm run test              # 158 unit
 npm run test:integration  # 459 integration
-npm run test:e2e          # 137 end-to-end, needs a build first
+npm run test:e2e          # 141 end-to-end, needs a build first
+
+node scripts/verify-mcp.mjs   # spawns the built MCP server and speaks to it
 ```
 
 `npm run verify` is the gate. It runs migrations, typecheck, lint, formatting,
 the forbidden-terminology rule, the dependency audit, all three suites, the
-cached-balances-against-ledger check, a real backup-and-restore, and the image
-build. It replaced GitHub Actions and is the _only_ thing standing between a
+cached-balances-against-ledger check, a real backup-and-restore, a live MCP
+handshake against the built entrypoint, and the image build. It replaced GitHub Actions and is the _only_ thing standing between a
 branch and `main` now — nothing on a server is watching.
 
 Most commands need the environment loaded first:

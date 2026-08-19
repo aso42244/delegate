@@ -78,8 +78,16 @@ export const auth = fp(authPlugin, { name: 'auth' });
  * Re-reads the user on every request rather than trusting what login wrote into
  * the session: a role change or an archival must take effect immediately, not
  * whenever the cookie happens to expire.
+ *
+ * A request carrying a valid API token arrives here already authenticated, so
+ * this returns without touching the session at all.
  */
 export async function requireSession(request: FastifyRequest, reply: FastifyReply): Promise<void> {
+  // A bearer token has already resolved the user, and it did so by reading the
+  // same row this would. See `plugins/api-token.ts`, which also refuses any
+  // route outside the token's scope before this runs.
+  if (request.apiToken && request.currentUser) return;
+
   const userId = request.session.userId;
   if (!userId) {
     await reply.code(401).send({ error: { code: 'unauthenticated', message: 'Please sign in.' } });

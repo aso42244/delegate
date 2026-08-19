@@ -18,7 +18,7 @@ import {
   DEFAULT_PAGE_SIZE,
 } from '../domain/transactions.js';
 import { confirmPair, findPairCandidates, unpair } from '../domain/pairing.js';
-import { centsInLoose, centsOut, dateOut } from '../http/serialize.js';
+import { booleanQuery, centsInLoose, centsOut, dateOut } from '../http/serialize.js';
 import { AUTHENTICATED } from '../plugins/auth.js';
 
 /**
@@ -38,9 +38,9 @@ const listQuerySchema = z.object({
   kind: z.enum(TRANSACTION_KINDS).optional(),
   dateFrom: z.coerce.date().optional(),
   dateTo: z.coerce.date().optional(),
-  uncategorized: z.coerce.boolean().optional(),
-  pending: z.coerce.boolean().optional(),
-  includeArchived: z.coerce.boolean().optional(),
+  uncategorized: booleanQuery.optional(),
+  pending: booleanQuery.optional(),
+  includeArchived: booleanQuery.optional(),
   limit: z.coerce.number().int().positive().max(MAX_PAGE_SIZE).default(DEFAULT_PAGE_SIZE),
   offset: z.coerce.number().int().nonnegative().default(0),
 });
