@@ -9,4 +9,10 @@ node_modules
 test-results
 playwright-report
 backups
-*.tsbuildinfo
+# Anchored at the root, so `packages/shared/tsconfig.tsbuildinfo` was copied in
+# — and a stale one is a lie the compiler believes. `tsc --build` reads it,
+# concludes the project is already built, emits nothing, and every workspace
+# that imports @budget/shared then fails to resolve it. The image build was the
+# only thing that ever saw this, because the NAS builds from `git archive`,
+# which carries no ignored files.
+**/*.tsbuildinfo

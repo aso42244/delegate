@@ -259,25 +259,39 @@ are not negotiable by a request, whoever wrote it.
 - **Homebrew PostgreSQL 16.** `household_budget_dev` and `household_budget_test`
   (names predate the rename; harmless).
 - `gh` is installed and authenticated as `aso42244`.
-- **Docker is not installed locally, and this has a consequence worth knowing.**
-  The NAS builds the image from source now, so nothing here needs to (ADR 019) —
-  but it means `npm run verify` cannot complete its last step. Use
-  `npm run verify:quick`, which skips exactly that.
+- **Docker is installed** — colima, since 2026-08-19. `npm run verify` now
+  completes: it builds the image, starts it, and asks it for `/health`.
+  `verify:quick` still exists for a fast loop and skips exactly that step. Run
+  `colima start` if a build reports no Docker daemon; `colima stop` gives the
+  RAM back.
 
-  So the Dockerfile, `docker-compose.yml` and `tor/` are the one part of this
-  repository that is reasoned about rather than executed before it ships. When
-  changing any of them, say so plainly rather than reporting them as verified.
+  One end-to-end test timed out **setting up the browser** on the first full run
+  with the VM up, and passed alone immediately after. Chromium and a 4-CPU Linux
+  VM competing on one laptop is the likeliest reading, and it has not recurred.
+  If it becomes a pattern, shrink the VM (`colima stop && colima start --cpu 2`)
+  rather than raising a Playwright timeout — a timeout raised to paper over
+  contention is how the racy tests in this suite got written the first time.
 
-  **The Dockerfile changed when `apps/mcp` landed and has not been built.**
-  `npm ci` reads every workspace the lockfile names and fails on a missing one,
-  so its manifest is copied in; the production install is then scoped with
-  `--workspace` so the MCP server's dependencies — express, hono, jose — do not
-  reach a machine that never runs it. The resulting dependency tree _was_
-  verified, against the real lockfile in a scratch directory: it is the previous
-  one minus that subtree. The image itself was not built.
-  The Tor image and its entrypoint went out on that basis; if the onion address
-  never appears, `sudo docker compose logs tor` on the NAS is the first thing to
-  read.
+  Two things it still does not prove. It produces an **arm64** image and the
+  DS220+ is x86_64, so it shows the Dockerfile is correct rather than that a
+  native module has a prebuilt binary for the NAS — which is why the NAS builds
+  its own from source (ADR 019). And `docker-compose.yml` and `tor/` are still
+  reasoned about rather than executed, so say so plainly when changing them. The
+  Tor image and its entrypoint went out on that basis; if the onion address never
+  appears, `sudo docker compose logs tor` on the NAS is the first thing to read.
+
+  **The first thing this caught was a lie in `.dockerignore`**, on its very first
+  run. `*.tsbuildinfo` is anchored at the root, so
+  `packages/shared/tsconfig.tsbuildinfo` was copied into the build context — and
+  a stale one is a lie `tsc --build` believes: it concludes the project is
+  already built, emits nothing, and every workspace importing `@budget/shared`
+  then fails to resolve it. The pattern is `**/*.tsbuildinfo` now.
+
+  Worth knowing _why_ nobody had hit it. The NAS builds from a `git archive`
+  tarball, which carries no ignored file at all, so the local build context and
+  the deployed one were different and only the local one was broken. **If a build
+  fails here while the NAS is fine, suspect that difference before suspecting the
+  release** — this cost a false alarm the day it was found.
 
 - Playwright with Chromium is installed.
 - Put `/opt/homebrew/opt/postgresql@16/bin` and `/opt/homebrew/bin` on `PATH` in
@@ -293,8 +307,8 @@ cannot collide.
 ### Commands
 
 ```bash
-npm run verify            # everything, in the order CI used to run it
-npm run verify:quick      # the same, minus the container image build
+npm run verify            # everything, including building and starting the image
+npm run verify:quick      # the same, minus the container image
 
 npm run test              # 158 unit
 npm run test:integration  # 459 integration
