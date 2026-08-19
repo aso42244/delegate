@@ -88,8 +88,8 @@ These are non-negotiable. Violating one is a build failure.
 
 ## Where things stand
 
-**Live on the NAS, currently at `v0.14.0`.** 170 unit, 488 integration and 141
-end-to-end tests, plus a live MCP handshake. There is no CI: GitHub stores the code and nothing else
+**Live on the NAS, currently at `v0.14.0`.** 158 unit, 459 integration and 137
+end-to-end tests. There is no CI: GitHub stores the code and nothing else
 ([ADR 022](decisions/022-the-checks-run-here-not-on-github.md)), and every gate
 runs locally through `npm run verify`.
 
@@ -121,28 +121,6 @@ recorded in the ADRs, and the short version is:
 - Wallets watched by xpub/ypub/zpub or a multisig descriptor, gap-limit scanned
   ([ADR 025](decisions/025-a-descriptor-is-the-one-wallet-representation.md)).
   Descriptors are encrypted at rest and never returned by the API
-
-**An AI assistant can reach the budget**, which is the newest body of work
-
-- API tokens: a credential for a program, since everything else here assumes a
-  browser ([ADR 030](decisions/030-a-program-authenticates-with-a-scoped-token.md)).
-  A public selector and a hashed secret; scope is an **allowlist of route
-  patterns**, not a rule about methods, because `GET /api/settings` carries the
-  onion address. Issued from Settings → Connections, shown once
-- `apps/mcp`, a stdio Model Context Protocol server that is a client of the HTTP
-  API rather than of the database
-  ([ADR 031](decisions/031-the-mcp-server-is-a-client-of-the-http-api.md)). It
-  runs on somebody's own machine; nothing new listens on a port and nothing was
-  added to the tunnel. Setup is [docs/mcp.md](mcp.md)
-- **Setting it up involves no terminal**, which the owner asked for explicitly.
-  `delegate.mcpb` is packed into the container image and served from Settings →
-  Connections; Claude Desktop installs it by drag and drop and collects the key
-  and the address in a form of its own. `verify` packs the bundle, unpacks it and
-  drives _that_ copy over the protocol — npm hoists, so a missing transitive
-  dependency is invisible in the workspace build and fatal in a bundle
-- A write-scoped connection can sort transactions and write rules. It can never
-  move money, archive, apply a rule across history, or touch a setting — refused
-  by the server, and asserted route by route in the test suite
 
 **Security**, after two external OWASP reviews — see
 [docs/security-review-2026-08.md](security-review-2026-08.md) for what was fixed
@@ -243,12 +221,14 @@ Cloudflare Access was declined. A Tor onion service is the alternative path and
 is off until switched on from the LAN — see ADR 027, and note that running both
 means the weaker door sets the security level.
 
-**Remote MCP** — a `/mcp` endpoint on the public internet, which is what
-claude.ai and Notion AI would need — is not built and needs an ADR before it
-needs code. It makes Delegate an OAuth 2.1 authorization server and it puts the
-household's finances into a third party's infrastructure on every tool call.
-Notion additionally requires a Business or Enterprise plan and a Custom Agent.
-ADR 031 records why the stdio transport was the right first step.
+**Model Context Protocol support was built and then removed** at the owner's
+direction, in v0.15.0 and v0.16.0, and taken out again in v0.17.0. It is not on
+the roadmap and should not be reintroduced without him asking for it. The only
+trace left in the tree is
+`apps/api/prisma/migrations/20260819180000_drop_api_tokens`, which exists
+because migrations are forward-only (ADR 003) and the creating migration had
+already been applied to the deployment — deleting that file instead would leave
+`migrate deploy` reporting drift.
 
 **Phase 5** — feature requests arriving from a Notion database and built
 automatically — was removed from the plan at the owner's direction and is not on
@@ -271,13 +251,6 @@ are not negotiable by a request, whoever wrote it.
   `colima start` if a build reports no Docker daemon; `colima stop` gives the
   RAM back.
 
-  One end-to-end test timed out **setting up the browser** on the first full run
-  with the VM up, and passed alone immediately after. Chromium and a 4-CPU Linux
-  VM competing on one laptop is the likeliest reading, and it has not recurred.
-  If it becomes a pattern, shrink the VM (`colima stop && colima start --cpu 2`)
-  rather than raising a Playwright timeout — a timeout raised to paper over
-  contention is how the racy tests in this suite got written the first time.
-
   Two things it still does not prove. It produces an **arm64** image and the
   DS220+ is x86_64, so it shows the Dockerfile is correct rather than that a
   native module has a prebuilt binary for the NAS — which is why the NAS builds
@@ -297,7 +270,15 @@ are not negotiable by a request, whoever wrote it.
   tarball, which carries no ignored file at all, so the local build context and
   the deployed one were different and only the local one was broken. **If a build
   fails here while the NAS is fine, suspect that difference before suspecting the
-  release** — this cost a false alarm the day it was found.
+  release.**
+
+- **Orphaned servers are the other thing to watch for.** A `verify` run that is
+  interrupted can leave `node apps/api/dist/server.js` running against the
+  **test** database, still executing the sync, price and backup schedules. It
+  answers `/health` perfectly well, so the next run looks broken for reasons that
+  have nothing to do with the branch — that cost an afternoon once, with two
+  end-to-end failures and an eleven-minute hang on a documentation-only change.
+  `ps aux | grep 'apps/api/dist/server.js'` before believing a strange failure.
 
 - Playwright with Chromium is installed.
 - Put `/opt/homebrew/opt/postgresql@16/bin` and `/opt/homebrew/bin` on `PATH` in
@@ -313,21 +294,18 @@ cannot collide.
 ### Commands
 
 ```bash
-npm run verify            # everything, including building and starting the image
-npm run verify:quick      # the same, minus the container image
+npm run verify            # everything, in the order CI used to run it
+npm run verify:quick      # the same, minus the container image build
 
 npm run test              # 158 unit
 npm run test:integration  # 459 integration
-npm run test:e2e          # 141 end-to-end, needs a build first
-
-node scripts/verify-mcp.mjs      # spawns the built MCP server and speaks to it
-node scripts/build-connector.mjs # packs delegate.mcpb for Claude Desktop
+npm run test:e2e          # 137 end-to-end, needs a build first
 ```
 
 `npm run verify` is the gate. It runs migrations, typecheck, lint, formatting,
 the forbidden-terminology rule, the dependency audit, all three suites, the
-cached-balances-against-ledger check, a real backup-and-restore, a live MCP
-handshake against the built entrypoint, and the image build. It replaced GitHub Actions and is the _only_ thing standing between a
+cached-balances-against-ledger check, a real backup-and-restore, and the image
+build. It replaced GitHub Actions and is the _only_ thing standing between a
 branch and `main` now — nothing on a server is watching.
 
 Most commands need the environment loaded first:

@@ -8,80 +8,46 @@ phase (`v0.1.0-phase1`, and so on).
 
 Nothing yet.
 
-## [0.16.0] — 2026-08-19
+## [0.17.0] — 2026-08-19
 
-Connecting Claude no longer involves a terminal.
+Model Context Protocol support, added in 0.15.0 and 0.16.0, is removed at the
+owner's direction. Settings → Connections, the API token model, the connector
+bundle and the `apps/mcp` workspace are all gone, along with their
+documentation and ADRs 030 and 031.
 
-### Added
+The two fixes found while that work was being done are **kept**. Neither had
+anything to do with it beyond being noticed at the same time.
 
-- **The connector as a downloadable bundle.** `delegate.mcpb` is an MCP Bundle —
-  the server, its dependencies and a manifest describing what it needs to be
-  told — packed into the container image and served from **Settings →
-  Connections**. Claude Desktop installs it by drag and drop, carries its own
-  Node runtime, and collects the connection key and the address in a form of its
-  own. Create a key, download, drag, paste twice.
-- **The address to paste, shown on the page.** `window.location.origin` rather
-  than a guess at a LAN address: whatever reached the page reaches the budget.
-- **`verify` drives the packed bundle**, not only the workspace build. npm
-  hoists, so a missing transitive dependency resolves fine from the repository
-  root and is fatal inside a bundle on somebody else's machine.
-- **The container image step now starts the image** and asks it for `/health`.
-  Building alone was half of what the step's name claimed, and a container that
-  builds and then exits on boot is a failure this project has had twice.
+### Removed
 
-### Fixed
-
-- **`.dockerignore` was anchored at the root**, so `packages/shared/tsconfig.tsbuildinfo`
-  was copied into the build context. A stale one is a lie `tsc --build`
-  believes: it concludes the project is already built, emits nothing, and every
-  workspace importing `@budget/shared` then fails to resolve it. Only ever
-  visible locally — the NAS builds from a `git archive` tarball, which carries
-  no ignored file at all.
-
-## [0.15.0] — 2026-08-19
-
-Delegate can be connected to an AI assistant. Setup is [docs/mcp.md](docs/mcp.md).
-
-### Added
-
-- **API tokens.** A credential for a program, because everything else here
-  assumes a browser: a session cookie, a password, a code from an authenticator,
-  an origin check. A public selector and a hashed secret half, issued and revoked
-  from **Settings → Connections** and shown exactly once. Scope is an
-  **allowlist of registered route patterns** rather than a rule about HTTP
-  methods — `GET /api/settings` carries the onion address and `GET /api/users` is
-  the household, and both are correct for a browser —
-  [ADR 030](docs/decisions/030-a-program-authenticates-with-a-scoped-token.md).
-- **A Model Context Protocol server**, `apps/mcp`, running over stdio on
-  somebody's own machine and talking to Delegate over its HTTP API. Twelve tools:
-  the budget, accounts, transactions, spending, one envelope's full history, the
-  rules, the sync status — and, only where the token allows it, categorizing,
-  splitting, bulk categorizing and writing a rule. It is a client of the API
-  rather than of the database, so it can never do more than a person could do
-  through the interface —
-  [ADR 031](docs/decisions/031-the-mcp-server-is-a-client-of-the-http-api.md).
-- **A verify step that speaks the protocol** to the built entrypoint. Importing a
-  module does not catch a stray write to stdout corrupting the stream, which is
-  the failure mode where the client simply never starts.
+- API tokens, the token scope allowlist, Settings → Connections, the
+  `apps/mcp` server and the Claude Desktop connector bundle.
+- `api_tokens` is dropped by a new migration rather than by deleting the one
+  that created it. Migrations are forward-only (ADR 003) and the deployment had
+  already applied it; removing the file would leave `migrate deploy` reporting
+  drift. Dropping rather than archiving is right here for once — the rows were
+  credentials, not a record of anything the household did.
 
 ### Fixed
 
 - **A flag in a query string is text, not a truthy value.**
-  `z.coerce.boolean()` is `Boolean(value)`, and `Boolean("false")` is `true` — so
-  `GET /api/transactions?uncategorized=false` returned the uncategorized queue,
-  and the Transactions page's Categorized filter had been showing the wrong list.
+  `z.coerce.boolean()` is `Boolean(value)`, and `Boolean("false")` is `true`, so
+  `GET /api/transactions?uncategorized=false` returned the uncategorized queue —
+  the Transactions page's Categorized filter had been showing the wrong list.
   `pending` and `includeArchived` had the same fault, on transactions and on
-  accounts. This is the fault that was found once on `/api/rules/preview` and
-  patched at that call site; the parse now lives in `http/serialize.ts` so there
-  is one place to reach for.
+  accounts. The parse now lives in `http/serialize.ts` as `booleanQuery`.
+- **`.dockerignore` was anchored at the root**, so
+  `packages/shared/tsconfig.tsbuildinfo` was copied into the build context. A
+  stale one is a lie `tsc --build` believes: it concludes the project is already
+  built, emits nothing, and every workspace importing `@budget/shared` then
+  fails to resolve it. Only ever visible locally — the NAS builds from a
+  `git archive` tarball, which carries no ignored file at all.
 
-### Not built, by decision
+### Changed
 
-- **Remote MCP** — a `/mcp` endpoint on the public internet, which is what
-  claude.ai and Notion AI would need. It makes Delegate an OAuth 2.1
-  authorization server and puts the household's finances into a third party's
-  infrastructure on every tool call. Both deserve their own decision rather than
-  arriving as a consequence of this one.
+- **The container image step starts the image** and asks it for `/health`.
+  Building alone was half of what the step's name claimed, and a container that
+  builds and then exits on boot is a failure this project has had twice.
 
 ## [0.3.0-phase3] — 2026-08-10
 

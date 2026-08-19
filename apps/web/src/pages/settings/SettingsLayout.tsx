@@ -21,7 +21,6 @@ const SECTIONS = [
   { to: 'reconcile', label: 'Reconcile' },
   { to: 'users', label: 'Users' },
   { to: 'security', label: 'Security' },
-  { to: 'connections', label: 'Connections' },
   { to: 'display', label: 'Display' },
   { to: 'archived', label: 'Archived' },
 ] as const;

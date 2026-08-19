@@ -11,10 +11,6 @@ export default tseslint.config(
       '**/node_modules/**',
       '**/*.timestamp-*.mjs',
       '**/generated/**',
-      // Staging and output for the connector bundle: a copy of dist plus an
-      // installed dependency tree, none of it authored here.
-      'apps/mcp/bundle/**',
-      'apps/mcp/bundle-check/**',
     ],
   },
   js.configs.recommended,
@@ -84,9 +80,7 @@ export default tseslint.config(
     // Scripts and CLI entrypoints are the one place stdout is the interface.
     files: ['**/scripts/**/*.ts', '**/scripts/**/*.mjs', '**/cli/**/*.ts', '**/prisma/seed.ts'],
     languageOptions: {
-      // `fetch` is a global on Node 18 and later; the shared config predates
-      // any script here making an HTTP request.
-      globals: { console: 'readonly', process: 'readonly', fetch: 'readonly' },
+      globals: { console: 'readonly', process: 'readonly' },
     },
     rules: {
       'no-console': 'off',

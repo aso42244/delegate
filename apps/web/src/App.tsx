@@ -13,7 +13,6 @@ import { ArchivedSection } from './pages/settings/Archived.jsx';
 import { BitcoinSection } from './pages/settings/Bitcoin.jsx';
 import { PropertiesSection } from './pages/settings/Properties.jsx';
 import { BudgetSection } from './pages/settings/Budget.jsx';
-import { ConnectionsSection } from './pages/settings/Connections.jsx';
 import { DelegationsSection } from './pages/settings/Delegations.jsx';
 import { GroupingsSection } from './pages/settings/Groupings.jsx';
 import { RulesSection } from './pages/settings/Rules.jsx';
@@ -120,7 +119,6 @@ export function App(): ReactNode {
             <Route path="budget" element={<BudgetSection />} />
             <Route path="users" element={<UsersSection />} />
             <Route path="security" element={<SecuritySection />} />
-            <Route path="connections" element={<ConnectionsSection />} />
             <Route path="display" element={<DisplaySection />} />
             <Route path="archived" element={<ArchivedSection />} />
             <Route path="reconcile" element={<ReconcileSection />} />
