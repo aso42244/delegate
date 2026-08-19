@@ -16,3 +16,8 @@ backups
 # only thing that ever saw this, because the NAS builds from `git archive`,
 # which carries no ignored files.
 **/*.tsbuildinfo
+
+# Built in the image, never copied into it — the same reasoning as tsbuildinfo.
+apps/mcp/bundle/
+apps/mcp/bundle-check/
+apps/mcp/*.mcpb

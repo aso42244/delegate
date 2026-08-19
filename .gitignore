@@ -45,3 +45,8 @@ tls/
 # to the NAS; they are a copy of the repo, so committing one doubles it.
 delegate-*.tar.gz
 delegate-src.tar.gz
+
+# Built artefacts of the connector bundle.
+apps/mcp/bundle/
+apps/mcp/bundle-check/
+apps/mcp/*.mcpb

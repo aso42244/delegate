@@ -37,3 +37,34 @@ export const tokensApi = {
 
   revoke: (id: string) => api.post<{ tokens: ApiTokenDto[] }>(`/api/api-tokens/${id}/revoke`),
 };
+
+/**
+ * The connector download.
+ *
+ * A plain link would work and is the wrong tool: the route is behind the
+ * session guards, and an anchor that hits a 404 or a 403 navigates the page to
+ * a JSON error rather than saying anything. Fetching it means a failure can be
+ * reported where the button is.
+ */
+export async function downloadConnector(): Promise<void> {
+  const response = await fetch('/api/connector', { credentials: 'same-origin' });
+
+  if (!response.ok) {
+    const body = (await response.json().catch(() => null)) as {
+      error?: { message?: string };
+    } | null;
+    throw new Error(body?.error?.message ?? 'The connector could not be downloaded.');
+  }
+
+  const url = URL.createObjectURL(await response.blob());
+  try {
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = 'delegate.mcpb';
+    link.click();
+  } finally {
+    // Revoked on the next tick rather than immediately: the click is handled
+    // asynchronously, and freeing the object first cancels the download.
+    setTimeout(() => URL.revokeObjectURL(url), 10_000);
+  }
+}

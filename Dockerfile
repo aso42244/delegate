@@ -32,6 +32,12 @@ RUN npm ci
 COPY . .
 RUN npx prisma generate --schema apps/api/prisma/schema.prisma && npm run build
 
+# The Claude Desktop connector, packed here so the running application can hand
+# it to somebody as a download. It needs the MCPB tooling, which is a
+# devDependency and is gone after the production install below — so it happens
+# now rather than later.
+RUN node scripts/build-connector.mjs
+
 # Reinstalled without dev dependencies rather than pruned, so the runtime layer
 # carries no build toolchain. The Prisma client is regenerated afterwards because
 # the reinstall replaces node_modules wholesale.
@@ -72,6 +78,7 @@ COPY --from=build /app/apps/api/dist ./apps/api/dist
 COPY --from=build /app/apps/api/package.json ./apps/api/package.json
 COPY --from=build /app/apps/api/prisma ./apps/api/prisma
 COPY --from=build /app/apps/web/dist ./apps/web/dist
+COPY --from=build /app/apps/mcp/delegate.mcpb ./apps/mcp/delegate.mcpb
 COPY scripts ./scripts
 
 # Runs unprivileged. The node image ships a `node` user for exactly this.

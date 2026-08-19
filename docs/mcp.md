@@ -66,6 +66,8 @@ connection asked to do one of them gets an error.
 
 ## Setting it up
 
+No terminal. Two windows: Delegate, and Claude Desktop.
+
 ### 1. Create a connection
 
 In Delegate, go to **Settings → Connections**.
@@ -77,32 +79,56 @@ The key is shown once. Copy it now; Delegate stores only a fingerprint of it and
 cannot show it again. If you lose it, switch that connection off and make
 another.
 
-### 2. Build the connector
+### 2. Download the connector
 
-On the computer that will run it, from a checkout of this repository:
+On the same page, under **Set up Claude Desktop**, press **Download connector**.
+You get `delegate.mcpb` — the server, its dependencies and a description of
+itself, in one file.
+
+### 3. Drag it into Claude Desktop
+
+Open Claude Desktop, go to **Settings → Extensions**, and drag `delegate.mcpb`
+onto the page. It will show you what the connector is and ask you to confirm.
+
+Claude Desktop carries its own copy of Node, so there is nothing else to
+install.
+
+### 4. Fill in the two boxes
+
+It asks for the **connection key** — the one you copied — and the **Delegate
+address**. The Connections page shows the address to use, with a copy button
+beside it; it is whatever address you are reading that page on, because an
+address that reaches the budget from your machine is by definition the right
+one.
+
+### 5. Check it
+
+Ask Claude: _"what's the balance on my budget?"_ It should come back with the
+reading from the top of the Budget page.
+
+---
+
+## Claude Code, and anything else
+
+The connector is an ordinary MCP server, so anything that speaks the protocol
+can run it. That path does involve a terminal.
 
 ```sh
 npm install && npm run build --workspace @budget/mcp
 ```
 
-### 3. Tell Claude about it
-
-**Claude Code** — from the repository directory:
-
 ```sh
 claude mcp add delegate --env DELEGATE_URL=http://10.0.3.4:8088 --env DELEGATE_TOKEN=dlg_... -- node apps/mcp/dist/server.js
 ```
 
-**Claude Desktop** — open Settings → Developer → Edit Config, and add a
-`delegate` entry under `mcpServers`. Use absolute paths; the desktop app does
-not start in your repository.
+For a client that wants JSON, the same thing:
 
 ```json
 {
   "mcpServers": {
     "delegate": {
       "command": "node",
-      "args": ["/Users/you/Documents/Claude/Projects/delegate/apps/mcp/dist/server.js"],
+      "args": ["/absolute/path/to/delegate/apps/mcp/dist/server.js"],
       "env": {
         "DELEGATE_URL": "http://10.0.3.4:8088",
         "DELEGATE_TOKEN": "dlg_..."
@@ -112,12 +138,7 @@ not start in your repository.
 }
 ```
 
-Restart Claude Desktop afterwards. Claude Code picks it up immediately.
-
-### 4. Check it
-
-Ask Claude: _"what's the balance on my budget?"_ It should come back with the
-reading from the top of the Budget page.
+Absolute paths: nothing starts in your repository directory.
 
 ---
 
@@ -135,6 +156,11 @@ here writes it anywhere.
 ---
 
 ## When it does not work
+
+**The download says the connector was not built into this deployment.** The
+bundle is packed into the container image, so a deployment older than v0.16.0
+does not carry one. Upgrade, or build it yourself with
+`node scripts/build-connector.mjs`.
 
 **Claude does not list any Delegate tools.** The connector failed to start.
 Claude Desktop keeps its logs in `~/Library/Logs/Claude/`; the connector writes
