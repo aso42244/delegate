@@ -1,7 +1,13 @@
 import { useCallback, useSyncExternalStore } from 'react';
 
 /**
- * Row density: 40px comfortable, 32px compact.
+ * Row density: 40px comfortable, 32px compact, 28px dense.
+ *
+ * Compact is the default. Forty was, on the reasoning that legibility comes
+ * first — but the type size never changed with this setting, so the choice was
+ * only ever about how much air sits around the same words. On a budget whose
+ * whole job is a column of figures read together, eight extra pixels a row is
+ * two fewer envelopes on screen and nothing gained.
  *
  * Stored per device rather than on the server, for the same reason the sidebar's
  * collapsed state is: this is a fact about the screen someone is looking at, not
@@ -13,15 +19,25 @@ import { useCallback, useSyncExternalStore } from 'react';
  * of the tree from the control that changed it.
  */
 
-export type Density = 'comfortable' | 'compact';
+export type Density = 'comfortable' | 'compact' | 'dense';
+
+const DENSITIES: readonly Density[] = ['comfortable', 'compact', 'dense'];
+
+/** What an unset or unrecognised stored value means. */
+const DEFAULT_DENSITY: Density = 'compact';
 
 const STORAGE_KEY = 'budget.display.density';
 
 const listeners = new Set<() => void>();
 
 function read(): Density {
-  if (typeof window === 'undefined') return 'comfortable';
-  return window.localStorage.getItem(STORAGE_KEY) === 'compact' ? 'compact' : 'comfortable';
+  if (typeof window === 'undefined') return DEFAULT_DENSITY;
+
+  // Anything unrecognised falls back rather than being trusted: a value written
+  // by an older version, or by hand, must not leave the interface with no row
+  // height at all.
+  const stored = window.localStorage.getItem(STORAGE_KEY);
+  return DENSITIES.includes(stored as Density) ? (stored as Density) : DEFAULT_DENSITY;
 }
 
 /**
@@ -30,8 +46,10 @@ function read(): Density {
  */
 function apply(density: Density): void {
   if (typeof document === 'undefined') return;
-  if (density === 'compact') document.documentElement.dataset['density'] = 'compact';
-  else delete document.documentElement.dataset['density'];
+  // Always stamped, including the default. With three values, leaving the
+  // attribute off for one of them means the stylesheet has to encode which one
+  // that is in two places.
+  document.documentElement.dataset['density'] = density;
 }
 
 function subscribe(listener: () => void): () => void {
@@ -49,7 +67,7 @@ export function setDensity(density: Density): void {
 
 /** Named so the constant is not re-created, and typed without an assertion. */
 function serverSnapshot(): Density {
-  return 'comfortable';
+  return DEFAULT_DENSITY;
 }
 
 export function useDensity(): [Density, (next: Density) => void] {

@@ -10,35 +10,49 @@ import { expect, test, makeAccount, makeDelegation } from './fixtures.js';
  */
 
 test.describe('row density', () => {
-  test('compact shrinks the rows without shrinking the text', async ({ signedIn: page, api }) => {
+  test('every setting changes the spacing and none of them the text', async ({
+    signedIn: page,
+    api,
+  }) => {
     await makeDelegation(api, 'Grocery', '40000');
     await page.goto('/');
 
     const cell = page.locator('td.row-cell').first();
-    const comfortable = await cell.evaluate((node) => node.getBoundingClientRect().height);
+    const height = (): Promise<number> =>
+      cell.evaluate((node) => node.getBoundingClientRect().height);
+
+    // Compact is what an untouched device gets: the type size never changed with
+    // this setting, so the extra air was only ever fewer envelopes on screen.
+    expect(Math.round(await height())).toBe(32);
     const textSize = await cell.evaluate((node) => getComputedStyle(node).fontSize);
-    expect(Math.round(comfortable)).toBe(40);
 
-    await page.goto('/settings/display');
-    await page.getByLabel('Compact').check();
+    for (const [label, expected] of [
+      ['Comfortable', 40],
+      ['Dense', 28],
+      ['Compact', 32],
+    ] as const) {
+      await page.goto('/settings/display');
+      await page.getByLabel(label).check();
 
-    await page.goto('/');
-    const compact = await cell.evaluate((node) => node.getBoundingClientRect().height);
-    expect(Math.round(compact)).toBe(32);
+      await page.goto('/');
+      expect(Math.round(await height()), label).toBe(expected);
 
-    // Only the spacing changes. A "denser" setting that also shrank the type
-    // would be a different, worse thing.
-    expect(await cell.evaluate((node) => getComputedStyle(node).fontSize)).toBe(textSize);
+      // Only the spacing changes. A "denser" setting that also shrank the type
+      // would be a different, worse thing.
+      expect(await cell.evaluate((node) => getComputedStyle(node).fontSize), label).toBe(textSize);
+    }
   });
 
   test('the choice survives a reload, on this device', async ({ signedIn: page, api }) => {
     await makeDelegation(api, 'Grocery', '40000');
 
     await page.goto('/settings/display');
-    await page.getByLabel('Compact').check();
+    // Chosen away from the default, so the assertion proves a stored value
+    // rather than the fallback.
+    await page.getByLabel('Dense').check();
     await page.reload();
 
-    await expect(page.getByLabel('Compact')).toBeChecked();
+    await expect(page.getByLabel('Dense')).toBeChecked();
   });
 });
 

@@ -590,3 +590,24 @@ Measured from the real element rather than estimated from the item count,
 because the grouping panel is a different height and grows with the number of
 groupings. Re-measured on resize and scroll, since the window can change under an
 open menu.
+
+## Row height: three settings, and a new default
+
+**Compact (32px) is the default now**, with Comfortable (40px) and a new Dense
+(28px) beside it.
+
+Forty was the default on the reasoning that legibility comes first. That reason
+does not survive looking at what the setting actually does: the type size has
+never changed with it, only the space around the type. So the old default was not
+buying legibility, it was buying air — and on a page whose whole job is a column
+of figures read against each other, eight pixels a row is two fewer envelopes on
+screen for nothing.
+
+The three sit on one variable, so the whole interface changes at once and no
+component knows the number. Anything unrecognised in storage falls back to the
+default rather than being trusted: a value written by an older version must not
+leave the interface with no row height at all.
+
+It stays per-device. Which of the three reads best depends on the screen and the
+eyes in front of it, and one person's large monitor should not decide the other
+person's phone.

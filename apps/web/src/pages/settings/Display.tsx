@@ -14,6 +14,7 @@ import { SettingsCard } from './SettingsCard.jsx';
 const OPTIONS: readonly { value: Density; label: string; detail: string }[] = [
   { value: 'comfortable', label: 'Comfortable', detail: '40px rows' },
   { value: 'compact', label: 'Compact', detail: '32px rows' },
+  { value: 'dense', label: 'Dense', detail: '28px rows' },
 ];
 
 export function DisplaySection(): ReactNode {

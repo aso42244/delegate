@@ -109,9 +109,10 @@ test('an amount and its sign stay on one line', async ({ signedIn: page, api }) 
   await expect(amount).toContainText('3,527.63');
 
   /**
-   * Measured on the span rather than the cell: the cell is a fixed 40px by
-   * design, so its height says nothing about whether the text inside wrapped.
-   * A client rect per line is what actually answers the question.
+   * Measured on the span rather than the cell: the cell is a fixed height by
+   * design — whichever the row-height setting says — so its height says nothing
+   * about whether the text inside wrapped. A client rect per line is what
+   * actually answers the question.
    */
   const lineCount = await amount.evaluate((node) => node.getClientRects().length);
   expect(lineCount).toBe(1);
