@@ -110,9 +110,53 @@ if [ "$QUICK" = 'yes' ]; then
   exit 0
 fi
 
-# The image is what actually runs on the NAS. Building it here is the last thing
-# that stood between a green branch and a deploy that will not start.
+# The image is what actually runs on the NAS, and this step used only to build
+# it — which is half the claim its name makes. It now starts the thing and asks
+# it for /health, because a container that builds and then exits on boot is a
+# failure this project has already had twice.
+#
+# Note the architecture: this produces an arm64 image on an Apple Silicon Mac
+# and the DS220+ is x86_64. That proves the Dockerfile is correct, not that a
+# native module has a prebuilt binary for the NAS — which is why ADR 019 has the
+# NAS build its own image from source.
 step 'Container image builds and serves'
 docker build -t delegate:verify . >/dev/null || fail 'image build'
+
+CONTAINER='delegate-verify'
+docker rm -f "$CONTAINER" >/dev/null 2>&1 || true
+
+# The database lives on the host. `host-gateway` is what makes that name resolve
+# on Linux as well as on macOS.
+CONTAINER_DB_URL=$(printf '%s' "$TEST_DATABASE_URL" \
+  | sed 's|@localhost|@host.docker.internal|; s|@127\.0\.0\.1|@host.docker.internal|')
+
+docker run -d --name "$CONTAINER" \
+  --add-host=host.docker.internal:host-gateway \
+  -p 4599:3000 \
+  -e DATABASE_URL="$CONTAINER_DB_URL" \
+  -e SESSION_SECRET='verify-only-secret-at-least-32-characters-long' \
+  -e LOG_LEVEL=warn \
+  delegate:verify >/dev/null || fail 'the image would not start'
+
+served='no'
+for _ in $(seq 1 40); do
+  if curl -fsS -m 2 http://127.0.0.1:4599/health >/dev/null 2>&1; then
+    served='yes'
+    break
+  fi
+  # A container that has already exited will never answer; stop waiting for it.
+  if [ "$(docker inspect -f '{{.State.Running}}' "$CONTAINER" 2>/dev/null)" != 'true' ]; then
+    break
+  fi
+  sleep 1
+done
+
+if [ "$served" != 'yes' ]; then
+  docker logs "$CONTAINER" 2>&1 | tail -30 >&2
+  docker rm -f "$CONTAINER" >/dev/null 2>&1 || true
+  fail 'the image started but never served /health'
+fi
+
+docker rm -f "$CONTAINER" >/dev/null 2>&1 || true
 
 printf '\n\033[32m✓ Everything passed.\033[0m\n'
