@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { useLongPress } from '../useLongPress.js';
 
 /**
@@ -58,9 +58,28 @@ export function RowMenuShell({
 }: RowMenuShellProps): ReactNode {
   const canMove = groupings !== undefined && onMoveToGrouping !== undefined;
   const containerRef = useRef<HTMLDivElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
   const rowRef = useRef<HTMLTableRowElement | null>(null);
   const [open, setOpen] = useState(false);
   const [panel, setPanel] = useState<'root' | 'grouping'>('root');
+
+  /**
+   * Which way the menu opens, and how tall it is allowed to be.
+   *
+   * It used to always open downwards, which is right for every row except the
+   * ones near the bottom of the window — and the last row of a long table is
+   * exactly where somebody is when they want to rename the line they just added.
+   * The menu ran off the screen and the items could not be reached at all.
+   *
+   * Measured rather than guessed: the item count varies, and the grouping panel
+   * is a different height from the root one.
+   */
+  const [placement, setPlacement] = useState<{ side: 'below' | 'above'; maxHeight: number | null }>(
+    {
+      side: 'below',
+      maxHeight: null,
+    },
+  );
 
   /**
    * The row this menu belongs to, found rather than passed.
@@ -80,6 +99,56 @@ export function RowMenuShell({
       setOpen(true);
     }, []),
   );
+
+  /**
+   * Places the menu after it has rendered but before the browser paints.
+   *
+   * `useLayoutEffect` rather than `useEffect` so the flip is never seen: the
+   * menu is measured and moved in the same frame it appears in. Measuring the
+   * real element rather than estimating from the item count is what makes this
+   * hold for the grouping panel, which is a different height and grows with the
+   * number of groupings.
+   */
+  useLayoutEffect(() => {
+    if (!open) return;
+
+    function place(): void {
+      const menu = menuRef.current;
+      const anchor = containerRef.current;
+      if (!menu || !anchor) return;
+
+      const rect = anchor.getBoundingClientRect();
+      // A little air, so the menu never sits flush against the window edge.
+      const margin = 8;
+      const below = window.innerHeight - rect.bottom - margin;
+      const above = rect.top - margin;
+      const wanted = menu.scrollHeight;
+
+      // Flipped only when it genuinely does not fit *and* the other side is
+      // roomier. Flipping to somewhere equally cramped would move the problem
+      // rather than fix it.
+      const side = wanted > below && above > below ? 'above' : 'below';
+      const available = side === 'above' ? above : below;
+
+      setPlacement({
+        side,
+        // Scrolls rather than overflows when neither side is tall enough — a
+        // long list of groupings on a short window has nowhere else to go.
+        maxHeight: wanted > available ? Math.max(available, 120) : null,
+      });
+    }
+
+    place();
+
+    // The window can change under an open menu: a rotated phone, a resized
+    // window, a page scrolled with the keyboard.
+    window.addEventListener('resize', place);
+    window.addEventListener('scroll', place, true);
+    return () => {
+      window.removeEventListener('resize', place);
+      window.removeEventListener('scroll', place, true);
+    };
+  }, [open, panel]);
 
   useEffect(() => {
     if (!open) return;
@@ -130,9 +199,13 @@ export function RowMenuShell({
 
       {open && (
         <div
+          ref={menuRef}
           role="menu"
           aria-label={`Options for ${name}`}
-          className="absolute top-full right-0 z-20 w-[250px] rounded-[10px] border border-line bg-canvas p-2 shadow-[0_4px_16px_rgba(0,0,0,.10)]"
+          className={`absolute right-0 z-20 w-[250px] overflow-y-auto rounded-[10px] border border-line bg-canvas p-2 shadow-[0_4px_16px_rgba(0,0,0,.10)] ${
+            placement.side === 'above' ? 'bottom-full mb-1' : 'top-full mt-1'
+          }`}
+          {...(placement.maxHeight === null ? {} : { style: { maxHeight: placement.maxHeight } })}
         >
           {panel === 'root' || !canMove ? (
             <>

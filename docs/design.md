@@ -566,3 +566,27 @@ Settings → Accounts where there is room for it.
 
 Both are the same edit really: a row of a financial table should carry the
 figures and the name, and make everything else earn its place.
+
+## A menu that stays on screen
+
+The row menu always opened downwards, which is right everywhere except the rows
+near the bottom of the window — and the last row of a long table is exactly where
+somebody is when they want to rename the line they just added. It ran off the
+bottom and its items could not be reached at all.
+
+It measures now, in a layout effect so the decision happens before the browser
+paints and the flip is never seen. Three rules, in order:
+
+1. Open downwards. That is where a menu belongs, and flipping every one of them
+   would be a different bug — the first row would open upwards over the header
+   for no reason.
+2. Flip up only when it does not fit below _and_ there is more room above.
+   Flipping into somewhere equally cramped moves the problem rather than solving
+   it.
+3. If neither side is tall enough, scroll inside the menu. A long list of
+   groupings on a short window has nowhere else to go.
+
+Measured from the real element rather than estimated from the item count,
+because the grouping panel is a different height and grows with the number of
+groupings. Re-measured on resize and scroll, since the window can change under an
+open menu.

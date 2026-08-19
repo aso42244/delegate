@@ -195,3 +195,52 @@ test('a note is written, shown in the menu, and can be cleared', async ({ signed
   await signedIn.getByRole('button', { name: 'Options for Car Insurance' }).click();
   await expect(signedIn.getByRole('menuitem', { name: 'Add a note' })).toBeVisible();
 });
+
+/**
+ * The last row of a long table is exactly where somebody is when they want to
+ * rename the line they just added — and the menu opened downwards off the
+ * bottom of the window, where its items could not be reached at all.
+ */
+test('the row menu stays on screen at the bottom of a long table', async ({ signedIn, api }) => {
+  // Enough lines that the last one sits below the fold on an ordinary window.
+  for (let index = 0; index < 25; index += 1) {
+    await makeDelegation(api, `Line ${String(index).padStart(2, '0')}`);
+  }
+  await signedIn.setViewportSize({ width: 1280, height: 700 });
+  await signedIn.goto('/');
+
+  const last = signedIn.getByRole('button', { name: 'Options for Line 24' });
+  await last.scrollIntoViewIfNeeded();
+  await last.click();
+
+  const menu = signedIn.getByRole('menu', { name: 'Options for Line 24' });
+  await expect(menu).toBeVisible();
+
+  const box = await menu.boundingBox();
+  const viewport = signedIn.viewportSize();
+  expect(box).not.toBeNull();
+  expect(viewport).not.toBeNull();
+
+  // Wholly inside the window, top and bottom. Before this the bottom edge sat
+  // several hundred pixels past it.
+  expect(box!.y).toBeGreaterThanOrEqual(0);
+  expect(box!.y + box!.height).toBeLessThanOrEqual(viewport!.height);
+
+  // And still usable: the item that was off-screen is clickable.
+  await expect(signedIn.getByRole('menuitem', { name: 'Rename' })).toBeVisible();
+});
+
+test('the row menu still opens downwards where there is room', async ({ signedIn, api }) => {
+  await makeDelegation(api, 'Grocery');
+  await signedIn.setViewportSize({ width: 1280, height: 900 });
+  await signedIn.goto('/');
+
+  const trigger = signedIn.getByRole('button', { name: 'Options for Grocery' });
+  await trigger.click();
+
+  // Flipping every menu would be a different bug: the first row would open
+  // upwards over the header for no reason.
+  const triggerBox = await trigger.boundingBox();
+  const menuBox = await signedIn.getByRole('menu', { name: 'Options for Grocery' }).boundingBox();
+  expect(menuBox!.y).toBeGreaterThan(triggerBox!.y);
+});
