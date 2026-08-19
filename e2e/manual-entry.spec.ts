@@ -174,3 +174,83 @@ test('splitting evenly hands the odd cent to the first line', async ({ signedIn,
   await expect(signedIn.getByRole('button', { name: 'Grocery balance' })).toContainText('-$33.34');
   await expect(signedIn.getByRole('button', { name: 'Fuel balance' })).toContainText('-$33.33');
 });
+
+/**
+ * The same dialog, reached from the Budget page.
+ *
+ * Manual entry is how the two accounts no feed carries stay true, and the
+ * Budget page is where the household notices one has drifted — so having to
+ * leave it to fix that was a detour with no purpose.
+ *
+ * The assertion is that the page the button lives on updates itself. The Budget
+ * page reads its balances once on load, so a dialog that saved without
+ * invalidating the view would leave the number the owner is looking at stale
+ * while everything else was right.
+ *
+ * Every field is reached through the dialog rather than through the page. The
+ * Budget page has an "amount to delegate" control on every row, so a bare
+ * `getByLabel('Amount')` matches those too — which is the same collision this
+ * suite has been bitten by before.
+ */
+test('a transaction can be entered from the Budget page, which then updates', async ({
+  signedIn,
+  api,
+}) => {
+  await makeAccount('Physical Cash', 'asset', 20000n);
+  await makeDelegation(api, 'Grocery');
+
+  await signedIn.goto('/');
+  await expect(signedIn.getByRole('button', { name: 'Physical Cash balance' })).toContainText(
+    '$200.00',
+  );
+
+  await signedIn.getByRole('button', { name: 'Add transaction' }).click();
+  const dialog = signedIn.getByRole('dialog');
+
+  await dialog.getByLabel('Account').selectOption({ label: 'Physical Cash' });
+  await dialog.getByLabel('Description').fill('Farmers market');
+  await dialog.getByLabel('Amount').fill('42.10');
+  await dialog.getByRole('button', { name: 'Save transaction' }).click();
+
+  await expect(signedIn.getByRole('dialog')).toHaveCount(0);
+
+  // No reload: the page the button is on has to refresh itself.
+  await expect(signedIn.getByRole('button', { name: 'Physical Cash balance' })).toContainText(
+    '$157.90',
+  );
+});
+
+/**
+ * An outstanding check is a delegation, and it is not somewhere spending can be
+ * filed — it is settled by matching the payment that cashes it. The picker on
+ * the Transactions page excludes them, and the one reached from the Budget page
+ * has to as well, or the two routes to the same dialog disagree.
+ */
+test('the Budget page picker does not offer outstanding checks', async ({ signedIn, api }) => {
+  await makeAccount('Everyday Checking', 'asset', 500000n);
+  await makeDelegation(api, 'Grocery', '40000');
+
+  await signedIn.goto('/');
+  await signedIn.getByRole('button', { name: 'New check' }).click();
+
+  const checkDialog = signedIn.getByRole('dialog');
+  await checkDialog.getByLabel('Check number').fill('1042');
+  await checkDialog.getByLabel('Amount').fill('120.00');
+  await checkDialog.getByLabel('Money comes from').selectOption({ label: 'Grocery' });
+  await checkDialog.getByRole('button', { name: 'Record check' }).click();
+
+  // The check appearing on the page is the signal that the write landed.
+  await expect(signedIn.getByRole('dialog')).toHaveCount(0);
+  await expect(signedIn.getByRole('button', { name: 'Check 1042 balance' })).toBeVisible();
+
+  await signedIn.getByRole('button', { name: 'Add transaction' }).click();
+  const dialog = signedIn.getByRole('dialog');
+
+  // Focusing the picker opens the list with everything it is willing to offer.
+  await dialog.getByLabel('Delegation for this transaction').click();
+
+  const options = signedIn.getByRole('listbox', { name: 'Delegations' });
+  await expect(options).toBeVisible();
+  await expect(options.getByRole('option', { name: 'Grocery' })).toBeVisible();
+  await expect(options.getByRole('option', { name: /Check 1042/ })).toHaveCount(0);
+});

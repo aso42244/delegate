@@ -9,6 +9,7 @@ import { BudgetSection } from '../components/BudgetSection.jsx';
 import { CheckRowMenu } from '../components/CheckRowMenu.jsx';
 import { DelegationRowMenu } from '../components/DelegationRowMenu.jsx';
 import { NewCheckDialog } from '../components/NewCheckDialog.jsx';
+import { NewTransactionDialog } from '../components/NewTransactionDialog.jsx';
 import { Alert, Button } from '../components/ui.jsx';
 
 /**
@@ -218,7 +219,9 @@ function UndoBar(): ReactNode {
 
 export function MainBudget(): ReactNode {
   const queryClient = useQueryClient();
-  const [dialog, setDialog] = useState<'none' | 'delegate' | 'transfer' | 'check'>('none');
+  const [dialog, setDialog] = useState<'none' | 'delegate' | 'transfer' | 'check' | 'transaction'>(
+    'none',
+  );
   const [problem, setProblem] = useState<string | null>(null);
   // Set when Transfer was opened from a line whose archive was blocked.
   const [transferFrom, setTransferFrom] = useState<string | null>(null);
@@ -341,6 +344,22 @@ export function MainBudget(): ReactNode {
     ...view.data.delegations.ungrouped,
   ].map((row) => ({ id: row.id, name: row.name }));
 
+  /**
+   * The same lines, minus the outstanding checks.
+   *
+   * Transfer may legitimately move money onto or off a check, so `delegations`
+   * above keeps them. Spending cannot be *categorized* to one — a check is
+   * settled by matching the payment that cashes it, which is a different act —
+   * so the picker in the new-transaction dialog must not offer them. This is
+   * the same filter the Transactions page applies, for the same reason.
+   */
+  const spendable = [
+    ...view.data.delegations.groupings.flatMap((grouping) => grouping.rows),
+    ...view.data.delegations.ungrouped,
+  ]
+    .filter((row) => row.kind !== 'check')
+    .map((row) => ({ id: row.id, name: row.name }));
+
   const groupingOptionsFor = (section: {
     groupings: readonly { id: string; name: string }[];
   }): { id: string; name: string }[] =>
@@ -376,7 +395,10 @@ export function MainBudget(): ReactNode {
           ) : (
             <Button onClick={() => setNewGrouping(true)}>Add grouping</Button>
           )}
-          <Button onClick={() => setDialog('check')}>New outstanding check</Button>
+          {/* Same wording as the button on the Transactions page: two controls
+              that open the same dialog should read the same. */}
+          <Button onClick={() => setDialog('transaction')}>Add transaction</Button>
+          <Button onClick={() => setDialog('check')}>New check</Button>
           {/* Transfer sits to the left of Delegate, per the design. */}
           <Button onClick={() => setDialog('transfer')}>Transfer</Button>
           <Button variant="primary" onClick={() => setDialog('delegate')}>
@@ -445,6 +467,9 @@ export function MainBudget(): ReactNode {
         }
       />
 
+      {dialog === 'transaction' && (
+        <NewTransactionDialog delegations={spendable} onClose={() => setDialog('none')} />
+      )}
       {dialog === 'check' && <NewCheckDialog view={view.data} onClose={() => setDialog('none')} />}
       {dialog === 'delegate' && <DelegateDialog onClose={() => setDialog('none')} />}
       {dialog === 'transfer' && (
