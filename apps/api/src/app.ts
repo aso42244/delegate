@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { getConfig, type AppConfig } from './config.js';
 import { errorHandler } from './http/errors.js';
+import { apiToken } from './plugins/api-token.js';
 import { auth } from './plugins/auth.js';
 import { configPlugin } from './plugins/config.js';
 import { csrf } from './plugins/csrf.js';
@@ -17,6 +18,7 @@ import { ruleRoutes } from './routes/rules.js';
 import { settingsRoutes } from './routes/settings.js';
 import { syncRoutes } from './routes/sync.js';
 import { accountRoutes } from './routes/accounts.js';
+import { apiTokenRoutes } from './routes/api-tokens.js';
 import { appInfoRoutes } from './routes/app-info.js';
 import { bitcoinRoutes } from './routes/bitcoin.js';
 import { budgetRoutes } from './routes/budget.js';
@@ -138,8 +140,13 @@ export async function buildApp(config: AppConfig = getConfig()): Promise<Fastify
   // access has been turned on from the LAN.
   await app.register(remoteAccess);
   await app.register(auth, { config });
+  // After `auth`, whose decorator it fills in, and before every route: its
+  // hooks resolve a bearer token and enforce the scope allowlist, so no route
+  // has to know that tokens exist.
+  await app.register(apiToken);
   await app.register(healthRoutes);
   await app.register(appInfoRoutes);
+  await app.register(apiTokenRoutes);
   await app.register(authRoutes);
   await app.register(userRoutes);
   await app.register(syncRoutes);
