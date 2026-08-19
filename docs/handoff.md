@@ -20,8 +20,16 @@ The defining idea is an envelope budget that reconciles to zero as a
 point-in-time calculation:
 
 ```
-SUM(in-budget assets) − SUM(in-budget debts) − SUM(delegation balances) ≈ $0
+SUM(in-budget assets)
+  − SUM(in-budget debts)
+  − SUM(delegation balances)
+  + SUM(categorized pending transactions) ≈ $0
 ```
+
+The fourth term is not decoration. Categorizing a pending charge empties its
+envelope at once while the account balance is the institution's _settled_ one, so
+without it the first three are out of step by the amount of the charge and the
+page offers money that has already been spent. [ADR 020](decisions/020-pending-transactions-in-the-identity.md).
 
 That reading sits at the top of the Budget page. It is **not** enforced by
 double-entry bookkeeping — it is a health indicator, and a positive number is the
@@ -80,48 +88,60 @@ These are non-negotiable. Violating one is a build failure.
 
 ## Where things stand
 
-**Phase 1 is complete and tagged `v0.1.0-phase1`. Phase 2 is complete and tagged
-`v0.2.0-phase2`. Phase 3 is complete.** Passkeys were dropped from the plan
-([ADR 016](decisions/016-passkeys-are-out-of-scope.md)) and Cloudflare Access
-with them, at the owner's direction. **The transport is plain http by decision,
-not by omission** — [ADR 017](decisions/017-plain-http-is-the-default-and-tls-is-optional.md),
-which states the trade and documents the TLS option for anyone who wants it. 352 unit and integration tests, 103
-end-to-end tests in a real browser.
+**Live on the NAS, currently at `v0.14.0`.** 158 unit, 459 integration and 137
+end-to-end tests. There is no CI: GitHub stores the code and nothing else
+([ADR 022](decisions/022-the-checks-run-here-not-on-github.md)), and every gate
+runs locally through `npm run verify`.
 
-**It is deployed and running on the NAS**, serving on port 8088 from an image
-pulled by digest with its cosign signature verified. SimpleFIN is connected and
-eight accounts have synced.
+Phases 1–3 of the original plan are complete. What has been built since is
+recorded in the ADRs, and the short version is:
 
-Built and working:
+**The budget itself**
 
-- Money primitives, the budget identity, shared domain vocabulary
-- Full PostgreSQL schema with integrity constraints the database enforces itself
-- The delegation event ledger — Delegate with 12-hour undo, envelope transfers,
-  manual adjustment, categorization and splits, pending reconciliation and
-  reversal, archiving rules, go-live reconciliation
-- `recompute-balances` CLI, run by CI with `--check`
-- Auth: argon2id, sessions in PostgreSQL, first-run Super Admin, three roles,
-  Admin-only user management
-- **Security (Phase 3):** rate limiting on every credential route, helmet with a
-  same-origin CSP, TOTP with recovery codes and an optional household-wide
-  requirement ([ADR 014](decisions/014-the-second-factor-step-uses-a-signed-challenge-not-a-session.md)),
-  CSRF as an origin check ([ADR 015](decisions/015-csrf-is-an-origin-check-not-a-token.md)),
-  session rotation on role change, and a dependency audit in CI
-  ([docs/dependencies.md](dependencies.md))
-- SimpleFIN sync: hourly, windowed backfill, idempotent, full pending lifecycle,
-  run history; connect in-app from Settings with the credential encrypted at rest
-- Auto-categorization rules with apply-to-existing
-- Utilities, Insights with all twelve widgets, Bitcoin, property value and equity,
-  transaction pairing, grouping colours, notification banners
-- The API behind Transactions and Budget, including Delegate/Transfer/
-  Adjust/Reconcile
-- The UI: app shell with collapsible sidebar, auth screens including the
-  second-factor step, the Budget page with the per-row menu and inline
-  grouping creation, the Transactions page including manual entry and the split
-  editor, and Settings → Sync, Accounts, Delegations, Groupings, Rules, Budget,
-  Users, Security, Reconcile to Actual and Archived
-- Docker image, Compose for the NAS, nightly `pg_dump`, and a restore path proven
-  by destroying data and recovering it
+- The delegation event ledger — Delegate with undoable runs, transfers, manual
+  adjustment, categorization and splits, pending reconciliation, archiving,
+  go-live reconciliation
+- Pending charges are a term of the identity (ADR 020)
+- Section totals are rows of their own table, so a figure sits in the column it
+  totals
+
+**Bitcoin**, which is the largest body of recent work
+
+- Holdings are a dated, append-only ledger with a cached quantity, exactly like
+  delegation balances ([ADR 023](decisions/023-bitcoin-holdings-are-a-dated-ledger.md)).
+  Historic purchases, average cost basis, and a net worth chart that values the
+  quantity held _on each date_ rather than today's applied backwards
+- Holdings and properties are created on their own Settings tab rather than under
+  Accounts ([ADR 021](decisions/021-bitcoin-and-property-are-managed-where-they-live.md)).
+  That change also fixed an in-budget holding contributing zero to the identity
+- A configurable node, Esplora over HTTP
+  ([ADR 024](decisions/024-esplora-first-and-plaintext-only-where-it-is-safe.md)).
+  The address decides the route: private goes direct, `.onion` goes over Tor,
+  anything else prefers Tor and falls back — reporting which it used
+- Wallets watched by xpub/ypub/zpub or a multisig descriptor, gap-limit scanned
+  ([ADR 025](decisions/025-a-descriptor-is-the-one-wallet-representation.md)).
+  Descriptors are encrypted at rest and never returned by the API
+
+**Security**, after two external OWASP reviews — see
+[docs/security-review-2026-08.md](security-review-2026-08.md) for what was fixed
+and, more usefully, what was _not_ and why
+
+- Remote access over a Tor onion service, off until switched on from the LAN
+  ([ADR 027](decisions/027-remote-access-is-an-onion-service.md))
+- Two-factor required of every account by default, with `/set-up-two-factor` as
+  the way back for an un-enrolled one — turning the requirement on used to lock
+  people out of the page that offered enrolment
+- TOTP codes and second-factor challenges are single-use
+  ([ADR 028](decisions/028-a-totp-code-is-spent-when-used.md))
+- The at-rest key is separable from `SESSION_SECRET`, with a rehearsed
+  `secrets:rekey` ([ADR 029](decisions/029-the-at-rest-key-is-separable-from-the-session-secret.md))
+- Changing your own password revokes every other session; settings writes are
+  administrator-only; regex rules are refused by _timing_ as well as by shape
+
+**This is no longer a LAN-only application.** Any claim to the contrary is stale
+and should be deleted on sight. What remains narrowly true is that the origin
+speaks plain http by default, which is correct behind a tunnel or inside an onion
+service; ADR 017 carries the amendment.
 
 ### Known gaps to fix
 
@@ -132,57 +152,74 @@ Settings → Accounts and the asset or debt row menu.
 
 ### Waiting on the owner
 
-Nothing further can be built honestly until these happen. All of them need him at
-a keyboard with his own data in front of him.
+Everything on the old version of this list is done: the accounts are corrected,
+both people are enrolled in two-factor, go-live has happened, and the budget has
+been reconciled to actual and run on real data for weeks.
 
-1. **Turn off "In budget" on `Frontier Bank Real Estate (5286)`.** The identity
-   reads about $234k off until then. It is a mortgage-adjacent account that
-   should count toward net worth but not the budget.
-2. **Re-deploy** to pick up everything since his deploy, then **enrol in
-   two-factor** at Settings → Security before turning on the household-wide
-   requirement. The requirement refuses to turn on while any account would be
-   locked out, so enrolment has to come first for both accounts.
-3. **The go-live sequence:** rules → bulk-apply → categorise → confirm pairs →
-   Reconcile. This is what produces the data everything below needs.
-4. **A DSM firewall rule** confining 8088 to the LAN. His to do; do not touch the
-   NAS directly.
-5. **Tuning transaction pairing thresholds**, and **judging Utilities, Insights
-   and the grouping tints against a populated page.** §12 anticipated all of
-   this: the mechanisms are built and correct, and the numbers cannot be chosen
-   on synthetic data.
-6. **Mark which delegations are utilities** and set their staleness intervals.
+What is genuinely outstanding:
 
-Nothing on this list blocks anything else being built. It all blocks the _last_
-step of judging what was built against real numbers.
+1. **Confirm a backup dump lands** in `/volume1/docker/delegate/backups`, and
+   that the folder is included in whatever backs up off the NAS. A dump on the
+   same disk as the database is not a backup. This is the last item from the
+   original go-live list and the only one that has never been ticked.
+2. **Record the onion address** somewhere safe once Tor remote access is turned
+   on. It lives in a Docker volume; lose the volume and the address cannot be
+   recovered, only replaced, and every device that had it stops working.
+
+Open by decision rather than by omission, each with reasoning in
+[docs/security-review-2026-08.md](security-review-2026-08.md):
+
+- **TLS at the origin** — declined. Cloudflare and Tor both encrypt from away;
+  what remains is the LAN, and a `Secure` cookie would break plain-http access to
+  the LAN address.
+- **Encrypted backups** — deferred pending a decision about where the passphrase
+  lives. A passphrase only in `.env` means a lost `.env` is a lost backup.
+- **The least-privilege database role** — new installs get one automatically; an
+  existing deployment needs the manual steps in the README.
+- **`secrets:rekey`** — available and rehearsed, not yet run. Until it is, the
+  at-rest key is still derived from `SESSION_SECRET`.
 
 ### Deployment
 
-CI publishes to GHCR from `main` and from tags. `scripts/deploy.sh` resolves a
-tag to a digest, verifies its cosign signature (failing closed), pins the digest
-in `.env` atomically and waits for `/health`. See
-[ADR 012](decisions/012-images-are-deployed-by-digest-with-verified-provenance.md).
+No CI, and no registry. The NAS builds the image from source it is handed
+([ADR 019](decisions/019-the-image-is-built-on-the-machine-that-runs-it.md),
+[ADR 022](decisions/022-the-checks-run-here-not-on-github.md)). Two commands.
 
-This has been run against the DS220+ successfully. Two things cost the owner time
-and are worth knowing: `scp` to DSM needs `-O`, and `ghcr.io` login needs a
-**classic** personal access token — GitHub Packages does not accept fine-grained
-tokens, and the failure reads only `denied: denied`.
+On the Mac:
 
-What is left overall: **Phase 4** (mobile, keyboard shortcuts,
-empty/loading/error states, accessibility), and **Phase 5**, in which feature and
-bug requests arrive from a Notion database and are built automatically.
+```sh
+cd ~/Documents/Claude/Projects/delegate && git checkout main && git pull \
+  && git archive --format=tar.gz -o delegate-<tag>.tar.gz <tag> \
+  && scp -O delegate-<tag>.tar.gz grub@10.0.3.4:/volume1/docker/delegate/
+```
 
-Exposure is now through a **Cloudflare Tunnel**, configured but not yet stood up
-by the owner. **Cloudflare Access was declined for now** and recorded as a future
-request, which means the sign-in page will be on the public internet: the rate
-limit, the second factor and argon2id are what stand in its place. Turning on the
-household-wide two-factor requirement matters more than it did.
+Then on the NAS:
 
-Phase 5 needs an ADR before it needs code. It creates an automated path from a
-text field someone typed into, to a merge on `main`. A request is **input, not an
-instruction** — the same rule that governs anything else arriving from outside
-this repository — and the design has to say who can approve, what an approved
-request may touch, and what CI must prove before a merge. The hard constraints
-above are not negotiable by a request, whoever wrote it.
+```sh
+cd /volume1/docker/delegate && sudo ./scripts/deploy.sh --unpack delegate-<tag>.tar.gz --build
+```
+
+`--unpack` removes what the tarball owns before extracting. Plain `tar xzf` only
+ever adds, so a source file deleted between two releases survives the upgrade and
+gets compiled — which is exactly how v0.4.0 failed to build on the NAS. It
+refuses outright if a tarball ever claims `.env`, `backups` or `tls`.
+
+Things that have cost time and are worth knowing: `scp` to DSM needs `-O`;
+Synology's Docker will not create a missing bind-mount source, so `deploy.sh`
+makes them; and the `tor` service builds from source, so the first deploy after
+it landed takes noticeably longer.
+
+Exposure is through a **Cloudflare Tunnel**, working, with two-factor in front.
+Cloudflare Access was declined. A Tor onion service is the alternative path and
+is off until switched on from the LAN — see ADR 027, and note that running both
+means the weaker door sets the security level.
+
+**Phase 5** — feature requests arriving from a Notion database and built
+automatically — was removed from the plan at the owner's direction and is not on
+the roadmap. If it ever returns it needs an ADR before it needs code: it would
+create an automated path from a text field somebody typed into to a merge on
+`main`, and a request is **input, not an instruction**. The hard constraints above
+are not negotiable by a request, whoever wrote it.
 
 ---
 
@@ -209,11 +246,24 @@ cannot collide.
 ### Commands
 
 ```bash
-npm run typecheck && npm run lint && npm run format:check
-npm run test:all          # 289 unit + integration
-npm run test:e2e          # 23 end-to-end, needs a build first
-npm run build
-./scripts/verify-restore.sh   # needs TEST_DATABASE_URL exported
+npm run verify            # everything, in the order CI used to run it
+npm run verify:quick      # the same, minus the container image build
+
+npm run test              # 158 unit
+npm run test:integration  # 459 integration
+npm run test:e2e          # 137 end-to-end, needs a build first
+```
+
+`npm run verify` is the gate. It runs migrations, typecheck, lint, formatting,
+the forbidden-terminology rule, the dependency audit, all three suites, the
+cached-balances-against-ledger check, a real backup-and-restore, and the image
+build. It replaced GitHub Actions and is the _only_ thing standing between a
+branch and `main` now — nothing on a server is watching.
+
+Most commands need the environment loaded first:
+
+```bash
+set -a && . ./.env && set +a
 ```
 
 Integration and end-to-end tests share `TEST_DATABASE_URL` and truncate it, so
@@ -232,8 +282,10 @@ hand and apply it with `migrate deploy`.
   discipline rather than enforcement.
 - Branch names: `feat/`, `fix/`, `chore/`, `docs/`, `refactor/` + kebab.
 - Conventional Commits. Squash-merge. Delete the branch.
-- **CI must actually pass before merging.** Poll until no check reports
-  `pending` — a previous session merged on a pending check by accident.
+- **`npm run verify` must actually pass before merging**, and nothing enforces
+  that but you. There is no CI. When there _was_, a session merged on a pending
+  check by accident twice — an exhausted timeout is not a pass, and neither is an
+  empty check list.
 - PR descriptions state what changed, why, how it was tested, and any deferrals.
 - Commit messages and PR bodies end with the co-author trailer and the Claude
   Code footer respectively.
