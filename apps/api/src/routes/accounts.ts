@@ -11,7 +11,7 @@ import {
 } from '../domain/accounts.js';
 import { ConflictError } from '../domain/errors.js';
 import { equityFor, listValuations, recordValuation } from '../domain/valuations.js';
-import { centsInLoose, centsOut, dateOut } from '../http/serialize.js';
+import { booleanQuery, centsInLoose, centsOut, dateOut } from '../http/serialize.js';
 import { AUTHENTICATED } from '../plugins/auth.js';
 
 /**
@@ -27,7 +27,7 @@ import { AUTHENTICATED } from '../plugins/auth.js';
 const idParamsSchema = z.object({ id: z.string().uuid() });
 
 const listQuerySchema = z.object({
-  includeArchived: z.coerce.boolean().optional(),
+  includeArchived: booleanQuery.optional(),
 });
 
 const createSchema = z.object({

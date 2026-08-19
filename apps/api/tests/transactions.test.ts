@@ -592,3 +592,69 @@ describe('the uncategorized queue', () => {
     expect(await queueCount()).toBe(1);
   });
 });
+
+/**
+ * A query string carries text, so a flag in one has to be parsed rather than
+ * coerced.
+ *
+ * `z.coerce.boolean()` is `Boolean(value)` and `Boolean("false")` is `true`, so
+ * every one of these asked for the opposite of what it got. The Transactions
+ * page sends `uncategorized=false` for its Categorized filter, which means it
+ * had been showing the uncategorized queue under both settings.
+ */
+describe('flags in the query string', () => {
+  let accountId: string;
+  let categorized: string;
+
+  beforeEach(async () => {
+    const account = await makeAccount({ name: 'Checking', type: 'asset', balanceCents: 500_000n });
+    accountId = account.id;
+
+    const delegation = await makeDelegation({ name: 'Grocery' });
+    const paid = await makeTransaction({
+      accountId,
+      amountCents: -4_210n,
+      description: 'Whole Foods',
+    });
+    await categorizeTransaction(prisma, paid.id, delegation.id);
+    categorized = paid.id;
+
+    await makeTransaction({ accountId, amountCents: -1_000n, description: 'Corner shop' });
+  });
+
+  it('reads uncategorized=false as "only the categorized ones"', async () => {
+    const body = await list('?uncategorized=false');
+    expect(body.transactions).toHaveLength(1);
+    expect(body.transactions[0]?.id).toBe(categorized);
+  });
+
+  it('still reads uncategorized=true as the queue', async () => {
+    const body = await list('?uncategorized=true');
+    expect(body.transactions).toHaveLength(1);
+    expect(body.transactions[0]?.description).toBe('Corner shop');
+  });
+
+  it('refuses a flag that is neither, rather than guessing', async () => {
+    const response = await app.inject({
+      method: 'GET',
+      url: '/api/transactions?uncategorized=yes',
+      headers: { cookie },
+    });
+    expect(response.statusCode).toBe(400);
+  });
+
+  it('reads pending=false as "only the settled ones"', async () => {
+    await makeTransaction({
+      accountId,
+      amountCents: -2_500n,
+      description: 'Pending charge',
+      pending: true,
+    });
+
+    const settled = await list('?pending=false');
+    expect(settled.transactions.map((row) => row.description)).not.toContain('Pending charge');
+
+    const pending = await list('?pending=true');
+    expect(pending.transactions.map((row) => row.description)).toEqual(['Pending charge']);
+  });
+});

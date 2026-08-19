@@ -48,3 +48,17 @@ export function dateOut(value: Date | null | undefined): string | null;
 export function dateOut(value: Date | null | undefined): string | null {
   return value === null || value === undefined ? null : value.toISOString();
 }
+
+/**
+ * A boolean in a query string.
+ *
+ * `z.coerce.boolean()` is `Boolean(value)`, and a query string carries text —
+ * so `Boolean("false")` is `true`, and asking for the opposite of a filter
+ * silently returns the filter. This is the same fault that made
+ * `GET /api/rules/preview?includeCategorized=false` answer with the count for
+ * the mode that overwrites categorizations made by hand.
+ *
+ * Only the two literals are accepted. Anything else is a 400 rather than a
+ * guess, because every wrong guess here is a wrong answer that looks right.
+ */
+export const booleanQuery = z.enum(['true', 'false']).transform((value) => value === 'true');
