@@ -105,6 +105,14 @@ export interface UpdateDelegationInput {
 }
 
 export const budgetApi = {
+  /**
+   * Where a line sits, and which grouping it is in — one request, because
+   * dragging a row does both. `orderedIds` is the destination grouping's full
+   * membership afterwards, in order.
+   */
+  place: (id: string, groupingId: string | null, orderedIds: readonly string[]) =>
+    api.post<BudgetViewDto>(`/api/delegations/${id}/place`, { groupingId, orderedIds }),
+
   view: () => api.get<BudgetViewDto>('/api/budget'),
 
   createDelegation: (name: string, amountToDelegateCents: string | null) =>

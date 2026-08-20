@@ -242,3 +242,78 @@ export async function updateGrouping(
     },
   });
 }
+
+/**
+ * Puts a delegation somewhere, in one move.
+ *
+ * Both halves at once — which grouping it belongs to, and where it sits among
+ * that grouping's lines — because dragging a row does both and doing them as
+ * two writes would show the page an intermediate state that nobody asked for.
+ *
+ * `orderedIds` is the grouping's full membership afterwards, in order. A
+ * partial order would silently leave rows where they were, which reads as the
+ * drop having been ignored; and computing the gap arithmetic on the server from
+ * a complete list is the only version of this that cannot drift.
+ */
+export async function placeDelegation(
+  db: Db,
+  input: {
+    readonly delegationId: string;
+    readonly groupingId: string | null;
+    readonly orderedIds: readonly string[];
+  },
+): Promise<void> {
+  const moving = await db.delegation.findUnique({
+    where: { id: input.delegationId },
+    select: { id: true, archivedAt: true },
+  });
+  if (!moving || moving.archivedAt) {
+    throw new NotFoundError('Delegation', input.delegationId);
+  }
+
+  if (input.groupingId !== null) {
+    const grouping = await db.grouping.findUnique({
+      where: { id: input.groupingId },
+      select: { id: true, section: true, archivedAt: true },
+    });
+    if (!grouping || grouping.archivedAt) {
+      throw new NotFoundError('Grouping', input.groupingId);
+    }
+    if (grouping.section !== 'delegations') {
+      throw new ValidationError(
+        'wrong_section',
+        'A delegation can only be filed under a grouping in the Delegations section.',
+      );
+    }
+  }
+
+  if (!input.orderedIds.includes(input.delegationId)) {
+    throw new ValidationError(
+      'incomplete_order',
+      'The new order must include the delegation being moved.',
+    );
+  }
+
+  const live = await db.delegation.findMany({
+    where: { id: { in: [...input.orderedIds] }, archivedAt: null },
+    select: { id: true },
+  });
+  if (live.length !== new Set(input.orderedIds).size) {
+    throw new ValidationError(
+      'unknown_delegation',
+      'The new order names a delegation that does not exist.',
+    );
+  }
+
+  // Gaps of ten, as the rules table does: inserting between two neighbours
+  // later does not have to renumber everything.
+  for (const [index, id] of input.orderedIds.entries()) {
+    await db.delegation.update({
+      where: { id },
+      data: {
+        position: (index + 1) * 10,
+        ...(id === input.delegationId ? { groupingId: input.groupingId } : {}),
+      },
+    });
+  }
+}

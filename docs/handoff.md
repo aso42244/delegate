@@ -110,6 +110,11 @@ recorded in the ADRs, and the short version is:
 
 **The budget itself**
 
+- Delegations carry a `position` and can be reordered — by dragging a row onto
+  another row, or from the row menu. Stored on the budget, not per browser.
+  Dragging _between_ groupings already existed; what was missing was ordering,
+  which is why the owner's groupings are named "3 - Food" and "5 - Home"
+
 - Pay cadence is a setting — weekly, every two weeks, twice a month, monthly —
   and the Utilities suggestion divides by it. It is a **divisor, not a
   schedule**: a cycle is still one Delegate press to the next, and no amount to

@@ -109,3 +109,73 @@ test('the row menu remains the route that works without a mouse', async ({ signe
   await signedIn.getByRole('button', { name: /Essentials/ }).click();
   await expect(signedIn.getByRole('cell', { name: 'Grocery', exact: true })).toBeHidden();
 });
+
+/**
+ * Putting delegations in an order, and keeping it.
+ *
+ * Alphabetical was the only order the budget had, which is why a household ends
+ * up naming its groupings "3 - Food" and "5 - Home" — numbering by hand to buy
+ * back an ordering the software would not give them.
+ *
+ * The order is a column, not a preference: it is the same for everybody who
+ * signs in, because it is a property of the budget rather than of a browser.
+ */
+
+/**
+ * The delegation names on the Budget page, top to bottom.
+ *
+ * Read from the accessible name, not the text: the button's text is the money
+ * it holds. Scoped to the third table, which is the Delegations section —
+ * Assets and Debts label their rows the same way.
+ */
+async function order(page: import('@playwright/test').Page, expected: string[]): Promise<string[]> {
+  // The rows have to be on screen before they can be read in order; without
+  // this the first call runs against an empty table and reports no order at all.
+  await expect(page.getByRole('button', { name: `${expected[0]!} balance` })).toBeVisible();
+
+  const names = await page
+    .locator('button[aria-label$=" balance"]')
+    .evaluateAll((buttons) =>
+      buttons.map((button) => (button.getAttribute('aria-label') ?? '').replace(/ balance$/, '')),
+    );
+  // Filtered to the lines this test made: Assets and Debts label their rows the
+  // same way, and which sections are on screen depends on what else exists.
+  return names.filter((name) => expected.includes(name));
+}
+
+test('a line is moved with the row menu, and stays there for everyone', async ({
+  signedIn,
+  api,
+}) => {
+  const NAMES = ['Apples', 'Bananas', 'Cherries'];
+  for (const name of NAMES) await makeDelegation(api, name);
+
+  await signedIn.goto('/');
+  // Alphabetical to begin with, which is what the backfill preserves.
+  expect(await order(signedIn, NAMES)).toEqual(['Apples', 'Bananas', 'Cherries']);
+
+  await signedIn.getByRole('button', { name: 'Options for Cherries' }).click();
+  await signedIn.getByRole('menuitem', { name: 'Move up' }).click();
+
+  // Polled: the write and the refetch are two round trips, and reading the rows
+  // straight after the click reads the order they were in before it.
+  await expect.poll(() => order(signedIn, NAMES)).toEqual(['Apples', 'Cherries', 'Bananas']);
+
+  // Stored, not remembered by this tab: a reload is a fresh read of the budget.
+  await signedIn.reload();
+  expect(await order(signedIn, NAMES)).toEqual(['Apples', 'Cherries', 'Bananas']);
+});
+
+test('the top line cannot be moved above itself', async ({ signedIn, api }) => {
+  const NAMES = ['Apples', 'Bananas'];
+  for (const name of NAMES) await makeDelegation(api, name);
+
+  await signedIn.goto('/');
+  await signedIn.getByRole('button', { name: 'Options for Apples' }).click();
+  await signedIn.getByRole('menuitem', { name: 'Move up' }).click();
+
+  // Nothing to do, and nothing sent: the menu closes and the order is what it
+  // was. Reloaded so this cannot pass on a stale render.
+  await signedIn.reload();
+  expect(await order(signedIn, NAMES)).toEqual(['Apples', 'Bananas']);
+});

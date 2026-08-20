@@ -397,6 +397,15 @@ model Delegation {
 
   isUtility Boolean @default(false) @map("is_utility")
 
+  /// Where this line sits among its neighbours, ascending.
+  ///
+  /// Alphabetical was the only order the budget had, which is why a household
+  /// ends up naming its groupings "3 - Food" and "5 - Home" — numbering by hand
+  /// to buy back an ordering the software would not give them. Ties break on
+  /// name, so a new line lands predictably rather than wherever the database
+  /// felt like putting it.
+  position Int @default(0)
+
   // Freeform and deliberately unstructured. The owner writes "$2200, Dec 27"
   // and does the per-cycle arithmetic himself. A real column, so structured
   // target fields remain a purely additive migration later.

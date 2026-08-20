@@ -28,6 +28,7 @@ import {
 import {
   createDelegation,
   createGrouping,
+  placeDelegation,
   updateDelegation,
   updateGrouping,
 } from '../domain/delegations.js';
@@ -79,6 +80,12 @@ const groupingColorSchema = z
   .string()
   .transform(normalizeHexColor)
   .refine(isHexColor, { message: 'A colour looks like #2783DE.' });
+
+/** The grouping's full membership afterwards, in order. */
+const placeSchema = z.object({
+  groupingId: z.string().uuid().nullable(),
+  orderedIds: z.array(z.string().uuid()).min(1).max(500),
+});
 
 const createGroupingSchema = z.object({
   name: z.string().min(1).max(100),
@@ -226,6 +233,43 @@ export const budgetRoutes: FastifyPluginCallback = (fastify, _options, done) => 
   });
 
   /** Per-line history. The only place `adjust` events are visible. */
+  /**
+   * Where a line sits, and which grouping it is in — one request, because
+   * dragging a row does both.
+   *
+   * Wrapped in a transaction: a half-applied order would leave the page in an
+   * arrangement nobody chose, and the row that was dragged is the one most
+   * likely to be the casualty.
+   */
+  fastify.post('/api/delegations/:id/place', async (request) => {
+    const { id } = idParamsSchema.parse(request.params);
+    const body = placeSchema.parse(request.body);
+
+    await prisma.$transaction(async (tx) => {
+      await placeDelegation(tx, {
+        delegationId: id,
+        groupingId: body.groupingId,
+        orderedIds: body.orderedIds,
+      });
+    });
+
+    return buildBudgetView(prisma).then((view) => ({
+      assets: presentSection(view.assets),
+      debts: presentSection(view.debts),
+      delegations: presentSection(view.delegations),
+      identity: {
+        assetsCents: centsOut(view.identity.assetsCents),
+        debtsCents: centsOut(view.identity.debtsCents),
+        delegationsCents: centsOut(view.identity.delegationsCents),
+        pendingCents: centsOut(view.identity.pendingCents),
+        differenceCents: centsOut(view.identity.differenceCents),
+        toleranceCents: centsOut(view.identity.toleranceCents),
+        status: view.identity.status,
+      },
+      cycleStartedAt: dateOut(view.cycleStartedAt),
+    }));
+  });
+
   fastify.get('/api/delegations/:id/history', async (request) => {
     const { id } = idParamsSchema.parse(request.params);
     const events = await prisma.delegationEvent.findMany({

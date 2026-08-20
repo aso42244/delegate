@@ -8,6 +8,25 @@ phase (`v0.1.0-phase1`, and so on).
 
 Nothing yet.
 
+## [0.21.0] — 2026-08-19
+
+### Added
+
+- **Delegations can be put in an order**, and it is stored on the budget rather
+  than in a browser — the same for everyone who signs in. Alphabetical was the
+  only order this application had, which is why a household ends up naming its
+  groupings "3 - Food" and "5 - Home": numbering by hand to buy back an ordering
+  the software would not give them.
+- **Drop a row onto another row** to put it in that row's place, in that row's
+  grouping. Dropping onto a grouping still sends it to the end, as before.
+- **Move up** and **Move down** in the row menu, beside the existing Move to
+  grouping. Dragging is the fast route and it is not a keyboard one, so this is
+  not a lesser alternative — it is the one that always works, including under a
+  thumb.
+
+Positions are backfilled to the order the budget already showed, so nothing
+moves on upgrade.
+
 ## [0.20.0] — 2026-08-19
 
 Interface work asked for by the owner, and a second factor that is no longer

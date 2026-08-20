@@ -118,31 +118,23 @@ export const test = base.extend<BudgetFixtures>({
     /*
      * Straight to enrolment, because there is nowhere else to go.
      *
-     * Done through the API rather than the screen: this runs before all 20
-     * specs, only one of which is about enrolment, and that one drives the
-     * real interface. The secret is kept so a spec can sign in again.
+     * Done over `page.request`, which shares this context's cookies but is not
+     * attached to the document: an in-page `fetch` races the navigation the
+     * app is already making and fails as "Failed to fetch" perhaps one run in
+     * twenty. The API rather than the screen because this runs before all
+     * twenty specs and only one of them is about enrolment — that one drives
+     * the real interface. The secret is kept so a spec can sign in again.
      */
     await page.waitForURL('/set-up-two-factor');
 
-    ownerTotpSecret = await page.evaluate(async () => {
-      const response = await fetch('/api/auth/totp/begin', {
-        method: 'POST',
-        credentials: 'same-origin',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ currentPassword: 'end-to-end-passphrase' }),
-      });
-      return ((await response.json()) as { secret: string }).secret;
+    const begun = await page.request.post('/api/auth/totp/begin', {
+      data: { currentPassword: OWNER.password },
     });
+    ownerTotpSecret = ((await begun.json()) as { secret: string }).secret;
 
-    const code = await generateOtp({ secret: ownerTotpSecret });
-    await page.evaluate(async (confirmation) => {
-      await fetch('/api/auth/totp/confirm', {
-        method: 'POST',
-        credentials: 'same-origin',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ code: confirmation }),
-      });
-    }, code);
+    await page.request.post('/api/auth/totp/confirm', {
+      data: { code: await generateOtp({ secret: ownerTotpSecret }) },
+    });
 
     await page.goto('/');
     await use(page);

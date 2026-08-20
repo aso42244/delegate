@@ -1,7 +1,12 @@
 import { formatCents } from '@budget/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState, type ReactNode } from 'react';
-import { budgetApi, type BudgetSectionDto, type BudgetViewDto } from '../api/budget.js';
+import {
+  budgetApi,
+  type BudgetRowDto,
+  type BudgetSectionDto,
+  type BudgetViewDto,
+} from '../api/budget.js';
 import { ApiError } from '../api/client.js';
 import { AccountRowMenu } from '../components/AccountRowMenu.jsx';
 import { BalanceBanner } from '../components/BalanceBanner.jsx';
@@ -339,6 +344,44 @@ export function MainBudget(): ReactNode {
     onError,
   });
 
+  const placeDelegation = useMutation({
+    mutationFn: ({
+      id,
+      groupingId,
+      orderedIds,
+    }: {
+      id: string;
+      groupingId: string | null;
+      orderedIds: string[];
+    }) => budgetApi.place(id, groupingId, orderedIds),
+    onSuccess: refresh,
+    onError,
+  });
+
+  /**
+   * Moves a line one place, for anybody not using a mouse.
+   *
+   * Drag and drop is the fast route and it is not a keyboard one, so this is
+   * the same operation reached from the row menu. It works out the neighbour
+   * list here rather than asking the server to interpret "up".
+   */
+  function nudge(row: BudgetRowDto, direction: -1 | 1): void {
+    const siblings =
+      row.groupingId === null
+        ? view.data!.delegations.ungrouped
+        : (view.data!.delegations.groupings.find((grouping) => grouping.id === row.groupingId)
+            ?.rows ?? []);
+
+    const from = siblings.findIndex((sibling) => sibling.id === row.id);
+    const to = from + direction;
+    if (from === -1 || to < 0 || to >= siblings.length) return;
+
+    const orderedIds = siblings.map((sibling) => sibling.id);
+    orderedIds.splice(to, 0, ...orderedIds.splice(from, 1));
+
+    placeDelegation.mutate({ id: row.id, groupingId: row.groupingId, orderedIds });
+  }
+
   /**
    * Collapsing a grouping moves rows, not money.
    *
@@ -492,6 +535,9 @@ export function MainBudget(): ReactNode {
         onEditBalance={(id, cents) => editBalance.mutate({ id, cents })}
         onCreate={(name) => createDelegation.mutate(name)}
         onMoveToGrouping={(rowId, groupingId) => moveDelegation.mutate({ id: rowId, groupingId })}
+        onPlace={(rowId, groupingId, orderedIds) =>
+          placeDelegation.mutate({ id: rowId, groupingId, orderedIds })
+        }
         rowMenu={(row) =>
           // A check is not a delegation to rename, re-file or adjust; its menu
           // offers only what the bank can decide.
@@ -501,6 +547,7 @@ export function MainBudget(): ReactNode {
             <DelegationRowMenu
               row={row}
               groupings={groupingOptions}
+              onNudge={nudge}
               onTransferFrom={(delegationId) => {
                 setTransferFrom(delegationId);
                 setDialog('transfer');
