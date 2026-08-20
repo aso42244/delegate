@@ -25,12 +25,6 @@ export interface BudgetSettings {
    * about it schedules a Delegate run.
    */
   readonly payCadence: PayCadence;
-  /**
-   * Whether every account must carry a second factor. Default on: the reason it
-   * was optional — that turning it on could lock an un-enrolled account out —
-   * expired once the interface gained a way back (`/set-up-two-factor`).
-   */
-  readonly requireTotp: boolean;
   readonly remoteOverTorEnabled: boolean;
   readonly remoteOverTorEnabledAt: Date | null;
 }
@@ -43,7 +37,6 @@ export async function getBudgetSettings(db: Db): Promise<BudgetSettings> {
       identityToleranceCents: true,
       goLiveAt: true,
       payCadence: true,
-      requireTotp: true,
       remoteOverTorEnabled: true,
       remoteOverTorEnabledAt: true,
     },
@@ -54,7 +47,6 @@ export async function getBudgetSettings(db: Db): Promise<BudgetSettings> {
     identityToleranceCents: settings?.identityToleranceCents ?? DEFAULT_IDENTITY_TOLERANCE_CENTS,
     goLiveAt: settings?.goLiveAt ?? null,
     payCadence: settings?.payCadence ?? DEFAULT_PAY_CADENCE,
-    requireTotp: settings?.requireTotp ?? true,
     // Off unless a row says otherwise. A missing settings row must not be a way
     // in from the internet.
     remoteOverTorEnabled: settings?.remoteOverTorEnabled ?? false,
@@ -66,7 +58,6 @@ export interface UpdateBudgetSettingsInput {
   readonly undoWindowHours?: number | undefined;
   readonly identityToleranceCents?: Cents | undefined;
   readonly payCadence?: PayCadence | undefined;
-  readonly requireTotp?: boolean | undefined;
   readonly remoteOverTorEnabled?: boolean | undefined;
 }
 
@@ -120,7 +111,6 @@ export async function updateBudgetSettings(
       undoWindowHours: input.undoWindowHours ?? DEFAULT_UNDO_WINDOW_HOURS,
       identityToleranceCents: input.identityToleranceCents ?? DEFAULT_IDENTITY_TOLERANCE_CENTS,
       payCadence: input.payCadence ?? DEFAULT_PAY_CADENCE,
-      requireTotp: input.requireTotp ?? true,
       remoteOverTorEnabled: input.remoteOverTorEnabled ?? false,
     },
     update: {
@@ -129,7 +119,6 @@ export async function updateBudgetSettings(
         ? {}
         : { identityToleranceCents: input.identityToleranceCents }),
       ...(input.payCadence === undefined ? {} : { payCadence: input.payCadence }),
-      ...(input.requireTotp === undefined ? {} : { requireTotp: input.requireTotp }),
       ...(input.remoteOverTorEnabled === undefined
         ? {}
         : {
@@ -143,7 +132,6 @@ export async function updateBudgetSettings(
       identityToleranceCents: true,
       goLiveAt: true,
       payCadence: true,
-      requireTotp: true,
       remoteOverTorEnabled: true,
       remoteOverTorEnabledAt: true,
     },

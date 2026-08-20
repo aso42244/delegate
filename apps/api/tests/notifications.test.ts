@@ -5,7 +5,13 @@ import { loadConfig } from '../src/config.js';
 import { prisma } from '../src/db/client.js';
 import { recordSpotPrice } from '../src/domain/bitcoin.js';
 import { buildNotifications } from '../src/domain/notifications.js';
-import { makeAccount, makeDelegation, makeTransaction, resetDatabase } from './helpers.js';
+import {
+  makeAccount,
+  makeDelegation,
+  makeTransaction,
+  markTwoFactorEnrolled,
+  resetDatabase,
+} from './helpers.js';
 import { sessionCookie } from './http.js';
 import { categorizeTransaction } from '../src/domain/allocations.js';
 
@@ -48,6 +54,7 @@ beforeEach(async () => {
   await resetDatabase();
   const response = await app.inject({ method: 'POST', url: '/api/auth/setup', payload: OWNER });
   cookie = sessionCookie(response.headers);
+  await markTwoFactorEnrolled();
 });
 
 const kinds = async (now = NOW): Promise<string[]> =>

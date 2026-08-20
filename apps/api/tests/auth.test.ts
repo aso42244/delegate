@@ -3,7 +3,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { buildApp } from '../src/app.js';
 import { loadConfig } from '../src/config.js';
 import { prisma } from '../src/db/client.js';
-import { resetDatabase } from './helpers.js';
+import { markTwoFactorEnrolled, resetDatabase } from './helpers.js';
 import { errorOf, sessionCookie, userOf } from './http.js';
 
 /**
@@ -275,6 +275,10 @@ describe('temporary passwords', () => {
 
   beforeEach(async () => {
     ownerCookie = await setUpOwner();
+    // The owner, and only the owner: creating an account is itself behind the
+    // two-factor guard now. The partner is created afterwards and stays
+    // un-enrolled, which is the state these tests are about.
+    await markTwoFactorEnrolled();
     await app.inject({
       method: 'POST',
       url: '/api/users',

@@ -73,6 +73,8 @@ export type UserRole = 'user' | 'admin' | 'super_admin';
 export interface SessionUser {
   readonly id: string;
   readonly username: string;
+  /** What to call them on screen. Null falls back to the username. */
+  readonly displayName: string | null;
   readonly role: UserRole;
   readonly mustChangePassword: boolean;
   /** The household requires a second factor and this account has none. */
@@ -134,6 +136,10 @@ export const authApi = {
   me: () => api.get<{ user: SessionUser }>('/api/auth/me'),
   changePassword: (currentPassword: string, newPassword: string) =>
     api.post<void>('/api/auth/change-password', { currentPassword, newPassword }),
+
+  /** Your own, whatever role you hold: it is not a credential. */
+  setDisplayName: (displayName: string | null) =>
+    api.patch<{ user: SessionUser }>('/api/auth/me', { displayName }),
 
   totpStatus: () => api.get<TotpStatusDto>('/api/auth/totp'),
   totpBegin: (currentPassword: string) =>

@@ -62,11 +62,6 @@ export async function resetDatabase(): Promise<void> {
       // cadence from one test into the next and made the suggestion in the
       // following test wrong for reasons nothing in it explained.
       payCadence: 'biweekly',
-      // Off here even though the product default is on: almost every test signs
-      // in without a second factor, and the requirement would 403 them out of
-      // the subject under test. The tests that are *about* the requirement turn
-      // it on themselves.
-      requireTotp: false,
       remoteOverTorEnabled: false,
       remoteOverTorEnabledAt: null,
       bitcoinInBudgetAckAt: null,
@@ -242,4 +237,28 @@ export async function makeHolding(options: MakeHoldingOptions): Promise<{ id: st
   });
 
   return account;
+}
+
+/**
+ * Marks every account as having finished two-factor enrolment.
+ *
+ * A second factor is required of everyone and there is no setting that changes
+ * that, so a test signing in without one is refused from every route under
+ * `AUTHENTICATED` — which is nearly all of them. Setting the columns directly
+ * rather than walking the enrolment flow keeps that out of tests that are not
+ * about it; `totp.test.ts` exercises the real thing.
+ *
+ * Called after signing in, never before: sign-in demands a code the moment an
+ * account has a confirmed factor, so enrolling first would lock the test out of
+ * its own session.
+ */
+export async function markTwoFactorEnrolled(): Promise<void> {
+  await prisma.user.updateMany({
+    data: {
+      // Not a real secret and never verified against — no test in this file's
+      // callers presents a code.
+      totpSecretEncrypted: 'test-only-not-a-real-secret',
+      totpConfirmedAt: new Date(),
+    },
+  });
 }

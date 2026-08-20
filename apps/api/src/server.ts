@@ -1,7 +1,6 @@
 import { buildApp } from './app.js';
 import { getConfig } from './config.js';
 import { prisma } from './db/client.js';
-import { getBudgetSettings } from './domain/settings.js';
 import { startScheduler } from './scheduler.js';
 
 /**
@@ -52,21 +51,8 @@ if (config.TLS_CERT_PATH) {
   }
 }
 
-/**
- * The combination worth refusing to be quiet about: reachable from the internet
- * through a proxy, while the sign-in page is protected by a password alone.
- *
- * Not an error — the household may be mid-enrolment, and refusing to boot would
- * lock them out of the screen where they fix it.
- */
-if (config.TRUST_PROXY) {
-  const { requireTotp } = await getBudgetSettings(prisma);
-  if (!requireTotp) {
-    app.log.warn(
-      'a proxy is trusted, so this may be reachable from outside the LAN, but two-factor is not required of every account. Turn it on in Settings -> Security.',
-    );
-  }
-}
+// The warning that stood here — a trusted proxy while two-factor was optional —
+// cannot happen now. A second factor is required of every account, always.
 
 // Started after the listener is up, so a slow first sync cannot delay the app
 // becoming reachable and failing its container health check.

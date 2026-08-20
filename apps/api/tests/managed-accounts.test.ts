@@ -5,7 +5,7 @@ import { loadConfig } from '../src/config.js';
 import { prisma } from '../src/db/client.js';
 import { recordSpotPrice, revalueBitcoinHoldings } from '../src/domain/bitcoin.js';
 import { computeBudgetIdentity } from '../src/domain/identity.js';
-import { makeAccount, resetDatabase } from './helpers.js';
+import { makeAccount, markTwoFactorEnrolled, resetDatabase } from './helpers.js';
 import { sessionCookie } from './http.js';
 
 /**
@@ -47,6 +47,7 @@ beforeEach(async () => {
   await resetDatabase();
   const response = await app.inject({ method: 'POST', url: '/api/auth/setup', payload: OWNER });
   cookie = sessionCookie(response.headers);
+  await markTwoFactorEnrolled();
 });
 
 async function addHolding(payload: Record<string, unknown>): Promise<string> {

@@ -10,7 +10,7 @@ import {
   recordSpotPrice,
   type PriceProvider,
 } from '../src/domain/bitcoin.js';
-import { makeAccount, resetDatabase } from './helpers.js';
+import { makeAccount, markTwoFactorEnrolled, resetDatabase } from './helpers.js';
 import { errorOf, sessionCookie } from './http.js';
 
 /**
@@ -68,6 +68,7 @@ beforeEach(async () => {
   await resetDatabase();
   const response = await app.inject({ method: 'POST', url: '/api/auth/setup', payload: OWNER });
   cookie = sessionCookie(response.headers);
+  await markTwoFactorEnrolled();
 });
 
 describe('recording a price', () => {

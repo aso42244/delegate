@@ -15,7 +15,12 @@ import { hashPassword, verifyAgainstDummyHash, verifyPassword } from './password
 export interface PublicUser {
   readonly id: string;
   readonly username: string;
+  /** What to call them on screen. Null falls back to the username. */
+  readonly displayName: string | null;
   readonly role: UserRole;
+  /** Whether a second factor is confirmed. Required of everyone, so this is
+   *  "has finished setting up" rather than "has opted in". */
+  readonly hasTotp: boolean;
   readonly mustChangePassword: boolean;
   readonly lastLoginAt: Date | null;
   readonly archivedAt: Date | null;
@@ -25,7 +30,9 @@ export interface PublicUser {
 const PUBLIC_USER_SELECT = {
   id: true,
   username: true,
+  displayName: true,
   role: true,
+  totpConfirmedAt: true,
   mustChangePassword: true,
   lastLoginAt: true,
   archivedAt: true,
@@ -100,14 +107,40 @@ export async function createFirstUser(db: Db, input: CreateFirstUserInput): Prom
     );
   }
 
-  return db.user.create({
-    data: { username, passwordHash, role: 'super_admin', mustChangePassword: false },
-    select: PUBLIC_USER_SELECT,
-  });
+  return present(
+    await db.user.create({
+      data: { username, passwordHash, role: 'super_admin', mustChangePassword: false },
+      select: PUBLIC_USER_SELECT,
+    }),
+  );
+}
+
+export const MAX_DISPLAY_NAME_LENGTH = 60;
+
+/**
+ * A display name, trimmed, with blank meaning "no name" rather than "".
+ *
+ * Not a credential and not unique: nothing is ever looked up by it, so there is
+ * nothing to collide. It exists because the username is an email address and
+ * reads as one everywhere it appears.
+ */
+export function normalizeDisplayName(value: string | null): string | null {
+  if (value === null) return null;
+  const trimmed = value.trim();
+  if (trimmed === '') return null;
+  if (trimmed.length > MAX_DISPLAY_NAME_LENGTH) {
+    throw new ValidationError(
+      'display_name_too_long',
+      `A display name must be at most ${MAX_DISPLAY_NAME_LENGTH} characters.`,
+      { maxLength: MAX_DISPLAY_NAME_LENGTH },
+    );
+  }
+  return trimmed;
 }
 
 export interface CreateUserInput {
   readonly username: string;
+  readonly displayName?: string | null | undefined;
   readonly temporaryPassword: string;
   readonly role: UserRole;
 }
@@ -135,20 +168,97 @@ export async function createUser(
     throw new ConflictError('username_taken', `The username "${username}" is already in use.`);
   }
 
-  return db.user.create({
-    data: { username, passwordHash, role: input.role, mustChangePassword: true },
+  return present(
+    await db.user.create({
+      data: {
+        username,
+        displayName: normalizeDisplayName(input.displayName ?? null),
+        passwordHash,
+        role: input.role,
+        mustChangePassword: true,
+      },
+      select: PUBLIC_USER_SELECT,
+    }),
+  );
+}
+
+/** Turns the stored `totpConfirmedAt` into the boolean the interface wants. */
+function present(row: {
+  id: string;
+  username: string;
+  displayName: string | null;
+  role: UserRole;
+  totpConfirmedAt: Date | null;
+  mustChangePassword: boolean;
+  lastLoginAt: Date | null;
+  archivedAt: Date | null;
+  createdAt: Date;
+}): PublicUser {
+  const { totpConfirmedAt, ...rest } = row;
+  return { ...rest, hasTotp: totpConfirmedAt !== null };
+}
+
+/**
+ * Clears somebody else's second factor, so they can enrol again.
+ *
+ * The way back when the phone is gone and the recovery codes are gone with it.
+ * Until this existed the only route was a database prompt: sign-in demands the
+ * second factor whenever one is confirmed, and no setting anywhere changed
+ * that. Now that a second factor is required of everyone, the household needs
+ * a way to undo one that has become unusable.
+ *
+ * Administrator-only, and it deletes the recovery codes too — leaving them
+ * would leave a set of credentials for an authenticator nobody holds.
+ */
+export async function resetTwoFactor(db: Db, actorRole: UserRole, id: string): Promise<PublicUser> {
+  const target = await loadModifiableUser(db, actorRole, id);
+
+  await db.recoveryCode.deleteMany({ where: { userId: target.id } });
+  const updated = await db.user.update({
+    where: { id: target.id },
+    data: { totpSecretEncrypted: null, totpConfirmedAt: null },
     select: PUBLIC_USER_SELECT,
   });
+
+  // Every session that account holds was established against the factor that
+  // has just been removed.
+  await db.session.deleteMany({ where: { userId: target.id } });
+
+  return present(updated);
+}
+
+/**
+ * Sets your own display name.
+ *
+ * Separate from `updateUser` because it is not user management: no role check,
+ * no Super Admin immunity, nothing to protect. What you are called is yours.
+ */
+export async function setOwnDisplayName(
+  db: Db,
+  id: string,
+  displayName: string | null,
+): Promise<PublicUser> {
+  return present(
+    await db.user.update({
+      where: { id },
+      data: { displayName: normalizeDisplayName(displayName) },
+      select: PUBLIC_USER_SELECT,
+    }),
+  );
 }
 
 export async function listUsers(db: Db): Promise<PublicUser[]> {
-  return db.user.findMany({ orderBy: { username: 'asc' }, select: PUBLIC_USER_SELECT });
+  const rows = await db.user.findMany({
+    orderBy: { username: 'asc' },
+    select: PUBLIC_USER_SELECT,
+  });
+  return rows.map(present);
 }
 
 export async function getUser(db: Db, id: string): Promise<PublicUser> {
   const user = await db.user.findUnique({ where: { id }, select: PUBLIC_USER_SELECT });
   if (!user) throw new NotFoundError('User', id);
-  return user;
+  return present(user);
 }
 
 /**
@@ -176,6 +286,7 @@ async function loadModifiableUser(db: Db, actorRole: UserRole, id: string): Prom
  */
 export interface UpdateUserInput {
   readonly username?: string | undefined;
+  readonly displayName?: string | null | undefined;
   readonly role?: UserRole | undefined;
 }
 
@@ -193,7 +304,11 @@ export async function updateUser(
     throw new ConflictError('forbidden', 'Only a Super Admin can grant the Super Admin role.');
   }
 
-  const data: { username?: string; role?: UserRole } = {};
+  const data: { username?: string; displayName?: string | null; role?: UserRole } = {};
+
+  if (input.displayName !== undefined) {
+    data.displayName = normalizeDisplayName(input.displayName);
+  }
 
   if (input.username !== undefined) {
     const username = normalizeUsername(input.username);
@@ -219,7 +334,7 @@ export async function updateUser(
     await db.session.deleteMany({ where: { userId: id } });
   }
 
-  return db.user.update({ where: { id }, data, select: PUBLIC_USER_SELECT });
+  return present(await db.user.update({ where: { id }, data, select: PUBLIC_USER_SELECT }));
 }
 
 /**
@@ -238,11 +353,13 @@ export async function resetPassword(
 
   await db.session.deleteMany({ where: { userId: id } });
 
-  return db.user.update({
-    where: { id },
-    data: { passwordHash, mustChangePassword: true },
-    select: PUBLIC_USER_SELECT,
-  });
+  return present(
+    await db.user.update({
+      where: { id },
+      data: { passwordHash, mustChangePassword: true },
+      select: PUBLIC_USER_SELECT,
+    }),
+  );
 }
 
 /**
@@ -321,16 +438,20 @@ export async function archiveUser(
   }
 
   await db.session.deleteMany({ where: { userId: id } });
-  return db.user.update({
-    where: { id },
-    data: { archivedAt: new Date() },
-    select: PUBLIC_USER_SELECT,
-  });
+  return present(
+    await db.user.update({
+      where: { id },
+      data: { archivedAt: new Date() },
+      select: PUBLIC_USER_SELECT,
+    }),
+  );
 }
 
 export async function restoreUser(db: Db, actorRole: UserRole, id: string): Promise<PublicUser> {
   await loadModifiableUser(db, actorRole, id);
-  return db.user.update({ where: { id }, data: { archivedAt: null }, select: PUBLIC_USER_SELECT });
+  return present(
+    await db.user.update({ where: { id }, data: { archivedAt: null }, select: PUBLIC_USER_SELECT }),
+  );
 }
 
 /**
@@ -362,8 +483,8 @@ export async function authenticate(
 
   // Strip the hash by omission, so a future column added to the select cannot
   // leak by default.
-  const { passwordHash, ...publicUser } = user;
-  return publicUser;
+  const { passwordHash, ...rest } = user;
+  return present(rest);
 }
 
 export async function recordLogin(db: Db, id: string): Promise<void> {

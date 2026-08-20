@@ -448,6 +448,21 @@ underwater property moves to the debts side, where it belongs. A mortgage that i
 not itself in net worth is never netted, since subtracting it here would subtract
 it twice.
 
+## Settings → Users
+
+Two cards. **Your account** is the display name, and everyone gets it whatever
+role they hold — a name is not a credential and nothing is looked up by it.
+**The household** is the table of accounts, administrator-only, with creating
+and editing in a dialog.
+
+It was a permanent creation form at the foot of the page and a set of inline
+fields on every row, which made the common case — reading who has an account —
+the hardest thing on the screen to do.
+
+**Two-factor has no setting.** It is required of every account including the
+first, so the only control is an administrator's **Reset two-factor**, for a
+phone that is gone.
+
 ## Utilities
 
 Each card's sparkline takes its grouping's colour, the same one as the dot beside

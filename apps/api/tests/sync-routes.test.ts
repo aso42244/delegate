@@ -3,7 +3,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { buildApp } from '../src/app.js';
 import { loadConfig } from '../src/config.js';
 import { prisma } from '../src/db/client.js';
-import { resetDatabase } from './helpers.js';
+import { markTwoFactorEnrolled, resetDatabase } from './helpers.js';
 import { sessionCookie } from './http.js';
 
 /**
@@ -46,6 +46,7 @@ beforeEach(async () => {
 async function setUpOwner(): Promise<string> {
   const response = await app.inject({ method: 'POST', url: '/api/auth/setup', payload: OWNER });
   expect(response.statusCode).toBe(201);
+  await markTwoFactorEnrolled();
   return sessionCookie(response.headers);
 }
 

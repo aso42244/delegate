@@ -3,12 +3,25 @@ import { generate as generateOtp } from 'otplib';
 import { expect, OWNER, test } from './fixtures.js';
 
 /**
- * Two-factor authentication, through the screens the household actually uses:
- * enrol, sign out, sign back in with a code.
+ * Two-factor authentication, through the screens the household actually uses.
  *
- * The proof that matters is the last step. Everything before it can look
- * finished while the password alone still opens the budget.
+ * The proof that matters is the last step of each: everything before it can
+ * look finished while the password alone still opens the budget.
+ *
+ * A second factor is required of every account now, so the fixture arrives
+ * already enrolled — through the API, for speed, across all twenty specs. These
+ * tests therefore start by turning it *off* from the Security page, which is
+ * how they reach the enrolment screen and how the disable path gets exercised
+ * at all.
  */
+
+/** Removes the factor the fixture enrolled, leaving the real screen to re-do it. */
+async function turnItOff(page: Page): Promise<void> {
+  await page.goto('/settings/security');
+  await page.getByLabel('Current password').fill(OWNER.password);
+  await page.getByRole('button', { name: 'Turn off two-factor' }).click();
+  await expect(page.getByRole('button', { name: 'Set up two-factor' })).toBeVisible();
+}
 
 /**
  * Drops the session and lands on a freshly mounted sign-in screen.
@@ -24,7 +37,7 @@ async function signOut(page: Page): Promise<void> {
 }
 
 test('enrols, then requires a code on the next sign-in', async ({ signedIn: page }) => {
-  await page.goto('/settings/security');
+  await turnItOff(page);
 
   // The password again: binding an authenticator from a session somebody else
   // is holding would give them a credential you never issued.
@@ -65,7 +78,7 @@ test('enrols, then requires a code on the next sign-in', async ({ signedIn: page
 test('a recovery code gets in when the phone is gone, and is then spent', async ({
   signedIn: page,
 }) => {
-  await page.goto('/settings/security');
+  await turnItOff(page);
   // The password again: binding an authenticator from a session somebody else
   // is holding would give them a credential you never issued.
   await page.getByLabel('Current password').fill(OWNER.password);
@@ -96,7 +109,7 @@ test('a recovery code gets in when the phone is gone, and is then spent', async 
 });
 
 test('refuses a wrong code without giving up the session', async ({ signedIn: page }) => {
-  await page.goto('/settings/security');
+  await turnItOff(page);
   // The password again: binding an authenticator from a session somebody else
   // is holding would give them a credential you never issued.
   await page.getByLabel('Current password').fill(OWNER.password);

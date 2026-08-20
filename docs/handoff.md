@@ -96,6 +96,18 @@ runs locally through `npm run verify`.
 Phases 1–3 of the original plan are complete. What has been built since is
 recorded in the ADRs, and the short version is:
 
+**Accounts and access**
+
+- **A second factor is required of every account, always.** There is no setting
+  and no toggle; `requireTotp` is gone. It never worked the way its name read —
+  sign-in demanded the factor whenever one was confirmed regardless — so its
+  only effect was to permit accounts without one
+- An administrator can **reset somebody's second factor**, which is the only
+  route back from a lost phone plus lost recovery codes that is not a database
+  prompt. Done to yourself it leaves you signed in and routed to enrolment: the
+  request that deletes the sessions writes its own back on the way out
+- Display names, settable by anyone for themselves at any role
+
 **The budget itself**
 
 - Pay cadence is a setting — weekly, every two weeks, twice a month, monthly —

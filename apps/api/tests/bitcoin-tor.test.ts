@@ -5,7 +5,7 @@ import { loadConfig } from '../src/config.js';
 import { prisma } from '../src/db/client.js';
 import { torDispatcher } from '../src/bitcoin/tor.js';
 import { readNodeSettings, saveNodeSettings } from '../src/domain/bitcoin-node.js';
-import { resetDatabase } from './helpers.js';
+import { markTwoFactorEnrolled, resetDatabase } from './helpers.js';
 import { sessionCookie } from './http.js';
 
 /**
@@ -44,6 +44,7 @@ beforeEach(async () => {
   await resetDatabase();
   const response = await app.inject({ method: 'POST', url: '/api/auth/setup', payload: OWNER });
   cookie = sessionCookie(response.headers);
+  await markTwoFactorEnrolled();
 });
 
 describe('an onion address', () => {

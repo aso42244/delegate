@@ -358,33 +358,29 @@ describe('turning it off', () => {
   });
 });
 
-describe('requiring it of everyone', () => {
+describe('required of everyone', () => {
   /**
-   * This used to be refused, and the refusal was right at the time: turning the
-   * requirement on 403'd an un-enrolled account out of every route, including
-   * the settings page that offers enrolment, recoverable only from a database
-   * prompt.
+   * There is no setting. A second factor is required of every account
+   * including the first Super Admin, from the moment it is created.
    *
-   * It is allowed now because that is no longer true. `/api/auth/me` sits
-   * outside the guard and reports the state, so the interface sends such an
-   * account to enrolment instead. The requirement is a demand to enrol rather
-   * than a door closing.
+   * That is only survivable because `/api/auth/me` sits outside the guard and
+   * reports the state, so the interface sends such an account to enrolment
+   * rather than to a wall. Without that this would be an account that can sign
+   * in and reach nothing, recoverable only from a database prompt — which is
+   * exactly what it was the first time this was tried.
    */
-  it('can be turned on while an account has not enrolled, and tells that account to', async () => {
+  it('shuts an un-enrolled account out of everything except the way to enrol', async () => {
     const cookie = await setUpOwner();
-
-    const response = await app.inject({
-      method: 'PATCH',
-      url: '/api/settings',
-      headers: { cookie },
-      payload: { requireTotp: true },
-    });
-    expect(response.statusCode).toBe(200);
 
     // The one route that still answers, carrying the reason.
     const me = await app.inject({ method: 'GET', url: '/api/auth/me', headers: { cookie } });
     expect(me.statusCode).toBe(200);
     expect(me.json<{ user: { needsTwoFactor: boolean } }>().user.needsTwoFactor).toBe(true);
+
+    // Enrolment itself, or the account could never get out of this state.
+    const totp = await app.inject({ method: 'GET', url: '/api/auth/totp', headers: { cookie } });
+    expect(totp.statusCode).toBe(200);
+    expect(totp.json<{ required: boolean }>().required).toBe(true);
 
     // And everything else is shut until they do.
     const budget = await app.inject({ method: 'GET', url: '/api/budget', headers: { cookie } });
@@ -392,19 +388,33 @@ describe('requiring it of everyone', () => {
     expect(errorOf(budget).code).toBe('two_factor_required');
   });
 
+  it('has no setting that can switch it off', async () => {
+    const cookie = await setUpOwner();
+    await enrol(cookie);
+
+    const response = await app.inject({
+      method: 'PATCH',
+      url: '/api/settings',
+      headers: { cookie },
+      payload: { requireTotp: false },
+    });
+    // Refused as an unknown field rather than quietly ignored: a request that
+    // looks like it turned the requirement off must not answer 200.
+    expect(response.statusCode).toBe(400);
+
+    const settings = await app.inject({
+      method: 'GET',
+      url: '/api/settings',
+      headers: { cookie },
+    });
+    expect(settings.json<Record<string, unknown>>()).not.toHaveProperty('requireTotp');
+  });
+
   it('blocks the budget for an unenrolled account once required', async () => {
     const owner = await setUpOwner();
     await enrol(owner);
 
-    const enabled = await app.inject({
-      method: 'PATCH',
-      url: '/api/settings',
-      headers: { cookie: owner },
-      payload: { requireTotp: true },
-    });
-    expect(enabled.statusCode).toBe(200);
-
-    // A second account, created after the requirement was in force.
+    // A second account. The requirement is always in force.
     const created = await app.inject({
       method: 'POST',
       url: '/api/users',

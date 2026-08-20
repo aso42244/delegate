@@ -7,7 +7,7 @@ import type { AddressStats, BitcoinNode } from '../src/bitcoin/esplora.js';
 import { deriveRange, parseWalletInput } from '../src/bitcoin/descriptors.js';
 import { addWallet, scanWallet } from '../src/domain/bitcoin-wallets.js';
 import { saveNodeSettings } from '../src/domain/bitcoin-node.js';
-import { makeHolding, resetDatabase } from './helpers.js';
+import { makeHolding, markTwoFactorEnrolled, resetDatabase } from './helpers.js';
 import { sessionCookie } from './http.js';
 
 /**
@@ -50,6 +50,7 @@ beforeEach(async () => {
   await prisma.bitcoinWallet.deleteMany();
   const response = await app.inject({ method: 'POST', url: '/api/auth/setup', payload: OWNER });
   cookie = sessionCookie(response.headers);
+  await markTwoFactorEnrolled();
   await saveNodeSettings(prisma, { mode: 'esplora', baseUrl: 'https://node.example/api' });
 });
 

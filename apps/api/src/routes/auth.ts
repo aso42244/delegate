@@ -11,6 +11,8 @@ import {
   createFirstUser,
   needsFirstRunSetup,
   recordLogin,
+  setOwnDisplayName,
+  MAX_DISPLAY_NAME_LENGTH,
 } from '../domain/users.js';
 import { claimChallenge, issueChallenge, readChallenge } from '../domain/challenge.js';
 import {
@@ -20,7 +22,6 @@ import {
   totpStatus,
   verifySecondFactor,
 } from '../domain/totp.js';
-import { getBudgetSettings } from '../domain/settings.js';
 import { requireSession } from '../plugins/auth.js';
 import { authRateLimit } from '../plugins/security.js';
 import { pruneExpiredSessions } from '../plugins/session-store.js';
@@ -49,6 +50,7 @@ const changePasswordSchema = z.object({
 interface PresentableUser {
   readonly id: string;
   readonly username: string;
+  readonly displayName?: string | null | undefined;
   readonly role: UserRole;
   readonly mustChangePassword: boolean;
 }
@@ -57,6 +59,8 @@ function presentUser(user: PresentableUser): Record<string, unknown> {
   return {
     id: user.id,
     username: user.username,
+    // Null where none is set; the interface falls back to the username.
+    displayName: user.displayName ?? null,
     role: user.role,
     mustChangePassword: user.mustChangePassword,
   };
@@ -252,16 +256,16 @@ export const authRoutes: FastifyPluginCallback = (fastify, _options, done) => {
    * learn *why* it was locked out, and would read it as signed out. It reports
    * the state instead, and the client routes to enrolment.
    */
+  // eslint-disable-next-line @typescript-eslint/require-await -- a route handler's signature
   fastify.get('/api/auth/me', { preHandler: [requireSession] }, async (request) => {
     const user = request.currentUser!;
-    const { requireTotp } = await getBudgetSettings(prisma);
 
     return {
       user: {
         ...presentUser(user),
-        // True when the household requires a second factor and this account has
-        // not set one up. The one screen that account can reach.
-        needsTwoFactor: requireTotp && !user.hasTotp,
+        // A second factor is required of everyone, so this is simply "has not
+        // set one up yet". Enrolment is the one screen such an account reaches.
+        needsTwoFactor: !user.hasTotp,
       },
     };
   });
@@ -292,12 +296,27 @@ export const authRoutes: FastifyPluginCallback = (fastify, _options, done) => {
 
   // --- Two-factor ---------------------------------------------------------
 
+  /**
+   * Your own display name.
+   *
+   * Deliberately outside user management: what you are called is yours to set,
+   * whatever role you hold. It is not a credential and nothing is looked up by
+   * it, so there is no privilege here to protect.
+   */
+  fastify.patch('/api/auth/me', { preHandler: [requireSession] }, async (request) => {
+    const { displayName } = z
+      .object({ displayName: z.string().max(MAX_DISPLAY_NAME_LENGTH).nullable() })
+      .parse(request.body);
+
+    const user = await setOwnDisplayName(prisma, request.currentUser!.id, displayName);
+    return { user };
+  });
+
   fastify.get('/api/auth/totp', { preHandler: [requireSession] }, async (request) => {
-    const [status, settings] = await Promise.all([
-      totpStatus(prisma, request.currentUser!.id),
-      getBudgetSettings(prisma),
-    ]);
-    return { ...status, required: settings.requireTotp };
+    const status = await totpStatus(prisma, request.currentUser!.id);
+    // Always. Kept in the response so the interface does not have to hard-code
+    // a fact about the server.
+    return { ...status, required: true };
   });
 
   /**

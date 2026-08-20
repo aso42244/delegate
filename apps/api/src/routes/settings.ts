@@ -20,13 +20,22 @@ import { AUTHENTICATED, requireSettingsManagement } from '../plugins/auth.js';
  * Delegate press can be taken back.
  */
 
-const updateSchema = z.object({
-  undoWindowHours: z.number().int().optional(),
-  identityToleranceCents: centsIn.optional(),
-  payCadence: z.enum(PAY_CADENCES).optional(),
-  requireTotp: z.boolean().optional(),
-  remoteOverTorEnabled: z.boolean().optional(),
-});
+const updateSchema = z
+  .object({
+    undoWindowHours: z.number().int().optional(),
+    identityToleranceCents: centsIn.optional(),
+    payCadence: z.enum(PAY_CADENCES).optional(),
+    remoteOverTorEnabled: z.boolean().optional(),
+  })
+  /*
+   * Unknown fields are refused rather than stripped, which is zod's default.
+   *
+   * `requireTotp` used to live here. Once it was removed, a PATCH still
+   * carrying it answered 200 with the field quietly discarded — a request that
+   * looks to the caller like it turned two-factor off for the household, and a
+   * success. Refusing is the only honest answer.
+   */
+  .strict();
 
 function present(settings: BudgetSettings): Record<string, unknown> {
   return {
@@ -37,7 +46,6 @@ function present(settings: BudgetSettings): Record<string, unknown> {
     // The divisor the Utilities page uses, resolved here so the interface never
     // has to keep its own copy of the mapping.
     cyclesPerYear: CYCLES_PER_YEAR[settings.payCadence],
-    requireTotp: settings.requireTotp,
     remoteOverTorEnabled: settings.remoteOverTorEnabled,
     remoteOverTorEnabledAt: dateOut(settings.remoteOverTorEnabledAt),
     // The address itself, when the onion service has been started. Read from
@@ -75,10 +83,9 @@ export const settingsRoutes: FastifyPluginCallback = (fastify, _options, done) =
   /**
    * Reading is for everyone; changing is not.
    *
-   * These are not cosmetic preferences. `requireTotp` decides whether two-factor
-   * is demanded of the whole household, and `remoteOverTorEnabled` decides
-   * whether the budget answers anything arriving from outside the house. An
-   * ordinary account able to switch either off would make every other protection
+   * These are not cosmetic preferences. `remoteOverTorEnabled` decides whether
+   * the budget answers anything arriving from outside the house, and an
+   * ordinary account able to switch that on would make every other protection
    * worth what the weakest session is worth.
    */
   fastify.patch('/api/settings', { preHandler: [requireSettingsManagement] }, async (request) => {
@@ -86,14 +93,11 @@ export const settingsRoutes: FastifyPluginCallback = (fastify, _options, done) =
     const before = await getBudgetSettings(prisma);
     const settings = await updateBudgetSettings(prisma, body);
 
-    // Old and new, for the two that decide who gets in. A log line saying only
+    // Old and new for the one that decides who gets in. A log line saying only
     // "settings updated" cannot answer the question anybody would ask later.
     request.log.info(
       {
         actorId: request.currentUser?.id,
-        ...(body.requireTotp === undefined
-          ? {}
-          : { requireTotp: { from: before.requireTotp, to: settings.requireTotp } }),
         ...(body.remoteOverTorEnabled === undefined
           ? {}
           : {

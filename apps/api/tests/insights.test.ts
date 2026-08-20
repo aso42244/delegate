@@ -14,9 +14,10 @@ import {
 } from '../src/domain/insights.js';
 import {
   makeAccount,
-  makeHolding,
   makeDelegation,
+  makeHolding,
   makeTransaction,
+  markTwoFactorEnrolled,
   resetDatabase,
 } from './helpers.js';
 import { sessionCookie } from './http.js';
@@ -60,6 +61,7 @@ beforeEach(async () => {
   await resetDatabase();
   const response = await app.inject({ method: 'POST', url: '/api/auth/setup', payload: OWNER });
   cookie = sessionCookie(response.headers);
+  await markTwoFactorEnrolled();
 });
 
 describe('composition', () => {

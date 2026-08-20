@@ -116,39 +116,98 @@ test('overwriting hand-made categorizations is opt-in and warns first', async ({
   );
 });
 
+/** Creates an account through the dialog, which is the only route now. */
+async function createAccount(
+  page: import('@playwright/test').Page,
+  username: string,
+): Promise<void> {
+  await page.getByRole('button', { name: 'Create account' }).click();
+
+  const dialog = page.getByRole('dialog', { name: 'Create an account' });
+  await dialog.getByLabel('Username').fill(username);
+  await dialog.getByLabel('Temporary password').fill('temporary-passphrase-here');
+  await dialog.getByRole('button', { name: 'Create account' }).click();
+
+  // The dialog closing is the signal the write landed and the list refetched.
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+}
+
 test('the first account is Super Admin and can create another', async ({ signedIn }) => {
   await signedIn.goto('/settings/users');
 
-  // The first account created becomes Super Admin.
-  await expect(signedIn.getByText('(you)')).toBeVisible();
-  await expect(signedIn.getByLabel('Role of e2e-owner@example.test')).toHaveValue('super_admin');
+  await expect(signedIn.getByText('e2e-owner@example.test', { exact: true }).first()).toBeVisible();
+  await expect(signedIn.getByText('Super Admin', { exact: true }).first()).toBeVisible();
 
-  await signedIn.getByLabel('Username').fill('second@example.test');
-  await signedIn.getByLabel('Temporary password').fill('temporary-passphrase-here');
-  await signedIn.getByRole('button', { name: 'Create account' }).click();
+  await createAccount(signedIn, 'second@example.test');
 
   await expect(signedIn.getByText('second@example.test', { exact: true })).toBeVisible();
   // A temporary password reaches exactly one screen until it is changed.
-  await expect(signedIn.getByText('must change password')).toBeVisible();
+  await expect(signedIn.getByText('Temporary password', { exact: true })).toBeVisible();
+  // And a second factor is required of it before even that.
+  await expect(signedIn.getByText('Not set up yet').first()).toBeVisible();
+});
+
+/**
+ * A display name, which anybody can set for themselves whatever role they hold.
+ * The username is an email address and reads as one everywhere it appears.
+ */
+test('a display name replaces the username on screen', async ({ signedIn }) => {
+  await signedIn.goto('/settings/users');
+
+  await signedIn.getByLabel('Display name').fill('Andy');
+  await signedIn.getByRole('button', { name: 'Save' }).click();
+  await expect(signedIn.getByText('Saved.')).toBeVisible();
+
+  await signedIn.reload();
+  await expect(signedIn.getByLabel('Display name')).toHaveValue('Andy');
+  // Shown in the list, with the username kept underneath it.
+  await expect(signedIn.getByText('Andy', { exact: true }).first()).toBeVisible();
 });
 
 test('an account can be archived and restored, but not your own', async ({ signedIn }) => {
   await signedIn.goto('/settings/users');
-  await signedIn.getByLabel('Username').fill('second@example.test');
-  await signedIn.getByLabel('Temporary password').fill('temporary-passphrase-here');
-  await signedIn.getByRole('button', { name: 'Create account' }).click();
+  await createAccount(signedIn, 'second@example.test');
   await expect(signedIn.getByText('second@example.test', { exact: true })).toBeVisible();
 
+  const rows = signedIn.locator('tbody tr');
+  const owner = rows.filter({ hasText: 'e2e-owner@example.test' });
+  const second = rows.filter({ hasText: 'second@example.test' });
+
   // Archiving yourself would lock the household out of its own budget.
+  await expect(owner.getByRole('button', { name: 'Archive' })).toHaveCount(0);
+
+  await second.getByRole('button', { name: 'Archive' }).click();
+  await expect(second.getByRole('button', { name: 'Restore' })).toBeVisible();
+
+  await second.getByRole('button', { name: 'Restore' }).click();
+  await expect(second.getByRole('button', { name: 'Archive' })).toBeVisible();
+});
+
+/**
+ * The way back when the phone is gone and the recovery codes went with it.
+ * Sign-in demands the second factor whenever one is confirmed, and no setting
+ * anywhere changes that — so without this the only route is a database prompt.
+ */
+test('an administrator can reset somebody else’s second factor', async ({ signedIn }) => {
+  await signedIn.goto('/settings/users');
+
+  const owner = signedIn.locator('tbody tr').filter({ hasText: 'e2e-owner@example.test' });
+  await expect(owner.getByText('Set up')).toBeVisible();
+
+  await owner.getByRole('button', { name: 'Reset two-factor' }).click();
+
+  /*
+   * Done to yourself, this leaves you signed in and sends you to enrolment.
+   *
+   * The reset deletes that account's sessions, and for anybody else that is
+   * the end of theirs. Your own survives because the very request that did it
+   * writes its session back on the way out — `rolling: true` refreshes the
+   * expiry on every response. The result is the useful one either way: the
+   * factor is gone, and the only screen reachable is the one that sets up a
+   * new one.
+   */
+  await signedIn.reload();
   await expect(
-    signedIn.getByRole('button', { name: 'Archive e2e-owner@example.test' }),
-  ).toHaveCount(0);
-
-  // Asserted through the control rather than the badge: "Archived" is also a
-  // navigation item on this page, and getByText matches substrings.
-  await signedIn.getByRole('button', { name: 'Archive second@example.test' }).click();
-  await expect(signedIn.getByRole('button', { name: 'Restore second@example.test' })).toBeVisible();
-
-  await signedIn.getByRole('button', { name: 'Restore second@example.test' }).click();
-  await expect(signedIn.getByRole('button', { name: 'Archive second@example.test' })).toBeVisible();
+    signedIn.getByRole('heading', { name: 'Set up two-factor authentication' }),
+  ).toBeVisible();
 });

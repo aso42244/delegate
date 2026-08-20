@@ -1,9 +1,10 @@
 import { beforeAll, afterAll, beforeEach, describe, expect, it } from 'vitest';
 import type { FastifyInstance } from 'fastify';
+import { generate as generateOtp } from 'otplib';
 import { buildApp } from '../src/app.js';
 import { loadConfig } from '../src/config.js';
 import { prisma } from '../src/db/client.js';
-import { resetDatabase } from './helpers.js';
+import { markTwoFactorEnrolled, resetDatabase } from './helpers.js';
 import { sessionCookie } from './http.js';
 
 /**
@@ -33,11 +34,53 @@ afterAll(async () => {
   await app.close();
 });
 
+let ownerTotpSecret: string;
+
 beforeEach(async () => {
   await resetDatabase();
   const response = await app.inject({ method: 'POST', url: '/api/auth/setup', payload: OWNER });
   owner = sessionCookie(response.headers);
+
+  /*
+   * The owner enrols for real, through the API, keeping the secret.
+   *
+   * The shortcut used elsewhere in this suite writes a placeholder that no code
+   * can be generated from — fine where nothing signs in twice, and useless
+   * here: one test below opens a *second* session for this account, and every
+   * sign-in demands a second factor once one is confirmed.
+   */
+  const begun = await app.inject({
+    method: 'POST',
+    url: '/api/auth/totp/begin',
+    headers: { cookie: owner },
+    payload: { currentPassword: OWNER.password },
+  });
+  ownerTotpSecret = begun.json<{ secret: string }>().secret;
+
+  await app.inject({
+    method: 'POST',
+    url: '/api/auth/totp/confirm',
+    headers: { cookie: owner },
+    payload: { code: await generateOtp({ secret: ownerTotpSecret }) },
+  });
 });
+
+/** Signs in as the owner all the way through the second factor. */
+async function signInAsOwner(password: string): Promise<string> {
+  const login = await app.inject({
+    method: 'POST',
+    url: '/api/auth/login',
+    payload: { ...OWNER, password },
+  });
+  const { challenge } = login.json<{ challenge: string }>();
+
+  const second = await app.inject({
+    method: 'POST',
+    url: '/api/auth/second-factor',
+    payload: { challenge, code: await generateOtp({ secret: ownerTotpSecret }) },
+  });
+  return sessionCookie(second.headers);
+}
 
 /** A second account with a session, at the ordinary `user` role. */
 async function partner(): Promise<string> {
@@ -58,18 +101,14 @@ async function partner(): Promise<string> {
     headers: { cookie: sessionCookie(login.headers) },
     payload: { currentPassword: 'temporary-pass-phrase', newPassword: 'partner-pass-phrase' },
   });
+  await markTwoFactorEnrolled();
   return sessionCookie(changed.headers);
 }
 
 describe('changing your own password', () => {
   it('throws every other session out', async () => {
     // Two sessions for one account, the way a phone and a laptop are.
-    const second = await app.inject({
-      method: 'POST',
-      url: '/api/auth/login',
-      payload: OWNER,
-    });
-    const laptop = sessionCookie(second.headers);
+    const laptop = await signInAsOwner(OWNER.password);
     expect(
       (await app.inject({ method: 'GET', url: '/api/auth/me', headers: { cookie: laptop } }))
         .statusCode,
@@ -108,11 +147,11 @@ describe('household settings', () => {
         .statusCode,
     ).toBe(200);
 
-    // `requireTotp` decides whether two-factor is demanded of everyone, and
-    // `remoteOverTorEnabled` decides whether the budget answers from outside the
-    // house. An ordinary account switching either off would make every other
-    // protection worth what the weakest session is worth.
-    for (const payload of [{ requireTotp: false }, { remoteOverTorEnabled: true }]) {
+    // `remoteOverTorEnabled` decides whether the budget answers anything from
+    // outside the house, and `payCadence` changes what every suggestion on the
+    // Utilities page reads. An ordinary account able to set either would make
+    // every other protection worth what the weakest session is worth.
+    for (const payload of [{ remoteOverTorEnabled: true }, { payCadence: 'weekly' }]) {
       const refused = await app.inject({
         method: 'PATCH',
         url: '/api/settings',
