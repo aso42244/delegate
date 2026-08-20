@@ -211,8 +211,10 @@ test('Transfer moves between envelopes without moving the bottom line', async ({
 
   await signedIn.getByRole('button', { name: 'Transfer' }).click();
   const dialog = signedIn.getByRole('dialog', { name: 'Transfer between delegations' });
-  await dialog.getByLabel('From').selectOption({ label: 'Grocery' });
-  await dialog.getByLabel('To').selectOption({ label: 'Dining' });
+  // The balance is part of the option label now, so choosing where to move
+  // money from means comparing what the candidates hold while the list is open.
+  await dialog.getByLabel('From').selectOption({ label: 'Grocery — $300.00' });
+  await dialog.getByLabel('To').selectOption({ label: 'Dining — $0.00' });
   await dialog.getByLabel('Amount').fill('100.00');
   await dialog.getByRole('button', { name: 'Transfer' }).click();
 
@@ -303,4 +305,51 @@ test('a collapsed grouping folds at once and is still folded after a reload', as
   await expect(signedIn.getByRole('cell', { name: 'Grocery', exact: true })).toBeVisible();
   await signedIn.reload();
   await expect(signedIn.getByRole('cell', { name: 'Grocery', exact: true })).toBeVisible();
+});
+
+/**
+ * The Transfer dropdowns mirror the page beneath them.
+ *
+ * This dialog is only ever opened while looking at the Budget page, so a flat
+ * alphabetical list made finding a line in the dialog a different act from
+ * finding it on the page.
+ */
+test('Transfer lists delegations grouped as the page groups them', async ({ signedIn, api }) => {
+  await makeAccount('Everyday Checking', 'asset', 30000n);
+
+  const grouping = async (name: string): Promise<string> => {
+    const created = await api.post('/api/groupings', {
+      data: { name, section: 'delegations' },
+    });
+    return ((await created.json()) as { grouping: { id: string } }).grouping.id;
+  };
+
+  const essentials = await grouping('Essentials');
+  const fun = await grouping('Discretionary');
+
+  const grocery = await makeDelegation(api, 'Grocery');
+  const dining = await makeDelegation(api, 'Dining');
+  await makeDelegation(api, 'Odds and Ends');
+
+  await api.patch(`/api/delegations/${grocery}`, { data: { groupingId: essentials } });
+  await api.patch(`/api/delegations/${dining}`, { data: { groupingId: fun } });
+
+  await signedIn.goto('/');
+  await signedIn.getByRole('button', { name: 'Transfer' }).click();
+
+  const from = signedIn
+    .getByRole('dialog', { name: 'Transfer between delegations' })
+    .getByLabel('From');
+
+  // Grouped, and each option carries the balance it holds.
+  await expect(from.locator('optgroup')).toHaveCount(2);
+  await expect(from.locator('optgroup').nth(0)).toHaveAttribute('label', 'Discretionary');
+  await expect(from.locator('optgroup').nth(1)).toHaveAttribute('label', 'Essentials');
+  await expect(from.locator('optgroup[label="Essentials"] option')).toHaveText(['Grocery — $0.00']);
+
+  // Ungrouped lines sit after the groupings, as they do on the page.
+  await expect(from.locator('> option')).toHaveText([
+    'Choose a delegation',
+    'Odds and Ends — $0.00',
+  ]);
 });

@@ -21,12 +21,66 @@ import { Alert, Button } from '../components/ui.jsx';
  * which is the one thing this page cannot do.
  */
 
+/**
+ * The options, grouped exactly as the page beneath is grouped.
+ *
+ * A flat alphabetical list meant finding "Fuel" in the dialog was a different
+ * act from finding it on the page — and this dialog is always opened while
+ * looking at that page. Groupings first, then the ungrouped lines, which is the
+ * order `buildBudgetView` returns and the order the sections render in.
+ *
+ * The balance is in the label rather than reported under the select once a
+ * choice is made. Deciding where to move money from means comparing what the
+ * candidates hold, and that comparison has to be possible *while* the list is
+ * open.
+ */
+function TransferOptions({
+  section,
+  exclude,
+}: {
+  readonly section: BudgetSectionDto;
+  /** The other side of the transfer, which cannot also be this side. */
+  readonly exclude: string;
+}): ReactNode {
+  const label = (row: { name: string; balanceCents: string }): string =>
+    `${row.name} — ${formatCents(BigInt(row.balanceCents))}`;
+
+  return (
+    <>
+      {section.groupings.map((grouping) => {
+        const rows = grouping.rows.filter((row) => row.id !== exclude);
+        if (rows.length === 0) return null;
+
+        return (
+          <optgroup key={grouping.id} label={grouping.name}>
+            {rows.map((row) => (
+              <option key={row.id} value={row.id}>
+                {label(row)}
+              </option>
+            ))}
+          </optgroup>
+        );
+      })}
+
+      {/* Ungrouped lines sit after the groupings, as they do on the page. */}
+      {section.ungrouped
+        .filter((row) => row.id !== exclude)
+        .map((row) => (
+          <option key={row.id} value={row.id}>
+            {label(row)}
+          </option>
+        ))}
+    </>
+  );
+}
+
 function TransferDialog({
-  delegations,
+  section,
   initialFrom,
   onClose,
 }: {
-  delegations: readonly { id: string; name: string }[];
+  /** The delegations section of the budget, in the order the page shows it. */
+  readonly section: BudgetSectionDto;
   /** Preset when Transfer was reached from a blocked archive. */
   initialFrom?: string | undefined;
   onClose: () => void;
@@ -77,11 +131,7 @@ function TransferDialog({
               className="w-full rounded-lg border border-line bg-canvas px-3 py-2"
             >
               <option value="">Choose a delegation</option>
-              {delegations.map((delegation) => (
-                <option key={delegation.id} value={delegation.id}>
-                  {delegation.name}
-                </option>
-              ))}
+              <TransferOptions section={section} exclude={to} />
             </select>
           </label>
 
@@ -93,13 +143,7 @@ function TransferDialog({
               className="w-full rounded-lg border border-line bg-canvas px-3 py-2"
             >
               <option value="">Choose a delegation</option>
-              {delegations
-                .filter((delegation) => delegation.id !== from)
-                .map((delegation) => (
-                  <option key={delegation.id} value={delegation.id}>
-                    {delegation.name}
-                  </option>
-                ))}
+              <TransferOptions section={section} exclude={from} />
             </select>
           </label>
 
@@ -339,19 +383,18 @@ export function MainBudget(): ReactNode {
     return <Alert>Could not load the budget. {String(view.error ?? '')}</Alert>;
   }
 
-  const delegations = [
-    ...view.data.delegations.groupings.flatMap((grouping) => grouping.rows),
-    ...view.data.delegations.ungrouped,
-  ].map((row) => ({ id: row.id, name: row.name }));
-
   /**
-   * The same lines, minus the outstanding checks.
+   * Every line spending can be filed against.
    *
-   * Transfer may legitimately move money onto or off a check, so `delegations`
-   * above keeps them. Spending cannot be *categorized* to one — a check is
-   * settled by matching the payment that cashes it, which is a different act —
-   * so the picker in the new-transaction dialog must not offer them. This is
-   * the same filter the Transactions page applies, for the same reason.
+   * Outstanding checks are excluded. A check is a delegation, but it is not
+   * somewhere spending goes — it is settled by matching the payment that cashes
+   * it, which is a different act — so the picker in the new-transaction dialog
+   * must not offer one. This is the same filter the Transactions page applies,
+   * for the same reason.
+   *
+   * Transfer does not use this list. It takes the whole section, checks
+   * included, because moving money onto or off a check is legitimate — and
+   * because its dropdowns mirror the page's own grouping.
    */
   const spendable = [
     ...view.data.delegations.groupings.flatMap((grouping) => grouping.rows),
@@ -474,7 +517,7 @@ export function MainBudget(): ReactNode {
       {dialog === 'delegate' && <DelegateDialog onClose={() => setDialog('none')} />}
       {dialog === 'transfer' && (
         <TransferDialog
-          delegations={delegations}
+          section={view.data.delegations}
           {...(transferFrom === null ? {} : { initialFrom: transferFrom })}
           onClose={() => {
             setDialog('none');
