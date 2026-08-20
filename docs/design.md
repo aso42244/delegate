@@ -452,7 +452,9 @@ the name. A purple dot above a blue chart read as two unrelated things on one
 card.
 
 Both headline figures name their unit, and both are per cycle — the suggestion
-and what is actually funded, which is the comparison. The monthly average sits in
+and what is actually funded, which is the comparison. How many cycles a year
+that is comes from the pay cadence on Settings → Budget, and the sentence under
+the cards names the number it used rather than a fixed 26. The monthly average sits in
 the sentence explaining where the suggestion comes from. It used to lead in hero
 type with an unlabelled "Currently" beside it: a per-month figure and a
 per-paycheck one, adjacent and looking comparable.
@@ -504,7 +506,7 @@ Under the chart, four labelled figures in one column:
 |                                 |                                       |
 | ------------------------------- | ------------------------------------- |
 | Average per month               | the completed months only             |
-| Suggested per cycle             | that average spread over 26 paychecks |
+| Suggested per cycle             | that average spread over a year's pay |
 | Delegated per cycle             | what the line is actually set to      |
 | Delegated above/below suggested | the comparison the page exists for    |
 

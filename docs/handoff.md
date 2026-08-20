@@ -98,6 +98,12 @@ recorded in the ADRs, and the short version is:
 
 **The budget itself**
 
+- Pay cadence is a setting — weekly, every two weeks, twice a month, monthly —
+  and the Utilities suggestion divides by it. It is a **divisor, not a
+  schedule**: a cycle is still one Delegate press to the next, and no amount to
+  delegate is ever rewritten when it changes. Defaults to biweekly so an
+  existing budget reads identically on upgrade
+
 - The delegation event ledger — Delegate with undoable runs, transfers, manual
   adjustment, categorization and splits, pending reconciliation, archiving,
   go-live reconciliation

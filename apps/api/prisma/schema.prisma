@@ -111,6 +111,21 @@ enum RuleDirection {
   @@map("rule_direction")
 }
 
+/// How often the household is paid — see @budget/shared's PayCadence.
+///
+/// Only the count of payments a year matters to the arithmetic, so
+/// `semimonthly` covers both the 1st-and-15th pattern and the 15th-and-last-day
+/// one. Nothing here schedules a Delegate run; the cycle is still one press to
+/// the next.
+enum PayCadence {
+  weekly
+  biweekly
+  semimonthly
+  monthly
+
+  @@map("pay_cadence")
+}
+
 enum UserRole {
   user
   admin
@@ -881,6 +896,14 @@ model BudgetSettings {
 
   // A difference within ±this reads as "Balanced" on the Budget page bottom row.
   identityToleranceCents BigInt @default(500) @map("identity_tolerance_cents")
+
+  /// How often the household is paid. Turns the Utilities page's monthly
+  /// average into a per-paycheck suggestion, and nothing else — the amount to
+  /// delegate on each line is per Delegate press whatever this says.
+  ///
+  /// Defaults to biweekly because that is what the arithmetic assumed before it
+  /// was configurable; an existing budget's numbers must not move on upgrade.
+  payCadence PayCadence @default(biweekly) @map("pay_cadence")
 
   // Recorded when the owner commits the go-live Reconcile screen, so history
   // before this date can be understood as backfill.

@@ -194,3 +194,70 @@ describe('go-live', () => {
     expect(balances.map((row) => row.balanceCents)).toEqual([72500n, -1200n]);
   });
 });
+
+describe('pay cadence', () => {
+  it('reports biweekly and 26 until somebody chooses otherwise', async () => {
+    const response = await app.inject({ method: 'GET', url: '/api/settings', headers: { cookie } });
+    const body = response.json<{ payCadence: string; cyclesPerYear: number }>();
+
+    expect(body.payCadence).toBe('biweekly');
+    // Resolved by the server, so the interface never keeps its own copy of the
+    // mapping and cannot disagree with the figures it is labelling.
+    expect(body.cyclesPerYear).toBe(26);
+  });
+
+  it.each([
+    ['weekly', 52],
+    ['semimonthly', 24],
+    ['monthly', 12],
+  ])('accepts %s and reports %i a year', async (payCadence, cyclesPerYear) => {
+    const response = await app.inject({
+      method: 'PATCH',
+      url: '/api/settings',
+      headers: { cookie },
+      payload: { payCadence },
+    });
+    expect(response.statusCode).toBe(200);
+
+    const body = response.json<{ payCadence: string; cyclesPerYear: number }>();
+    expect(body.payCadence).toBe(payCadence);
+    expect(body.cyclesPerYear).toBe(cyclesPerYear);
+  });
+
+  it('refuses a cadence that is not one of the four', async () => {
+    for (const payCadence of ['fortnightly', 'daily', 'BIWEEKLY', 'every_four_weeks', '']) {
+      const response = await app.inject({
+        method: 'PATCH',
+        url: '/api/settings',
+        headers: { cookie },
+        payload: { payCadence },
+      });
+      expect(response.statusCode, payCadence).toBe(400);
+    }
+  });
+
+  it('leaves the tolerance and the undo window alone', async () => {
+    await app.inject({
+      method: 'PATCH',
+      url: '/api/settings',
+      headers: { cookie },
+      payload: { identityToleranceCents: '1000', undoWindowHours: 24 },
+    });
+
+    const response = await app.inject({
+      method: 'PATCH',
+      url: '/api/settings',
+      headers: { cookie },
+      payload: { payCadence: 'weekly' },
+    });
+
+    const body = response.json<{
+      identityToleranceCents: string;
+      undoWindowHours: number;
+      payCadence: string;
+    }>();
+    expect(body.identityToleranceCents).toBe('1000');
+    expect(body.undoWindowHours).toBe(24);
+    expect(body.payCadence).toBe('weekly');
+  });
+});

@@ -309,8 +309,13 @@ export interface CycleSummary {
   /** Income less spending. Negative means the cycle ran a deficit. */
   readonly surplusCents: Cents;
   /**
-   * True for a cycle containing a third payday. The owner is paid biweekly, so
-   * two months a year have three — flagged so the comparison is not misread.
+   * True for the cycle still open — the one since the most recent Delegate
+   * press — so a half-finished cycle is not compared against whole ones as
+   * though it were.
+   *
+   * It said "a cycle containing a third payday" and described biweekly pay. The
+   * code never did that, and the pay cadence is a setting now, so the comment
+   * was wrong twice over.
    */
   readonly partial: boolean;
 }

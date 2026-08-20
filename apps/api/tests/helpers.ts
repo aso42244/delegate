@@ -58,6 +58,10 @@ export async function resetDatabase(): Promise<void> {
       undoWindowHours: 12,
       identityToleranceCents: 500n,
       goLiveAt: null,
+      // The product default. Left out of this list once already, which leaked a
+      // cadence from one test into the next and made the suggestion in the
+      // following test wrong for reasons nothing in it explained.
+      payCadence: 'biweekly',
       // Off here even though the product default is on: almost every test signs
       // in without a second factor, and the requirement would 403 them out of
       // the subject under test. The tests that are *about* the requirement turn

@@ -13,7 +13,7 @@ import {
   SPENDING_WINDOWS,
 } from '../domain/insights.js';
 import { equitySeries, netWorthSeries, singleAccountSeries } from '../domain/history.js';
-import { buildUtilitySummaries } from '../domain/utilities.js';
+import { buildUtilities } from '../domain/utilities.js';
 import { centsOut, dateOut } from '../http/serialize.js';
 import { AUTHENTICATED } from '../plugins/auth.js';
 
@@ -188,7 +188,7 @@ export const insightRoutes: FastifyPluginCallback = (fastify, _options, done) =>
         buildNegativeDelegations(prisma),
         buildBacklog(prisma),
         buildCycles(prisma),
-        buildUtilitySummaries(prisma),
+        buildUtilities(prisma),
       ]);
 
     const spending = (
@@ -239,7 +239,8 @@ export const insightRoutes: FastifyPluginCallback = (fastify, _options, done) =>
         surplusCents: centsOut(cycle.surplusCents),
         partial: cycle.partial,
       })),
-      utilities_vs_delegated: utilities.map((utility) => ({
+      cyclesPerYear: utilities.cyclesPerYear,
+      utilities_vs_delegated: utilities.summaries.map((utility) => ({
         name: utility.name,
         averageCents: centsOut(utility.averageCents),
         suggestedPerCycleCents: centsOut(utility.suggestedPerCycleCents),

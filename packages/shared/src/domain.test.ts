@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import {
   CYCLES_PER_YEAR,
+  PAY_CADENCES,
+  PAY_CADENCE_LABELS,
+  isPayCadence,
+  type PayCadence,
   canManageUsers,
   canModifyUser,
   isBalanceStale,
@@ -55,27 +59,81 @@ describe('isBalanceStale', () => {
 });
 
 describe('suggestedPerCycleCents', () => {
-  it('spreads a monthly average across 26 biweekly cycles', () => {
-    expect(CYCLES_PER_YEAR).toBe(26);
+  /**
+   * The biweekly cases are the ones this function shipped with, kept verbatim.
+   * Every budget in existence was computed at 26 before the cadence became a
+   * setting, so these are the regression: if they move, an upgrade moves a
+   * number somebody was reading.
+   */
+  it('spreads a monthly average across 26 cycles, as it always did', () => {
+    expect(CYCLES_PER_YEAR.biweekly).toBe(26);
     // $120/mo × 12 ÷ 26 = $55.3846… → $55.38
-    expect(suggestedPerCycleCents(120_00n)).toBe(55_38n);
+    expect(suggestedPerCycleCents(120_00n, 26)).toBe(55_38n);
     // $260/mo × 12 ÷ 26 = exactly $120.00
-    expect(suggestedPerCycleCents(260_00n)).toBe(120_00n);
+    expect(suggestedPerCycleCents(260_00n, 26)).toBe(120_00n);
   });
 
   it('rounds half away from zero', () => {
     // 13 cents × 12 = 156; 156 / 26 = exactly 6.
-    expect(suggestedPerCycleCents(13n)).toBe(6n);
+    expect(suggestedPerCycleCents(13n, 26)).toBe(6n);
     // 1 cent × 12 = 12; 12 / 26 = 0.46 → 0.
-    expect(suggestedPerCycleCents(1n)).toBe(0n);
+    expect(suggestedPerCycleCents(1n, 26)).toBe(0n);
     // 2 cents × 12 = 24; 24 / 26 = 0.92 → 1.
-    expect(suggestedPerCycleCents(2n)).toBe(1n);
+    expect(suggestedPerCycleCents(2n, 26)).toBe(1n);
   });
 
   it('handles zero and negatives symmetrically', () => {
-    expect(suggestedPerCycleCents(0n)).toBe(0n);
-    expect(suggestedPerCycleCents(-120_00n)).toBe(-55_38n);
-    expect(suggestedPerCycleCents(-2n)).toBe(-1n);
+    expect(suggestedPerCycleCents(0n, 26)).toBe(0n);
+    expect(suggestedPerCycleCents(-120_00n, 26)).toBe(-55_38n);
+    expect(suggestedPerCycleCents(-2n, 26)).toBe(-1n);
+  });
+
+  /**
+   * $120 a month is $1,440 a year however it is sliced, so each cadence is
+   * that divided by its own number of paychecks. Worked by hand rather than
+   * from the implementation, which is the only way a test of arithmetic is
+   * worth anything.
+   */
+  it.each([
+    ['weekly', 52, 27_69n],
+    ['biweekly', 26, 55_38n],
+    ['semimonthly', 24, 60_00n],
+    ['monthly', 12, 120_00n],
+  ])('spreads $120 a month over %s', (cadence, cycles, expected) => {
+    expect(CYCLES_PER_YEAR[cadence as PayCadence]).toBe(cycles);
+    expect(suggestedPerCycleCents(120_00n, cycles)).toBe(expected);
+  });
+
+  /** Twice a month and monthly divide evenly, so they are exact. */
+  it('is exact where the arithmetic is exact', () => {
+    expect(suggestedPerCycleCents(100_00n, 24)).toBe(50_00n);
+    expect(suggestedPerCycleCents(100_00n, 12)).toBe(100_00n);
+  });
+
+  it('rounds half away from zero at every cadence', () => {
+    // 1 cent a month is 12 a year. Over 52 that is 0.2307… → 0.
+    expect(suggestedPerCycleCents(1n, 52)).toBe(0n);
+    // 5 cents a month is 60 a year. Over 52 that is 1.1538… → 1.
+    expect(suggestedPerCycleCents(5n, 52)).toBe(1n);
+    // 13 cents a month is 156 a year. Over 24 that is 6.5 → 7, away from zero.
+    expect(suggestedPerCycleCents(13n, 24)).toBe(7n);
+    expect(suggestedPerCycleCents(-13n, 24)).toBe(-7n);
+  });
+
+  it('covers every cadence the interface offers', () => {
+    for (const cadence of PAY_CADENCES) {
+      expect(CYCLES_PER_YEAR[cadence]).toBeGreaterThan(0);
+      expect(PAY_CADENCE_LABELS[cadence]).toContain(String(CYCLES_PER_YEAR[cadence]));
+    }
+  });
+});
+
+describe('isPayCadence', () => {
+  it('accepts what the interface offers and nothing else', () => {
+    for (const cadence of PAY_CADENCES) expect(isPayCadence(cadence)).toBe(true);
+    for (const other of ['', 'fortnightly', 'BIWEEKLY', 'every_four_weeks', 'daily']) {
+      expect(isPayCadence(other), other).toBe(false);
+    }
   });
 });
 
