@@ -1,12 +1,14 @@
-import { suggestedPerCycleCents, sumCents, type Cents } from '@budget/shared';
+import { CYCLES_PER_YEAR, suggestedPerCycleCents, sumCents, type Cents } from '@budget/shared';
 import type { Db } from '../db/client.js';
+import { getBudgetSettings } from './settings.js';
 
 /**
  * The Utilities page.
  *
  * The owner does this arithmetic by hand today: what does the water bill average
  * over a year, and what is that per paycheck? Showing it is the entire point of
- * the page — §9.3 says so outright. It **suggests only** and never writes an
+ * the page — §9.3 says so outright. How many paychecks a year that is comes
+ * from the household's pay cadence on Settings → Budget. It **suggests only** and never writes an
  * amount to delegate, because a bill that averages $118 is not the same as a
  * decision to fund it at $118.
  *
@@ -39,8 +41,23 @@ export interface UtilitySummary {
    * against a standing amount.
    */
   readonly averageCents: Cents;
-  /** monthly average × 12 ÷ 26. Advice, never auto-written. */
+  /**
+   * The monthly average spread over a year's paychecks, at the household's
+   * configured cadence. Advice, never auto-written.
+   */
   readonly suggestedPerCycleCents: Cents;
+}
+
+export interface UtilitiesView {
+  readonly summaries: readonly UtilitySummary[];
+  /**
+   * How many paychecks a year the suggestion was divided by.
+   *
+   * Returned rather than left for the interface to look up, so the figure and
+   * the sentence explaining it cannot disagree — a page saying "over 26" beside
+   * a number computed from 24 is worse than either alone.
+   */
+  readonly cyclesPerYear: number;
 }
 
 const MONTHS_SHOWN = 12;
@@ -61,8 +78,16 @@ function monthWindow(now: Date): Date[] {
   );
 }
 
+export async function buildUtilities(db: Db, now: Date = new Date()): Promise<UtilitiesView> {
+  const { payCadence } = await getBudgetSettings(db);
+  const cyclesPerYear = CYCLES_PER_YEAR[payCadence];
+
+  return { summaries: await buildUtilitySummaries(db, cyclesPerYear, now), cyclesPerYear };
+}
+
 export async function buildUtilitySummaries(
   db: Db,
+  cyclesPerYear: number,
   now: Date = new Date(),
 ): Promise<UtilitySummary[]> {
   const months = monthWindow(now);
@@ -134,7 +159,7 @@ export async function buildUtilitySummaries(
       amountToDelegateCents: delegation.amountToDelegateCents,
       months: monthly,
       averageCents,
-      suggestedPerCycleCents: suggestedPerCycleCents(averageCents),
+      suggestedPerCycleCents: suggestedPerCycleCents(averageCents, cyclesPerYear),
     };
   });
 }

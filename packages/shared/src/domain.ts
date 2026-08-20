@@ -78,18 +78,66 @@ export function isBalanceStale(
 }
 
 /**
- * The Utilities page suggestion: a monthly average spread over 26 biweekly
- * cycles a year. Rounded to the nearest cent; it is advice, never auto-written.
+ * How often the household is paid.
+ *
+ * A cycle in this system is one Delegate press to the next, and nothing
+ * schedules it — the owner presses it when the money lands. So this does not
+ * make Delegate run itself. It is the divisor: it says how many of those
+ * presses a year is, which is what turns a monthly average into a per-paycheck
+ * figure on the Utilities page.
+ *
+ * "Twice a month" covers both the 1st-and-15th pattern and the
+ * 15th-and-last-day one. They are the same 24 payments a year, and naming it by
+ * a pair of dates would make half of the households it fits think it did not.
  */
-export function suggestedPerCycleCents(monthlyAverageCents: bigint): bigint {
-  const numerator = monthlyAverageCents * 12n;
-  const sign = numerator < 0n ? -1n : 1n;
-  const magnitude = numerator < 0n ? -numerator : numerator;
-  // Round half away from zero: floor((|n| + 13) / 26).
-  return sign * ((magnitude + 13n) / 26n);
+export const PAY_CADENCES = ['weekly', 'biweekly', 'semimonthly', 'monthly'] as const;
+export type PayCadence = (typeof PAY_CADENCES)[number];
+
+export const DEFAULT_PAY_CADENCE: PayCadence = 'biweekly';
+
+/** Payments a year, which is the only thing the arithmetic needs. */
+export const CYCLES_PER_YEAR: Record<PayCadence, number> = {
+  weekly: 52,
+  biweekly: 26,
+  semimonthly: 24,
+  monthly: 12,
+};
+
+/**
+ * How each one is written on screen.
+ *
+ * The count is part of the label rather than a footnote. "Biweekly" is
+ * genuinely ambiguous in English — it is used for both twice a week and every
+ * two weeks — and a household picking the wrong one gets a suggestion that is
+ * out by a factor of four with nothing on screen to reveal it.
+ */
+export const PAY_CADENCE_LABELS: Record<PayCadence, string> = {
+  weekly: 'Weekly — 52 a year',
+  biweekly: 'Every two weeks — 26 a year',
+  semimonthly: 'Twice a month — 24 a year',
+  monthly: 'Monthly — 12 a year',
+};
+
+export function isPayCadence(value: string): value is PayCadence {
+  return (PAY_CADENCES as readonly string[]).includes(value);
 }
 
-export const CYCLES_PER_YEAR = 26;
+/**
+ * The Utilities page suggestion: a monthly average spread over a year's
+ * paychecks. Advice, never auto-written.
+ *
+ * Integer throughout, and rounded half away from zero. The doubling is what
+ * lets that rounding stay exact for an odd number of cycles as well as an even
+ * one — `+ cycles` over `2 * cycles` is "+ a half", without ever forming a
+ * half.
+ */
+export function suggestedPerCycleCents(monthlyAverageCents: bigint, cyclesPerYear: number): bigint {
+  const cycles = BigInt(cyclesPerYear);
+  const numerator = monthlyAverageCents * 12n * 2n;
+  const sign = numerator < 0n ? -1n : 1n;
+  const magnitude = numerator < 0n ? -numerator : numerator;
+  return sign * ((magnitude + cycles) / (cycles * 2n));
+}
 
 /**
  * The curated palette a grouping colour is chosen from.

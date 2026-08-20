@@ -13,7 +13,9 @@ import { appendEvent, markEventsReversed } from './ledger.js';
  * nothing here.
  *
  * The run's `created_at` defines the start of the current budget cycle. There is
- * no automatic cadence: the owner is paid biweekly and presses this by hand.
+ * no automatic cadence and there is not meant to be: the owner presses this when
+ * the money lands. Settings → Budget carries a pay cadence, but it is a divisor
+ * for the Utilities page rather than a schedule — nothing here reads it.
  */
 
 export interface DelegatePreview {

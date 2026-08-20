@@ -153,3 +153,85 @@ test('the card compares like with like', async ({ signedIn, api }) => {
   // And "delegated" throughout — the application has one word for this.
   await expect(signedIn.getByText('Funded', { exact: false })).toHaveCount(0);
 });
+
+/**
+ * Pay cadence, from the setting to the figure it changes.
+ *
+ * The arithmetic is proved elsewhere. What only a browser can show is that the
+ * choice made on one page reaches the number on another, and that the sentence
+ * explaining the number names the same divisor it was computed from — a page
+ * saying "over 26" beside a figure computed from 12 is worse than either alone.
+ */
+test('changing the pay cadence changes the suggestion and the sentence', async ({
+  signedIn,
+  api,
+}) => {
+  const accountId = await makeAccount('Everyday Checking', 'asset', 500000n);
+  const water = await makeDelegation(api, 'Water', '6000');
+  await api.patch(`/api/delegations/${water}`, { data: { isUtility: true } });
+
+  /*
+   * One $132 bill in a completed month.
+   *
+   * The average is the mean over the eleven *complete* months in the window,
+   * not over the months that happen to have a bill — so this is $12.00 a month,
+   * and $144 a year.
+   *
+   * Monthly is deliberately not the cadence under test here: twelve months over
+   * twelve paychecks makes the suggestion equal the average, and two identical
+   * figures on one card cannot be told apart by a test. Weekly keeps all three
+   * numbers distinct.
+   */
+  const lastMonth = new Date();
+  lastMonth.setUTCDate(1);
+  lastMonth.setUTCMonth(lastMonth.getUTCMonth() - 1);
+  lastMonth.setUTCDate(15);
+
+  const created = await api.post('/api/transactions', {
+    data: {
+      accountId,
+      amountCents: '-13200',
+      description: 'Water bill',
+      postedAt: lastMonth.toISOString(),
+    },
+  });
+  const { transaction } = (await created.json()) as { transaction: { id: string } };
+  await api.post(`/api/transactions/${transaction.id}/categorize`, {
+    data: { delegationId: water },
+  });
+
+  // Biweekly by default: $144 a year over 26 is $5.54.
+  await signedIn.goto('/utilities');
+  await expect(signedIn.getByText('$12.00')).toBeVisible();
+  await expect(signedIn.getByText('$5.54')).toBeVisible();
+  await expect(signedIn.getByText(/one of 26 paychecks a year/)).toBeVisible();
+
+  await signedIn.goto('/settings/budget');
+  await signedIn.getByLabel('Paid').selectOption('weekly');
+
+  // The card's own copy updating is the signal the write landed; reading the
+  // other page before it does would race the save.
+  await expect(signedIn.getByText(/over 52 paychecks a year/)).toBeVisible();
+
+  // $144 a year over 52 is $2.77. The average is untouched.
+  await signedIn.goto('/utilities');
+  await expect(signedIn.getByText('$12.00')).toBeVisible();
+  await expect(signedIn.getByText('$2.77')).toBeVisible();
+  await expect(signedIn.getByText(/one of 52 paychecks a year/)).toBeVisible();
+});
+
+test('the amount to delegate is left alone when the cadence changes', async ({ signedIn, api }) => {
+  const water = await makeDelegation(api, 'Water', '6000');
+  await api.patch(`/api/delegations/${water}`, { data: { isUtility: true } });
+
+  await signedIn.goto('/settings/budget');
+  await signedIn.getByLabel('Paid').selectOption('weekly');
+  await expect(signedIn.getByText(/over 52 paychecks a year/)).toBeVisible();
+
+  // Still $60.00 a press. Changing how often you are paid does not decide how
+  // much goes into an envelope — that stays the household's call.
+  await signedIn.goto('/');
+  await expect(signedIn.getByRole('button', { name: 'Water amount to delegate' })).toContainText(
+    '$60.00',
+  );
+});

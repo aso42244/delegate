@@ -1,6 +1,6 @@
 import type { FastifyPluginCallback } from 'fastify';
 import { prisma } from '../db/client.js';
-import { buildUtilitySummaries } from '../domain/utilities.js';
+import { buildUtilities } from '../domain/utilities.js';
 import { centsOut, dateOut } from '../http/serialize.js';
 import { AUTHENTICATED } from '../plugins/auth.js';
 
@@ -14,9 +14,12 @@ export const utilityRoutes: FastifyPluginCallback = (fastify, _options, done) =>
   }
 
   fastify.get('/api/utilities', async () => {
-    const summaries = await buildUtilitySummaries(prisma);
+    const { summaries, cyclesPerYear } = await buildUtilities(prisma);
 
     return {
+      // Sent alongside the figures so the sentence explaining them cannot
+      // name a different number than the one they were computed from.
+      cyclesPerYear,
       utilities: summaries.map((summary) => ({
         delegationId: summary.delegationId,
         name: summary.name,

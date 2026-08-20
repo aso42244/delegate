@@ -1,3 +1,4 @@
+import { CYCLES_PER_YEAR, PAY_CADENCES } from '@budget/shared';
 import { readFileSync } from 'node:fs';
 import type { FastifyPluginCallback } from 'fastify';
 import { z } from 'zod';
@@ -22,6 +23,7 @@ import { AUTHENTICATED, requireSettingsManagement } from '../plugins/auth.js';
 const updateSchema = z.object({
   undoWindowHours: z.number().int().optional(),
   identityToleranceCents: centsIn.optional(),
+  payCadence: z.enum(PAY_CADENCES).optional(),
   requireTotp: z.boolean().optional(),
   remoteOverTorEnabled: z.boolean().optional(),
 });
@@ -31,6 +33,10 @@ function present(settings: BudgetSettings): Record<string, unknown> {
     undoWindowHours: settings.undoWindowHours,
     identityToleranceCents: centsOut(settings.identityToleranceCents),
     goLiveAt: dateOut(settings.goLiveAt),
+    payCadence: settings.payCadence,
+    // The divisor the Utilities page uses, resolved here so the interface never
+    // has to keep its own copy of the mapping.
+    cyclesPerYear: CYCLES_PER_YEAR[settings.payCadence],
     requireTotp: settings.requireTotp,
     remoteOverTorEnabled: settings.remoteOverTorEnabled,
     remoteOverTorEnabledAt: dateOut(settings.remoteOverTorEnabledAt),

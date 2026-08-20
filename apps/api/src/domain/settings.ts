@@ -1,4 +1,4 @@
-import type { Cents } from '@budget/shared';
+import { DEFAULT_PAY_CADENCE, type Cents, type PayCadence } from '@budget/shared';
 import type { Db } from '../db/client.js';
 import { ValidationError } from './errors.js';
 
@@ -20,6 +20,12 @@ export interface BudgetSettings {
   readonly identityToleranceCents: Cents;
   readonly goLiveAt: Date | null;
   /**
+   * How often the household is paid. The Utilities page divides a monthly
+   * average by this many payments a year; nothing else reads it, and nothing
+   * about it schedules a Delegate run.
+   */
+  readonly payCadence: PayCadence;
+  /**
    * Whether every account must carry a second factor. Default on: the reason it
    * was optional — that turning it on could lock an un-enrolled account out —
    * expired once the interface gained a way back (`/set-up-two-factor`).
@@ -36,6 +42,7 @@ export async function getBudgetSettings(db: Db): Promise<BudgetSettings> {
       undoWindowHours: true,
       identityToleranceCents: true,
       goLiveAt: true,
+      payCadence: true,
       requireTotp: true,
       remoteOverTorEnabled: true,
       remoteOverTorEnabledAt: true,
@@ -46,6 +53,7 @@ export async function getBudgetSettings(db: Db): Promise<BudgetSettings> {
     undoWindowHours: settings?.undoWindowHours ?? DEFAULT_UNDO_WINDOW_HOURS,
     identityToleranceCents: settings?.identityToleranceCents ?? DEFAULT_IDENTITY_TOLERANCE_CENTS,
     goLiveAt: settings?.goLiveAt ?? null,
+    payCadence: settings?.payCadence ?? DEFAULT_PAY_CADENCE,
     requireTotp: settings?.requireTotp ?? true,
     // Off unless a row says otherwise. A missing settings row must not be a way
     // in from the internet.
@@ -57,6 +65,7 @@ export async function getBudgetSettings(db: Db): Promise<BudgetSettings> {
 export interface UpdateBudgetSettingsInput {
   readonly undoWindowHours?: number | undefined;
   readonly identityToleranceCents?: Cents | undefined;
+  readonly payCadence?: PayCadence | undefined;
   readonly requireTotp?: boolean | undefined;
   readonly remoteOverTorEnabled?: boolean | undefined;
 }
@@ -110,6 +119,7 @@ export async function updateBudgetSettings(
       id: 1,
       undoWindowHours: input.undoWindowHours ?? DEFAULT_UNDO_WINDOW_HOURS,
       identityToleranceCents: input.identityToleranceCents ?? DEFAULT_IDENTITY_TOLERANCE_CENTS,
+      payCadence: input.payCadence ?? DEFAULT_PAY_CADENCE,
       requireTotp: input.requireTotp ?? true,
       remoteOverTorEnabled: input.remoteOverTorEnabled ?? false,
     },
@@ -118,6 +128,7 @@ export async function updateBudgetSettings(
       ...(input.identityToleranceCents === undefined
         ? {}
         : { identityToleranceCents: input.identityToleranceCents }),
+      ...(input.payCadence === undefined ? {} : { payCadence: input.payCadence }),
       ...(input.requireTotp === undefined ? {} : { requireTotp: input.requireTotp }),
       ...(input.remoteOverTorEnabled === undefined
         ? {}
@@ -131,6 +142,7 @@ export async function updateBudgetSettings(
       undoWindowHours: true,
       identityToleranceCents: true,
       goLiveAt: true,
+      payCadence: true,
       requireTotp: true,
       remoteOverTorEnabled: true,
       remoteOverTorEnabledAt: true,

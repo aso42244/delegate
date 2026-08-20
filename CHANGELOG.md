@@ -8,6 +8,46 @@ phase (`v0.1.0-phase1`, and so on).
 
 Nothing yet.
 
+## [0.19.0] — 2026-08-19
+
+The budget no longer assumes the household is paid every two weeks.
+
+### Added
+
+- **Pay cadence**, on Settings → Budget: weekly (52 a year), every two weeks
+  (26), twice a month (24), or monthly (12). The count is part of each label
+  because "biweekly" is genuinely ambiguous in English, and picking the wrong
+  one would put the suggestion out by a factor of four with nothing on screen to
+  reveal it.
+- **Twice a month covers both patterns.** The 1st-and-15th and the
+  15th-and-last-day are the same 24 payments a year, and naming it by a pair of
+  dates would make half the households it fits think it did not.
+
+### Changed
+
+- `suggestedPerCycleCents` takes the number of cycles rather than assuming 26.
+  Still integer throughout and still rounded half away from zero; the doubling
+  in the new form is what keeps that exact for an odd divisor as well as an even
+  one.
+- The Utilities page names the divisor it actually used, and the server sends it
+  alongside the figures rather than leaving the interface to look it up — a page
+  saying "over 26" beside a number computed from 24 is worse than either alone.
+- Two comments that described biweekly pay as though the code depended on it.
+  One of them, on `partial` in the cycle summaries, had never matched what the
+  code did.
+
+### Unchanged, deliberately
+
+- **Nothing runs on a schedule.** A cycle is still one Delegate press to the
+  next, pressed by hand when the money lands. The cadence is a divisor, not a
+  timetable.
+- **No amount to delegate is rewritten.** Those are applied once per press, so
+  changing cadence changes what they come to over a year. That is the
+  household's decision and the interface says so rather than acting on it.
+- **An existing budget reads identically after the upgrade.** The column
+  defaults to `biweekly`, which is what the arithmetic assumed before it was a
+  setting.
+
 ## [0.17.0] — 2026-08-19
 
 Model Context Protocol support, added in 0.15.0 and 0.16.0, is removed at the

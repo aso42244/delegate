@@ -1,4 +1,4 @@
-import { formatCents, CYCLES_PER_YEAR } from '@budget/shared';
+import { formatCents } from '@budget/shared';
 import { useQuery } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
 import { api } from '../api/client.js';
@@ -175,10 +175,14 @@ function UtilityCard({ utility }: { readonly utility: UtilityDto }): ReactNode {
 export function Utilities(): ReactNode {
   const query = useQuery({
     queryKey: ['utilities'],
-    queryFn: () => api.get<{ utilities: readonly UtilityDto[] }>('/api/utilities'),
+    queryFn: () =>
+      api.get<{ utilities: readonly UtilityDto[]; cyclesPerYear: number }>('/api/utilities'),
   });
 
   const utilities = query.data?.utilities ?? [];
+  // From the server, which computed the suggestions with it. Looking it up here
+  // instead would let the sentence and the figures drift apart.
+  const cyclesPerYear = query.data?.cyclesPerYear ?? null;
   const anyHistory = utilities.some((utility) => BigInt(utility.averageCents) !== 0n);
 
   return (
@@ -214,9 +218,11 @@ export function Utilities(): ReactNode {
           </div>
 
           <p className="mt-4 text-quiet text-muted">
-            A cycle is one of {CYCLES_PER_YEAR} paychecks a year. The average covers the completed
-            months only — including the month in progress would make it collapse on the second and
-            recover by the thirtieth.
+            {cyclesPerYear === null
+              ? 'A cycle is one paycheck.'
+              : `A cycle is one of ${cyclesPerYear} paychecks a year, which is set on Settings → Budget.`}{' '}
+            The average covers the completed months only — including the month in progress would
+            make it collapse on the second and recover by the thirtieth.
           </p>
         </>
       )}
