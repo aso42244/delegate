@@ -22,17 +22,52 @@ async function makeTransaction(
   return body.transaction.id;
 }
 
-test('shows the uncategorized queue by default', async ({ signedIn, api }) => {
+/**
+ * The register opens unfiltered.
+ *
+ * It used to open on the uncategorized queue, which is right for a session
+ * spent clearing a backlog and wrong for every other visit — a register that
+ * hides most of the register has to be un-configured before anything can be
+ * looked up.
+ */
+test('shows every transaction by default, filtered by nothing', async ({ signedIn, api }) => {
   const accountId = await makeAccount('Everyday Checking', 'asset', 500000n);
-  await makeTransaction(api, accountId, '-4210', 'Whole Foods Market');
+  const waiting = await makeTransaction(api, accountId, '-4210', 'Whole Foods Market');
+  const sorted = await makeTransaction(api, accountId, '-1500', 'Corner Shop');
+
+  const grocery = await makeDelegation(api, 'Grocery');
+  await api.post(`/api/transactions/${sorted}/categorize`, {
+    data: { delegationId: grocery },
+  });
 
   await signedIn.getByRole('link', { name: 'Transactions' }).click();
 
   await expect(signedIn.getByRole('heading', { name: 'Transactions' })).toBeVisible();
+  // Both of them: the one waiting and the one already dealt with.
   await expect(signedIn.getByText('Whole Foods Market')).toBeVisible();
+  await expect(signedIn.getByText('Corner Shop')).toBeVisible();
   // Exact: the notification banner carries very similar wording, and a
   // substring match would resolve to both as soon as its query landed.
+  await expect(signedIn.getByText('2 transactions.')).toBeVisible();
+
+  expect(waiting).not.toBe(sorted);
+});
+
+test('the uncategorized queue is one press away', async ({ signedIn, api }) => {
+  const accountId = await makeAccount('Everyday Checking', 'asset', 500000n);
+  await makeTransaction(api, accountId, '-4210', 'Whole Foods Market');
+  const sorted = await makeTransaction(api, accountId, '-1500', 'Corner Shop');
+
+  const grocery = await makeDelegation(api, 'Grocery');
+  await api.post(`/api/transactions/${sorted}/categorize`, {
+    data: { delegationId: grocery },
+  });
+
+  await signedIn.goto('/transactions');
+  await signedIn.getByRole('button', { name: 'Uncategorized' }).click();
+
   await expect(signedIn.getByText('1 transaction waiting to be categorized.')).toBeVisible();
+  await expect(signedIn.getByText('Corner Shop')).toHaveCount(0);
 });
 
 test('categorizing with the keyboard removes the row from the queue', async ({ signedIn, api }) => {
@@ -41,6 +76,9 @@ test('categorizing with the keyboard removes the row from the queue', async ({ s
   await makeTransaction(api, accountId, '-4210', 'Whole Foods Market');
 
   await signedIn.goto('/transactions');
+  // The queue, explicitly: the page no longer opens filtered, and what is under
+  // test here is a row leaving it.
+  await signedIn.getByRole('button', { name: 'Uncategorized' }).click();
 
   // Type a few letters, press Enter. No mouse, no scrolling sixty options.
   const picker = signedIn.getByLabel('Categorize Whole Foods Market');
@@ -57,6 +95,9 @@ test('a categorized transaction moves its delegation', async ({ signedIn, api })
   await makeTransaction(api, accountId, '-4210', 'Whole Foods Market');
 
   await signedIn.goto('/transactions');
+  // The queue, explicitly: the page no longer opens filtered, and what is under
+  // test here is a row leaving it.
+  await signedIn.getByRole('button', { name: 'Uncategorized' }).click();
   const picker = signedIn.getByLabel('Categorize Whole Foods Market');
   await picker.fill('gro');
   await picker.press('Enter');
@@ -106,6 +147,9 @@ test('bulk categorize assigns a whole selection at once', async ({ signedIn, api
   await makeTransaction(api, accountId, '-2000', 'Shop two');
 
   await signedIn.goto('/transactions');
+  // The queue, explicitly: the page no longer opens filtered, and what is under
+  // test here is a row leaving it.
+  await signedIn.getByRole('button', { name: 'Uncategorized' }).click();
   await signedIn.getByLabel('Select Shop one').check();
   await signedIn.getByLabel('Select Shop two').check();
 
@@ -140,9 +184,9 @@ test('income offers no delegation picker, because it allocates to nothing', asyn
     },
   });
 
+  // Nothing to switch off any more: the register opens unfiltered, and income
+  // would never have appeared in the queue in the first place.
   await signedIn.goto('/transactions');
-  // Filter off, since income is never "uncategorized" in the queue sense.
-  await signedIn.getByRole('button', { name: 'Uncategorized' }).click();
 
   await expect(signedIn.getByText('Paycheck')).toBeVisible();
   await expect(signedIn.getByLabel('Categorize Paycheck')).toHaveCount(0);

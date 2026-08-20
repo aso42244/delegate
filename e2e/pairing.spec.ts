@@ -66,8 +66,8 @@ test('a confirmed pair can be undone', async ({ signedIn, api }) => {
     .click();
   await expect(signedIn.getByText('possible transfer')).toHaveCount(0);
 
-  // Turn the uncategorized filter off so the paired rows are visible.
-  await signedIn.getByRole('button', { name: 'Uncategorized' }).click();
+  // Nothing to turn off: the register opens unfiltered now, so the paired rows
+  // are already on screen.
   await signedIn.getByRole('button', { name: 'Unpair Payment to card' }).click();
 
   // Back to ordinary transactions, and suggested again.
