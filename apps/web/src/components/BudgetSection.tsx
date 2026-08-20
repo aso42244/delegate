@@ -178,7 +178,10 @@ export function BudgetSection({
         )}
 
         {showToDelegate && (
-          <td className="w-36 row-cell pr-3">
+          // No right padding, so the figure lands in the same column as the
+          // balance on the Assets and Debts tables. Those cells have none, so
+          // the 12px here was the whole of the misalignment.
+          <td className="w-36 row-cell">
             <MoneyCell
               valueCents={parseCents(row.amountToDelegateCents)}
               editable={onEditAmount !== undefined}
@@ -222,7 +225,7 @@ export function BudgetSection({
               </td>
             )}
             {showToDelegate && (
-              <td className="w-36 pb-1 pr-3">
+              <td className="w-36 pb-1">
                 <span className="money block px-2 text-section font-bold text-faint">
                   {section.totalAmountToDelegateCents === null
                     ? '—'
@@ -279,7 +282,7 @@ export function BudgetSection({
               </th>
             )}
             {showToDelegate && (
-              <th className="row-cell pr-5 text-right font-normal text-faint">To delegate</th>
+              <th className="row-cell pr-2 text-right font-normal text-faint">To delegate</th>
             )}
             {rowMenu && <th className="w-10 row-cell pr-3" />}
           </tr>
@@ -355,7 +358,7 @@ export function BudgetSection({
                 )}
 
                 {showToDelegate && (
-                  <td className="row-cell pr-3">
+                  <td className="row-cell">
                     {grouping.collapsed && (
                       <MoneyCell
                         valueCents={parseCents(grouping.amountToDelegateCents)}

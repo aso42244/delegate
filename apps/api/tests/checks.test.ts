@@ -10,7 +10,13 @@ import {
   textNamesCheck,
   writeCheck,
 } from '../src/domain/checks.js';
-import { makeAccount, makeDelegation, makeTransaction, resetDatabase } from './helpers.js';
+import {
+  makeAccount,
+  makeDelegation,
+  makeTransaction,
+  markTwoFactorEnrolled,
+  resetDatabase,
+} from './helpers.js';
 import { errorOf, sessionCookie } from './http.js';
 
 /**
@@ -50,6 +56,7 @@ beforeEach(async () => {
   await resetDatabase();
   const setup = await app.inject({ method: 'POST', url: '/api/auth/setup', payload: OWNER });
   cookie = sessionCookie(setup.headers);
+  await markTwoFactorEnrolled();
 });
 
 async function balanceOf(id: string): Promise<bigint> {

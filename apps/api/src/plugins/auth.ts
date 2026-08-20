@@ -5,7 +5,6 @@ import type { FastifyPluginAsync, FastifyReply, FastifyRequest } from 'fastify';
 import fp from 'fastify-plugin';
 import type { AppConfig } from '../config.js';
 import { prisma } from '../db/client.js';
-import { getBudgetSettings } from '../domain/settings.js';
 import { PrismaSessionStore } from './session-store.js';
 
 /**
@@ -22,6 +21,8 @@ import { PrismaSessionStore } from './session-store.js';
 export interface RequestUser {
   readonly id: string;
   readonly username: string;
+  /** What to call them on screen. Null falls back to the username. */
+  readonly displayName: string | null;
   readonly role: UserRole;
   readonly mustChangePassword: boolean;
   /** Whether a confirmed second factor exists — see `requireTwoFactor`. */
@@ -91,6 +92,7 @@ export async function requireSession(request: FastifyRequest, reply: FastifyRepl
     select: {
       id: true,
       username: true,
+      displayName: true,
       role: true,
       mustChangePassword: true,
       archivedAt: true,
@@ -109,6 +111,7 @@ export async function requireSession(request: FastifyRequest, reply: FastifyRepl
   request.currentUser = {
     id: user.id,
     username: user.username,
+    displayName: user.displayName,
     role: user.role,
     mustChangePassword: user.mustChangePassword,
     hasTotp: user.totpConfirmedAt !== null,
@@ -116,21 +119,23 @@ export async function requireSession(request: FastifyRequest, reply: FastifyRepl
 }
 
 /**
- * Blocks everything except enrolling once the budget requires a second factor
- * and this account has not set one up.
+ * Blocks everything except enrolling until this account has a second factor.
  *
- * The settings row is only read when the user is *not* enrolled, so the ordinary
- * request pays nothing for this. Like `requirePasswordChanged`, the routes that
- * resolve the state — the enrolment pair, and logout — deliberately skip it.
+ * Unconditional. It used to consult a `requireTotp` setting, which never did
+ * what its name suggested: sign-in demands the second factor whenever an
+ * account has one confirmed, whatever the setting said — so it could not
+ * rescue anybody locked out, and its only real effect was to permit accounts
+ * with no second factor at all.
+ *
+ * Like `requirePasswordChanged`, the routes that resolve the state — the
+ * enrolment pair, and logout — deliberately skip this, or an un-enrolled
+ * account could never reach the screen that enrols it.
  */
 export async function requireTwoFactor(
   request: FastifyRequest,
   reply: FastifyReply,
 ): Promise<void> {
   if (!request.currentUser || request.currentUser.hasTotp) return;
-
-  const { requireTotp } = await getBudgetSettings(prisma);
-  if (!requireTotp) return;
 
   await reply.code(403).send({
     error: {

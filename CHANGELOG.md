@@ -8,6 +8,51 @@ phase (`v0.1.0-phase1`, and so on).
 
 Nothing yet.
 
+## [0.20.0] — 2026-08-19
+
+Interface work asked for by the owner, and a second factor that is no longer
+optional.
+
+### Added
+
+- **Display names.** The username is an email address and reads as one wherever
+  it appears. A name is not a credential and nothing is looked up by it, so
+  anybody can set their own whatever role they hold — `PATCH /api/auth/me` sits
+  outside user management for that reason.
+- **Resetting somebody's second factor**, for an administrator. The way back
+  when the phone is gone and the recovery codes went with it. Sign-in demands
+  the second factor whenever one is confirmed, so before this the only route was
+  a database prompt.
+- **Add transaction on the Budget page**, beside Add grouping.
+
+### Changed
+
+- **A second factor is required of every account, always**, including the first
+  Super Admin. The `requireTotp` setting is gone with its toggle. It never did
+  what its name suggested: sign-in demanded the second factor whenever one was
+  confirmed whatever it said, so it could not rescue a locked-out account, and
+  its only real effect was to permit accounts with none at all.
+- **Settings → Users is a table**, with creating and editing in a dialog. It was
+  a permanent form at the bottom of the page and inline fields on every row,
+  which made the common case — reading who has an account — the hardest thing on
+  the screen.
+- **The Transactions register opens unfiltered**, and its columns are stated
+  rather than left to the browser. A bank description is unbounded and took 728
+  of 1112 pixels, leaving the delegation picker 87.
+- **Transfer mirrors the Budget page**: grouped dropdowns in the same order, each
+  option carrying the balance it holds.
+- **To delegate lines up with Assets and Debts.** A single `pr-3` those cells do
+  not carry had it 12 pixels out.
+- **New outstanding check** is **New check**.
+- Less prose on Utilities and Insights, and **Add from catalog** is a button in
+  the header rather than a dashed tile at the end of the grid.
+
+### Fixed
+
+- `PATCH /api/settings` refused unknown fields rather than stripping them. A
+  request still carrying `requireTotp` answered 200 with the field discarded —
+  which reads to the caller as having turned two-factor off, successfully.
+
 ## [0.19.0] — 2026-08-19
 
 The budget no longer assumes the household is paid every two weeks.

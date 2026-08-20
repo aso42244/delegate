@@ -100,10 +100,10 @@ test('an amount and its sign stay on one line', async ({ signedIn: page, api }) 
   });
   expect(created.ok(), await created.text()).toBeTruthy();
 
-  // Income leaves the uncategorized queue by design, so turn the filter off.
+  // The register opens unfiltered, and income would never have been in the
+  // queue anyway.
   await page.goto('/transactions');
-  await page.getByRole('button', { name: 'Uncategorized' }).click();
-  await expect(page.getByText('waiting to be categorized')).toBeHidden();
+  await expect(page.getByText('ONLINE PAYMENT, THANK YOU')).toBeVisible();
 
   const amount = page.locator('td.money span').first();
   await expect(amount).toContainText('3,527.63');

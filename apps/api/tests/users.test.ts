@@ -3,7 +3,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { buildApp } from '../src/app.js';
 import { loadConfig } from '../src/config.js';
 import { prisma } from '../src/db/client.js';
-import { resetDatabase } from './helpers.js';
+import { markTwoFactorEnrolled, resetDatabase } from './helpers.js';
 import { errorOf, sessionCookie, userOf } from './http.js';
 
 /**
@@ -45,6 +45,7 @@ beforeEach(async () => {
 async function setUpOwner(): Promise<string> {
   const response = await app.inject({ method: 'POST', url: '/api/auth/setup', payload: OWNER });
   expect(response.statusCode).toBe(201);
+  await markTwoFactorEnrolled();
   return sessionCookie(response.headers);
 }
 
@@ -82,6 +83,8 @@ async function makeActiveUser(
     payload: { currentPassword: temporaryPassword, newPassword: permanentPassword },
   });
   expect(changed.statusCode).toBe(204);
+
+  await markTwoFactorEnrolled();
 
   return { id: userOf(created).id, cookie: sessionCookie(changed.headers) };
 }
@@ -467,5 +470,135 @@ describe('password reset by an administrator', () => {
       payload: { username: 'partner', password: 'new-temporary-password' },
     });
     expect(login.statusCode).toBe(200);
+  });
+});
+
+describe('display names', () => {
+  it('is set by an administrator and comes back on the list', async () => {
+    const cookie = await setUpOwner();
+    const created = await app.inject({
+      method: 'POST',
+      url: '/api/users',
+      headers: { cookie },
+      payload: {
+        username: 'partner',
+        displayName: '  Kenzie  ',
+        temporaryPassword: 'temporary-pass-word',
+        role: 'user',
+      },
+    });
+    expect(created.statusCode).toBe(201);
+    // Trimmed, because a name with an accidental space is the same name.
+    expect(userOf(created).displayName).toBe('Kenzie');
+  });
+
+  it('is cleared by an empty one rather than stored as a blank', async () => {
+    const cookie = await setUpOwner();
+    const created = await app.inject({
+      method: 'POST',
+      url: '/api/users',
+      headers: { cookie },
+      payload: {
+        username: 'partner',
+        displayName: 'Kenzie',
+        temporaryPassword: 'temporary-pass-word',
+        role: 'user',
+      },
+    });
+
+    const cleared = await app.inject({
+      method: 'PATCH',
+      url: `/api/users/${userOf(created).id}`,
+      headers: { cookie },
+      payload: { displayName: '   ' },
+    });
+    expect(cleared.statusCode).toBe(200);
+    expect(userOf(cleared).displayName).toBeNull();
+  });
+
+  /**
+   * A display name is not a credential and nothing is looked up by it, so
+   * there is no privilege to protect — which is why this sits outside user
+   * management and an ordinary account can set its own.
+   */
+  it('can be set by an ordinary account for itself', async () => {
+    const owner = await setUpOwner();
+    const { cookie } = await makeActiveUser(owner, 'partner', 'user');
+
+    const response = await app.inject({
+      method: 'PATCH',
+      url: '/api/auth/me',
+      headers: { cookie },
+      payload: { displayName: 'Kenzie' },
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.json<{ user: { displayName: string } }>().user.displayName).toBe('Kenzie');
+  });
+
+  it('refuses one longer than the column allows', async () => {
+    const owner = await setUpOwner();
+    const { cookie } = await makeActiveUser(owner, 'partner', 'user');
+
+    const response = await app.inject({
+      method: 'PATCH',
+      url: '/api/auth/me',
+      headers: { cookie },
+      payload: { displayName: 'x'.repeat(61) },
+    });
+    expect(response.statusCode).toBe(400);
+  });
+});
+
+/**
+ * Resetting somebody's second factor.
+ *
+ * The way back when the phone is gone and the recovery codes went with it. Now
+ * that a second factor is required of every account, this is the only route
+ * that does not involve a database prompt.
+ */
+describe('resetting a second factor', () => {
+  it('clears it, spends the recovery codes, and ends that account’s sessions', async () => {
+    const cookie = await setUpOwner();
+    const { id, cookie: partnerCookie } = await makeActiveUser(cookie, 'partner', 'user');
+
+    await prisma.user.update({
+      where: { id },
+      data: { totpSecretEncrypted: 'test-only', totpConfirmedAt: new Date() },
+    });
+    await prisma.recoveryCode.create({ data: { userId: id, codeHash: 'test-only' } });
+
+    const response = await app.inject({
+      method: 'POST',
+      url: `/api/users/${id}/reset-two-factor`,
+      headers: { cookie },
+    });
+    expect(response.statusCode).toBe(200);
+    expect(userOf(response).hasTotp).toBe(false);
+
+    const after = await prisma.user.findUniqueOrThrow({ where: { id } });
+    expect(after.totpSecretEncrypted).toBeNull();
+    // Codes for an authenticator nobody holds are not a way back in.
+    expect(await prisma.recoveryCode.count({ where: { userId: id } })).toBe(0);
+
+    // Every session that account held was established against the factor that
+    // has just been removed.
+    const blocked = await app.inject({
+      method: 'GET',
+      url: '/api/auth/me',
+      headers: { cookie: partnerCookie },
+    });
+    expect(blocked.statusCode).toBe(401);
+  });
+
+  it('is refused to an ordinary account', async () => {
+    const owner = await setUpOwner();
+    const { id, cookie } = await makeActiveUser(owner, 'partner', 'user');
+
+    const response = await app.inject({
+      method: 'POST',
+      url: `/api/users/${id}/reset-two-factor`,
+      headers: { cookie },
+    });
+    expect(response.statusCode).toBe(403);
   });
 });

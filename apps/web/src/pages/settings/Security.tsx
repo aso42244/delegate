@@ -69,16 +69,6 @@ export function SecuritySection(): ReactNode {
     onError: (error: unknown) => setProblem(messageOf(error)),
   });
 
-  const setRequirement = useMutation({
-    mutationFn: (requireTotp: boolean) => settingsApi.update({ requireTotp }),
-    onSuccess: async () => {
-      setProblem(null);
-      await queryClient.invalidateQueries({ queryKey: ['settings'] });
-      await queryClient.invalidateQueries({ queryKey: ['totp'] });
-    },
-    onError: (error: unknown) => setProblem(messageOf(error)),
-  });
-
   const enrolled = status.data?.enrolled === true;
 
   return (
@@ -226,24 +216,6 @@ export function SecuritySection(): ReactNode {
             </details>
           </div>
         )}
-      </SettingsCard>
-
-      <SettingsCard
-        title="Require it of everyone"
-        description="Refuses the budget to any account without a second factor set up."
-      >
-        <div className="flex items-center gap-3">
-          <Toggle
-            checked={settings.data?.requireTotp === true}
-            onChange={(next) => setRequirement.mutate(next)}
-            label="Require two-factor authentication"
-          />
-          <span className="text-quiet text-muted">
-            {settings.data?.requireTotp
-              ? 'Required. Every active account has one.'
-              : 'Not required. It can only be turned on once every account has enrolled.'}
-          </span>
-        </div>
       </SettingsCard>
     </>
   );

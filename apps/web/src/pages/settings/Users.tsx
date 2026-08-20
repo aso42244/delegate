@@ -1,25 +1,34 @@
-import { canManageUsers, type UserRole } from '@budget/shared';
+import { canManageUsers, canModifyUser, type UserRole } from '@budget/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState, type FormEvent, type ReactNode } from 'react';
-import { api, ApiError } from '../../api/client.js';
+import { api, ApiError, authApi } from '../../api/client.js';
 import { useSession } from '../../auth/SessionProvider.jsx';
-import { Alert, Button, SelectField, TextField } from '../../components/ui.jsx';
+import { Alert, Button, Modal, SelectField, TextField } from '../../components/ui.jsx';
 import { SettingsCard } from './SettingsCard.jsx';
 
 /**
  * Settings → Users.
  *
- * The whole permission model is one capability check plus Super Admin immunity,
- * and both are enforced on the server — the domain layer refuses rather than the
- * route, so it cannot be forgotten. This screen mirrors that rather than
- * reimplementing it: controls that would certainly fail are not offered, and
- * anything else that is refused shows the server's reason.
+ * Two things, and they are not the same thing. **Your account** is yours
+ * whatever role you hold — a display name is not a credential and nothing is
+ * looked up by it. **The household** is user management, and every rule in it
+ * is enforced in the domain layer rather than at the route, so it cannot be
+ * forgotten. This screen mirrors those rules rather than reimplementing them:
+ * a control that would certainly be refused is not offered, and anything else
+ * that is refused shows the server's own reason.
+ *
+ * Creating and editing happen in a dialog. They used to be a permanent form at
+ * the bottom of the page and a set of inline fields on every row, which meant
+ * the common case — reading who has an account — was the hardest thing on the
+ * screen to do.
  */
 
 interface UserDto {
   readonly id: string;
   readonly username: string;
+  readonly displayName: string | null;
   readonly role: UserRole;
+  readonly hasTotp: boolean;
   readonly mustChangePassword: boolean;
   readonly archivedAt: string | null;
 }
@@ -32,221 +41,377 @@ const ROLE_LABELS: Record<UserRole, string> = {
 
 const usersApi = {
   list: () => api.get<{ users: readonly UserDto[] }>('/api/users'),
-  create: (username: string, temporaryPassword: string, role: UserRole) =>
-    api.post<{ user: UserDto }>('/api/users', { username, temporaryPassword, role }),
-  update: (id: string, input: { username?: string; role?: UserRole }) =>
-    api.patch<{ user: UserDto }>(`/api/users/${id}`, input),
+  create: (input: {
+    username: string;
+    displayName: string | null;
+    temporaryPassword: string;
+    role: UserRole;
+  }) => api.post<{ user: UserDto }>('/api/users', input),
+  update: (
+    id: string,
+    input: { username?: string; displayName?: string | null; role?: UserRole },
+  ) => api.patch<{ user: UserDto }>(`/api/users/${id}`, input),
   resetPassword: (id: string, temporaryPassword: string) =>
     api.post<{ user: UserDto }>(`/api/users/${id}/reset-password`, { temporaryPassword }),
+  resetTwoFactor: (id: string) => api.post<{ user: UserDto }>(`/api/users/${id}/reset-two-factor`),
   archive: (id: string) => api.post<{ user: UserDto }>(`/api/users/${id}/archive`),
   restore: (id: string) => api.post<{ user: UserDto }>(`/api/users/${id}/restore`),
 };
+
+function messageOf(error: unknown): string {
+  return error instanceof ApiError ? error.message : 'Something went wrong. Please try again.';
+}
+
+// --- Your own account -------------------------------------------------------
+
+/**
+ * Everyone gets this, at any role.
+ *
+ * The username is an email address and reads as one everywhere it appears — in
+ * the sidebar, against a manual adjustment in an envelope's history. A name is
+ * what makes those lines legible, and it is nobody's business but yours.
+ */
+function YourAccount(): ReactNode {
+  const { user, refresh } = useSession();
+  const [name, setName] = useState<string | null>(null);
+  const [problem, setProblem] = useState<string | null>(null);
+  const [saved, setSaved] = useState(false);
+
+  // Null means "not edited yet", so the server's value shows until it is.
+  const value = name ?? user?.displayName ?? '';
+
+  const save = useMutation({
+    mutationFn: () => authApi.setDisplayName(value.trim() === '' ? null : value),
+    onSuccess: async () => {
+      setProblem(null);
+      setSaved(true);
+      setName(null);
+      await refresh();
+    },
+    onError: (error: unknown) => {
+      setSaved(false);
+      setProblem(messageOf(error));
+    },
+  });
+
+  return (
+    <SettingsCard title="Your account" description="What this budget calls you.">
+      <form
+        onSubmit={(event: FormEvent) => {
+          event.preventDefault();
+          save.mutate();
+        }}
+        className="flex max-w-sm flex-col gap-3"
+      >
+        <TextField
+          label="Display name"
+          value={value}
+          onChange={(event) => setName(event.target.value)}
+          maxLength={60}
+          placeholder={user?.username ?? ''}
+          hint="Shown instead of your username. Leave it empty to use the username."
+        />
+
+        <p className="text-quiet text-muted">
+          Signed in as <span className="text-ink">{user?.username}</span> ·{' '}
+          {user ? ROLE_LABELS[user.role] : ''}
+        </p>
+
+        {problem && <Alert>{problem}</Alert>}
+        {saved && <Alert tone="positive">Saved.</Alert>}
+
+        <div>
+          <Button type="submit" variant="primary" disabled={save.isPending}>
+            {save.isPending ? 'Saving…' : 'Save'}
+          </Button>
+        </div>
+      </form>
+    </SettingsCard>
+  );
+}
+
+// --- The household ----------------------------------------------------------
+
+/** Creating an account, or editing one. The same fields either way. */
+function UserDialog({
+  editing,
+  actorRole,
+  onClose,
+}: {
+  /** The account being edited, or null to create one. */
+  readonly editing: UserDto | null;
+  readonly actorRole: UserRole;
+  readonly onClose: () => void;
+}): ReactNode {
+  const queryClient = useQueryClient();
+  const [username, setUsername] = useState(editing?.username ?? '');
+  const [displayName, setDisplayName] = useState(editing?.displayName ?? '');
+  const [temporaryPassword, setTemporaryPassword] = useState('');
+  const [role, setRole] = useState<UserRole>(editing?.role ?? 'user');
+  const [problem, setProblem] = useState<string | null>(null);
+
+  const save = useMutation({
+    mutationFn: () => {
+      const name = displayName.trim() === '' ? null : displayName.trim();
+      if (editing) {
+        return usersApi.update(editing.id, { username: username.trim(), displayName: name, role });
+      }
+      return usersApi.create({
+        username: username.trim(),
+        displayName: name,
+        temporaryPassword,
+        role,
+      });
+    },
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['users'] });
+      onClose();
+    },
+    onError: (error: unknown) => setProblem(messageOf(error)),
+  });
+
+  const incomplete =
+    username.trim() === '' || (editing === null && temporaryPassword.trim().length < 12);
+
+  return (
+    <Modal
+      label={editing ? `Edit ${editing.username}` : 'Create an account'}
+      title={editing ? 'Edit account' : 'Create an account'}
+      description={
+        editing
+          ? 'Everyone sees the whole budget. Only account management is restricted.'
+          : 'They will have to change the temporary password before they can reach anything, and set up two-factor before that.'
+      }
+      onClose={onClose}
+    >
+      <form
+        onSubmit={(event: FormEvent) => {
+          event.preventDefault();
+          save.mutate();
+        }}
+        className="flex flex-col gap-3"
+      >
+        <TextField
+          label="Username"
+          value={username}
+          onChange={(event) => setUsername(event.target.value)}
+          autoComplete="off"
+          required
+        />
+
+        <TextField
+          label="Display name"
+          value={displayName}
+          onChange={(event) => setDisplayName(event.target.value)}
+          maxLength={60}
+          hint="Optional. They can change this themselves."
+        />
+
+        {editing === null && (
+          <TextField
+            label="Temporary password"
+            value={temporaryPassword}
+            onChange={(event) => setTemporaryPassword(event.target.value)}
+            autoComplete="new-password"
+            hint="At least 12 characters. They must replace it at first sign-in."
+            required
+          />
+        )}
+
+        <SelectField label="Role" value={role} onChange={(next) => setRole(next as UserRole)}>
+          {(['user', 'admin', 'super_admin'] as const)
+            // Offering a role the server would refuse is a dead control.
+            .filter((option) => canModifyUser(actorRole, option))
+            .map((option) => (
+              <option key={option} value={option}>
+                {ROLE_LABELS[option]}
+              </option>
+            ))}
+        </SelectField>
+
+        {problem && <Alert>{problem}</Alert>}
+
+        <div className="flex justify-end gap-2">
+          <Button type="button" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button type="submit" variant="primary" disabled={incomplete || save.isPending}>
+            {save.isPending ? 'Saving…' : editing ? 'Save' : 'Create account'}
+          </Button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
+/** Handing somebody a new temporary password. */
+function ResetPasswordDialog({
+  user,
+  onClose,
+}: {
+  readonly user: UserDto;
+  readonly onClose: () => void;
+}): ReactNode {
+  const queryClient = useQueryClient();
+  const [temporaryPassword, setTemporaryPassword] = useState('');
+  const [problem, setProblem] = useState<string | null>(null);
+
+  const reset = useMutation({
+    mutationFn: () => usersApi.resetPassword(user.id, temporaryPassword),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['users'] });
+      onClose();
+    },
+    onError: (error: unknown) => setProblem(messageOf(error)),
+  });
+
+  return (
+    <Modal
+      label={`Reset the password for ${user.username}`}
+      title="Reset password"
+      description="Every session that account holds ends, and it must set a new password at the next sign-in."
+      onClose={onClose}
+    >
+      <form
+        onSubmit={(event: FormEvent) => {
+          event.preventDefault();
+          reset.mutate();
+        }}
+        className="flex flex-col gap-3"
+      >
+        <TextField
+          label={`Temporary password for ${user.username}`}
+          value={temporaryPassword}
+          onChange={(event) => setTemporaryPassword(event.target.value)}
+          autoComplete="new-password"
+          hint="At least 12 characters."
+          required
+        />
+
+        {problem && <Alert>{problem}</Alert>}
+
+        <div className="flex justify-end gap-2">
+          <Button type="button" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button
+            type="submit"
+            variant="primary"
+            disabled={temporaryPassword.trim().length < 12 || reset.isPending}
+          >
+            {reset.isPending ? 'Working…' : 'Reset password'}
+          </Button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
 
 function UserRow({
   user,
   actorRole,
   isSelf,
+  onEdit,
+  onResetPassword,
 }: {
   readonly user: UserDto;
   readonly actorRole: UserRole;
   readonly isSelf: boolean;
+  readonly onEdit: () => void;
+  readonly onResetPassword: () => void;
 }): ReactNode {
   const queryClient = useQueryClient();
-  const [resetting, setResetting] = useState(false);
-  const [temporaryPassword, setTemporaryPassword] = useState('');
   const [problem, setProblem] = useState<string | null>(null);
-  const [done, setDone] = useState<string | null>(null);
 
-  const refresh = async (): Promise<void> => {
-    await queryClient.invalidateQueries({ queryKey: ['users'] });
-  };
-  const onError = (error: unknown): void => {
-    setDone(null);
-    setProblem(error instanceof ApiError ? error.message : 'Could not change this account.');
-  };
+  const act = (run: () => Promise<unknown>): void => runRowAction(run, queryClient, setProblem);
 
-  const update = useMutation({
-    mutationFn: (input: { username?: string; role?: UserRole }) => usersApi.update(user.id, input),
-    onSuccess: async () => {
-      setProblem(null);
-      await refresh();
-    },
-    onError,
-  });
-
-  const reset = useMutation({
-    mutationFn: () => usersApi.resetPassword(user.id, temporaryPassword),
-    onSuccess: async () => {
-      setProblem(null);
-      setResetting(false);
-      setTemporaryPassword('');
-      // Their sessions are revoked immediately, so say so rather than leaving
-      // them to discover it.
-      setDone(`${user.username} must set a new password at their next sign-in.`);
-      await refresh();
-    },
-    onError,
-  });
-
-  const archive = useMutation({
-    mutationFn: () => (user.archivedAt ? usersApi.restore(user.id) : usersApi.archive(user.id)),
-    onSuccess: async () => {
-      setProblem(null);
-      await refresh();
-    },
-    onError,
-  });
-
-  // Only a Super Admin may modify a Super Admin. Offering the control to anyone
-  // else would only produce a refusal.
-  const mayModify = user.role !== 'super_admin' || actorRole === 'super_admin';
+  const archived = user.archivedAt !== null;
+  // Mirrors the domain rule rather than restating it: an Admin cannot touch a
+  // Super Admin, and nobody archives themselves.
+  const mayModify = canModifyUser(actorRole, user.role);
 
   return (
-    <div className="border-b border-line py-3 last:border-0">
-      <div className="flex flex-wrap items-center gap-3">
-        <div className="min-w-48 flex-1">
-          <span className="text-ink">{user.username}</span>
-          {isSelf && <span className="ml-2 text-quiet text-muted">(you)</span>}
-          {user.archivedAt && (
-            <span className="ml-2 text-label font-semibold text-warning">archived</span>
-          )}
-          {user.mustChangePassword && (
-            <span className="ml-2 text-label font-semibold text-muted">must change password</span>
-          )}
-        </div>
-
-        <div className="w-40">
-          <SelectField
-            label={`Role of ${user.username}`}
-            value={user.role}
-            onChange={(value) => update.mutate({ role: value as UserRole })}
-          >
-            {Object.entries(ROLE_LABELS).map(([value, label]) => (
-              <option key={value} value={value} disabled={!mayModify}>
-                {label}
-              </option>
-            ))}
-          </SelectField>
-        </div>
-
-        {mayModify && (
-          <Button
-            onClick={() => setResetting(!resetting)}
-            aria-label={`Reset ${user.username}'s password`}
-          >
-            Reset password
-          </Button>
+    <tr className="border-b border-line last:border-0">
+      <td className="row-cell py-2 pl-3">
+        <span className="block text-ink">{user.displayName ?? user.username}</span>
+        {user.displayName !== null && (
+          <span className="block text-quiet text-muted">{user.username}</span>
         )}
+      </td>
 
-        {mayModify && !isSelf && (
-          <Button
-            variant={user.archivedAt ? 'default' : 'danger'}
-            onClick={() => archive.mutate()}
-            disabled={archive.isPending}
-            aria-label={`${user.archivedAt ? 'Restore' : 'Archive'} ${user.username}`}
-          >
-            {user.archivedAt ? 'Restore' : 'Archive'}
-          </Button>
+      <td className="row-cell text-quiet text-muted">{ROLE_LABELS[user.role]}</td>
+
+      <td className="row-cell text-quiet">
+        {user.hasTotp ? (
+          <span className="text-muted">Set up</span>
+        ) : (
+          <span className="text-warning">Not set up yet</span>
         )}
-      </div>
+      </td>
 
-      {resetting && (
-        <div className="mt-3 flex items-end gap-2 rounded-lg bg-surface p-3">
-          <div className="flex-1">
-            <TextField
-              label={`Temporary password for ${user.username}`}
-              value={temporaryPassword}
-              onChange={(event) => setTemporaryPassword(event.target.value)}
-              autoComplete="off"
-              hint="They must change it the first time they sign in, and their existing sessions end straight away."
-            />
-          </div>
-          <Button
-            variant="primary"
-            onClick={() => reset.mutate()}
-            disabled={temporaryPassword.trim() === '' || reset.isPending}
-          >
-            {reset.isPending ? 'Setting…' : 'Set'}
-          </Button>
-        </div>
-      )}
+      <td className="row-cell text-quiet text-muted">
+        {archived ? 'Archived' : user.mustChangePassword ? 'Temporary password' : 'Active'}
+      </td>
 
-      {problem && (
-        <div className="mt-2">
-          <Alert>{problem}</Alert>
+      <td className="row-cell pr-3">
+        <div className="flex flex-wrap justify-end gap-1">
+          {mayModify && !archived && (
+            <>
+              <Button onClick={onEdit}>Edit</Button>
+              <Button onClick={onResetPassword}>Reset password</Button>
+              {user.hasTotp && (
+                <Button onClick={() => act(() => usersApi.resetTwoFactor(user.id))}>
+                  Reset two-factor
+                </Button>
+              )}
+            </>
+          )}
+          {mayModify && !isSelf && (
+            <Button
+              variant={archived ? 'default' : 'danger'}
+              onClick={() =>
+                act(() => (archived ? usersApi.restore(user.id) : usersApi.archive(user.id)))
+              }
+            >
+              {archived ? 'Restore' : 'Archive'}
+            </Button>
+          )}
         </div>
-      )}
-      {done && (
-        <div className="mt-2">
-          <Alert tone="positive">{done}</Alert>
-        </div>
-      )}
-    </div>
+        {problem && (
+          <p className="mt-1 text-right text-quiet text-danger" role="alert">
+            {problem}
+          </p>
+        )}
+      </td>
+    </tr>
   );
 }
 
-function AddUserForm(): ReactNode {
-  const queryClient = useQueryClient();
-  const [username, setUsername] = useState('');
-  const [temporaryPassword, setTemporaryPassword] = useState('');
-  const [role, setRole] = useState<UserRole>('user');
-  const [problem, setProblem] = useState<string | null>(null);
-
-  const create = useMutation({
-    mutationFn: () => usersApi.create(username.trim(), temporaryPassword, role),
-    onSuccess: async () => {
-      setUsername('');
-      setTemporaryPassword('');
-      setProblem(null);
-      await queryClient.invalidateQueries({ queryKey: ['users'] });
-    },
-    onError: (error: unknown) =>
-      setProblem(error instanceof ApiError ? error.message : 'Could not create the account.'),
-  });
-
-  function onSubmit(event: FormEvent): void {
-    event.preventDefault();
-    create.mutate();
-  }
-
-  return (
-    <form onSubmit={onSubmit} className="mt-4 flex flex-col gap-3 rounded-lg bg-surface p-3">
-      <TextField
-        label="Username"
-        value={username}
-        onChange={(event) => setUsername(event.target.value)}
-        autoComplete="off"
-      />
-      <TextField
-        label="Temporary password"
-        value={temporaryPassword}
-        onChange={(event) => setTemporaryPassword(event.target.value)}
-        autoComplete="off"
-        hint="At least 12 characters. They will have to change it before they can reach anything."
-      />
-      <SelectField label="Role" value={role} onChange={(value) => setRole(value as UserRole)}>
-        <option value="user">User</option>
-        <option value="admin">Admin</option>
-      </SelectField>
-
-      {problem && <Alert>{problem}</Alert>}
-
-      <div>
-        <Button
-          type="submit"
-          variant="primary"
-          disabled={username.trim() === '' || temporaryPassword.trim() === '' || create.isPending}
-        >
-          {create.isPending ? 'Creating…' : 'Create account'}
-        </Button>
-      </div>
-    </form>
-  );
+/**
+ * Runs a one-off row action and reports the server's refusal where the button is.
+ *
+ * A plain function rather than a mutation hook: hooks have to be declared
+ * unconditionally, and these are chosen at click time. Deliberately not named
+ * `use…` for the same reason.
+ */
+function runRowAction(
+  run: () => Promise<unknown>,
+  queryClient: ReturnType<typeof useQueryClient>,
+  setProblem: (message: string | null) => void,
+): void {
+  setProblem(null);
+  void run()
+    .then(() => queryClient.invalidateQueries({ queryKey: ['users'] }))
+    .catch((error: unknown) => setProblem(messageOf(error)));
 }
 
 export function UsersSection(): ReactNode {
   const { user: actor } = useSession();
   const mayManage = actor ? canManageUsers(actor.role) : false;
+
+  const [creating, setCreating] = useState(false);
+  const [editing, setEditing] = useState<UserDto | null>(null);
+  const [resetting, setResetting] = useState<UserDto | null>(null);
 
   const users = useQuery({
     queryKey: ['users'],
@@ -256,37 +421,73 @@ export function UsersSection(): ReactNode {
     enabled: mayManage,
   });
 
-  if (!mayManage) {
-    return (
-      <SettingsCard title="Users" description="Who can sign in to this budget.">
-        <p className="text-quiet text-muted">
-          Only an Admin can manage accounts. Everything else in this application is shared.
-        </p>
-      </SettingsCard>
-    );
-  }
-
   return (
-    <SettingsCard
-      title="Users"
-      description="Who can sign in. Everyone sees the whole budget; only account management is restricted."
-    >
-      {users.isLoading ? (
-        <p className="text-quiet text-muted">Loading accounts…</p>
+    <>
+      <YourAccount />
+
+      {!mayManage ? (
+        <SettingsCard title="The household" description="Who else can sign in to this budget.">
+          <p className="text-quiet text-muted">
+            Only an administrator can manage accounts. Everything else in this application is
+            shared.
+          </p>
+        </SettingsCard>
       ) : (
-        <div>
-          {users.data?.users.map((user) => (
-            <UserRow
-              key={user.id}
-              user={user}
-              actorRole={actor?.role ?? 'user'}
-              isSelf={user.id === actor?.id}
-            />
-          ))}
-        </div>
+        <SettingsCard
+          title="The household"
+          description="Everyone sees the whole budget. Only account management is restricted."
+        >
+          <div className="mb-3 flex justify-end">
+            <Button variant="primary" onClick={() => setCreating(true)}>
+              Create account
+            </Button>
+          </div>
+
+          {users.isLoading ? (
+            <p className="text-quiet text-muted">Loading accounts…</p>
+          ) : (
+            <table className="w-full border-t border-line">
+              <thead>
+                <tr className="text-label uppercase tracking-[0.05em] text-muted">
+                  <th className="row-cell pl-3 text-left font-normal">Name</th>
+                  <th className="row-cell text-left font-normal">Role</th>
+                  <th className="row-cell text-left font-normal">Two-factor</th>
+                  <th className="row-cell text-left font-normal">Status</th>
+                  <th className="row-cell pr-3" />
+                </tr>
+              </thead>
+              <tbody>
+                {users.data?.users.map((user) => (
+                  <UserRow
+                    key={user.id}
+                    user={user}
+                    actorRole={actor?.role ?? 'user'}
+                    isSelf={user.id === actor?.id}
+                    onEdit={() => setEditing(user)}
+                    onResetPassword={() => setResetting(user)}
+                  />
+                ))}
+              </tbody>
+            </table>
+          )}
+        </SettingsCard>
       )}
 
-      <AddUserForm />
-    </SettingsCard>
+      {creating && (
+        <UserDialog
+          editing={null}
+          actorRole={actor?.role ?? 'user'}
+          onClose={() => setCreating(false)}
+        />
+      )}
+      {editing && (
+        <UserDialog
+          editing={editing}
+          actorRole={actor?.role ?? 'user'}
+          onClose={() => setEditing(null)}
+        />
+      )}
+      {resetting && <ResetPasswordDialog user={resetting} onClose={() => setResetting(null)} />}
+    </>
   );
 }

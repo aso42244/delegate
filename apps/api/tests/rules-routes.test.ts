@@ -10,6 +10,7 @@ import {
   makeAccount,
   makeDelegation,
   makeTransaction,
+  markTwoFactorEnrolled,
   resetDatabase,
 } from './helpers.js';
 import { sessionCookie } from './http.js';
@@ -53,6 +54,7 @@ beforeEach(async () => {
   await resetDatabase();
   const response = await app.inject({ method: 'POST', url: '/api/auth/setup', payload: OWNER });
   cookie = sessionCookie(response.headers);
+  await markTwoFactorEnrolled();
 });
 
 /** One rule, one matching row already categorized by hand, one uncategorized. */

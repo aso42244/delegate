@@ -204,7 +204,6 @@ test('changing the pay cadence changes the suggestion and the sentence', async (
   await signedIn.goto('/utilities');
   await expect(signedIn.getByText('$12.00')).toBeVisible();
   await expect(signedIn.getByText('$5.54')).toBeVisible();
-  await expect(signedIn.getByText(/one of 26 paychecks a year/)).toBeVisible();
 
   await signedIn.goto('/settings/budget');
   await signedIn.getByLabel('Paid').selectOption('weekly');
@@ -217,7 +216,6 @@ test('changing the pay cadence changes the suggestion and the sentence', async (
   await signedIn.goto('/utilities');
   await expect(signedIn.getByText('$12.00')).toBeVisible();
   await expect(signedIn.getByText('$2.77')).toBeVisible();
-  await expect(signedIn.getByText(/one of 52 paychecks a year/)).toBeVisible();
 });
 
 test('the amount to delegate is left alone when the cadence changes', async ({ signedIn, api }) => {

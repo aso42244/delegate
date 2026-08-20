@@ -1,4 +1,5 @@
 import { test as base, type APIRequestContext, type Page } from '@playwright/test';
+import { generate as generateOtp } from 'otplib';
 import { PrismaClient } from '@prisma/client';
 
 /**
@@ -68,11 +69,6 @@ async function resetDatabase(): Promise<void> {
       // cadence from one test into the next and made the suggestion in the
       // following test wrong for reasons nothing in it explained.
       payCadence: 'biweekly',
-      // Off here even though the product default is on: almost every test signs
-      // in without a second factor, and the requirement would 403 them out of
-      // the subject under test. The tests that are *about* the requirement turn
-      // it on themselves.
-      requireTotp: false,
       remoteOverTorEnabled: false,
       remoteOverTorEnabledAt: null,
       simplefinAccessUrlEncrypted: null,
@@ -89,6 +85,23 @@ export interface BudgetFixtures {
   readonly api: APIRequestContext;
 }
 
+/**
+ * The owner's TOTP secret for the current test.
+ *
+ * A second factor is required of every account including the first one, so
+ * every test signs in through enrolment. Specs that sign in a *second* time
+ * need to answer the challenge, and this is what they generate a code from.
+ */
+export let ownerTotpSecret = '';
+
+/** Answers the second-factor challenge on the sign-in screen. */
+export async function completeSecondFactor(page: Page): Promise<void> {
+  await page
+    .getByLabel('Code from your authenticator')
+    .fill(await generateOtp({ secret: ownerTotpSecret }));
+  await page.getByRole('button', { name: 'Verify' }).click();
+}
+
 export const test = base.extend<BudgetFixtures>({
   signedIn: async ({ page }, use) => {
     await resetDatabase();
@@ -101,8 +114,37 @@ export const test = base.extend<BudgetFixtures>({
     await page.getByLabel('Password', { exact: true }).fill(OWNER.password);
     await page.getByLabel('Confirm password').fill(OWNER.password);
     await page.getByRole('button', { name: 'Create account' }).click();
-    await page.waitForURL('/');
 
+    /*
+     * Straight to enrolment, because there is nowhere else to go.
+     *
+     * Done through the API rather than the screen: this runs before all 20
+     * specs, only one of which is about enrolment, and that one drives the
+     * real interface. The secret is kept so a spec can sign in again.
+     */
+    await page.waitForURL('/set-up-two-factor');
+
+    ownerTotpSecret = await page.evaluate(async () => {
+      const response = await fetch('/api/auth/totp/begin', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ currentPassword: 'end-to-end-passphrase' }),
+      });
+      return ((await response.json()) as { secret: string }).secret;
+    });
+
+    const code = await generateOtp({ secret: ownerTotpSecret });
+    await page.evaluate(async (confirmation) => {
+      await fetch('/api/auth/totp/confirm', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ code: confirmation }),
+      });
+    }, code);
+
+    await page.goto('/');
     await use(page);
   },
 

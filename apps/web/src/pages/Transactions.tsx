@@ -51,7 +51,15 @@ function cssEscape(value: string): string {
 
 export function Transactions(): ReactNode {
   const queryClient = useQueryClient();
-  const [filters, setFilters] = useState<TransactionFilters>({ uncategorized: true });
+  /*
+   * Nothing filtered on arrival.
+   *
+   * This used to open on the uncategorized queue, which is the right default
+   * for a session spent clearing a backlog and the wrong one for every other
+   * visit — a register that hides most of the register is a register somebody
+   * has to un-configure before they can look anything up.
+   */
+  const [filters, setFilters] = useState<TransactionFilters>({});
   const [search, setSearch] = useState('');
   const [offset, setOffset] = useState(0);
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -241,15 +249,39 @@ export function Transactions(): ReactNode {
       {list.isLoading ? (
         <p className="text-quiet text-muted">Loading transactions…</p>
       ) : (
-        <table className="w-full border-t-2 border-ink">
+        <table className="w-full border-t-2 border-ink md:table-fixed">
           <thead>
             <tr className="text-label uppercase tracking-[0.05em] text-muted">
-              <th className="w-8 row-cell pl-3" />
-              <th className="row-cell text-left font-normal whitespace-nowrap">Date</th>
-              <th className="row-cell w-full text-left font-normal">Description</th>
-              <th className="row-cell text-left font-normal">Account</th>
+              {/*
+                From `md` up only. These add to more than a phone screen is
+                wide, and a fixed layout that is over-subscribed gives the
+                unsized column nothing — the description collapsed to zero and
+                vanished. Below `md` the automatic algorithm is left alone,
+                which is what a narrow screen wants anyway.
+
+                `table-fixed`, and stated widths, because the
+                automatic algorithm sizes every column to its content — and a
+                bank description has no upper bound. Measured, it took 728 of
+                the 1112 pixels available and left the delegation picker 87,
+                which is narrower than the names it has to show.
+
+                So the account and the delegation get what they actually need,
+                and the description takes whatever is left over. That is the
+                right way round: it is the only one of the three whose content
+                is unbounded, and it truncates gracefully with the full text on
+                hover.
+              */}
+              <th className="w-8 row-cell pr-2 pl-3" />
+              <th className="row-cell pr-4 text-left font-normal whitespace-nowrap md:w-24">
+                Date
+              </th>
+              {/* No width: under a fixed layout the unsized column takes
+                  whatever the others leave, which is the right job for the one
+                  whose content has no upper bound. */}
+              <th className="row-cell pr-3 text-left font-normal">Description</th>
+              <th className="row-cell pr-3 text-left font-normal md:w-36">Account</th>
               <th className="w-32 row-cell pr-3 text-right font-normal">Amount</th>
-              <th className="row-cell pr-3 text-left font-normal">Delegation</th>
+              <th className="row-cell pr-3 text-left font-normal md:w-64">Delegation</th>
               <th className="w-10 row-cell pr-3" />
             </tr>
           </thead>
@@ -267,7 +299,7 @@ export function Transactions(): ReactNode {
                   className="group border-b border-line focus:bg-accent-soft"
                   {...keyboard.rowProps(index)}
                 >
-                  <td className="row-cell pl-3">
+                  <td className="row-cell pr-2 pl-3 align-middle">
                     <input
                       type="checkbox"
                       checked={selected.has(transaction.id)}
@@ -276,7 +308,9 @@ export function Transactions(): ReactNode {
                     />
                   </td>
 
-                  <td className="row-cell pr-3 text-quiet whitespace-nowrap text-muted">
+                  {/* `pr-4` and the middle alignment: the date was running
+                      into the checkbox and sitting a shade above it. */}
+                  <td className="row-cell pr-4 align-middle text-quiet whitespace-nowrap text-muted">
                     {new Date(transaction.postedAt).toLocaleDateString()}
                   </td>
 
@@ -287,7 +321,7 @@ export function Transactions(): ReactNode {
                     still. Truncated with the full text on hover and in the
                     title, so nothing is actually lost.
                   */}
-                  <td className="row-cell max-w-0 pr-3">
+                  <td className="row-cell pr-3">
                     <div className="flex items-baseline gap-2 overflow-hidden">
                       {/* Only the description gives way. The badges beside it
                           are short and fixed, and shrinking those to fit a long
@@ -326,8 +360,13 @@ export function Transactions(): ReactNode {
                     </div>
                   </td>
 
-                  <td className="row-cell pr-3 text-quiet whitespace-nowrap text-muted">
-                    {transaction.account.name}
+                  {/* Capped, so it truncates rather than pushing the row
+                      wider. The full name is in the title, as with the
+                      description. */}
+                  <td className="row-cell pr-3 text-quiet text-muted">
+                    <span className="block truncate" title={transaction.account.name}>
+                      {transaction.account.name}
+                    </span>
                   </td>
 
                   {/* `whitespace-nowrap`: a squeezed column was breaking
@@ -339,7 +378,7 @@ export function Transactions(): ReactNode {
                     </span>
                   </td>
 
-                  <td className="w-72 row-cell pr-3">
+                  <td className="row-cell pr-3">
                     {transaction.kind === 'normal' ? (
                       <DelegationPicker
                         options={delegations}

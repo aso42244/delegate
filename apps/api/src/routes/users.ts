@@ -8,8 +8,10 @@ import {
   createUser,
   listUsers,
   resetPassword,
+  resetTwoFactor,
   restoreUser,
   updateUser,
+  MAX_DISPLAY_NAME_LENGTH,
 } from '../domain/users.js';
 import { USER_MANAGEMENT } from '../plugins/auth.js';
 
@@ -21,8 +23,11 @@ import { USER_MANAGEMENT } from '../plugins/auth.js';
 
 const idParamsSchema = z.object({ id: z.string().uuid() });
 
+const displayNameSchema = z.string().max(MAX_DISPLAY_NAME_LENGTH).nullable();
+
 const createUserSchema = z.object({
   username: z.string().min(1).max(254),
+  displayName: displayNameSchema.optional(),
   temporaryPassword: z.string().min(1).max(MAX_PASSWORD_LENGTH),
   role: z.enum(USER_ROLES).default('user'),
 });
@@ -30,11 +35,14 @@ const createUserSchema = z.object({
 const updateUserSchema = z
   .object({
     username: z.string().min(1).max(254).optional(),
+    displayName: displayNameSchema.optional(),
     role: z.enum(USER_ROLES).optional(),
   })
-  .refine((value) => value.username !== undefined || value.role !== undefined, {
-    message: 'Provide a username or a role to change.',
-  });
+  .refine(
+    (value) =>
+      value.username !== undefined || value.role !== undefined || value.displayName !== undefined,
+    { message: 'Provide something to change.' },
+  );
 
 const resetPasswordSchema = z.object({
   temporaryPassword: z.string().min(1).max(MAX_PASSWORD_LENGTH),
@@ -69,6 +77,24 @@ export const userRoutes: FastifyPluginCallback = (fastify, _options, done) => {
 
     const user = await updateUser(prisma, actor.role, id, input);
     request.log.info({ actorId: actor.id, targetUserId: id }, 'user updated');
+    return { user };
+  });
+
+  /**
+   * Clears somebody's second factor so they can enrol again.
+   *
+   * The way back when the phone is gone and the recovery codes went with it.
+   * Sign-in demands the second factor whenever one is confirmed, and nothing
+   * anywhere changes that — so before this existed, the only route was a
+   * database prompt. Now that a second factor is required of every account,
+   * the household needs a way to undo one that has become unusable.
+   */
+  fastify.post('/api/users/:id/reset-two-factor', async (request) => {
+    const { id } = idParamsSchema.parse(request.params);
+    const actor = request.currentUser!;
+
+    const user = await resetTwoFactor(prisma, actor.role, id);
+    request.log.warn({ actorId: actor.id, targetUserId: id }, 'second factor reset');
     return { user };
   });
 

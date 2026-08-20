@@ -171,8 +171,11 @@ without leaving the menu.
   a 12-bar mini chart of the trailing twelve months (current month full opacity,
   others ~28%), and a footer with the 12-month average in bold and the suggested
   per-cycle amount.
-- **Insights** — card grid, two columns on desktop. Cards have a title, an `×`
-  remove affordance, and a dashed "+ Add from catalog" tile. Charts use the
+- **Insights** — card grid, two columns on desktop. Cards have a title and an
+  `×` remove affordance. **Add from catalog** is a button in the page header
+  beside the window controls; it was a dashed tile at the end of the grid, which
+  put an action on the page wherever the last card happened to leave it — below
+  the fold once enough were on. Charts use the
   accent for the primary series; the ordered multi-series palette is `#5E9FE8`,
   `#EAC26B`, `#72BC8F`, `#BF8EDA`, `#DE9255`, `#DF84A8`, `#4FB9C9`, `#E97366`.
   Period chips as small segmented controls, active chip filled with the accent.
@@ -444,6 +447,21 @@ not the property's value would be the same confusion in a new place. An
 underwater property moves to the debts side, where it belongs. A mortgage that is
 not itself in net worth is never netted, since subtracting it here would subtract
 it twice.
+
+## Settings → Users
+
+Two cards. **Your account** is the display name, and everyone gets it whatever
+role they hold — a name is not a credential and nothing is looked up by it.
+**The household** is the table of accounts, administrator-only, with creating
+and editing in a dialog.
+
+It was a permanent creation form at the foot of the page and a set of inline
+fields on every row, which made the common case — reading who has an account —
+the hardest thing on the screen to do.
+
+**Two-factor has no setting.** It is required of every account including the
+first, so the only control is an administrator's **Reset two-factor**, for a
+phone that is gone.
 
 ## Utilities
 

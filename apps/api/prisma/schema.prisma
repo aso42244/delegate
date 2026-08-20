@@ -152,6 +152,13 @@ model User {
   passwordHash String   @map("password_hash")
   role         UserRole @default(user)
 
+  /// What to call this person on screen, where the username is an email address
+  /// and reads as one. Null means fall back to the username, which is what
+  /// every account did before this column existed.
+  ///
+  /// Not unique and not a credential: nothing is ever looked up by it.
+  displayName String? @map("display_name")
+
   // Accounts created by an Admin start with a temporary password that must be
   // replaced at first login.
   mustChangePassword Boolean   @default(false) @map("must_change_password")
@@ -908,15 +915,6 @@ model BudgetSettings {
   // Recorded when the owner commits the go-live Reconcile screen, so history
   // before this date can be understood as backfill.
   goLiveAt DateTime? @map("go_live_at")
-
-  /// Whether every account must carry a second factor.
-  ///
-  /// Default on. It was optional so that shipping the mechanism could not lock a
-  /// household out between the code landing and them enrolling; that reason
-  /// expired once the interface gained a way back for an un-enrolled account
-  /// (`/set-up-two-factor`). It stays a setting because an operator may have a
-  /// reason to turn it off, not because it should start off.
-  requireTotp Boolean @default(true) @map("require_totp")
 
   // The SimpleFIN access URL, encrypted at rest (AES-256-GCM). It is a bearer
   // credential for the household's bank data and the database is dumped nightly,

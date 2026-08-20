@@ -12,7 +12,7 @@ import {
   satsOnDate,
 } from '../src/domain/bitcoin-holdings.js';
 import { netWorthSeries } from '../src/domain/history.js';
-import { makeHolding, resetDatabase } from './helpers.js';
+import { makeHolding, markTwoFactorEnrolled, resetDatabase } from './helpers.js';
 import { sessionCookie } from './http.js';
 
 /**
@@ -52,6 +52,7 @@ beforeEach(async () => {
   await resetDatabase();
   const response = await app.inject({ method: 'POST', url: '/api/auth/setup', payload: OWNER });
   cookie = sessionCookie(response.headers);
+  await markTwoFactorEnrolled();
 });
 
 describe('what was held on a date', () => {

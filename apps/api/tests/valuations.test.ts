@@ -4,7 +4,7 @@ import { buildApp } from '../src/app.js';
 import { loadConfig } from '../src/config.js';
 import { prisma } from '../src/db/client.js';
 import { equityFor, recordValuation, valueOnDate } from '../src/domain/valuations.js';
-import { makeAccount, resetDatabase } from './helpers.js';
+import { makeAccount, markTwoFactorEnrolled, resetDatabase } from './helpers.js';
 import { errorOf, sessionCookie } from './http.js';
 
 /**
@@ -49,6 +49,7 @@ beforeEach(async () => {
   await resetDatabase();
   const response = await app.inject({ method: 'POST', url: '/api/auth/setup', payload: OWNER });
   cookie = sessionCookie(response.headers);
+  await markTwoFactorEnrolled();
 });
 
 async function makeProperty(): Promise<{ id: string }> {

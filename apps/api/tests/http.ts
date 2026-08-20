@@ -12,7 +12,10 @@ import type { LightMyRequestResponse } from 'fastify';
 export interface UserPayload {
   readonly id: string;
   readonly username: string;
+  readonly displayName: string | null;
   readonly role: UserRole;
+  /** Whether enrolment is finished. Required of everyone, so never optional. */
+  readonly hasTotp: boolean;
   readonly mustChangePassword: boolean;
   readonly archivedAt: string | null;
 }
