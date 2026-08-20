@@ -14,6 +14,8 @@ import { computeBudgetIdentity } from './identity.js';
  */
 
 export interface BudgetRow {
+  /** Where this line sits among its neighbours. Accounts have none. */
+  readonly position: number;
   readonly id: string;
   readonly name: string;
   readonly balanceCents: Cents;
@@ -70,6 +72,18 @@ export interface BudgetView {
   readonly cycleStartedAt: Date | null;
 }
 
+/**
+ * Delegations sit where they were put; ties break on name.
+ *
+ * Accounts are not orderable and all carry position 0, so this falls through to
+ * the alphabetical comparison for them and nothing about those sections
+ * changes.
+ */
+const byPosition = (
+  a: { position: number; name: string },
+  b: { position: number; name: string },
+): number => (a.position === b.position ? byName(a, b) : a.position - b.position);
+
 const byName = (a: { name: string }, b: { name: string }): number =>
   a.name.localeCompare(b.name, 'en', { sensitivity: 'base' });
 
@@ -103,7 +117,7 @@ function groupRows(
 
   const built = sectionGroupings
     .map((grouping): BudgetGrouping => {
-      const children = rows.filter((row) => row.groupingId === grouping.id).sort(byName);
+      const children = rows.filter((row) => row.groupingId === grouping.id).sort(byPosition);
       return {
         id: grouping.id,
         name: grouping.name,
@@ -124,7 +138,7 @@ function groupRows(
       return byName(a, b);
     });
 
-  const ungrouped = rows.filter((row) => row.groupingId === null).sort(byName);
+  const ungrouped = rows.filter((row) => row.groupingId === null).sort(byPosition);
 
   return {
     section,
@@ -163,6 +177,7 @@ export async function buildBudgetView(db: Db): Promise<BudgetView> {
         balanceCents: true,
         amountToDelegateCents: true,
         groupingId: true,
+        position: true,
         isUtility: true,
         notes: true,
         kind: true,
@@ -199,6 +214,8 @@ export async function buildBudgetView(db: Db): Promise<BudgetView> {
     // Assets and debts have no amount to delegate; the column is empty for them.
     amountToDelegateCents: null,
     groupingId: account.groupingId,
+    // Accounts are not orderable; the comparison falls through to the name.
+    position: 0,
     isUtility: false,
     notes: null,
     source: account.source,
@@ -220,6 +237,7 @@ export async function buildBudgetView(db: Db): Promise<BudgetView> {
     balanceCents: delegation.balanceCents,
     amountToDelegateCents: delegation.amountToDelegateCents,
     groupingId: delegation.groupingId,
+    position: delegation.position,
     isUtility: delegation.isUtility,
     notes: delegation.notes,
     source: null,

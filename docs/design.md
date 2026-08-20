@@ -448,6 +448,25 @@ underwater property moves to the debts side, where it belongs. A mortgage that i
 not itself in net worth is never netted, since subtracting it here would subtract
 it twice.
 
+## Ordering delegations
+
+Lines sit where they are put. The order is a column on the delegation, so it is
+the same for everyone who signs in — a property of the budget, not of a browser.
+
+Three routes to it, and the last is the one that matters:
+
+- Drop a row **onto another row**: it takes that row's place, in that row's
+  grouping.
+- Drop a row **onto a grouping**: it goes to the end of it.
+- **Move up** / **Move down** in the row menu, beside Move to grouping.
+
+Dragging is the fast route and it is not a keyboard one, so the row menu is not
+a lesser alternative — it is the route that always works, including under a
+thumb, where a drag gesture would fight the page's own swipe.
+
+Ties break on name, so a new line lands predictably rather than wherever the
+database felt like putting it.
+
 ## Settings → Users
 
 Two cards. **Your account** is the display name, and everyone gets it whatever

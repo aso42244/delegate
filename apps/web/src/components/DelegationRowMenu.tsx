@@ -245,11 +245,20 @@ export function DelegationRowMenu({
   row,
   groupings,
   onTransferFrom,
+  onNudge,
 }: {
   readonly row: BudgetRowDto;
   readonly groupings: readonly GroupingOption[];
   /** Opens the page's Transfer dialog with this line as the source. */
   readonly onTransferFrom: (delegationId: string) => void;
+  /**
+   * Moves the line one place within its grouping.
+   *
+   * The keyboard route to the ordering that dragging a row also gives. Dragging
+   * is the fast way and it is not an accessible one, so this is not a lesser
+   * alternative — it is the one that always works, including under a thumb.
+   */
+  readonly onNudge: (row: BudgetRowDto, direction: -1 | 1) => void;
 }): ReactNode {
   const queryClient = useQueryClient();
   const [dialog, setDialog] = useState<Dialog>('none');
@@ -405,6 +414,30 @@ export function DelegationRowMenu({
               }}
             >
               History for this line
+            </button>
+
+            <button
+              type="button"
+              role="menuitem"
+              className={ITEM_CLASS}
+              onClick={() => {
+                onNudge(row, -1);
+                controls.close();
+              }}
+            >
+              Move up
+            </button>
+
+            <button
+              type="button"
+              role="menuitem"
+              className={ITEM_CLASS}
+              onClick={() => {
+                onNudge(row, 1);
+                controls.close();
+              }}
+            >
+              Move down
             </button>
 
             <button

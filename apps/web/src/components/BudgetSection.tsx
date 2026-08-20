@@ -36,11 +36,19 @@ export interface BudgetSectionProps {
    */
   readonly rowMenu?: (row: BudgetRowDto) => ReactNode;
   /**
-   * Dragging a row into a grouping. An enhancement, never the only route: the
-   * row menu's "Move to grouping" stays the keyboard path, because drag and drop
-   * is not one.
+   * Dragging a row into a grouping, dropped on the grouping itself: it goes to
+   * the end. An enhancement, never the only route — the row menu's "Move to
+   * grouping" and "Move up"/"Move down" stay the keyboard path, because drag and
+   * drop is not one.
    */
   readonly onMoveToGrouping?: (rowId: string, groupingId: string | null) => void;
+  /**
+   * Dropping a row onto another row: it takes that row's place, in that row's
+   * grouping. The component works out the resulting order and hands over the
+   * whole of it, because a list is the only description of an ordering that
+   * cannot be interpreted two ways.
+   */
+  readonly onPlace?: (rowId: string, groupingId: string | null, orderedIds: string[]) => void;
 }
 
 function parseCents(value: string | null): bigint | null {
@@ -58,6 +66,7 @@ export function BudgetSection({
   onCreate,
   rowMenu,
   onMoveToGrouping,
+  onPlace,
 }: BudgetSectionProps): ReactNode {
   const [newName, setNewName] = useState('');
 
@@ -101,11 +110,50 @@ export function BudgetSection({
   // before the drop rather than after it.
   const [dropTarget, setDropTarget] = useState<string | null | undefined>(undefined);
 
+  // Which row the pointer is over, so the insertion point is visible before the
+  // drop rather than discovered after it.
+  const [rowTarget, setRowTarget] = useState<string | null>(null);
+
   const draggable = onMoveToGrouping !== undefined;
 
   function onDragStart(event: DragEvent, rowId: string): void {
     event.dataTransfer.setData('text/plain', rowId);
     event.dataTransfer.effectAllowed = 'move';
+  }
+
+  /** Every row of the grouping the target sits in, in the order shown. */
+  function membersOf(groupingId: string | null): BudgetRowDto[] {
+    return groupingId === null
+      ? [...section.ungrouped]
+      : [...(section.groupings.find((grouping) => grouping.id === groupingId)?.rows ?? [])];
+  }
+
+  /**
+   * Drops a row onto another row: it takes that row's place.
+   *
+   * The dragged row is removed first and then inserted, so moving a row down
+   * inside its own grouping lands where the pointer is rather than one short of
+   * it — which is the classic off-by-one in every list like this.
+   */
+  function onDropOnRow(event: DragEvent, target: BudgetRowDto): void {
+    event.preventDefault();
+    event.stopPropagation();
+    setRowTarget(null);
+    setDropTarget(undefined);
+
+    const rowId = event.dataTransfer.getData('text/plain');
+    if (rowId === '' || rowId === target.id) return;
+
+    const destination = target.groupingId;
+    const members = membersOf(destination).filter((row) => row.id !== rowId);
+    const at = members.findIndex((row) => row.id === target.id);
+    members.splice(at === -1 ? members.length : at, 0, { ...target, id: rowId });
+
+    onPlace?.(
+      rowId,
+      destination,
+      members.map((row) => row.id),
+    );
   }
 
   function onDrop(event: DragEvent, groupingId: string | null): void {
@@ -135,9 +183,22 @@ export function BudgetSection({
       <tr
         key={row.id}
         className="group border-b border-line last:border-0"
-        {...(tint ? { style: { background: tint } } : {})}
         draggable={draggable}
         onDragStart={(event) => onDragStart(event, row.id)}
+        onDragOver={(event) => {
+          if (!draggable) return;
+          // Without preventDefault the drop never fires at all.
+          event.preventDefault();
+          event.dataTransfer.dropEffect = 'move';
+          setRowTarget(row.id);
+        }}
+        onDragLeave={() => setRowTarget((current) => (current === row.id ? null : current))}
+        onDrop={(event) => onDropOnRow(event, row)}
+        style={{
+          ...(tint ? { background: tint } : {}),
+          // A line above the row being dropped onto, which is where it will land.
+          ...(rowTarget === row.id ? { boxShadow: 'inset 0 2px 0 0 var(--color-accent)' } : {}),
+        }}
       >
         <td className={`row-cell pr-3 ${inGrouping ? 'pl-8' : 'pl-3'}`}>
           <span className="text-ink">{row.name}</span>
