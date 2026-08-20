@@ -180,19 +180,12 @@ export function Utilities(): ReactNode {
   });
 
   const utilities = query.data?.utilities ?? [];
-  // From the server, which computed the suggestions with it. Looking it up here
-  // instead would let the sentence and the figures drift apart.
-  const cyclesPerYear = query.data?.cyclesPerYear ?? null;
   const anyHistory = utilities.some((utility) => BigInt(utility.averageCents) !== 0n);
 
   return (
     <div>
       <header className="mb-6">
         <h1 className="text-page font-bold text-ink">Utilities</h1>
-        <p className="mt-1 text-quiet text-muted">
-          What each one averages, and what that is per paycheck. Suggestions only — nothing here
-          changes an amount to delegate.
-        </p>
       </header>
 
       {query.isLoading ? (
@@ -216,14 +209,6 @@ export function Utilities(): ReactNode {
               <UtilityCard key={utility.delegationId} utility={utility} />
             ))}
           </div>
-
-          <p className="mt-4 text-quiet text-muted">
-            {cyclesPerYear === null
-              ? 'A cycle is one paycheck.'
-              : `A cycle is one of ${cyclesPerYear} paychecks a year, which is set on Settings → Budget.`}{' '}
-            The average covers the completed months only — including the month in progress would
-            make it collapse on the second and recover by the thirtieth.
-          </p>
         </>
       )}
     </div>

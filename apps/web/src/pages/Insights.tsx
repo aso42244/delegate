@@ -857,12 +857,7 @@ export function Insights(): ReactNode {
   return (
     <div>
       <header className="mb-4 flex flex-wrap items-baseline justify-between gap-3">
-        <div>
-          <h1 className="text-page font-bold text-ink">Insights</h1>
-          <p className="mt-1 text-quiet text-muted">
-            A fixed set of questions, answered well. Choose which ones you want to see.
-          </p>
-        </div>
+        <h1 className="text-page font-bold text-ink">Insights</h1>
 
         <div className="flex flex-wrap items-center gap-1">
           {WINDOWS.map((option) => (
@@ -874,6 +869,18 @@ export function Insights(): ReactNode {
               {option.label}
             </Button>
           ))}
+
+          {/* Up here rather than a dashed tile at the end of the grid. Adding a
+              card is an action on the page, and it was sitting wherever the
+              last card happened to leave it — below the fold once enough were
+              on. */}
+          <Button
+            className="ml-2"
+            onClick={() => setShowCatalog(!showCatalog)}
+            aria-expanded={showCatalog}
+          >
+            Add from catalog
+          </Button>
         </div>
       </header>
 
@@ -924,16 +931,6 @@ export function Insights(): ReactNode {
               </Card>
             );
           })}
-
-          {/* The dashed "+ Add from catalog" tile the design asks for. */}
-          <button
-            type="button"
-            onClick={() => setShowCatalog(!showCatalog)}
-            aria-expanded={showCatalog}
-            className="rounded-lg border border-dashed border-line p-4 text-quiet text-muted"
-          >
-            + Add from catalog
-          </button>
         </div>
       )}
 

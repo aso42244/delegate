@@ -171,8 +171,11 @@ without leaving the menu.
   a 12-bar mini chart of the trailing twelve months (current month full opacity,
   others ~28%), and a footer with the 12-month average in bold and the suggested
   per-cycle amount.
-- **Insights** — card grid, two columns on desktop. Cards have a title, an `×`
-  remove affordance, and a dashed "+ Add from catalog" tile. Charts use the
+- **Insights** — card grid, two columns on desktop. Cards have a title and an
+  `×` remove affordance. **Add from catalog** is a button in the page header
+  beside the window controls; it was a dashed tile at the end of the grid, which
+  put an action on the page wherever the last card happened to leave it — below
+  the fold once enough were on. Charts use the
   accent for the primary series; the ordered multi-series palette is `#5E9FE8`,
   `#EAC26B`, `#72BC8F`, `#BF8EDA`, `#DE9255`, `#DF84A8`, `#4FB9C9`, `#E97366`.
   Period chips as small segmented controls, active chip filled with the accent.

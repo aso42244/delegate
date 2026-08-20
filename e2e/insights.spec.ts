@@ -34,7 +34,7 @@ test('a widget can be added back from the catalog', async ({ signedIn }) => {
   await signedIn.getByRole('button', { name: 'Remove Assets and debts' }).click();
   await expect(signedIn.getByRole('heading', { name: 'Assets and debts' })).toHaveCount(0);
 
-  await signedIn.getByRole('button', { name: '+ Add from catalog' }).click();
+  await signedIn.getByRole('button', { name: 'Add from catalog' }).click();
   await signedIn.getByRole('button', { name: 'Assets and debts', exact: true }).click();
 
   await expect(signedIn.getByRole('heading', { name: 'Assets and debts' })).toBeVisible();
