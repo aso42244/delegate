@@ -1063,3 +1063,53 @@ async function firstAccountId(): Promise<string> {
   const account = await prisma.account.findFirstOrThrow({ select: { id: true } });
   return account.id;
 }
+
+/**
+ * The undo offer and the undo itself must agree.
+ *
+ * They did not: `undoDelegateRun` has always refused once the window closed,
+ * while the preview computed the expiry and handed the run back anyway — so the
+ * interface kept offering a button that would be refused. The money was never
+ * at risk; the offer was a lie.
+ */
+describe('the undo window', () => {
+  async function aDelegateRun(): Promise<void> {
+    const account = await makeAccount({ name: 'Checking', type: 'asset', balanceCents: 30_000n });
+    await makeDelegation({ name: 'Grocery', amountToDelegateCents: 20_000n });
+    await prisma.$transaction((tx) => runDelegate(tx, { actorId: null }));
+    expect(account.id).toBeTruthy();
+  }
+
+  it('offers an undo inside the window', async () => {
+    await aDelegateRun();
+
+    const preview = await previewUndoLatestDelegate(prisma);
+    expect(preview).not.toBeNull();
+    expect(preview?.lineCount).toBe(1);
+  });
+
+  it('offers nothing once the window has closed', async () => {
+    await aDelegateRun();
+
+    const { undoWindowHours } = await prisma.budgetSettings.findUniqueOrThrow({ where: { id: 1 } });
+    const afterwards = new Date(Date.now() + (undoWindowHours + 1) * 60 * 60 * 1000);
+
+    expect(await previewUndoLatestDelegate(prisma, { now: afterwards })).toBeNull();
+  });
+
+  it('agrees with what the undo would actually do', async () => {
+    await aDelegateRun();
+
+    const { undoWindowHours } = await prisma.budgetSettings.findUniqueOrThrow({ where: { id: 1 } });
+    const afterwards = new Date(Date.now() + (undoWindowHours + 1) * 60 * 60 * 1000);
+
+    const preview = await previewUndoLatestDelegate(prisma, { now: afterwards });
+    expect(preview).toBeNull();
+
+    // The same moment, through the operation the button would have called.
+    const run = await prisma.delegateRun.findFirstOrThrow({ where: { undoneAt: null } });
+    await expect(undoDelegateRun(prisma, run.id, { now: afterwards })).rejects.toThrow(
+      /undo window/i,
+    );
+  });
+});

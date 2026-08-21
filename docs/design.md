@@ -448,6 +448,20 @@ underwater property moves to the debts side, where it belongs. A mortgage that i
 not itself in net worth is never netted, since subtracting it here would subtract
 it twice.
 
+## Delegate, and undoing it
+
+One slot in the header. While the latest run can still be undone the button
+reads **Undo Delegation** and is red; when the window closes it goes back to
+**Delegate**. There is never a moment where both make sense — a run that has
+just gone out is not a run to repeat.
+
+What was delegated, and the fact that undoing rolls the cycle back, sit beside
+"This cycle began …" and vanish with the offer. The date stays: the cycle did
+not end when the chance to undo it did.
+
+The offer closes on a timer as well as on a refetch. Left alone in a tab,
+nothing else would ever ask the server again.
+
 ## Ordering delegations
 
 Lines sit where they are put. The order is a column on the delegation, so it is

@@ -259,3 +259,23 @@ export async function makeSyncWarning(message: string): Promise<void> {
     },
   });
 }
+
+/**
+ * Moves the most recent Delegate run back in time.
+ *
+ * The undo window is measured from the run's `created_at`, so this is how a
+ * test reaches "the window has closed" without waiting out the clock.
+ */
+export async function ageLatestDelegateRun(hours: number): Promise<void> {
+  const latest = await prisma.delegateRun.findFirst({
+    where: { undoneAt: null },
+    orderBy: { createdAt: 'desc' },
+    select: { id: true, createdAt: true },
+  });
+  if (!latest) throw new Error('No delegate run to age.');
+
+  await prisma.delegateRun.update({
+    where: { id: latest.id },
+    data: { createdAt: new Date(latest.createdAt.getTime() - hours * 60 * 60 * 1000) },
+  });
+}
