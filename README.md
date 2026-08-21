@@ -180,10 +180,19 @@ sharing that hardware with DSM itself and the existing Sure container. Postgres
 memory settings are pinned explicitly in the Compose file rather than left at
 defaults, which assume a much larger machine.
 
-**This stays on the LAN until Phase 3 ships in full.** No port forward, no DSM
-reverse proxy, no QuickConnect. Rate limiting, two-factor authentication and CSRF
-protection are in place; **TLS is not**, so passwords and codes still cross the
-network in clear text. Passkeys have been dropped
+**How this is reached from outside the house is the operator's decision**, and
+never a port forward, a DSM reverse proxy or QuickConnect. A Cloudflare Tunnel
+and a Tor onion service are both supported and both encrypt everything that
+crosses the internet — see
+[ADR 017](docs/decisions/017-plain-http-is-the-default-and-tls-is-optional.md),
+[ADR 027](docs/decisions/027-remote-access-is-an-onion-service.md) and
+[docs/remote-access.md](docs/remote-access.md).
+
+The origin itself speaks plain http by default, which is correct behind either
+of those and is a decision rather than an omission; TLS at the origin is
+available and was declined. Rate limiting, two-factor authentication and CSRF
+protection are all in place, and a second factor is required of every account.
+Passkeys have been dropped
 ([ADR 016](docs/decisions/016-passkeys-are-out-of-scope.md)). See
 [ADR 007](docs/decisions/007-argon2id-parameters-and-password-policy.md).
 

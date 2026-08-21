@@ -375,15 +375,12 @@ while [ "$i" -le 60 ]; do
     echo
     echo "Serving on port ${HOST_PORT} over ${SCHEME}."
     echo "Running: $PINNED"
-    if [ "$SCHEME" = 'http' ]; then
-      echo
-      echo 'Plain http: passwords and two-factor codes cross this network in the'
-      echo 'clear. That is the documented default for a trusted LAN (ADR 017).'
-      echo 'To change it, run ./scripts/make-tls-cert.sh and set TLS_CERT_PATH.'
-    fi
-    echo
-    echo 'This must stay on the LAN — no port forward, no reverse proxy, no'
-    echo 'QuickConnect.'
+    # Nothing further. The plain-http note and the LAN-only warning that stood
+    # here said the same two things on every deploy, and neither survived
+    # reading: plain http at the origin is the documented default (ADR 017), and
+    # this has not been a LAN-only application since remote access landed
+    # (ADR 027). A warning printed every time is one nobody reads by the third
+    # deploy, and one that is wrong is worse than none.
     exit 0
   fi
   i=$((i + 1))
