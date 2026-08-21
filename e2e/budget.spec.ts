@@ -1,5 +1,12 @@
 import type { Locator } from '@playwright/test';
-import { expect, makeAccount, makeDelegation, makePendingSpend, test } from './fixtures.js';
+import {
+  ageLatestDelegateRun,
+  expect,
+  makeAccount,
+  makeDelegation,
+  makePendingSpend,
+  test,
+} from './fixtures.js';
 
 /**
  * The Budget page, driven in a real browser.
@@ -186,12 +193,59 @@ test('Delegate previews, distributes, and can be undone', async ({ signedIn, api
   await expect(signedIn.getByRole('status')).toContainText('Balanced');
   await expect(signedIn.getByRole('button', { name: 'Grocery balance' })).toContainText('$200.00');
 
-  // The undo offer states the cycle rollback, so it is not a surprise.
-  await expect(signedIn.getByText('Undoing also rolls the budget cycle back.')).toBeVisible();
-  await signedIn.getByRole('button', { name: 'Undo' }).click();
+  /*
+   * The Delegate button has become the undo, in the same slot: while the run can
+   * still be undone there is nothing sensible to delegate.
+   */
+  await expect(signedIn.getByRole('button', { name: 'Delegate', exact: true })).toHaveCount(0);
+  const undo = signedIn.getByRole('button', { name: 'Undo Delegation' });
+  await expect(undo).toBeVisible();
+
+  // What was delegated, and the cycle rollback, sit beside the cycle date.
+  await expect(signedIn.getByText(/This cycle began/)).toBeVisible();
+  await expect(signedIn.getByText(/Delegated \$300\.00 across 2 lines/)).toBeVisible();
+  await expect(signedIn.getByText(/Undoing also rolls the budget cycle back/)).toBeVisible();
+
+  await undo.click();
 
   await expect(signedIn.getByRole('button', { name: 'Grocery balance' })).toContainText('$0.00');
   await expect(signedIn.getByRole('status')).toContainText('$300.00 to delegate');
+
+  // And back to Delegate, with the offer gone.
+  await expect(signedIn.getByRole('button', { name: 'Delegate', exact: true })).toBeVisible();
+  await expect(signedIn.getByText(/Undoing also rolls the budget cycle back/)).toHaveCount(0);
+});
+
+/**
+ * The offer closes when the window does, not when something else happens to
+ * refetch — on a tab left open that would be never.
+ *
+ * The window is a setting, so this drives it to an hour, delegates, and then
+ * moves the run into the past. What is under test is that the interface asks
+ * again rather than trusting what it was told at the time.
+ */
+test('the undo offer expires back into a Delegate button', async ({ signedIn, api }) => {
+  await makeAccount('Everyday Checking', 'asset', 30000n);
+  await makeDelegation(api, 'Grocery', '20000');
+  await signedIn.reload();
+
+  await signedIn.getByRole('button', { name: 'Delegate', exact: true }).click();
+  await signedIn
+    .getByRole('dialog', { name: 'Confirm delegate' })
+    .getByRole('button', { name: 'Delegate', exact: true })
+    .click();
+
+  await expect(signedIn.getByRole('button', { name: 'Undo Delegation' })).toBeVisible();
+
+  // Age the run past the undo window, the way twelve hours would.
+  await api.patch('/api/settings', { data: { undoWindowHours: 1 } });
+  await ageLatestDelegateRun(2);
+
+  await signedIn.reload();
+  await expect(signedIn.getByRole('button', { name: 'Delegate', exact: true })).toBeVisible();
+  await expect(signedIn.getByText(/Undoing also rolls the budget cycle back/)).toHaveCount(0);
+  // The cycle did not end when the chance to undo it did.
+  await expect(signedIn.getByText(/This cycle began/)).toBeVisible();
 });
 
 test('Transfer moves between envelopes without moving the bottom line', async ({

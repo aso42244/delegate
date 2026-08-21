@@ -8,6 +8,26 @@ phase (`v0.1.0-phase1`, and so on).
 
 Nothing yet.
 
+## [0.22.0] — 2026-08-20
+
+### Changed
+
+- **The Delegate button becomes Undo Delegation** while the run can still be
+  undone, in red, and goes back to Delegate when the window closes. One slot,
+  because while a run is still undoable there is nothing sensible to delegate —
+  offering both would be offering the wrong one first.
+- **What was delegated is said beside the cycle date** rather than in a bar of
+  its own, and it disappears with the offer. The cycle date stays: the cycle did
+  not end when the chance to undo it did.
+
+### Fixed
+
+- **The undo offer never expired.** `previewUndoLatestDelegate` computed the
+  expiry and handed the run back regardless, so the interface kept offering an
+  undo that `undoDelegateRun` would refuse with `undo_window_expired`. The money
+  was never at risk — that refusal is real and always was — but a button that
+  cannot do what it says is worse than no button.
+
 ## [0.21.0] — 2026-08-19
 
 ### Added

@@ -1,6 +1,6 @@
 import { formatCents } from '@budget/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useState, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import {
   budgetApi,
   type BudgetRowDto,
@@ -236,36 +236,6 @@ function DelegateDialog({ onClose }: { onClose: () => void }): ReactNode {
   );
 }
 
-/** The undo offer, shown only while the window is open. */
-function UndoBar(): ReactNode {
-  const queryClient = useQueryClient();
-  const undo = useQuery({ queryKey: ['undo-preview'], queryFn: budgetApi.undoPreview });
-
-  const run = useMutation({
-    mutationFn: (runId: string) => budgetApi.undoDelegate(runId),
-    onSuccess: async () => {
-      await queryClient.invalidateQueries();
-    },
-  });
-
-  if (!undo.data?.available || !undo.data.runId) return null;
-
-  return (
-    <div className="mb-4 flex items-center justify-between rounded-lg border border-line bg-surface px-4 py-2">
-      <p className="text-quiet text-muted">
-        Delegated {formatCents(BigInt(undo.data.totalCents ?? '0'))} across {undo.data.lineCount}{' '}
-        lines.
-        {/* Undoing moves the cycle boundary back too, so it is said here rather
-            than discovered afterwards. */}
-        <span className="ml-1">Undoing also rolls the budget cycle back.</span>
-      </p>
-      <Button onClick={() => run.mutate(undo.data.runId!)} disabled={run.isPending} variant="ghost">
-        {run.isPending ? 'Undoing…' : 'Undo'}
-      </Button>
-    </div>
-  );
-}
-
 export function MainBudget(): ReactNode {
   const queryClient = useQueryClient();
   const [dialog, setDialog] = useState<'none' | 'delegate' | 'transfer' | 'check' | 'transaction'>(
@@ -274,6 +244,7 @@ export function MainBudget(): ReactNode {
   const [problem, setProblem] = useState<string | null>(null);
   // Set when Transfer was opened from a line whose archive was blocked.
   const [transferFrom, setTransferFrom] = useState<string | null>(null);
+
   const [newGrouping, setNewGrouping] = useState(false);
 
   const view = useQuery({ queryKey: ['budget'], queryFn: budgetApi.view });
@@ -305,6 +276,44 @@ export function MainBudget(): ReactNode {
 
   const onError = (error: unknown): void =>
     setProblem(error instanceof ApiError ? error.message : 'Something went wrong.');
+
+  /*
+   * The undo offer, which the header owns.
+   *
+   * It used to be a bar of its own below the banner. Both halves of it belong
+   * where the action is: the button takes the Delegate button's place while the
+   * window is open, and what was delegated is said beside the cycle date.
+   */
+  const undo = useQuery({ queryKey: ['undo-preview'], queryFn: budgetApi.undoPreview });
+  const undoRunId = undo.data?.available === true ? (undo.data.runId ?? null) : null;
+
+  const undoDelegate = useMutation({
+    mutationFn: (runId: string) => budgetApi.undoDelegate(runId),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries();
+    },
+    onError,
+  });
+
+  /*
+   * Closes the offer the moment the window does.
+   *
+   * The server stops offering an undo once it has expired, but nothing would
+   * ask it again — so without this the button stays red until something else
+   * on the page happens to refetch, which on a tab left open is never. The
+   * second of slack is for clock skew between here and the database.
+   */
+  useEffect(() => {
+    const expiresAt = undo.data?.expiresAt;
+    if (undoRunId === null || !expiresAt) return;
+
+    const remaining = new Date(expiresAt).getTime() - Date.now();
+    const timer = setTimeout(
+      () => void queryClient.invalidateQueries({ queryKey: ['undo-preview'] }),
+      Math.max(remaining, 0) + 1_000,
+    );
+    return () => clearTimeout(timer);
+  }, [undoRunId, undo.data?.expiresAt, queryClient]);
 
   const editAmount = useMutation({
     mutationFn: ({ id, cents }: { id: string; cents: bigint }) =>
@@ -454,17 +463,30 @@ export function MainBudget(): ReactNode {
 
   return (
     <div>
-      <header className="mb-6 flex items-baseline justify-between">
-        <div>
+      <header className="mb-6 flex items-baseline justify-between gap-4">
+        {/* `min-w-0` so the subtitle wraps instead of pushing the controls
+            around: with the undo offer in it, that line is long enough to shove
+            a button onto a second row otherwise. */}
+        <div className="min-w-0">
           <h1 className="text-page font-bold text-ink">Budget</h1>
           <p className="mt-1 text-quiet text-muted">
             {view.data.cycleStartedAt
               ? `This cycle began ${new Date(view.data.cycleStartedAt).toLocaleDateString()}.`
               : 'No delegate run yet — press Delegate on payday to start a cycle.'}
+            {/* Beside the cycle date rather than in a bar of its own, and gone
+                the moment the window closes — while the date stays, because
+                the cycle did not end when the chance to undo it did. */}
+            {undoRunId !== null && (
+              <span className="ml-2">
+                Delegated {formatCents(BigInt(undo.data?.totalCents ?? '0'))} across{' '}
+                {undo.data?.lineCount} lines. Undoing also rolls the budget cycle back.
+              </span>
+            )}
           </p>
         </div>
 
-        <div className="flex flex-wrap gap-2">
+        {/* `shrink-0`: the controls keep their row, and the prose gives way. */}
+        <div className="flex shrink-0 flex-wrap justify-end gap-2">
           {newGrouping ? (
             <input
               autoFocus
@@ -487,14 +509,26 @@ export function MainBudget(): ReactNode {
           <Button onClick={() => setDialog('check')}>New check</Button>
           {/* Transfer sits to the left of Delegate, per the design. */}
           <Button onClick={() => setDialog('transfer')}>Transfer</Button>
-          <Button variant="primary" onClick={() => setDialog('delegate')}>
-            Delegate
-          </Button>
+          {/* One slot, two jobs. While the run can still be undone there is
+              nothing sensible to delegate — the money has just gone out — so
+              offering both would be offering the wrong one first. */}
+          {undoRunId !== null ? (
+            <Button
+              variant="danger"
+              onClick={() => undoDelegate.mutate(undoRunId)}
+              disabled={undoDelegate.isPending}
+            >
+              {undoDelegate.isPending ? 'Undoing…' : 'Undo Delegation'}
+            </Button>
+          ) : (
+            <Button variant="primary" onClick={() => setDialog('delegate')}>
+              Delegate
+            </Button>
+          )}
         </div>
       </header>
 
       <BalanceBanner view={view.data} />
-      <UndoBar />
 
       {problem && (
         <div className="mb-4">

@@ -130,7 +130,12 @@ export interface UndoPreview {
  * Describes what undoing the latest run would do, including the cycle rollback —
  * surfaced in the confirmation so the boundary move is not a surprise.
  */
-export async function previewUndoLatestDelegate(db: Db): Promise<UndoPreview | null> {
+export async function previewUndoLatestDelegate(
+  db: Db,
+  options: { readonly now?: Date } = {},
+): Promise<UndoPreview | null> {
+  const now = options.now ?? new Date();
+
   const run = await db.delegateRun.findFirst({
     where: { undoneAt: null },
     orderBy: { createdAt: 'desc' },
@@ -144,6 +149,16 @@ export async function previewUndoLatestDelegate(db: Db): Promise<UndoPreview | n
   });
   const undoWindowHours = settings?.undoWindowHours ?? 12;
   const expiresAt = new Date(run.createdAt.getTime() + undoWindowHours * 60 * 60 * 1000);
+
+  /*
+   * Nothing offered once the window has closed.
+   *
+   * This used to compute `expiresAt` and hand the preview back regardless, so
+   * the interface kept offering an undo that `undoDelegateRun` would refuse
+   * with `undo_window_expired`. The money was never at risk — the refusal is
+   * real — but a button that cannot do what it says is worse than no button.
+   */
+  if (now > expiresAt) return null;
 
   const previous = await db.delegateRun.findFirst({
     where: { undoneAt: null, createdAt: { lt: run.createdAt } },
