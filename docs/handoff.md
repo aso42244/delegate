@@ -295,6 +295,21 @@ are not negotiable by a request, whoever wrote it.
   fails here while the NAS is fine, suspect that difference before suspecting the
   release.**
 
+- **Colima can wedge, and it looks exactly like flaky tests.** It has happened
+  once, on 2026-08-20. End-to-end tests began timing out at about 42 seconds
+  each, a _different_ one every run, and the suite took 9.2 minutes instead of
+  40 seconds. Nothing was wrong with the branch and there were no orphaned
+  servers — but `ps aux` itself was taking over two minutes to return and
+  `colima status` did not answer at all. `colima stop` took roughly an hour to
+  complete; load average dropped from 5.14 to 2.66 the moment it did, and the
+  suite came back green in 2.0 minutes.
+
+  So if end-to-end tests start timing out on a different test each run, check
+  the machine before the branch: `uptime`, and whether colima answers. **Do not
+  raise a Playwright timeout to make it go away** — a timeout raised to paper
+  over contention is how the racy tests in this suite got written the first
+  time. `colima start` again when the image step is needed.
+
 - **Orphaned servers are the other thing to watch for.** A `verify` run that is
   interrupted can leave `node apps/api/dist/server.js` running against the
   **test** database, still executing the sync, price and backup schedules. It
