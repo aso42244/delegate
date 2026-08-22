@@ -216,17 +216,6 @@ export function BudgetSection({
         <td className={`row-cell pr-3 ${inGrouping ? 'pl-8' : 'pl-3'}`}>
           <span className="text-ink">{row.name}</span>
 
-          {/* A check is settled by matching the payment that cashes it, never
-              by having money moved into it. */}
-          {onAbsorb && row.kind !== 'check' && (
-            <button
-              type="button"
-              onClick={() => onAbsorb(row)}
-              className="row-menu-trigger ml-2 rounded border border-line bg-canvas px-1.5 py-0.5 text-label font-semibold text-muted hover:bg-surface"
-            >
-              {absorbLabel}
-            </button>
-          )}
           {/*
             Only the accounts kept by hand are marked, and only with an `m`.
             Nearly everything here comes from the feed, so labelling those said
@@ -251,7 +240,22 @@ export function BudgetSection({
         </td>
 
         {showRemaining && (
-          <td className="w-40 row-cell">
+          // `relative`, with the button below hung off the left of the cell: it
+          // belongs beside the figure it is about, and that figure lives in a
+          // 160px column with no width to share. Out of flow it sits where it
+          // reads, over space the name column is not using, and only while the
+          // row is hovered.
+          <td className="relative w-40 row-cell">
+            {onAbsorb && row.kind !== 'check' && (
+              <button
+                type="button"
+                onClick={() => onAbsorb(row)}
+                className="row-menu-trigger absolute top-1/2 right-full mr-2 -translate-y-1/2 rounded border border-line bg-canvas px-1.5 py-0.5 text-label font-semibold whitespace-nowrap text-muted hover:bg-surface"
+              >
+                {absorbLabel}
+              </button>
+            )}
+
             <MoneyCell
               valueCents={parseCents(row.balanceCents)}
               editable={onEditBalance !== undefined}

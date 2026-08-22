@@ -457,6 +457,10 @@ button — **Move surplus here**, or **Fix deficit from here** when the envelope
 hold more than exists. It is revealed on hover like the row menu: an occasional
 act on a row that is mostly numbers.
 
+It sits **immediately left of the Remaining figure**, hung out of flow so the
+160px column gives up no width for it. Beside the number it is about, and in one
+vertical line down the table rather than wherever each name happens to end.
+
 Three choices, and an unavailable one is shown **disabled with its reason**
 rather than hidden. Hiding it makes the dialog look arbitrary, and the reason —
 "This line holds $50.00, which is not enough" — is usually what the reader

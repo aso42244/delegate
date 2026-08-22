@@ -197,17 +197,21 @@ test('an administrator can reset somebody else’s second factor', async ({ sign
   await owner.getByRole('button', { name: 'Reset two-factor' }).click();
 
   /*
-   * Done to yourself, this leaves you signed in and sends you to enrolment.
+   * Either landing proves it, and which one you get is a race.
    *
-   * The reset deletes that account's sessions, and for anybody else that is
-   * the end of theirs. Your own survives because the very request that did it
-   * writes its session back on the way out — `rolling: true` refreshes the
-   * expiry on every response. The result is the useful one either way: the
-   * factor is gone, and the only screen reachable is the one that sets up a
-   * new one.
+   * The reset deletes that account's sessions. Your own may survive it, because
+   * the very request that did the deleting writes its session back on the way
+   * out — `rolling: true` refreshes the expiry on every response — and whether
+   * that write lands before or after the delete commits is not ordered.
+   *
+   * So: signed out, or sent to enrolment. Both say the factor is gone, which is
+   * the whole claim. Asserting on one of them is asserting on the race, and
+   * this test failed exactly once that way under load before it said so.
    */
   await signedIn.reload();
   await expect(
-    signedIn.getByRole('heading', { name: 'Set up two-factor authentication' }),
+    signedIn
+      .getByRole('heading', { name: 'Set up two-factor authentication' })
+      .or(signedIn.getByLabel('Username')),
   ).toBeVisible();
 });
