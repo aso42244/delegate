@@ -8,6 +8,20 @@ phase (`v0.1.0-phase1`, and so on).
 
 Nothing yet.
 
+## [0.23.0] — 2026-08-22
+
+### Added
+
+- **Archive, on a transaction's row menu.** The API has always supported it and
+  the interface never offered it, so taking a row out of the register meant a
+  database prompt. The case it exists for arrived on its own: a re-linked
+  institution re-imports transactions that are already there.
+
+  Archive, never Delete — nothing here is hard-deleted. Archiving reverses any
+  envelope movement the transaction caused, and backs a **manual** row's amount
+  out of the account balance; a synced account's balance comes from the feed and
+  is left alone.
+
 ## [0.22.1] — 2026-08-22
 
 ### Fixed

@@ -191,3 +191,63 @@ test('income offers no delegation picker, because it allocates to nothing', asyn
   await expect(signedIn.getByText('Paycheck')).toBeVisible();
   await expect(signedIn.getByLabel('Categorize Paycheck')).toHaveCount(0);
 });
+
+/**
+ * Archiving a transaction, which is how a duplicate leaves the register.
+ *
+ * A re-linked institution can re-import rows that are already there, and until
+ * now there was no way to take one out without a database prompt. Archive, never
+ * Delete: nothing here is hard-deleted.
+ */
+test('a duplicate is archived, and the money it moved comes back', async ({ signedIn, api }) => {
+  const accountId = await makeAccount('Everyday Checking', 'asset', 500000n);
+  const delegationId = await makeDelegation(api, 'Grocery');
+  const duplicate = await makeTransaction(api, accountId, '-4210', 'Whole Foods Market');
+
+  await api.post(`/api/transactions/${duplicate}/categorize`, {
+    data: { delegationId },
+  });
+
+  // It moved an envelope, which archiving has to put back.
+  await signedIn.goto('/');
+  await expect(signedIn.getByRole('button', { name: 'Grocery balance' })).toContainText('-$42.10');
+
+  await signedIn.goto('/transactions');
+  await signedIn.getByRole('button', { name: 'Options for Whole Foods Market' }).click();
+  await signedIn.getByRole('menuitem', { name: 'Archive' }).click();
+
+  // Gone from the register …
+  await expect(signedIn.getByText('Whole Foods Market')).toHaveCount(0);
+
+  // … and the envelope is whole again.
+  await signedIn.goto('/');
+  await expect(signedIn.getByRole('button', { name: 'Grocery balance' })).toContainText('$0.00');
+});
+
+/**
+ * Income allocates to nothing by design, so a payday deposit stops asking to be
+ * filed anywhere.
+ */
+test('a deposit marked as income leaves the queue and offers no envelope', async ({
+  signedIn,
+  api,
+}) => {
+  const accountId = await makeAccount('Everyday Checking', 'asset', 500000n);
+  await makeDelegation(api, 'Grocery');
+  await makeTransaction(api, accountId, '260433', 'ACH Deposit PAYROLL');
+
+  await signedIn.goto('/transactions');
+  await signedIn.getByRole('button', { name: 'Uncategorized' }).click();
+  await expect(signedIn.getByText('ACH Deposit PAYROLL')).toBeVisible();
+
+  await signedIn.getByRole('button', { name: 'Options for ACH Deposit PAYROLL' }).click();
+  await signedIn.getByRole('menuitem', { name: 'Mark as income' }).click();
+
+  // Out of the queue: income is not waiting for a decision.
+  await expect(signedIn.getByText('ACH Deposit PAYROLL')).toHaveCount(0);
+
+  // And still in the register, with no picker on it.
+  await signedIn.getByRole('button', { name: 'Uncategorized' }).click();
+  await expect(signedIn.getByText('ACH Deposit PAYROLL')).toBeVisible();
+  await expect(signedIn.getByLabel('Categorize ACH Deposit PAYROLL')).toHaveCount(0);
+});
