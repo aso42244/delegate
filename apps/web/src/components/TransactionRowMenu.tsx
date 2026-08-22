@@ -47,6 +47,21 @@ export function TransactionRowMenu({
 }): ReactNode {
   const queryClient = useQueryClient();
 
+  const archive = useMutation({
+    mutationFn: () => transactionsApi.archive(transaction.id),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['transactions'] });
+      // Archiving reverses whatever envelope movement it caused, so the budget
+      // is no longer what the page is showing.
+      await queryClient.invalidateQueries({ queryKey: ['budget'] });
+    },
+    onError: (error: unknown) => {
+      onProblem(
+        error instanceof ApiError ? error.message : 'That transaction could not be archived.',
+      );
+    },
+  });
+
   const setKind = useMutation({
     mutationFn: (kind: 'normal' | 'income' | 'transfer') =>
       transactionsApi.setKind(transaction.id, kind),
@@ -108,6 +123,32 @@ export function TransactionRowMenu({
               <span className="text-label text-muted">{item.hint}</span>
             </button>
           ))}
+
+          <div className="my-1 border-t border-line" />
+
+          {/*
+            Archive, never Delete. Nothing here is hard-deleted, and a menu item
+            labelled Delete would name behaviour that does not exist.
+
+            The case it exists for is a duplicate: a re-linked institution can
+            re-import transactions that are already in the register, and there
+            was no way to take one out without a database prompt.
+          */}
+          <button
+            type="button"
+            role="menuitem"
+            className={`${ITEM_CLASS} flex-col items-start gap-0 text-danger`}
+            onClick={() => {
+              archive.mutate();
+              controls.close();
+            }}
+            disabled={archive.isPending}
+          >
+            <span>Archive</span>
+            <span className="text-label text-muted">
+              Takes it out of the register and puts back any money it moved. For a duplicate.
+            </span>
+          </button>
         </>
       )}
     </RowMenuShell>

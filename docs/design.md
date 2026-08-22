@@ -328,7 +328,9 @@ them as uncategorized left every payroll deposit and every card payment in the
 queue permanently.
 
 Splitting a transaction and matching one to a check both live in the row's `⋯`
-menu on the Transactions page, not as buttons in the row. Categorizing is the
+menu on the Transactions page, not as buttons in the row. That menu also carries
+**Archive**, for a duplicate — a re-linked institution re-imports rows that are
+already in the register, and there was otherwise no way to remove one. Categorizing is the
 frequent act there and stays a field; two permanent buttons beside every one of
 sixty rows made the rare thing as loud as the common one.
 

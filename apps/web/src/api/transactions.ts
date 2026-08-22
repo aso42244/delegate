@@ -101,6 +101,17 @@ export const transactionsApi = {
    * server refuses the change while the row still carries a categorization —
    * clear it first.
    */
+  /**
+   * Takes a transaction out of the register.
+   *
+   * Archive, never delete — nothing here is hard-deleted. The server reverses
+   * any envelope movement it caused and, for a manual row, backs its amount out
+   * of the account balance; a synced account's balance comes from the feed and
+   * is left alone.
+   */
+  archive: (transactionId: string) =>
+    api.post<{ ok: boolean }>(`/api/transactions/${transactionId}/archive`),
+
   setKind: (transactionId: string, kind: TransactionKind) =>
     api.patch<void>(`/api/transactions/${transactionId}`, { kind }),
 
