@@ -410,6 +410,14 @@ does.
   a credit card as an asset because the signal was in the institution name, not
   the account name — which would have thrown the identity off by twice the
   balance in the wrong direction.
+- **Resetting your own second factor may or may not end your session**, and
+  nothing decides which. The reset deletes that account's sessions; the request
+  that did it then writes its own session back, because `rolling: true`
+  refreshes the expiry on every response, and the two are not ordered against
+  each other. Both landings are fine — signed out, or sent to enrolment — so the
+  end-to-end test accepts either. Worth making deterministic if it ever matters:
+  the choice is to destroy the actor's session deliberately, which is arguably
+  what removing your own credential should do.
 - **Anything that races a write eventually fails on a slower machine.** Three
   separate tests have now been fixed for this: navigating away before a write
   landed, clicking a second control before the first one's PATCH returned, and
