@@ -88,7 +88,7 @@ These are non-negotiable. Violating one is a build failure.
 
 ## Where things stand
 
-**Live on the NAS, currently at `v0.14.0`.** 158 unit, 459 integration and 137
+**Live on the NAS, currently at `v0.24.1`.** 166 unit, 502 integration and 154
 end-to-end tests. There is no CI: GitHub stores the code and nothing else
 ([ADR 022](decisions/022-the-checks-run-here-not-on-github.md)), and every gate
 runs locally through `npm run verify`.
@@ -121,6 +121,20 @@ recorded in the ADRs, and the short version is:
   delegate is ever rewritten when it changes. Defaults to biweekly so an
   existing budget reads identically on upgrade
 
+- **The reading at the top is closed against a line from the line itself.**
+  Hover a delegation while it is not zero: "Move surplus here", or "Fix deficit
+  from here". Three choices, an unavailable one shown disabled with its reason.
+  It writes the ordinary `adjust` event — it _is_ a manual adjustment, with the
+  amount computed — so history, undo and the ledger check work on it for free.
+  The difference is recomputed **on the server**, because "all of it" has to
+  mean all of it when the request lands
+- **Delegate becomes Undo Delegation** while the run is still undoable, and back
+  again when the window closes. The offer used never to expire: the preview
+  computed `expiresAt` and returned the run regardless, so it kept offering an
+  undo the server would refuse
+- **A transaction can be archived** from its row menu — the API always could,
+  the interface never offered it. Reverses any envelope movement; only touches
+  the account balance for a manual row
 - The delegation event ledger — Delegate with undoable runs, transfers, manual
   adjustment, categorization and splits, pending reconciliation, archiving,
   go-live reconciliation
@@ -335,9 +349,9 @@ cannot collide.
 npm run verify            # everything, in the order CI used to run it
 npm run verify:quick      # the same, minus the container image build
 
-npm run test              # 158 unit
-npm run test:integration  # 459 integration
-npm run test:e2e          # 137 end-to-end, needs a build first
+npm run test              # 166 unit
+npm run test:integration  # 502 integration
+npm run test:e2e          # 154 end-to-end, needs a build first
 ```
 
 `npm run verify` is the gate. It runs migrations, typecheck, lint, formatting,
@@ -401,6 +415,10 @@ does.
   connections went stale because one had been reconnected. Reported and skipped
   now. Worth remembering as a shape: this sync touches several independent
   things, and a loop over them should not be all-or-nothing.
+- **A boolean in a query string is text.** `z.coerce.boolean()` is
+  `Boolean(value)`, so `?uncategorized=false` meant `true` and the Transactions
+  page's Categorized filter showed the queue. Parse with `booleanQuery` in
+  `http/serialize.ts`; there is one place for it now.
 - **The SimpleFIN bridge silently caps a long date range** at 90 days and reports
   it as a note, not an error. A twelve-month request returned three months while
   looking entirely successful. Requests are split into 45-day windows, which is
@@ -418,6 +436,16 @@ does.
   end-to-end test accepts either. Worth making deterministic if it ever matters:
   the choice is to destroy the actor's session deliberately, which is arguably
   what removing your own credential should do.
+- **Before believing a suite of failures, look at the machine.** The end-to-end
+  suite once took **1.3 hours** instead of two minutes, with seven multi-minute
+  timeouts scattered across specs the branch had not touched — each of which
+  passed in under a second on its own. The Mac had 41 days of uptime, load
+  average near 6 at rest and WindowServer at 45% CPU. A restart fixed all seven.
+  Scattered timeouts in unrelated specs are an environment signal, not a code
+  one; `uptime` costs nothing to check.
+- **After a restart, wait before testing.** Load average was **110** two minutes
+  in and took about seven minutes to fall below four. Testing into that
+  reproduces exactly the flakes you are trying to rule out.
 - **Anything that races a write eventually fails on a slower machine.** Three
   separate tests have now been fixed for this: navigating away before a write
   landed, clicking a second control before the first one's PATCH returned, and
