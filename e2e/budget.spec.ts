@@ -407,3 +407,114 @@ test('Transfer lists delegations grouped as the page groups them', async ({ sign
     'Odds and Ends — $0.00',
   ]);
 });
+
+/**
+ * Closing the reading at the top of the page against one line.
+ *
+ * The arithmetic is proved in the integration suite. What only a browser shows
+ * is the part that makes it usable: the button appears on hover, the option
+ * that cannot be taken says why rather than vanishing, and the dialog opens on
+ * something that can actually be applied.
+ */
+test('surplus is moved into a line, and the reading lands on zero', async ({ signedIn, api }) => {
+  await makeAccount('Everyday Checking', 'asset', 30000n);
+  await makeDelegation(api, 'Grocery');
+  await signedIn.reload();
+
+  // $300 in the bank, nothing delegated.
+  await expect(signedIn.getByRole('status')).toContainText('$300.00 to delegate');
+
+  await signedIn
+    .getByRole('row', { name: /Grocery/ })
+    .getByRole('button', { name: 'Move surplus here' })
+    .click();
+
+  const dialog = signedIn.getByRole('dialog', { name: 'Move surplus into Grocery' });
+  await expect(dialog).toContainText('Move all $300.00 here');
+  // Not over-spent, so bringing it to zero is offered with the reason it is not.
+  await expect(dialog).toContainText('This line is not over-spent.');
+
+  await dialog.getByRole('button', { name: 'Apply' }).click();
+
+  await expect(signedIn.getByRole('button', { name: 'Grocery balance' })).toContainText('$300.00');
+  await expect(signedIn.getByRole('status')).toContainText('Balanced');
+
+  // Nothing left to move, so the button is gone.
+  await expect(signedIn.getByRole('button', { name: 'Move surplus here' })).toHaveCount(0);
+});
+
+test('a deficit is covered from a line that can afford it', async ({ signedIn, api }) => {
+  await makeAccount('Everyday Checking', 'asset', 30000n);
+  const grocery = await makeDelegation(api, 'Grocery');
+  await api.post(`/api/delegations/${grocery}/adjust`, { data: { deltaCents: '50000' } });
+  await signedIn.reload();
+
+  // $300 in the bank against $500 delegated.
+  await expect(signedIn.getByRole('status')).toContainText('$200.00 over-delegated');
+
+  await signedIn
+    .getByRole('row', { name: /Grocery/ })
+    .getByRole('button', { name: 'Fix deficit from here' })
+    .click();
+
+  const dialog = signedIn.getByRole('dialog', { name: 'Fix the shortfall from Grocery' });
+  await expect(dialog).toContainText('Cover the whole $200.00 from here');
+  // It can cover the lot, so emptying it would overshoot.
+  await expect(dialog).toContainText('emptying it would overshoot');
+
+  await dialog.getByRole('button', { name: 'Apply' }).click();
+
+  await expect(signedIn.getByRole('button', { name: 'Grocery balance' })).toContainText('$300.00');
+  await expect(signedIn.getByRole('status')).toContainText('Balanced');
+});
+
+/**
+ * The case the dialog exists for: a line too small to cover the shortfall.
+ * It has to open on something that can be applied rather than on a dead option.
+ */
+test('a line too small to cover it opens on emptying itself', async ({ signedIn, api }) => {
+  await makeAccount('Everyday Checking', 'asset', 30000n);
+  const rent = await makeDelegation(api, 'Rent');
+  await api.post(`/api/delegations/${rent}/adjust`, { data: { deltaCents: '45000' } });
+  const odds = await makeDelegation(api, 'Odds and Ends');
+  await api.post(`/api/delegations/${odds}/adjust`, { data: { deltaCents: '5000' } });
+  await signedIn.reload();
+
+  await expect(signedIn.getByRole('status')).toContainText('$200.00 over-delegated');
+
+  await signedIn
+    .getByRole('row', { name: /Odds and Ends/ })
+    .getByRole('button', { name: 'Fix deficit from here' })
+    .click();
+
+  const dialog = signedIn.getByRole('dialog', { name: 'Fix the shortfall from Odds and Ends' });
+  await expect(dialog).toContainText('which is not enough');
+
+  // Opened on the choice that works, not the one that does not.
+  await dialog.getByRole('button', { name: 'Apply' }).click();
+
+  await expect(signedIn.getByRole('button', { name: 'Odds and Ends balance' })).toContainText(
+    '$0.00',
+  );
+  // $50 of the $200 closed.
+  await expect(signedIn.getByRole('status')).toContainText('$150.00 over-delegated');
+});
+
+test('a custom amount moves only part of the surplus', async ({ signedIn, api }) => {
+  await makeAccount('Everyday Checking', 'asset', 30000n);
+  await makeDelegation(api, 'Grocery');
+  await signedIn.reload();
+
+  await signedIn
+    .getByRole('row', { name: /Grocery/ })
+    .getByRole('button', { name: 'Move surplus here' })
+    .click();
+
+  const dialog = signedIn.getByRole('dialog', { name: 'Move surplus into Grocery' });
+  await dialog.getByRole('radio', { name: /Some of it/ }).check();
+  await dialog.getByLabel('Amount to move here').fill('120.00');
+  await dialog.getByRole('button', { name: 'Apply' }).click();
+
+  await expect(signedIn.getByRole('button', { name: 'Grocery balance' })).toContainText('$120.00');
+  await expect(signedIn.getByRole('status')).toContainText('$180.00 to delegate');
+});

@@ -10,6 +10,7 @@ import {
 import { ApiError } from '../api/client.js';
 import { AccountRowMenu } from '../components/AccountRowMenu.jsx';
 import { BalanceBanner } from '../components/BalanceBanner.jsx';
+import { AbsorbDialog } from '../components/AbsorbDialog.jsx';
 import { BudgetSection } from '../components/BudgetSection.jsx';
 import { CheckRowMenu } from '../components/CheckRowMenu.jsx';
 import { DelegationRowMenu } from '../components/DelegationRowMenu.jsx';
@@ -244,6 +245,8 @@ export function MainBudget(): ReactNode {
   const [problem, setProblem] = useState<string | null>(null);
   // Set when Transfer was opened from a line whose archive was blocked.
   const [transferFrom, setTransferFrom] = useState<string | null>(null);
+  /** The line the budget's reading is being closed against, if any. */
+  const [absorbing, setAbsorbing] = useState<BudgetRowDto | null>(null);
 
   const [newGrouping, setNewGrouping] = useState(false);
 
@@ -461,6 +464,15 @@ export function MainBudget(): ReactNode {
     section.groupings.map((grouping) => ({ id: grouping.id, name: grouping.name }));
   const groupingOptions = groupingOptionsFor(view.data.delegations);
 
+  /*
+   * The reading at the top of the page, which decides whether the per-row
+   * button appears at all and which direction it offers.
+   *
+   * Exactly zero is the one case with nothing to do — and it is a real case,
+   * because closing the difference against a line is what produces it.
+   */
+  const difference = BigInt(view.data.identity.differenceCents);
+
   return (
     <div>
       <header className="mb-6 flex items-baseline justify-between gap-4">
@@ -572,6 +584,12 @@ export function MainBudget(): ReactNode {
         onPlace={(rowId, groupingId, orderedIds) =>
           placeDelegation.mutate({ id: rowId, groupingId, orderedIds })
         }
+        {...(difference === 0n
+          ? {}
+          : {
+              onAbsorb: setAbsorbing,
+              absorbLabel: difference > 0n ? 'Move surplus here' : 'Fix deficit from here',
+            })}
         rowMenu={(row) =>
           // A check is not a delegation to rename, re-file or adjust; its menu
           // offers only what the bank can decide.
@@ -590,6 +608,15 @@ export function MainBudget(): ReactNode {
           )
         }
       />
+
+      {absorbing && (
+        <AbsorbDialog
+          row={absorbing}
+          differenceCents={BigInt(view.data.identity.differenceCents)}
+          onClose={() => setAbsorbing(null)}
+          onProblem={setProblem}
+        />
+      )}
 
       {dialog === 'transaction' && (
         <NewTransactionDialog delegations={spendable} onClose={() => setDialog('none')} />

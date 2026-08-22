@@ -3,6 +3,7 @@ import type { FastifyPluginCallback } from 'fastify';
 import { z } from 'zod';
 import { prisma } from '../db/client.js';
 import {
+  absorbDifference,
   adjustDelegationByDelta,
   adjustDelegationToTarget,
   reconcileToActual,
@@ -85,6 +86,18 @@ const groupingColorSchema = z
 const placeSchema = z.object({
   groupingId: z.string().uuid().nullable(),
   orderedIds: z.array(z.string().uuid()).min(1).max(500),
+});
+
+/**
+ * `custom` carries an amount; the other two are computed from the identity.
+ *
+ * A positive magnitude either way — the direction is the budget's to decide,
+ * not the caller's, which is what stops "move surplus here" being usable to
+ * take money out.
+ */
+const absorbSchema = z.object({
+  mode: z.enum(['all', 'zero_line', 'custom']),
+  amountCents: centsIn.optional(),
 });
 
 const createGroupingSchema = z.object({
@@ -268,6 +281,42 @@ export const budgetRoutes: FastifyPluginCallback = (fastify, _options, done) => 
       },
       cycleStartedAt: dateOut(view.cycleStartedAt),
     }));
+  });
+
+  /**
+   * Moves the reading at the top of the page into or out of one line.
+   *
+   * The amount is worked out on the server from the identity as it stands right
+   * now, not sent by the client: "all of it" has to mean all of it at the
+   * moment it is applied, and an hourly sync in between would otherwise move a
+   * figure the page had already decided.
+   *
+   * In a transaction, because the delta and the cached balance have to land
+   * together — that is true of every ledger write here.
+   */
+  fastify.post('/api/delegations/:id/absorb', async (request) => {
+    const { id } = idParamsSchema.parse(request.params);
+    const body = absorbSchema.parse(request.body);
+
+    const result = await prisma.$transaction(async (tx) =>
+      absorbDifference(tx, {
+        delegationId: id,
+        mode: body.mode,
+        ...(body.amountCents === undefined ? {} : { amountCents: body.amountCents }),
+        actorId: request.currentUser?.id ?? null,
+      }),
+    );
+
+    request.log.info(
+      { delegationId: id, mode: body.mode, actorId: request.currentUser?.id },
+      'budget difference absorbed',
+    );
+
+    return {
+      deltaCents: centsOut(result.deltaCents),
+      balanceCents: centsOut(result.balanceCents),
+      differenceCents: centsOut(result.differenceCents),
+    };
   });
 
   fastify.get('/api/delegations/:id/history', async (request) => {

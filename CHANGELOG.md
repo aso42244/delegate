@@ -8,6 +8,29 @@ phase (`v0.1.0-phase1`, and so on).
 
 Nothing yet.
 
+## [0.24.0] — 2026-08-22
+
+### Added
+
+- **Close the budget's reading against one line, from the line itself.** Hover a
+  delegation while the reading is not zero and a button appears: **Move surplus
+  here** when money has landed and is not in an envelope, **Fix deficit from
+  here** when the envelopes hold more than exists.
+
+  Three choices either way — all of it, bring the line to zero (or empty it into
+  the shortfall), or an amount you type. A choice that would be refused is shown
+  disabled **with the reason**, because the reason is usually the thing worth
+  knowing: "This line holds $50.00, which is not enough."
+
+  The dialog opens on the first choice that can actually be applied, which
+  matters most in exactly the case somebody opens it for.
+
+  It is the same `adjust` event a manual adjustment has always written, with the
+  amount computed instead of typed — so history, undo and the ledger check all
+  work on it already. The difference is **recomputed on the server** when the
+  request lands: "all of it" has to mean all of it then, not whatever the page
+  was showing before the hourly sync.
+
 ## [0.23.0] — 2026-08-22
 
 ### Added
