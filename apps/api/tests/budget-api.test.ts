@@ -10,6 +10,7 @@ import {
   markTwoFactorEnrolled,
   resetDatabase,
 } from './helpers.js';
+import { adjustDelegationByDelta } from '../src/domain/adjust.js';
 import { sessionCookie } from './http.js';
 
 /**
@@ -435,5 +436,188 @@ describe('Reconcile to Actual', () => {
 
     const fromEvents = await ledgerBalances();
     expect(await delegationBalance(grocery)).toBe(fromEvents.get(grocery) ?? 0n);
+  });
+});
+
+/**
+ * Moving the reading at the top of the page into or out of one line.
+ *
+ * The arithmetic is the whole feature, so every case here is worked from
+ * figures chosen by hand rather than from what the code happens to produce.
+ */
+describe('absorbing the difference', () => {
+  /** $300 in the bank, `delegated` already in envelopes: the rest is surplus. */
+  async function budget(delegated: bigint): Promise<string> {
+    await makeAccount({ name: 'Checking', type: 'asset', balanceCents: 30_000n });
+    const id = await makeDelegationVia('Grocery');
+    if (delegated !== 0n) {
+      await adjustDelegationByDelta(prisma, { delegationId: id, deltaCents: delegated });
+    }
+    return id;
+  }
+
+  async function absorb(
+    id: string,
+    body: Record<string, unknown>,
+  ): Promise<{ status: number; json: Record<string, string> }> {
+    const response = await app.inject({
+      method: 'POST',
+      url: `/api/delegations/${id}/absorb`,
+      headers: { cookie },
+      payload: body,
+    });
+    return { status: response.statusCode, json: response.json() };
+  }
+
+  describe('with a surplus', () => {
+    it('moves all of it into the line', async () => {
+      // $300 − $100 delegated = $200 to delegate.
+      const id = await budget(10_000n);
+
+      const { status, json } = await absorb(id, { mode: 'all' });
+      expect(status).toBe(200);
+      expect(json['deltaCents']).toBe('20000');
+      expect(json['balanceCents']).toBe('30000');
+      // The whole point: the reading lands on zero.
+      expect(json['differenceCents']).toBe('0');
+    });
+
+    it('brings an over-spent line back to zero', async () => {
+      // $300 − (−$50) = $350 to delegate, and the line is $50 in the red.
+      const id = await budget(-5_000n);
+
+      const { status, json } = await absorb(id, { mode: 'zero_line' });
+      expect(status).toBe(200);
+      expect(json['deltaCents']).toBe('5000');
+      expect(json['balanceCents']).toBe('0');
+      // Not all of it — only enough to close the line.
+      expect(json['differenceCents']).toBe('30000');
+    });
+
+    it('refuses to zero a line that is not over-spent', async () => {
+      const id = await budget(10_000n);
+
+      const { status, json } = await absorb(id, { mode: 'zero_line' });
+      expect(status).toBe(400);
+      expect(json).toMatchObject({ error: { code: 'line_not_over_spent' } });
+    });
+
+    it('takes a custom amount, and refuses more than there is', async () => {
+      const id = await budget(10_000n);
+
+      expect((await absorb(id, { mode: 'custom', amountCents: '5000' })).json['balanceCents']).toBe(
+        '15000',
+      );
+
+      // $150 left to delegate; asking for $200 is asking to over-delegate.
+      const tooMuch = await absorb(id, { mode: 'custom', amountCents: '20000' });
+      expect(tooMuch.status).toBe(400);
+      expect(tooMuch.json).toMatchObject({ error: { code: 'more_than_available' } });
+    });
+  });
+
+  describe('when over-delegated', () => {
+    it('covers the whole shortfall from a line that can', async () => {
+      // $300 − $500 delegated = $200 over-delegated.
+      const id = await budget(50_000n);
+
+      const { status, json } = await absorb(id, { mode: 'all' });
+      expect(status).toBe(200);
+      expect(json['deltaCents']).toBe('-20000');
+      expect(json['balanceCents']).toBe('30000');
+      expect(json['differenceCents']).toBe('0');
+    });
+
+    it('refuses to cover it from a line that cannot', async () => {
+      await makeAccount({ name: 'Checking', type: 'asset', balanceCents: 30_000n });
+      const big = await makeDelegationVia('Rent');
+      await adjustDelegationByDelta(prisma, { delegationId: big, deltaCents: 45_000n });
+      const small = await makeDelegationVia('Grocery');
+      await adjustDelegationByDelta(prisma, { delegationId: small, deltaCents: 5_000n });
+
+      // $300 − $500 = $200 over. Grocery holds $50.
+      const { status, json } = await absorb(small, { mode: 'all' });
+      expect(status).toBe(400);
+      expect(json).toMatchObject({ error: { code: 'line_too_small' } });
+    });
+
+    it('empties a line that cannot cover it', async () => {
+      await makeAccount({ name: 'Checking', type: 'asset', balanceCents: 30_000n });
+      const big = await makeDelegationVia('Rent');
+      await adjustDelegationByDelta(prisma, { delegationId: big, deltaCents: 45_000n });
+      const small = await makeDelegationVia('Grocery');
+      await adjustDelegationByDelta(prisma, { delegationId: small, deltaCents: 5_000n });
+
+      const { status, json } = await absorb(small, { mode: 'zero_line' });
+      expect(status).toBe(200);
+      expect(json['deltaCents']).toBe('-5000');
+      expect(json['balanceCents']).toBe('0');
+      // $50 of the $200 shortfall closed.
+      expect(json['differenceCents']).toBe('-15000');
+    });
+
+    it('refuses to empty a line that could have covered the whole thing', async () => {
+      const id = await budget(50_000n);
+
+      const { status, json } = await absorb(id, { mode: 'zero_line' });
+      expect(status).toBe(400);
+      expect(json).toMatchObject({ error: { code: 'line_covers_it' } });
+    });
+
+    it('refuses a custom amount larger than the shortfall', async () => {
+      const id = await budget(50_000n);
+
+      const { status, json } = await absorb(id, { mode: 'custom', amountCents: '25000' });
+      expect(status).toBe(400);
+      expect(json).toMatchObject({ error: { code: 'more_than_needed' } });
+    });
+  });
+
+  it('refuses when the budget is already balanced', async () => {
+    const id = await budget(30_000n);
+
+    const { status, json } = await absorb(id, { mode: 'all' });
+    expect(status).toBe(400);
+    expect(json).toMatchObject({ error: { code: 'nothing_to_move' } });
+  });
+
+  /**
+   * A check holds a specific sum written on a specific cheque, settled by
+   * matching the payment that cashes it. Adjusting one would make the two
+   * disagree.
+   */
+  it('refuses an outstanding check', async () => {
+    await makeAccount({ name: 'Checking', type: 'asset', balanceCents: 30_000n });
+    const source = await makeDelegationVia('Grocery');
+    await adjustDelegationByDelta(prisma, { delegationId: source, deltaCents: 10_000n });
+
+    const written = await app.inject({
+      method: 'POST',
+      url: '/api/checks',
+      headers: { cookie },
+      payload: {
+        checkNumber: '1042',
+        amountCents: '5000',
+        issuedAt: '2026-08-01T00:00:00.000Z',
+        sourceDelegationId: source,
+      },
+    });
+    expect(written.statusCode).toBe(201);
+
+    const check = await prisma.delegation.findFirstOrThrow({ where: { kind: 'check' } });
+    const { status, json } = await absorb(check.id, { mode: 'all' });
+    expect(status).toBe(400);
+    expect(json).toMatchObject({ error: { code: 'check_not_adjustable' } });
+  });
+
+  it('writes it as an ordinary adjustment, so history and undo already work', async () => {
+    const id = await budget(10_000n);
+    await absorb(id, { mode: 'all' });
+
+    const events = await prisma.delegationEvent.findMany({
+      where: { delegationId: id, eventType: 'adjust' },
+    });
+    expect(events).toHaveLength(2);
+    expect(events.some((event) => event.deltaCents === 20_000n)).toBe(true);
   });
 });

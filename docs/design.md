@@ -450,6 +450,22 @@ underwater property moves to the debts side, where it belongs. A mortgage that i
 not itself in net worth is never netted, since subtracting it here would subtract
 it twice.
 
+## Closing the reading against a line
+
+While the reading at the top is not zero, hovering a delegation reveals a small
+button — **Move surplus here**, or **Fix deficit from here** when the envelopes
+hold more than exists. It is revealed on hover like the row menu: an occasional
+act on a row that is mostly numbers.
+
+Three choices, and an unavailable one is shown **disabled with its reason**
+rather than hidden. Hiding it makes the dialog look arbitrary, and the reason —
+"This line holds $50.00, which is not enough" — is usually what the reader
+actually wanted to know. The dialog opens on the first choice that can be
+applied.
+
+An outstanding check never offers it. A check holds a specific sum written on a
+specific cheque and is settled by matching the payment that cashes it.
+
 ## Delegate, and undoing it
 
 One slot in the header. While the latest run can still be undone the button

@@ -106,6 +106,19 @@ export interface UpdateDelegationInput {
 
 export const budgetApi = {
   /**
+   * Moves the reading at the top of the page into or out of one line.
+   *
+   * No amount for `all` or `zero_line`: the server works those out from the
+   * identity as it stands when the request lands, so "all of it" cannot go
+   * stale between the page rendering and the button being pressed.
+   */
+  absorb: (id: string, mode: 'all' | 'zero_line' | 'custom', amountCents?: string) =>
+    api.post<{ deltaCents: string; balanceCents: string; differenceCents: string }>(
+      `/api/delegations/${id}/absorb`,
+      amountCents === undefined ? { mode } : { mode, amountCents },
+    ),
+
+  /**
    * Where a line sits, and which grouping it is in — one request, because
    * dragging a row does both. `orderedIds` is the destination grouping's full
    * membership afterwards, in order.

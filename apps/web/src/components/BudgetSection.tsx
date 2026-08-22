@@ -49,6 +49,17 @@ export interface BudgetSectionProps {
    * cannot be interpreted two ways.
    */
   readonly onPlace?: (rowId: string, groupingId: string | null, orderedIds: string[]) => void;
+  /**
+   * Offers to close the budget's reading against this line.
+   *
+   * Supplied only by the Delegations section, and only while there is a reading
+   * to close — a button that would open a dialog with nothing to do is worse
+   * than no button. Revealed on hover like the row menu, because it is an
+   * occasional act and the row is mostly numbers.
+   */
+  readonly onAbsorb?: (row: BudgetRowDto) => void;
+  /** What the button says: which direction the money is going. */
+  readonly absorbLabel?: string;
 }
 
 function parseCents(value: string | null): bigint | null {
@@ -67,6 +78,8 @@ export function BudgetSection({
   rowMenu,
   onMoveToGrouping,
   onPlace,
+  onAbsorb,
+  absorbLabel,
 }: BudgetSectionProps): ReactNode {
   const [newName, setNewName] = useState('');
 
@@ -202,6 +215,18 @@ export function BudgetSection({
       >
         <td className={`row-cell pr-3 ${inGrouping ? 'pl-8' : 'pl-3'}`}>
           <span className="text-ink">{row.name}</span>
+
+          {/* A check is settled by matching the payment that cashes it, never
+              by having money moved into it. */}
+          {onAbsorb && row.kind !== 'check' && (
+            <button
+              type="button"
+              onClick={() => onAbsorb(row)}
+              className="row-menu-trigger ml-2 rounded border border-line bg-canvas px-1.5 py-0.5 text-label font-semibold text-muted hover:bg-surface"
+            >
+              {absorbLabel}
+            </button>
+          )}
           {/*
             Only the accounts kept by hand are marked, and only with an `m`.
             Nearly everything here comes from the feed, so labelling those said
