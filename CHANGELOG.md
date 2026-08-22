@@ -8,6 +8,23 @@ phase (`v0.1.0-phase1`, and so on).
 
 Nothing yet.
 
+## [0.22.1] — 2026-08-22
+
+### Fixed
+
+- **An institution reconnected at the bridge broke syncing permanently.**
+  Deleting a connection at SimpleFIN and adding it back gives every one of its
+  accounts a new external id. Delegate matches on that id, so they arrived
+  looking new — and creating one failed on the partial unique index over
+  `lower(name)`, because the original was still there under the same name. The
+  collision then recurred every hour, forever. Such an account is adopted now:
+  same row, same register, same type and nickname, new id.
+- **One account's failure stopped every other institution syncing.** Anything
+  thrown while ingesting an account escaped and failed the whole run, so a
+  household with six connections lost all six balances because one had been
+  reconnected. Per-account failures are reported on the run and skipped, which
+  is how a foreign-currency account has always been handled.
+
 ## [0.22.0] — 2026-08-20
 
 ### Changed

@@ -677,3 +677,117 @@ describe('sync runs', () => {
     expect(abandoned.status).toBe('failed');
   });
 });
+
+/**
+ * An institution deleted at the bridge and connected again.
+ *
+ * This happened to the household on 2026-08-22. A broken Frontier Bank
+ * connection was deleted and re-added at SimpleFIN, which gave every one of its
+ * accounts a **new external id**. Delegate matches on that id, so they arrived
+ * looking like new accounts — and creating one failed on the partial unique
+ * index over `lower(name)`, because the original was still there under exactly
+ * the same name.
+ *
+ * Two things were wrong, and the second was the worse one: the collision recurs
+ * every hour forever, and the throw took the whole run with it, so the other
+ * five institutions stopped updating too.
+ */
+describe('an institution reconnected at the bridge', () => {
+  it('adopts the account it replaced rather than failing on the name', async () => {
+    const client = new ScriptedSimpleFinClient([
+      accountSet([{ id: 'frontier-old', name: 'Everyday Checking', balance: '1000.00' }]),
+      // Same account, same name, new id — which is all a re-link looks like.
+      accountSet([{ id: 'frontier-new', name: 'Everyday Checking', balance: '1250.00' }]),
+    ]);
+
+    await sync(client);
+    const before = await prisma.account.findFirstOrThrow({ where: { externalId: 'frontier-old' } });
+    // The owner corrected the type and gave it a nickname; both must survive.
+    await prisma.account.update({
+      where: { id: before.id },
+      data: { needsReview: false, nickname: 'Frontier' },
+    });
+
+    const result = await sync(client);
+    expect(result.errors).toEqual([]);
+
+    // One account, not two: the register is not split in half.
+    expect(await prisma.account.count()).toBe(1);
+
+    const after = await prisma.account.findFirstOrThrow();
+    expect(after.id).toBe(before.id);
+    expect(after.externalId).toBe('frontier-new');
+    expect(after.balanceCents).toBe(125000n);
+    expect(after.nickname).toBe('Frontier');
+    expect(after.needsReview).toBe(false);
+  });
+
+  it('keeps the transactions that were already on it', async () => {
+    const client = new ScriptedSimpleFinClient([
+      accountSet([
+        {
+          id: 'frontier-old',
+          name: 'Everyday Checking',
+          balance: '1000.00',
+          transactions: [
+            { id: 'txn-1', amount: '-42.10', description: 'Whole Foods', posted: EPOCH_2026_08_01 },
+          ],
+        },
+      ]),
+      accountSet([{ id: 'frontier-new', name: 'Everyday Checking', balance: '1000.00' }]),
+    ]);
+
+    await sync(client);
+    await sync(client);
+
+    const account = await prisma.account.findFirstOrThrow();
+    const transactions = await prisma.transaction.findMany({ where: { accountId: account.id } });
+    expect(transactions).toHaveLength(1);
+    expect(transactions[0]?.description).toBe('Whole Foods');
+  });
+
+  /**
+   * The distinguishing signal is that the old id is one the feed no longer
+   * mentions. An institution that is merely erroring still lists its accounts,
+   * so a live id is never mistaken for a replaced one.
+   */
+  it('does not adopt an account the feed still knows about', async () => {
+    const client = new ScriptedSimpleFinClient([
+      accountSet([{ id: 'acct-1', name: 'Everyday Checking', balance: '1000.00' }]),
+      accountSet([
+        { id: 'acct-1', name: 'Everyday Checking', balance: '1000.00' },
+        // A genuinely different account that happens to collide on name.
+        { id: 'acct-2', name: 'Everyday Checking', balance: '50.00' },
+      ]),
+    ]);
+
+    await sync(client);
+    const result = await sync(client);
+
+    // Refused, reported, and the run still succeeds — which is the point.
+    expect(result.errors.some((error) => error.includes('Everyday Checking'))).toBe(true);
+    expect(await prisma.account.count()).toBe(1);
+    expect((await prisma.account.findFirstOrThrow()).externalId).toBe('acct-1');
+  });
+
+  it('lets the other institutions sync even when one of them cannot', async () => {
+    const client = new ScriptedSimpleFinClient([
+      accountSet([{ id: 'acct-1', name: 'Everyday Checking', balance: '1000.00' }]),
+      accountSet([
+        { id: 'acct-1', name: 'Everyday Checking', balance: '1000.00' },
+        { id: 'acct-2', name: 'Everyday Checking', balance: '50.00' },
+        // A healthy institution, behind the broken one in the feed.
+        { id: 'acct-3', name: 'Rewards Credit Card', balance: '-200.00' },
+      ]),
+    ]);
+
+    await sync(client);
+    const result = await sync(client);
+
+    // The run reports the problem rather than dying of it …
+    expect(result.errors).toHaveLength(1);
+    // … and the account after the broken one still landed.
+    const card = await prisma.account.findFirstOrThrow({ where: { externalId: 'acct-3' } });
+    expect(card.balanceCents).toBe(20000n);
+  });
+});

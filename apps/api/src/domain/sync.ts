@@ -198,6 +198,12 @@ export async function runSync(db: Db, options: RunSyncOptions): Promise<SyncRunS
     });
     errors.push(...feed.errors);
 
+    /*
+     * Every external id in this run's feed, gathered before anything is
+     * written, so `upsertAccount` can tell a re-linked account from a new one.
+     */
+    const feedExternalIds = new Set(feed.accounts.map((account) => account.externalId));
+
     for (const feedAccount of feed.accounts) {
       // USD only, by hard constraint. Importing a foreign-currency account would
       // silently corrupt the identity, so it is refused loudly instead.
@@ -208,7 +214,37 @@ export async function runSync(db: Db, options: RunSyncOptions): Promise<SyncRunS
         continue;
       }
 
-      const { accountId, discovered } = await upsertAccount(db, feedAccount, now);
+      /*
+       * One account's problem is one account's problem.
+       *
+       * This used to let anything thrown here escape and fail the whole run, so
+       * a single institution in a bad state stopped the other five from
+       * updating at all — the household lost every balance because one
+       * connection had been reconnected at the bridge. Reported and skipped
+       * now, which is how a foreign-currency account has always been handled
+       * two lines above.
+       */
+      try {
+        await ingestAccount(feedAccount);
+      } catch (error) {
+        const reason = error instanceof Error ? error.message : String(error);
+        errors.push(`Could not sync "${feedAccount.name}": ${reason}`);
+        logger.error(
+          { correlationId, name: feedAccount.name, err: error },
+          'account skipped after an error; the rest of the run continues',
+        );
+      }
+    }
+
+    async function ingestAccount(feedAccount: FeedAccount): Promise<void> {
+      const { accountId, discovered } = await upsertAccount(
+        db,
+        feedAccount,
+        now,
+        feedExternalIds,
+        logger,
+        correlationId,
+      );
       accountsTouched += 1;
       if (discovered) {
         accountsDiscovered += 1;
@@ -340,6 +376,15 @@ async function upsertAccount(
   db: Db,
   feedAccount: FeedAccount,
   now: Date,
+  /**
+   * Every external id this run's feed mentioned.
+   *
+   * Used to tell a genuinely new account from one that has been re-linked:
+   * only an account the feed no longer knows about can have been replaced.
+   */
+  feedExternalIds: ReadonlySet<string>,
+  logger: SyncLogger,
+  correlationId: string,
 ): Promise<{ accountId: string; discovered: boolean }> {
   const existing = await db.account.findUnique({
     where: {
@@ -369,6 +414,60 @@ async function upsertAccount(
   const displayName = feedAccount.institution
     ? `${feedAccount.institution} ${feedAccount.name}`.trim()
     : feedAccount.name;
+
+  /*
+   * Adopt the account this one replaced, rather than duplicating it.
+   *
+   * Deleting an institution at the bridge and adding it back gives every one of
+   * its accounts a **new external id**. Delegate matches on that id, so the
+   * accounts arrive looking new — and creating them fails on the partial unique
+   * index over `lower(name)`, because the originals are still there under
+   * exactly the same name. The run then died, taking every other institution's
+   * data with it, and it stayed dead: the collision recurs every hour forever.
+   *
+   * The signal that this is a re-link rather than a genuinely new account is
+   * that the old row's external id is one **this feed no longer mentions**. An
+   * institution that is merely erroring still lists its accounts, so a live id
+   * is never mistaken for a dead one.
+   *
+   * Adopting keeps the register, the type the owner may have corrected, the
+   * nickname, the grouping and the in-budget flag. Creating a second row would
+   * split the history in two and quietly drop the account out of the identity
+   * until somebody noticed.
+   */
+  const replaced = await db.account.findFirst({
+    where: {
+      archivedAt: null,
+      source: 'simplefin',
+      name: { equals: displayName, mode: 'insensitive' },
+      externalId: { notIn: [...feedExternalIds] },
+    },
+    select: { id: true, type: true, externalId: true },
+  });
+
+  if (replaced) {
+    await db.account.update({
+      where: { id: replaced.id },
+      data: {
+        externalId: feedAccount.externalId,
+        balanceCents: storedBalance(replaced.type, feedAccount.balanceCents),
+        balanceAsOf: feedAccount.balanceAsOf ?? now,
+      },
+    });
+
+    logger.warn(
+      {
+        correlationId,
+        accountId: replaced.id,
+        name: displayName,
+        from: replaced.externalId,
+        to: feedAccount.externalId,
+      },
+      're-linked account adopted; the institution was reconnected at the bridge',
+    );
+
+    return { accountId: replaced.id, discovered: false };
+  }
 
   const type = guessAccountType(displayName, feedAccount.balanceCents);
   const created = await db.account.create({

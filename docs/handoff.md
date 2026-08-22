@@ -391,6 +391,16 @@ does.
   `index.html` with a 200 and `text/html`, producing a blank page and a MIME
   error that pointed nowhere near the cause. End-to-end tests assert **content
   type**, not status.
+- **Reconnecting an institution at the bridge changes every account's external
+  id.** Delegate matches on that id, so the accounts come back looking new and
+  collide with the originals on the partial unique index over `lower(name)` —
+  which then repeats every hour forever. `upsertAccount` adopts an account whose
+  id the feed no longer mentions. The distinguishing signal is exactly that: an
+  institution that is merely erroring still lists its accounts.
+- **A failure while ingesting one account used to fail the whole run**, so six
+  connections went stale because one had been reconnected. Reported and skipped
+  now. Worth remembering as a shape: this sync touches several independent
+  things, and a loop over them should not be all-or-nothing.
 - **The SimpleFIN bridge silently caps a long date range** at 90 days and reports
   it as a note, not an error. A twelve-month request returned three months while
   looking entirely successful. Requests are split into 45-day windows, which is
