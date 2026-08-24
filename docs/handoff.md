@@ -88,7 +88,7 @@ These are non-negotiable. Violating one is a build failure.
 
 ## Where things stand
 
-**Live on the NAS, currently at `v0.24.1`.** 166 unit, 502 integration and 154
+**Live on the NAS, currently at `v0.28.1`.** 169 unit, 502 integration and 151
 end-to-end tests. There is no CI: GitHub stores the code and nothing else
 ([ADR 022](decisions/022-the-checks-run-here-not-on-github.md)), and every gate
 runs locally through `npm run verify`.
@@ -180,44 +180,69 @@ and should be deleted on sight. What remains narrowly true is that the origin
 speaks plain http by default, which is correct behind a tunnel or inside an onion
 service; ADR 017 carries the amendment.
 
+**Since v0.24.1**, in the order it shipped:
+
+- **Settings → Accounts is one line per account**, split into Assets and Debts.
+  The split deleted the Type column outright — the section a row sits in _is_ its
+  type. Bitcoin and property left the page entirely
+  ([ADR 021](decisions/021-bitcoin-and-property-are-managed-where-they-live.md)
+  is amended twice: first to a one-line footer, then to nothing)
+- **The balance reading is a chip beside the page title**, not a bar across it.
+  `Balanced`, `To delegate $1,000.00`, `Over delegated $212.00` — state first,
+  figure second, with the equation on hover _and_ on focus. The wording lives in
+  `formatIdentityLabel`, which already existed and which the page used to
+  duplicate
+- **A cleared check is confirmed, never settled unasked**
+  ([ADR 030](decisions/030-a-cleared-check-is-confirmed-not-assumed.md)). A sync
+  proposes; a person settles. Purple is the fourth banner colour, for something
+  worked out and not yet acted on
+- **Every chip is one letter** — `p i t c sp m s r btc h u n`. One letter, one
+  meaning application-wide, enforced by a unit test; the full word is always
+  carried for a screen reader and on hover. See `components/chips.ts`
+- **Settings is quieter tab by tab.** Every list obeys Settings → Display, every
+  "add" is a header button and a dialog, two-factor moved to Users, and Security
+  became Tor
+- **Reconcile to Actual is removed**
+  ([ADR 031](decisions/031-reconcile-to-actual-is-removed.md)). No data went with
+  it: every event it wrote is an ordinary manual adjustment. Correcting a
+  backfill now happens on the Budget row menu or Settings → Delegations
+- **The nightly backup runs**, and says so when it does not. See below — it had
+  never run once
+
 ### Known gaps to fix
 
-None outstanding. A boolean in a query string was being read with
-`z.coerce.boolean()`, and `Boolean("false")` is `true` — so the Transactions
-page's Categorized filter had been showing the uncategorized queue instead. It
-is the same fault that was found once on `/api/rules/preview` and patched at the
-call site, leaving four more; the parse now lives in `http/serialize.ts` as
-`booleanQuery` and there is one place to reach for.
-
-The one that stood here — an account's type could not be
-corrected from the UI, found by the owner on his first real sync — shipped in
-[#41](https://github.com/aso42244/delegate/pull/41) and is available from both
-Settings → Accounts and the asset or debt row menu.
+None outstanding.
 
 ### Waiting on the owner
 
 Everything on the old version of this list is done: the accounts are corrected,
 both people are enrolled in two-factor, go-live has happened, and the budget has
-been reconciled to actual and run on real data for weeks.
+been corrected to actual and run on real data for weeks.
+
+**Backups were closed on 2026-08-24**, on the owner's instruction, and the last
+item from the original go-live list went with them. What was found on the way is
+worth keeping: the nightly dump had **never once run**. The directory is created
+by `deploy.sh` under `sudo` and so owned by root, the container runs as uid 1000,
+and every `pg_dump` since go-live failed with "Permission denied" — logged at
+error level each time, into a log nothing read. Dumps land in
+`/volume1/backups/delegate`, set by `BACKUP_DIR` in `.env` on the NAS; this
+document named the wrong path for months, which is part of why the item stayed
+untickable.
+
+Two things now stop it recurring. `deploy.sh` chowns the directory and **proves
+the container can write to it** before reporting success. And Settings → Sync
+shows the newest dump, with a red banner when none has landed in 48 hours — the
+check asks whether a dump is on disk, never whether the last attempt threw.
+
+The half this project cannot verify is whether `/volume1/backups` is included in
+whatever backs up **off** the NAS. A dump on the same disk as the database is not
+a backup. That was closed on the owner's word rather than by inspection — it is
+DSM configuration, invisible from here — so a future session should treat it as
+reported rather than as checked.
 
 What is genuinely outstanding:
 
-1. **Include the backup directory in whatever backs up off the NAS.** The dumps
-   land in `/volume1/backups/delegate` — a DSM shared folder, set by `BACKUP_DIR`
-   in `.env` on the NAS, and _not_ the path this document claimed for months. A
-   dump on the same disk as the database is not a backup, and this half is still
-   not done.
-
-   The other half — that a dump lands at all — **was broken from go-live until
-   2026-08-24 and is now fixed.** The directory was created by `deploy.sh` under
-   `sudo` and so owned by root, the container runs as uid 1000, and every
-   nightly `pg_dump` failed with "Permission denied". It was logged at error
-   level each time and nothing read the log. Settings → Sync now shows the
-   newest dump and a red banner appears when none has landed in 48 hours, so
-   this cannot go quiet again. `deploy.sh` chowns the directory and proves the
-   container can write to it before it reports success.
-
-2. **Record the onion address** somewhere safe once Tor remote access is turned
+1. **Record the onion address** somewhere safe once Tor remote access is turned
    on. It lives in a Docker volume; lose the volume and the address cannot be
    recovered, only replaced, and every device that had it stops working.
 
@@ -261,8 +286,18 @@ refuses outright if a tarball ever claims `.env`, `backups` or `tls`.
 
 Things that have cost time and are worth knowing: `scp` to DSM needs `-O`;
 Synology's Docker will not create a missing bind-mount source, so `deploy.sh`
-makes them; and the `tor` service builds from source, so the first deploy after
-it landed takes noticeably longer.
+makes them **and chowns the backup directory to uid 1000**, which the container
+runs as; and the `tor` service builds from source, so the first deploy after it
+landed takes noticeably longer.
+
+A successful deploy now ends with `Backups: the container can write to the backup
+directory.` If it instead prints a warning, the nightly dump will fail silently
+until the chown it names is run — that is the one failure this project cannot
+catch anywhere but on the NAS.
+
+`sudo docker …` does not work on DSM: `sudo` resolves the command against
+`secure_path`, which does not include `/usr/local/bin`. Use `sudo -i sh -c '…'`,
+which runs root's login shell and gets a full `PATH`.
 
 Exposure is through a **Cloudflare Tunnel**, working, with two-factor in front.
 Cloudflare Access was declined. A Tor onion service is the alternative path and
@@ -447,6 +482,22 @@ does.
   end-to-end test accepts either. Worth making deterministic if it ever matters:
   the choice is to destroy the actor's session deliberately, which is arguably
   what removing your own credential should do.
+- **A bind mount replaces the image's directory, ownership and all.** The
+  Dockerfile ran `chown -R node:node /backups` and it counted for nothing: at
+  runtime the host directory takes that path, and the host's ownership is what
+  the process meets. `deploy.sh` created it under `sudo`, so it was root's, and
+  the container runs as uid 1000. Every nightly `pg_dump` since go-live failed
+  with "Permission denied". Anything done to a mount point at build time is
+  decoration — the check that matters runs on the machine that has the mount,
+  which is why `deploy.sh` now writes a file there before reporting success.
+- **A thing that fails quietly is worse than one that does not run at all,
+  because it is trusted.** That sentence was in the comment at the top of
+  `backup.sh` while the backup it describes failed every night for weeks. The
+  code was right and nobody was reading it. What was missing was the question
+  asked from the other end: not "did the attempt throw" — which was answered
+  correctly, into a log — but "is there a recent dump on disk", which nothing
+  asked until somebody went looking by hand. **When something matters, check for
+  the evidence it leaves, not for the absence of an error.**
 - **Before believing a suite of failures, look at the machine.** The end-to-end
   suite once took **1.3 hours** instead of two minutes, with seven multi-minute
   timeouts scattered across specs the branch had not touched — each of which
