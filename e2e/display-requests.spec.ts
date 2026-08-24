@@ -48,11 +48,16 @@ test('a grouping takes a colour outside the five presets', async ({ signedIn: pa
   await api.post('/api/groupings', { data: { name: 'Essentials', section: 'delegations' } });
   await page.goto('/settings/groupings');
 
+  // The palette lives behind the current swatch now: a choice made once and then
+  // left alone for months does not need seven controls open on every row.
+  await page.getByRole('button', { name: /^Colour for Essentials/ }).click();
+
   const hex = page.getByLabel('Colour hex for Essentials');
   await hex.fill('#123ABC');
   await hex.press('Enter');
 
   await page.reload();
+  await page.getByRole('button', { name: /^Colour for Essentials/ }).click();
   await expect(page.getByLabel('Colour hex for Essentials')).toHaveValue('#123ABC');
 });
 
@@ -74,8 +79,8 @@ test('an account nickname replaces the long name on the budget', async ({
       name: 'Options for Citibank Costco VISA Costco Anywhere Visa Card by Citi-7459',
     })
     .click();
-  await page.getByRole('menuitem', { name: 'Short name' }).click();
-  await page.getByLabel('Short name', { exact: true }).fill('Costco Visa');
+  await page.getByRole('menuitem', { name: 'Nickname' }).click();
+  await page.getByLabel('Nickname', { exact: true }).fill('Costco Visa');
   await page.getByRole('button', { name: 'Save' }).click();
 
   // The dialog closing is the signal the write landed. Navigating before it does

@@ -1,12 +1,11 @@
 import type { Cents } from '@budget/shared';
-import { newUuid } from '../db/ids.js';
 import type { Db } from '../db/client.js';
 import { NotFoundError, ValidationError } from './errors.js';
 import { computeBudgetIdentity } from './identity.js';
 import { appendEvent } from './ledger.js';
 
 /**
- * Manual adjustment, and the go-live Reconcile screen.
+ * Manual adjustment.
  *
  * An adjustment records a *delta*, never an absolute. Editing Grocery from $650
  * to $675 writes an `adjust` event of +$25. Storing the absolute would destroy
@@ -73,68 +72,6 @@ export async function adjustDelegationByDelta(
     actorId: input.actorId ?? null,
     batchId: input.batchId ?? null,
   });
-}
-
-export interface ReconcileLine {
-  readonly delegationId: string;
-  readonly actualBalanceCents: Cents;
-}
-
-export interface ReconcileResult {
-  readonly batchId: string;
-  readonly adjustedCount: number;
-  readonly unchangedCount: number;
-  readonly totalDeltaCents: Cents;
-}
-
-/**
- * Go-live reconciliation: sixty corrections as one screen and one commit.
- *
- * At go-live the owner has backfilled and categorized twelve months of history,
- * which drives balances deeply negative — Grocery may read −$9,000 when its true
- * balance is $725. That is deliberate: it buys full history and accurate day-one
- * numbers. This writes every correction as an `adjust` delta in a single batch,
- * so the whole reconciliation is one identifiable event group in history.
- *
- * Must be called inside a transaction. Half a reconciliation is worse than none.
- */
-export async function reconcileToActual(
-  db: Db,
-  lines: readonly ReconcileLine[],
-  options: { readonly actorId?: string | null; readonly goLiveAt?: Date } = {},
-): Promise<ReconcileResult> {
-  const batchId = newUuid();
-  let adjustedCount = 0;
-  let totalDeltaCents: Cents = 0n;
-
-  for (const line of lines) {
-    const result = await adjustDelegationToTarget(db, {
-      delegationId: line.delegationId,
-      targetBalanceCents: line.actualBalanceCents,
-      actorId: options.actorId ?? null,
-      batchId,
-    });
-    if (result) {
-      adjustedCount += 1;
-      totalDeltaCents += result.deltaCents;
-    }
-  }
-
-  // Stamping go-live lets later views distinguish backfilled history from live
-  // activity without inspecting individual events.
-  if (options.goLiveAt) {
-    await db.budgetSettings.update({
-      where: { id: 1 },
-      data: { goLiveAt: options.goLiveAt },
-    });
-  }
-
-  return {
-    batchId,
-    adjustedCount,
-    unchangedCount: lines.length - adjustedCount,
-    totalDeltaCents,
-  };
 }
 
 /**

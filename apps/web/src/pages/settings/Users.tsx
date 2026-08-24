@@ -3,8 +3,10 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState, type FormEvent, type ReactNode } from 'react';
 import { api, ApiError, authApi } from '../../api/client.js';
 import { useSession } from '../../auth/SessionProvider.jsx';
+import { DANGER_ITEM_CLASS, ITEM_CLASS, RowMenuShell } from '../../components/RowMenuShell.jsx';
 import { Alert, Button, Modal, SelectField, TextField } from '../../components/ui.jsx';
 import { SettingsCard } from './SettingsCard.jsx';
+import { TwoFactorCard } from './TwoFactor.jsx';
 
 /**
  * Settings → Users.
@@ -331,59 +333,115 @@ function UserRow({
   const mayModify = canModifyUser(actorRole, user.role);
 
   return (
-    <tr className="border-b border-line last:border-0">
-      <td className="row-cell py-2 pl-3">
-        <span className="block text-ink">{user.displayName ?? user.username}</span>
-        {user.displayName !== null && (
-          <span className="block text-quiet text-muted">{user.username}</span>
-        )}
-      </td>
+    <>
+      <tr className="group border-b border-line last:border-0 hover:bg-surface">
+        <td className="row-cell overflow-hidden pl-1">
+          <div className="flex items-baseline gap-2 overflow-hidden">
+            <span className="truncate text-ink">{user.displayName ?? user.username}</span>
+            {user.displayName !== null && (
+              <span className="truncate text-quiet text-faint">{user.username}</span>
+            )}
+          </div>
+        </td>
 
-      <td className="row-cell text-quiet text-muted">{ROLE_LABELS[user.role]}</td>
+        <td className="row-cell w-32 text-quiet text-muted">{ROLE_LABELS[user.role]}</td>
 
-      <td className="row-cell text-quiet">
-        {user.hasTotp ? (
-          <span className="text-muted">Set up</span>
-        ) : (
-          <span className="text-warning">Not set up yet</span>
-        )}
-      </td>
+        <td className="row-cell w-32 text-quiet">
+          {user.hasTotp ? (
+            <span className="text-muted">On</span>
+          ) : (
+            <span className="text-warning">Not set up</span>
+          )}
+        </td>
 
-      <td className="row-cell text-quiet text-muted">
-        {archived ? 'Archived' : user.mustChangePassword ? 'Temporary password' : 'Active'}
-      </td>
+        <td className="row-cell w-40 text-quiet text-muted">
+          {archived ? 'Archived' : user.mustChangePassword ? 'Temporary password' : 'Active'}
+        </td>
 
-      <td className="row-cell pr-3">
-        <div className="flex flex-wrap justify-end gap-1">
-          {mayModify && !archived && (
-            <>
-              <Button onClick={onEdit}>Edit</Button>
-              <Button onClick={onResetPassword}>Reset password</Button>
-              {user.hasTotp && (
-                <Button onClick={() => act(() => usersApi.resetTwoFactor(user.id))}>
-                  Reset two-factor
-                </Button>
+        {/*
+          One menu rather than up to four buttons. A row could carry Edit, Reset
+          password, Reset two-factor and Archive at once — four controls of equal
+          weight, one of them destructive, on every row of a table read far more
+          often than it is acted on.
+        */}
+        <td className="w-10 row-cell pr-1">
+          {mayModify && (
+            <RowMenuShell name={user.displayName ?? user.username}>
+              {(controls) => (
+                <>
+                  {!archived && (
+                    <>
+                      <button
+                        type="button"
+                        role="menuitem"
+                        className={ITEM_CLASS}
+                        onClick={() => {
+                          onEdit();
+                          controls.close();
+                        }}
+                      >
+                        Edit
+                      </button>
+                      <button
+                        type="button"
+                        role="menuitem"
+                        className={ITEM_CLASS}
+                        onClick={() => {
+                          onResetPassword();
+                          controls.close();
+                        }}
+                      >
+                        Reset password
+                      </button>
+                      {user.hasTotp && (
+                        <button
+                          type="button"
+                          role="menuitem"
+                          className={ITEM_CLASS}
+                          onClick={() => {
+                            act(() => usersApi.resetTwoFactor(user.id));
+                            controls.close();
+                          }}
+                        >
+                          Reset two-factor
+                        </button>
+                      )}
+                    </>
+                  )}
+
+                  {!isSelf && (
+                    <>
+                      <div className="my-1 border-t border-line" />
+                      <button
+                        type="button"
+                        role="menuitem"
+                        className={archived ? ITEM_CLASS : DANGER_ITEM_CLASS}
+                        onClick={() => {
+                          act(() =>
+                            archived ? usersApi.restore(user.id) : usersApi.archive(user.id),
+                          );
+                          controls.close();
+                        }}
+                      >
+                        {archived ? 'Restore' : 'Archive'}
+                      </button>
+                    </>
+                  )}
+                </>
               )}
-            </>
+            </RowMenuShell>
           )}
-          {mayModify && !isSelf && (
-            <Button
-              variant={archived ? 'default' : 'danger'}
-              onClick={() =>
-                act(() => (archived ? usersApi.restore(user.id) : usersApi.archive(user.id)))
-              }
-            >
-              {archived ? 'Restore' : 'Archive'}
-            </Button>
-          )}
-        </div>
-        {problem && (
-          <p className="mt-1 text-right text-quiet text-danger" role="alert">
-            {problem}
-          </p>
-        )}
-      </td>
-    </tr>
+        </td>
+      </tr>
+
+      {problem && (
+        <tr>
+          <td colSpan={5} className="pb-2">
+            <Alert>{problem}</Alert>
+          </td>
+        </tr>
+      )}
+    </>
   );
 }
 
@@ -425,6 +483,10 @@ export function UsersSection(): ReactNode {
     <>
       <YourAccount />
 
+      {/* Two-factor is a credential of the account above, not a property of the
+          network, which is where it used to live. */}
+      <TwoFactorCard />
+
       {!mayManage ? (
         <SettingsCard title="The household" description="Who else can sign in to this budget.">
           <p className="text-quiet text-muted">
@@ -436,24 +498,19 @@ export function UsersSection(): ReactNode {
         <SettingsCard
           title="The household"
           description="Everyone sees the whole budget. Only account management is restricted."
+          action={<Button onClick={() => setCreating(true)}>Create account</Button>}
         >
-          <div className="mb-3 flex justify-end">
-            <Button variant="primary" onClick={() => setCreating(true)}>
-              Create account
-            </Button>
-          </div>
-
           {users.isLoading ? (
             <p className="text-quiet text-muted">Loading accounts…</p>
           ) : (
-            <table className="w-full border-t border-line">
+            <table className="w-full table-fixed border-t-2 border-ink">
               <thead>
                 <tr className="text-label uppercase tracking-[0.05em] text-muted">
-                  <th className="row-cell pl-3 text-left font-normal">Name</th>
-                  <th className="row-cell text-left font-normal">Role</th>
-                  <th className="row-cell text-left font-normal">Two-factor</th>
-                  <th className="row-cell text-left font-normal">Status</th>
-                  <th className="row-cell pr-3" />
+                  <th className="row-cell pl-1 text-left font-normal">Name</th>
+                  <th className="row-cell w-32 text-left font-normal">Role</th>
+                  <th className="row-cell w-32 text-left font-normal">Two-factor</th>
+                  <th className="row-cell w-40 text-left font-normal">Status</th>
+                  <th className="w-10 row-cell pr-1" />
                 </tr>
               </thead>
               <tbody>

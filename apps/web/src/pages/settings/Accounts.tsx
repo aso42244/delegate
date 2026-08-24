@@ -1,12 +1,11 @@
 import { formatCents, formatCentsForInput, isBalanceStale, tryParseMoney } from '@budget/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Fragment, useState, type FormEvent, type ReactNode } from 'react';
-import { Link } from 'react-router-dom';
+import { useState, type FormEvent, type ReactNode } from 'react';
 import { accountsApi, type AccountDto } from '../../api/accounts.js';
 import { ApiError } from '../../api/client.js';
 import { AccountRowMenu } from '../../components/AccountRowMenu.jsx';
 import { Chips } from '../../components/Chip.jsx';
-import { Alert, Button, SelectField, TextField, Toggle } from '../../components/ui.jsx';
+import { Alert, Button, Modal, SelectField, TextField, Toggle } from '../../components/ui.jsx';
 import { SettingsCard } from './SettingsCard.jsx';
 
 /**
@@ -29,7 +28,7 @@ import { SettingsCard } from './SettingsCard.jsx';
  * for, and a balance you can click on a manual account.
  */
 
-function AddAccountForm({ onDone }: { readonly onDone: () => void }): ReactNode {
+function AddAccountDialog({ onDone }: { readonly onDone: () => void }): ReactNode {
   const queryClient = useQueryClient();
   const [name, setName] = useState('');
   const [type, setType] = useState<'asset' | 'debt'>('asset');
@@ -79,74 +78,81 @@ function AddAccountForm({ onDone }: { readonly onDone: () => void }): ReactNode 
   }
 
   return (
-    <form onSubmit={onSubmit} className="mt-4 flex flex-col gap-3 rounded-lg bg-surface p-3">
-      <TextField
-        label="Name"
-        value={name}
-        onChange={(event) => setName(event.target.value)}
-        placeholder="Physical Cash"
-        autoComplete="off"
-      />
+    <Modal
+      label="Add an account you keep by hand"
+      title="Add a manual account"
+      description="For anything no feed reports: physical cash, a hardware wallet, a loan between people."
+      onClose={onDone}
+    >
+      <form onSubmit={onSubmit} className="flex flex-col gap-3">
+        <TextField
+          label="Name"
+          value={name}
+          onChange={(event) => setName(event.target.value)}
+          placeholder="Physical Cash"
+          autoComplete="off"
+        />
 
-      <div className="flex gap-3">
-        <div className="flex-1">
-          <SelectField
-            label="Type"
-            value={type}
-            onChange={(value) => setType(value as 'asset' | 'debt')}
+        <div className="flex gap-3">
+          <div className="flex-1">
+            <SelectField
+              label="Type"
+              value={type}
+              onChange={(value) => setType(value as 'asset' | 'debt')}
+            >
+              <option value="asset">Asset</option>
+              <option value="debt">Debt</option>
+            </SelectField>
+          </div>
+          <div className="flex-1">
+            <TextField
+              label="Balance"
+              value={balance}
+              onChange={(event) => setBalance(event.target.value)}
+              inputMode="decimal"
+              placeholder="200.00"
+              className="money"
+              {...(type === 'debt' ? { hint: 'What is owed, as a positive amount.' } : {})}
+            />
+          </div>
+        </div>
+
+        <TextField
+          label="Goes stale after (days)"
+          value={staleness}
+          onChange={(event) => setStaleness(event.target.value)}
+          inputMode="numeric"
+          placeholder="Leave empty for never"
+          hint="How long a confirmed balance stays trustworthy. One mechanism for cash, the hardware wallet and the house alike."
+        />
+
+        <div className="flex gap-6">
+          <label className="flex items-center gap-2 text-quiet text-ink">
+            <Toggle checked={inBudget} onChange={setInBudget} label="In budget" />
+            In budget
+          </label>
+          <label className="flex items-center gap-2 text-quiet text-ink">
+            <Toggle checked={inNetWorth} onChange={setInNetWorth} label="In net worth" />
+            In net worth
+          </label>
+        </div>
+
+        {problem && <Alert>{problem}</Alert>}
+
+        <div className="flex justify-end gap-2">
+          <Button type="button" onClick={onDone}>
+            Cancel
+          </Button>
+          <Button
+            type="submit"
+            variant="primary"
+            disabled={name.trim() === '' || balance.trim() === '' || create.isPending}
           >
-            <option value="asset">Asset</option>
-            <option value="debt">Debt</option>
-          </SelectField>
+            {create.isPending ? 'Adding…' : 'Add account'}
+          </Button>
         </div>
-        <div className="flex-1">
-          <TextField
-            label="Balance"
-            value={balance}
-            onChange={(event) => setBalance(event.target.value)}
-            inputMode="decimal"
-            placeholder="200.00"
-            className="money"
-            {...(type === 'debt' ? { hint: 'What is owed, as a positive amount.' } : {})}
-          />
-        </div>
-      </div>
-
-      <TextField
-        label="Goes stale after (days)"
-        value={staleness}
-        onChange={(event) => setStaleness(event.target.value)}
-        inputMode="numeric"
-        placeholder="Leave empty for never"
-        hint="How long a confirmed balance stays trustworthy. One mechanism for cash, the hardware wallet and the house alike."
-      />
-
-      <div className="flex gap-6">
-        <label className="flex items-center gap-2 text-quiet text-ink">
-          <Toggle checked={inBudget} onChange={setInBudget} label="In budget" />
-          In budget
-        </label>
-        <label className="flex items-center gap-2 text-quiet text-ink">
-          <Toggle checked={inNetWorth} onChange={setInNetWorth} label="In net worth" />
-          In net worth
-        </label>
-      </div>
-
-      {problem && <Alert>{problem}</Alert>}
-
-      <div className="flex gap-2">
-        <Button
-          type="submit"
-          variant="primary"
-          disabled={name.trim() === '' || balance.trim() === '' || create.isPending}
-        >
-          {create.isPending ? 'Adding…' : 'Add account'}
-        </Button>
-        <Button type="button" onClick={onDone}>
-          Cancel
-        </Button>
-      </div>
-    </form>
+      </form>
+    </Modal>
   );
 }
 
@@ -322,63 +328,11 @@ function AccountsTable({
   );
 }
 
-/**
- * Whether this row's `balance_cents` is a figure or a placeholder.
- *
- * A property's is its valuation and is always written. A holding's is written
- * only while it is in the budget, because that is the only place the identity
- * reads it — and taking one *out* of the budget clears it rather than leaving a
- * number behind that would go on counting (ADR 021). So a net-worth-only
- * holding reads `0`, which is not a balance of zero but the absence of one.
- * Printing it as $0.00 beside a wallet worth six figures is a lie, and the
- * old "Manage in Bitcoin" row printed exactly that.
- */
-function hasMaintainedBalance(account: AccountDto): boolean {
-  return account.managedAs !== 'bitcoin' || account.inBudget;
-}
-
-/**
- * Bitcoin and property, in one line rather than a row each.
- *
- * ADR 021 listed them here in full so the page could not become "a lie about
- * what the budget is made of". That reasoning survives; the two rows it was
- * spending do not. Neither is an account on this page, neither is editable
- * here, and each name links to the tab that owns it.
- */
-function ManagedElsewhere({ accounts }: { readonly accounts: readonly AccountDto[] }): ReactNode {
-  if (accounts.length === 0) return null;
-
-  return (
-    <div className="mt-3 flex flex-wrap items-baseline gap-x-2 gap-y-1 border-t border-line px-3 pt-2 text-quiet text-muted">
-      <span>Also counted:</span>
-      {accounts.map((account, index) => (
-        <Fragment key={account.id}>
-          {index > 0 && (
-            <span aria-hidden className="text-faint">
-              ·
-            </span>
-          )}
-          <Link
-            to={account.managedAs === 'bitcoin' ? '/settings/bitcoin' : '/settings/properties'}
-            className="font-semibold text-accent"
-          >
-            {account.name}
-          </Link>
-          {hasMaintainedBalance(account) && (
-            <span className="money text-ink">{formatCents(BigInt(account.balanceCents))}</span>
-          )}
-        </Fragment>
-      ))}
-    </div>
-  );
-}
-
 export function AccountsSection(): ReactNode {
   const [adding, setAdding] = useState(false);
   const accounts = useQuery({ queryKey: ['accounts'], queryFn: () => accountsApi.list() });
 
   const all = accounts.data?.accounts ?? [];
-  const managed = all.filter((account) => account.managedAs !== 'none');
 
   /*
    * Ordered by what the row shows, not by what the database sorts on.
@@ -398,6 +352,7 @@ export function AccountsSection(): ReactNode {
     <SettingsCard
       title="Accounts"
       description="What each account is, whether it counts towards the budget, and whether it counts towards net worth."
+      action={<Button onClick={() => setAdding(true)}>Add a manual account</Button>}
     >
       {accounts.isLoading ? (
         <p className="text-quiet text-muted">Loading accounts…</p>
@@ -415,17 +370,10 @@ export function AccountsSection(): ReactNode {
             section="Debts"
             accounts={ordinary.filter((account) => account.type === 'debt')}
           />
-          <ManagedElsewhere accounts={managed} />
         </div>
       )}
 
-      {adding ? (
-        <AddAccountForm onDone={() => setAdding(false)} />
-      ) : (
-        <div className="mt-4">
-          <Button onClick={() => setAdding(true)}>+ Add a manual account</Button>
-        </div>
-      )}
+      {adding && <AddAccountDialog onDone={() => setAdding(false)} />}
     </SettingsCard>
   );
 }

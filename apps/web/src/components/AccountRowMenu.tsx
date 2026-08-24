@@ -165,14 +165,14 @@ function RenameDialog({
 }
 
 /**
- * The short name — what the budget and the register show in place of whatever
- * the institution calls the account.
+ * The nickname — what the budget and the register show in place of whatever the
+ * institution calls the account.
  *
  * Empty clears it, which is why the Save button is not disabled on an empty
  * field the way Rename's is: clearing is a real edit, and the only way back to
  * the full name.
  */
-function ShortNameDialog({
+function NicknameDialog({
   row,
   onClose,
 }: {
@@ -204,14 +204,14 @@ function ShortNameDialog({
 
   return (
     <Modal
-      label={`Short name for ${row.name}`}
-      title="Short name"
+      label={`Nickname for ${row.name}`}
+      title="Nickname"
       description="Shown on the budget and the register in place of the institution's own wording. Leave it empty to use the full name."
       onClose={onClose}
     >
       <form onSubmit={onSubmit} className="flex flex-col gap-3">
         <TextField
-          label="Short name"
+          label="Nickname"
           value={nickname}
           onChange={(event) => setNickname(event.target.value)}
           placeholder={row.name}
@@ -250,7 +250,7 @@ export function AccountRowMenu({
   readonly groupings?: readonly GroupingOption[];
 }): ReactNode {
   const queryClient = useQueryClient();
-  const [dialog, setDialog] = useState<'none' | 'rename' | 'shortName' | 'balance'>('none');
+  const [dialog, setDialog] = useState<'none' | 'rename' | 'nickname' | 'balance'>('none');
   const [blocked, setBlocked] = useState<string | null>(null);
 
   const refresh = async (): Promise<void> => {
@@ -291,9 +291,7 @@ export function AccountRowMenu({
       overlay={
         <>
           {dialog === 'rename' && <RenameDialog row={row} onClose={() => setDialog('none')} />}
-          {dialog === 'shortName' && (
-            <ShortNameDialog row={row} onClose={() => setDialog('none')} />
-          )}
+          {dialog === 'nickname' && <NicknameDialog row={row} onClose={() => setDialog('none')} />}
           {dialog === 'balance' && <SetBalanceDialog row={row} onClose={() => setDialog('none')} />}
         </>
       }
@@ -318,17 +316,28 @@ export function AccountRowMenu({
           </div>
         ) : (
           <>
-            <button
-              type="button"
-              role="menuitem"
-              className={ITEM_CLASS}
-              onClick={() => {
-                setDialog('rename');
-                controls.close();
-              }}
-            >
-              Rename
-            </button>
+            {/*
+              Rename is for accounts this budget owns the name of.
+              
+              A SimpleFIN account is called whatever the institution calls it,
+              and the next sync would not restore a name typed over it — it
+              would simply leave the two disagreeing, with no sign on the page
+              that they ever matched. The nickname is the supported way to call
+              it something else, and it says so by sitting right underneath.
+            */}
+            {row.source === 'manual' && (
+              <button
+                type="button"
+                role="menuitem"
+                className={ITEM_CLASS}
+                onClick={() => {
+                  setDialog('rename');
+                  controls.close();
+                }}
+              >
+                Rename
+              </button>
+            )}
 
             {/* Absent rather than null on a budget row, whose `name` is already
                 the short one — there is no pair to edit from there. */}
@@ -338,11 +347,11 @@ export function AccountRowMenu({
                 role="menuitem"
                 className={ITEM_CLASS}
                 onClick={() => {
-                  setDialog('shortName');
+                  setDialog('nickname');
                   controls.close();
                 }}
               >
-                Short name
+                Nickname
               </button>
             )}
 

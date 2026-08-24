@@ -17,7 +17,7 @@ import { expect, OWNER, test } from './fixtures.js';
 
 /** Removes the factor the fixture enrolled, leaving the real screen to re-do it. */
 async function turnItOff(page: Page): Promise<void> {
-  await page.goto('/settings/security');
+  await page.goto('/settings/users');
   await page.getByLabel('Current password').fill(OWNER.password);
   await page.getByRole('button', { name: 'Turn off two-factor' }).click();
   await expect(page.getByRole('button', { name: 'Set up two-factor' })).toBeVisible();
@@ -104,7 +104,7 @@ test('a recovery code gets in when the phone is gone, and is then spent', async 
 
   // Spent, not merely accepted: the count is what tells the household how many
   // ways back in they have left.
-  await page.goto('/settings/security');
+  await page.goto('/settings/users');
   await expect(page.getByText('9 recovery codes left.')).toBeVisible();
 });
 

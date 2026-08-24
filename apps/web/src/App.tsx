@@ -17,9 +17,8 @@ import { DelegationsSection } from './pages/settings/Delegations.jsx';
 import { GroupingsSection } from './pages/settings/Groupings.jsx';
 import { RulesSection } from './pages/settings/Rules.jsx';
 import { DisplaySection } from './pages/settings/Display.jsx';
-import { SecuritySection } from './pages/settings/Security.jsx';
+import { TorSection } from './pages/settings/Tor.jsx';
 import { UsersSection } from './pages/settings/Users.jsx';
-import { ReconcileSection } from './pages/settings/Reconcile.jsx';
 import { SettingsLayout } from './pages/settings/SettingsLayout.jsx';
 import { SyncSection } from './pages/settings/Sync.jsx';
 import { Transactions } from './pages/Transactions.jsx';
@@ -118,10 +117,12 @@ export function App(): ReactNode {
             <Route path="properties" element={<PropertiesSection />} />
             <Route path="budget" element={<BudgetSection />} />
             <Route path="users" element={<UsersSection />} />
-            <Route path="security" element={<SecuritySection />} />
+            <Route path="tor" element={<TorSection />} />
+            {/* The tab was Security until two-factor moved to Users; anything
+                bookmarked or linked still lands somewhere. */}
+            <Route path="security" element={<Navigate to="/settings/tor" replace />} />
             <Route path="display" element={<DisplaySection />} />
             <Route path="archived" element={<ArchivedSection />} />
-            <Route path="reconcile" element={<ReconcileSection />} />
           </Route>
         </Route>
       </Route>

@@ -99,6 +99,10 @@ export interface SyncStatus {
     readonly status: string;
     readonly startedAt: string;
     readonly finishedAt: string | null;
+    readonly accountsTouched: number;
+    readonly transactionsAdded: number;
+    readonly transactionsUpdated: number;
+    readonly transactionsReversed: number;
     readonly error: string | null;
   }[];
 }

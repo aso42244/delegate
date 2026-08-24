@@ -21,16 +21,19 @@ test('a holding is added on its own tab and becomes an asset', async ({ signedIn
   await expect(signedIn.getByLabel('Hardware wallet quantity')).toHaveValue('0.05000000');
 
   /*
-   * It is an account now — but not a row on the Accounts page. ADR 021 listed
-   * holdings and properties there in full so the page could not become "a lie
-   * about what the budget is made of"; the amendment keeps that promise in one
-   * line under the tables instead of a row apiece.
+   * It is an account now — and it appears on Settings → Accounts nowhere at all.
+   * ADR 021 listed holdings and properties there so the page could not become
+   * "a lie about what the budget is made of", then kept the promise in a
+   * one-line footer; the owner wanted both managed only where they live, so the
+   * footer went too. ADR 031 records what that costs.
    */
   await signedIn.goto('/settings/accounts');
-  await expect(signedIn.getByRole('link', { name: 'Hardware wallet' })).toBeVisible();
-  await expect(signedIn.getByRole('button', { name: 'Options for Hardware wallet' })).toHaveCount(
-    0,
-  );
+  await expect(signedIn.getByText('Hardware wallet')).toHaveCount(0);
+
+  // It is an account all the same — net worth on, budget off, which is the
+  // default because Bitcoin is not spendable. Its own tab is where it lives.
+  await signedIn.goto('/settings/bitcoin');
+  await expect(signedIn.getByLabel('Hardware wallet quantity')).toBeVisible();
 });
 
 test('a quantity finer than a satoshi is refused rather than rounded', async ({ signedIn }) => {
