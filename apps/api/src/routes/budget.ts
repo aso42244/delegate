@@ -125,6 +125,7 @@ function presentRow(row: BudgetRow): Record<string, unknown> {
     type: row.type,
     inBudget: row.inBudget,
     inNetWorth: row.inNetWorth,
+    managedAs: row.managedAs,
     needsReview: row.needsReview,
     balanceAsOf: dateOut(row.balanceAsOf),
     stalenessIntervalDays: row.stalenessIntervalDays,

@@ -252,11 +252,3 @@ export function Toggle({
     </button>
   );
 }
-
-export function Tag({ children }: { children: ReactNode }): ReactNode {
-  return (
-    <span className="rounded bg-surface-2 px-1.5 py-0.5 text-label font-semibold text-muted">
-      {children}
-    </span>
-  );
-}

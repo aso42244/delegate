@@ -28,6 +28,15 @@ export interface BudgetRow {
   readonly source: string | null;
   /** Assets and debts only; null for a delegation, which is neither. */
   readonly type: 'asset' | 'debt' | null;
+  /**
+   * Which Settings tab owns this row's lifecycle — ADR 021.
+   *
+   * On the page it is the difference between a bank balance and a figure that
+   * moves on its own: a holding is a quantity times a price, revalued daily with
+   * no transaction behind it, and a property is a dated valuation. Both read as
+   * ordinary balances without something saying otherwise.
+   */
+  readonly managedAs: 'none' | 'bitcoin' | 'property';
   readonly inBudget: boolean;
   readonly inNetWorth: boolean;
   readonly needsReview: boolean;
@@ -167,6 +176,7 @@ export async function buildBudgetView(db: Db): Promise<BudgetView> {
         stalenessIntervalDays: true,
         inBudget: true,
         inNetWorth: true,
+        managedAs: true,
       },
     }),
     db.delegation.findMany({
@@ -220,6 +230,7 @@ export async function buildBudgetView(db: Db): Promise<BudgetView> {
     notes: null,
     source: account.source,
     type: account.type,
+    managedAs: account.managedAs,
     inBudget: account.inBudget,
     inNetWorth: account.inNetWorth,
     needsReview: account.needsReview,
@@ -243,6 +254,7 @@ export async function buildBudgetView(db: Db): Promise<BudgetView> {
     source: null,
     type: null,
     // Delegations are not accounts; these are an account's business.
+    managedAs: 'none',
     inBudget: false,
     inNetWorth: false,
     needsReview: false,

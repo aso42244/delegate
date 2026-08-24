@@ -353,6 +353,19 @@ export async function clearCheck(
     });
   }
 
+  /*
+   * The payment remembers which check it settled.
+   *
+   * The allocation deliberately points at the source delegation rather than the
+   * check line, so without this there is nothing on the transaction saying a
+   * check was involved and the register cannot mark the row. Written here rather
+   * than derived, because after the line is archived there is no way back to it.
+   */
+  await db.transaction.update({
+    where: { id: transactionId },
+    data: { settledCheckDelegationId: checkId },
+  });
+
   await db.delegation.update({ where: { id: checkId }, data: { archivedAt: new Date() } });
 
   return {

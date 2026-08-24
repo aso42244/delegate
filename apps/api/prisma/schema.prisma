@@ -423,6 +423,7 @@ model Delegation {
   grouping     Grouping?               @relation(fields: [groupingId], references: [id])
   checkSource  Delegation?             @relation("CheckSource", fields: [checkSourceDelegationId], references: [id])
   checksDrawn  Delegation[]            @relation("CheckSource")
+  settledBy    Transaction?            @relation("SettledCheck")
   events       DelegationEvent[]
   allocations  TransactionAllocation[]
   rules        CategorizationRule[]
@@ -565,11 +566,20 @@ model Transaction {
 
   kind TransactionKind @default(normal)
 
+  // The outstanding check this payment settled, if it settled one. `clearCheck`
+  // allocates to the delegation the check was drawn on and archives the check
+  // line, which left nothing here saying a check was involved — so the register
+  // could not mark the row. Null on everything that predates the column: which
+  // payment settled which check cannot be reconstructed afterwards, and guessing
+  // from amounts and dates is the loose matching ADR 030 exists to avoid.
+  settledCheckDelegationId String? @unique @map("settled_check_delegation_id") @db.Uuid
+
   archivedAt DateTime? @map("archived_at")
   createdAt  DateTime  @default(now()) @map("created_at")
   updatedAt  DateTime  @updatedAt @map("updated_at")
 
   account           Account                 @relation(fields: [accountId], references: [id])
+  settledCheck      Delegation?             @relation("SettledCheck", fields: [settledCheckDelegationId], references: [id])
   pairedTransaction Transaction?            @relation("TransactionPair", fields: [pairedTransactionId], references: [id])
   pairedBy          Transaction[]           @relation("TransactionPair")
   allocations       TransactionAllocation[]

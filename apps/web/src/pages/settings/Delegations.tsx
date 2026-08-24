@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState, type ReactNode } from 'react';
 import { budgetApi, type BudgetRowDto, type BudgetViewDto } from '../../api/budget.js';
 import { ApiError } from '../../api/client.js';
+import { Chip } from '../../components/Chip.jsx';
 import { Alert, Button, SelectField, TextArea, TextField, Toggle } from '../../components/ui.jsx';
 import { SettingsCard } from './SettingsCard.jsx';
 
@@ -99,8 +100,8 @@ function DelegationRow({
           </span>
           {row.name}
           {row.isUtility && (
-            <span className="ml-2 rounded bg-surface-2 px-1.5 py-0.5 text-label font-semibold text-muted">
-              utility
+            <span className="ml-2 inline-flex align-middle">
+              <Chip kind="utility" />
             </span>
           )}
         </button>

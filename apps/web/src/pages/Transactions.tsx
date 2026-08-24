@@ -8,13 +8,15 @@ import {
   type TransactionDto,
   type TransactionFilters,
 } from '../api/transactions.js';
+import { Chips } from '../components/Chip.jsx';
+import type { ChipKind } from '../components/chips.js';
 import { DelegationPicker } from '../components/DelegationPicker.jsx';
 import { NewTransactionDialog } from '../components/NewTransactionDialog.jsx';
 import { PairSuggestions } from '../components/PairSuggestions.jsx';
 import { MatchCheckDialog } from '../components/MatchCheckDialog.jsx';
 import { TransactionRowMenu } from '../components/TransactionRowMenu.jsx';
 import { SplitDialog } from '../components/SplitDialog.jsx';
-import { Alert, Button, Tag } from '../components/ui.jsx';
+import { Alert, Button } from '../components/ui.jsx';
 import { NO_HOVER, useMediaQuery } from '../useMediaQuery.js';
 import { useRowKeyboard } from '../useRowKeyboard.js';
 
@@ -36,9 +38,15 @@ function AllocationSummary({ transaction }: { transaction: TransactionDto }): Re
   }
   if (transaction.allocations.length <= 1) return null;
 
+  /*
+   * The names only. "Split across 2:" used to lead this, and the `sp` mark now
+   * says exactly that in two characters a few pixels to the left — printing both
+   * is the same fact twice on the one row where width is scarcest. The
+   * description truncates to make room for whatever follows it, so those three
+   * words were being paid for out of the merchant name.
+   */
   return (
     <span className="text-quiet text-muted">
-      Split across {transaction.allocations.length}:{' '}
       {transaction.allocations.map((allocation) => allocation.delegation.name).join(', ')}
     </span>
   );
@@ -47,6 +55,27 @@ function AllocationSummary({ transaction }: { transaction: TransactionDto }): Re
 /** Descriptions come from the bank and can contain quotes, which would break the selector. */
 function cssEscape(value: string): string {
   return value.replace(/["\\]/g, '\\$&');
+}
+
+/**
+ * Which marks a register row carries.
+ *
+ * What it *is* comes before what is *pending about it*: a settled check that
+ * has not cleared the account yet reads `c p`, which is the order somebody
+ * would say it in.
+ */
+function chipsFor(transaction: TransactionDto): ChipKind[] {
+  const kinds: ChipKind[] = [];
+
+  if (transaction.kind === 'income') kinds.push('income');
+  if (transaction.kind === 'transfer') kinds.push('transfer');
+  // Null on everything that predates the column: which payment settled which
+  // check cannot be reconstructed afterwards, so old rows carry no mark.
+  if (transaction.settledCheckNumber !== null) kinds.push('check');
+  if (transaction.allocations.length > 1) kinds.push('split');
+  if (transaction.pending) kinds.push('pending');
+
+  return kinds;
 }
 
 export function Transactions(): ReactNode {
@@ -330,18 +359,11 @@ export function Transactions(): ReactNode {
                         {transaction.description}
                       </span>
 
-                      {/* Pending rows already moved the envelopes, so they are
-                          marked rather than hidden. */}
-                      {transaction.pending && (
-                        <span className="shrink-0 rounded bg-warning-soft px-1.5 py-0.5 text-label font-semibold text-warning">
-                          Pending
-                        </span>
-                      )}
-                      {transaction.kind !== 'normal' && (
-                        <span className="shrink-0">
-                          <Tag>{transaction.kind}</Tag>
-                        </span>
-                      )}
+                      {/* Marks, not words — see components/chips.ts. A pending
+                          row has already moved its envelope while the account
+                          balance has not caught up, so it is marked rather than
+                          hidden, and it keeps the yellow. */}
+                      <Chips kinds={chipsFor(transaction)} />
                       {/* A confirmed pair has to be reversible: the suggestion
                           was a judgement, and judgements are sometimes wrong. */}
                       {transaction.pairedTransactionId && (

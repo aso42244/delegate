@@ -5,7 +5,8 @@ import { Link } from 'react-router-dom';
 import { accountsApi, type AccountDto } from '../../api/accounts.js';
 import { ApiError } from '../../api/client.js';
 import { AccountRowMenu } from '../../components/AccountRowMenu.jsx';
-import { Alert, Button, SelectField, Tag, TextField, Toggle } from '../../components/ui.jsx';
+import { Chips } from '../../components/Chip.jsx';
+import { Alert, Button, SelectField, TextField, Toggle } from '../../components/ui.jsx';
 import { SettingsCard } from './SettingsCard.jsx';
 
 /**
@@ -206,18 +207,17 @@ function AccountRow({ account }: { readonly account: AccountDto }): ReactNode {
               </span>
             )}
 
-            {/* Only `manual`. Eight identical `simplefin` chips say nothing; a
-                manual account is the one whose balance is yours to type and
-                which can go stale, so it is the one worth marking. */}
-            {account.source === 'manual' && <Tag>manual</Tag>}
-
-            {account.needsReview && (
-              <span className="text-label font-semibold whitespace-nowrap text-warning">
-                needs review
-              </span>
-            )}
-            {/* Said in words, not by colour alone. */}
-            {stale && <span className="text-label font-semibold text-warning">stale</span>}
+            {/* The same marks the budget uses — see components/chips.ts. Only
+                `manual` is worth carrying: eight identical `simplefin` chips say
+                nothing, while a manual account is the one whose balance is yours
+                to type and which can go stale. */}
+            <Chips
+              kinds={[
+                ...(account.source === 'manual' ? (['manual'] as const) : []),
+                ...(stale ? (['stale'] as const) : []),
+                ...(account.needsReview ? (['review'] as const) : []),
+              ]}
+            />
           </div>
         </td>
 

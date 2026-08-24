@@ -1,4 +1,4 @@
-import { formatCents, groupingTint } from '@budget/shared';
+import { formatCents, groupingTint, isBalanceStale } from '@budget/shared';
 import {
   Fragment,
   useRef,
@@ -10,6 +10,8 @@ import {
 } from 'react';
 import type { BudgetRowDto, BudgetSectionDto } from '../api/budget.js';
 import { NARROW, useMediaQuery } from '../useMediaQuery.js';
+import { Chips } from './Chip.jsx';
+import type { ChipKind } from './chips.js';
 import { MoneyCell } from './MoneyCell.jsx';
 
 /**
@@ -74,6 +76,36 @@ export interface BudgetSectionProps {
 
 function parseCents(value: string | null): bigint | null {
   return value === null ? null : BigInt(value);
+}
+
+/**
+ * Which marks a budget row carries.
+ *
+ * Ordered by what it *is* before what is *wrong with it*: a holding is a
+ * holding whether or not its price is stale, and reading `btc s` in that order
+ * matches how somebody would say it out loud.
+ */
+function chipsFor(row: BudgetRowDto): ChipKind[] {
+  const kinds: ChipKind[] = [];
+
+  if (row.managedAs === 'bitcoin') kinds.push('bitcoin');
+  if (row.managedAs === 'property') kinds.push('property');
+  // A managed row's balance is not one anybody keeps by hand, whatever `source`
+  // happens to say about how the account was created.
+  if (row.source === 'manual' && row.managedAs === 'none') kinds.push('manual');
+  if (row.isUtility) kinds.push('utility');
+  if (row.notes !== null && row.notes.trim() !== '') kinds.push('note');
+  if (
+    isBalanceStale(
+      row.balanceAsOf === null ? null : new Date(row.balanceAsOf),
+      row.stalenessIntervalDays,
+    )
+  ) {
+    kinds.push('stale');
+  }
+  if (row.needsReview) kinds.push('review');
+
+  return kinds;
 }
 
 export function BudgetSection({
@@ -228,25 +260,17 @@ export function BudgetSection({
           <span className="text-ink">{row.name}</span>
 
           {/*
-            Only the accounts kept by hand are marked, and only with an `m`.
-            Nearly everything here comes from the feed, so labelling those said
-            nothing while taking a word of width on every row; what is worth
-            knowing at a glance is the opposite — which balances somebody has to
-            keep true themselves. The full word is on Settings → Accounts, where
-            there is room for it.
+            Marks, never words. Nearly everything on this page comes from the
+            feed, so labelling *those* said nothing while taking a row's width;
+            what is worth knowing at a glance is the opposite — which balances
+            somebody keeps true by hand, which are guesses, and which are not
+            bank balances at all. Every mark carries its meaning for a screen
+            reader and on hover; see components/chips.ts.
           */}
-          {row.source === 'manual' && (
-            <span
-              aria-label="kept by hand"
-              title="Kept by hand"
-              className="ml-2 text-label font-semibold text-faint"
-            >
-              m
+          {chipsFor(row).length > 0 && (
+            <span className="ml-2 inline-flex align-middle">
+              <Chips kinds={chipsFor(row)} />
             </span>
-          )}
-          {/* A discovered account's type is a guess until the owner confirms it. */}
-          {row.needsReview && (
-            <span className="ml-2 text-label font-semibold text-warning">needs review</span>
           )}
         </td>
 

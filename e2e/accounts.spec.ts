@@ -22,10 +22,11 @@ test('a manual account is added and appears on the Budget page', async ({ signed
   await signedIn.getByLabel('Balance', { exact: true }).fill('200.00');
   await signedIn.getByRole('button', { name: 'Add account' }).click();
 
-  // Exact: the row shows the name, and a manual account is chipped `manual`
-  // beside it.
+  // The row shows the name, and a manual account carries the `m` mark. Located
+  // by its meaning rather than its letter: the letter is what is painted, the
+  // meaning is what it is for, and it is the half that must not drift.
   await expect(signedIn.getByText('Physical Cash', { exact: true })).toBeVisible();
-  await expect(signedIn.getByText('manual', { exact: true })).toBeVisible();
+  await expect(signedIn.getByTitle('Kept by hand')).toBeVisible();
 
   await signedIn.goto('/');
   await expect(signedIn.getByRole('button', { name: 'Physical Cash balance' })).toContainText(

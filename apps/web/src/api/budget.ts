@@ -18,6 +18,8 @@ export interface BudgetRowDto {
   readonly source: string | null;
   /** Accounts only; null for a delegation, which is neither. */
   readonly type: 'asset' | 'debt' | null;
+  /** Which Settings tab owns this row — ADR 021. `none` is an ordinary account. */
+  readonly managedAs: 'none' | 'bitcoin' | 'property';
   /** Accounts only; a delegation is neither. */
   readonly inBudget: boolean;
   readonly inNetWorth: boolean;

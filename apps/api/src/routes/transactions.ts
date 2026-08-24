@@ -89,6 +89,8 @@ function present(transaction: TransactionRow): Record<string, unknown> {
     kind: transaction.kind,
     archivedAt: dateOut(transaction.archivedAt),
     pairedTransactionId: transaction.pairedTransactionId,
+    /** Null unless this payment settled an outstanding check. */
+    settledCheckNumber: transaction.settledCheck?.checkNumber ?? null,
     account: {
       id: transaction.account.id,
       // The short name where one exists. The register is the other place a full
