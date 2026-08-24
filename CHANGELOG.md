@@ -6,6 +6,10 @@ phase (`v0.1.0-phase1`, and so on).
 
 ## [Unreleased]
 
+Nothing yet.
+
+## [0.27.0] — 2026-08-24
+
 ### Changed
 
 - **Every chip is one letter.** The marks beside a row's name were words —
