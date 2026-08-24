@@ -69,11 +69,18 @@ test('an account nickname replaces the long name on the budget', async ({
   await makeDelegation(api, 'Grocery');
 
   await page.goto('/settings/accounts');
-  const nickname = page.getByLabel(
-    'Short name for Citibank Costco VISA Costco Anywhere Visa Card by Citi-7459',
-  );
-  await nickname.fill('Costco Visa');
-  await nickname.press('Enter');
+  await page
+    .getByRole('button', {
+      name: 'Options for Citibank Costco VISA Costco Anywhere Visa Card by Citi-7459',
+    })
+    .click();
+  await page.getByRole('menuitem', { name: 'Short name' }).click();
+  await page.getByLabel('Short name', { exact: true }).fill('Costco Visa');
+  await page.getByRole('button', { name: 'Save' }).click();
+
+  // The dialog closing is the signal the write landed. Navigating before it does
+  // snapshots a budget that never updates.
+  await expect(page.getByRole('dialog')).toHaveCount(0);
 
   // The budget shows the short one; Settings keeps the full one, because that is
   // where identifying the account is the point.
@@ -82,8 +89,9 @@ test('an account nickname replaces the long name on the budget', async ({
   await expect(page.getByText('Citibank Costco VISA', { exact: false })).toBeHidden();
 
   await page.goto('/settings/accounts');
-  // `.first()`: the full name appears both as the row's label and inside the
-  // nickname field's accessible name.
+  // Both, on one line: the short name in black, the institution's own wording
+  // after it in grey.
+  await expect(page.getByText('Costco Visa', { exact: true })).toBeVisible();
   await expect(page.getByText('Citibank Costco VISA', { exact: false }).first()).toBeVisible();
 });
 

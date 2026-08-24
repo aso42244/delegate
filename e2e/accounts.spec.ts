@@ -7,6 +7,11 @@ import { expect, makeAccount, test } from './fixtures.js';
  * is part of the identity at all, and `in_net_worth` decides whether it shows on
  * the net worth chart — independently, which is the only reason a mortgage does
  * not swamp the budget.
+ *
+ * Settings is one line per account in two tables, Assets and Debts. Both
+ * switches stay on the row; the type, the short name and Archive are reached
+ * through the same `⋯` menu the Budget page uses, which is why several of these
+ * open it first.
  */
 
 test('a manual account is added and appears on the Budget page', async ({ signedIn }) => {
@@ -17,8 +22,10 @@ test('a manual account is added and appears on the Budget page', async ({ signed
   await signedIn.getByLabel('Balance', { exact: true }).fill('200.00');
   await signedIn.getByRole('button', { name: 'Add account' }).click();
 
-  // Exact: the type control's label also contains the account name.
+  // Exact: the row shows the name, and a manual account is chipped `manual`
+  // beside it.
   await expect(signedIn.getByText('Physical Cash', { exact: true })).toBeVisible();
+  await expect(signedIn.getByText('manual', { exact: true })).toBeVisible();
 
   await signedIn.goto('/');
   await expect(signedIn.getByRole('button', { name: 'Physical Cash balance' })).toContainText(
@@ -72,13 +79,18 @@ test('archiving an in-budget account holding money is refused, with a way out', 
   await makeAccount('Everyday Checking', 'asset', 40000n);
 
   await signedIn.goto('/settings/accounts');
-  await signedIn.getByRole('button', { name: 'Archive Everyday Checking' }).click();
+  await signedIn.getByRole('button', { name: 'Options for Everyday Checking' }).click();
+  await signedIn.getByRole('menuitem', { name: 'Archive' }).click();
 
   // The identity subtracts what the accounts hold, so this would move the
   // bottom line by $400 with nothing on screen to explain it.
   await expect(signedIn.getByRole('alert')).toContainText('$400.00');
+  // The refusal offers the honest way out rather than only saying no.
+  await expect(signedIn.getByRole('button', { name: 'Take it out of the budget' })).toBeVisible();
   // Still there: refused, not archived.
-  await expect(signedIn.getByRole('button', { name: 'Archive Everyday Checking' })).toBeVisible();
+  await expect(
+    signedIn.getByRole('button', { name: 'Options for Everyday Checking' }),
+  ).toBeVisible();
 });
 
 test('an off-budget account archives at any balance', async ({ signedIn }) => {
@@ -93,10 +105,11 @@ test('an off-budget account archives at any balance', async ({ signedIn }) => {
   await inBudget.click();
   await expect(inBudget).toHaveAttribute('aria-checked', 'false');
 
-  await signedIn.getByRole('button', { name: 'Archive The house' }).click();
+  await signedIn.getByRole('button', { name: 'Options for The house' }).click();
+  await signedIn.getByRole('menuitem', { name: 'Archive' }).click();
 
   // Not part of the identity, so there is nothing to protect.
-  await expect(signedIn.getByRole('button', { name: 'Archive The house' })).toHaveCount(0);
+  await expect(signedIn.getByRole('button', { name: 'Options for The house' })).toHaveCount(0);
 });
 
 test('the row menu on an asset offers the same settings as the Settings page', async ({
@@ -159,12 +172,20 @@ test('an account type can be corrected from Settings', async ({ signedIn }) => {
   await makeAccount('Mystery Account', 'asset', 40000n);
 
   await signedIn.goto('/settings/accounts');
+  await signedIn.getByRole('button', { name: 'Options for Mystery Account' }).click();
   await signedIn.getByLabel('Type of Mystery Account').selectOption('debt');
 
-  await signedIn.reload();
-  await expect(signedIn.getByLabel('Type of Mystery Account')).toHaveValue('debt');
+  /*
+   * The section a row sits in *is* its type, so correcting it moves the row to
+   * the other table. Asserting that rather than reloading also waits for the
+   * write: the row only lands here once the refetch that follows it has.
+   */
+  const debts = signedIn
+    .locator('table')
+    .filter({ has: signedIn.getByRole('columnheader', { name: 'Debts' }) });
+  await expect(debts.getByText('Mystery Account', { exact: true })).toBeVisible();
 
-  // It moves from Assets to Debts on the budget, and the identity follows.
+  // And on the budget, where the identity follows it.
   await signedIn.goto('/');
   await expect(signedIn.getByRole('status')).toContainText('$400.00 over-delegated');
 });

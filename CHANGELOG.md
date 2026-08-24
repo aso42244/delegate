@@ -6,7 +6,58 @@ phase (`v0.1.0-phase1`, and so on).
 
 ## [Unreleased]
 
-Nothing yet.
+### Changed
+
+- **Settings → Accounts is one line per account.** A row was 77px — a name, a
+  short-name box under it whether or not it held anything, a bordered dropdown
+  for a field with two values, two switches each with their own written label,
+  and a red Archive button. Ten rows came to 738px. The same accounts now take
+  289px.
+
+  The list is split into **Assets** and **Debts**, alphabetical within each, and
+  the section name sits in the first column heading rather than in a title row of
+  its own. That split removes the Type column outright: the section a row is in
+  _is_ its type.
+
+  What stays on the row is what the page exists for — the two switches, one click
+  each, under a heading that names them once instead of sixteen times — and the
+  balance, still click-to-edit on a manual account. Everything read far more often
+  than it is changed moved into the `⋯` menu the Budget page has always had:
+  Rename, **Short name**, Set balance, Type, and Archive. Settings and the Budget
+  row menu are now the same menu, which is what §9.5 asked for.
+
+  Ordering follows the name on screen rather than the one in the column. The API
+  sorts by `name`, which used to be the black text here; now the short name reads
+  first, and sorting by the grey text underneath would have put "Frontier
+  Checking" above "Frontier Bank Little Pioneer Savings" — its real name begins
+  "Big Deal Cash Back".
+
+  The source chip is shown on **manual** accounts only. Eight identical
+  `simplefin` chips said nothing; a manual account is the one whose balance is
+  yours to type and which can go stale.
+
+  Row height follows Settings → Display like every other table, so compact,
+  comfortable and dense give 32, 40 and 28px here too.
+
+- **Bitcoin and property are no longer rows on that page.** They are one line
+  under the tables — `Also counted: …` — with each name linking to the tab that
+  owns it. Amends [ADR 021](docs/decisions/021-bitcoin-and-property-are-managed-where-they-live.md),
+  which put them there so the page could not become "a lie about what the budget
+  is made of"; that reasoning holds, and now costs 30px rather than two full rows.
+
+### Fixed
+
+- **A net-worth-only Bitcoin holding no longer reads `$0.00`.** `balance_cents`
+  is written for in-budget holdings only and cleared when one leaves the budget,
+  so `0` there means the absence of a figure, not a balance of zero. The old
+  "Manage in Bitcoin" row printed it as `$0.00` next to a wallet worth six
+  figures. A figure now appears only where it is maintained.
+
+- **Archive reads as destructive again in every row menu.** It was written as
+  `ITEM_CLASS text-danger`, and those two colour utilities have equal
+  specificity — so which won came down to the order Tailwind emitted them in,
+  and it was `text-ink`. The one destructive item in the menu looked like all the
+  others. There is a `DANGER_ITEM_CLASS` now that cannot lose that race.
 
 ## [0.24.0] — 2026-08-22
 

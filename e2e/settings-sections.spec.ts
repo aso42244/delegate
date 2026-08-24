@@ -100,7 +100,8 @@ test('an archived account is listed beside archived delegations', async ({ signe
   await makeAccount('Old Card', 'debt', 0n);
 
   await signedIn.goto('/settings/accounts');
-  await signedIn.getByRole('button', { name: 'Archive Old Card' }).click();
+  await signedIn.getByRole('button', { name: 'Options for Old Card' }).click();
+  await signedIn.getByRole('menuitem', { name: 'Archive' }).click();
 
   await signedIn.goto('/settings/archived');
   await expect(signedIn.getByRole('button', { name: 'Restore Old Card' })).toBeVisible();
