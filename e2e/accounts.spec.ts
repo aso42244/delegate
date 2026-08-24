@@ -37,7 +37,7 @@ test('taking an account out of the budget removes it from the identity', async (
   await makeAccount('The house', 'asset', 45_000_000n);
 
   await signedIn.goto('/');
-  await expect(signedIn.getByRole('status')).toContainText('$450,000.00 to delegate');
+  await expect(signedIn.getByRole('status')).toContainText('To delegate $450,000.00');
 
   await signedIn.goto('/settings/accounts');
   const inBudget = signedIn.getByRole('switch', { name: 'The house in budget' });
@@ -187,7 +187,7 @@ test('an account type can be corrected from Settings', async ({ signedIn }) => {
 
   // And on the budget, where the identity follows it.
   await signedIn.goto('/');
-  await expect(signedIn.getByRole('status')).toContainText('$400.00 over-delegated');
+  await expect(signedIn.getByRole('status')).toContainText('Over delegated $400.00');
 });
 
 test('an account type can be corrected from the row menu', async ({ signedIn }) => {
@@ -197,5 +197,5 @@ test('an account type can be corrected from the row menu', async ({ signedIn }) 
   await signedIn.getByRole('button', { name: 'Options for Mystery Account' }).click();
   await signedIn.getByLabel('Type of Mystery Account').selectOption('debt');
 
-  await expect(signedIn.getByRole('status')).toContainText('$400.00 over-delegated');
+  await expect(signedIn.getByRole('status')).toContainText('Over delegated $400.00');
 });

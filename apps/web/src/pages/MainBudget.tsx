@@ -10,7 +10,7 @@ import {
 import { checksApi, type CheckMatchDto } from '../api/checks.js';
 import { ApiError } from '../api/client.js';
 import { AccountRowMenu } from '../components/AccountRowMenu.jsx';
-import { BalanceBanner } from '../components/BalanceBanner.jsx';
+import { BalanceReading } from '../components/BalanceReading.jsx';
 import { AbsorbDialog } from '../components/AbsorbDialog.jsx';
 import { BudgetSection } from '../components/BudgetSection.jsx';
 import { CheckRowMenu } from '../components/CheckRowMenu.jsx';
@@ -494,7 +494,12 @@ export function MainBudget(): ReactNode {
             around: with the undo offer in it, that line is long enough to shove
             a button onto a second row otherwise. */}
         <div className="min-w-0">
-          <h1 className="text-page font-bold text-ink">Budget</h1>
+          {/* The reading sits beside the title rather than in a bar of its own,
+              baseline-aligned with the controls across the header. */}
+          <div className="flex flex-wrap items-baseline gap-x-3 gap-y-2">
+            <h1 className="text-page font-bold text-ink">Budget</h1>
+            <BalanceReading view={view.data} />
+          </div>
           <p className="mt-1 text-quiet text-muted">
             {view.data.cycleStartedAt
               ? `This cycle began ${new Date(view.data.cycleStartedAt).toLocaleDateString()}.`
@@ -553,8 +558,6 @@ export function MainBudget(): ReactNode {
           )}
         </div>
       </header>
-
-      <BalanceBanner view={view.data} />
 
       {problem && (
         <div className="mb-4">

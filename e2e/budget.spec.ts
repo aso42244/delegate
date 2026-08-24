@@ -33,8 +33,8 @@ test('money that has landed reads as available to delegate, not as a fault', asy
 
   // The ordinary payday state. It must not be styled as a warning.
   const banner = signedIn.getByRole('status');
-  await expect(banner).toContainText('$4,890.00 to delegate');
-  await expect(banner).not.toContainText('over-delegated');
+  await expect(banner).toContainText('To delegate $4,890.00');
+  await expect(banner).not.toContainText('Over delegated');
 });
 
 /**
@@ -94,18 +94,23 @@ test('a pending charge is not offered as money to delegate', async ({ signedIn, 
   const balance = signedIn.getByLabel('Grocery balance');
   await balance.fill('1000.00');
   await balance.press('Enter');
-  await expect(signedIn.getByRole('status')).toContainText('Balanced');
+  const reading = signedIn.getByRole('status');
+  await expect(reading).toContainText('Balanced');
 
-  // No term at all while nothing is pending — it would be four words of noise on
-  // the one line that has to be read at a glance.
-  await expect(signedIn.getByRole('status')).not.toContainText('Pending');
+  // No term at all while nothing is pending — it would be four words of noise in
+  // a line that exists to be checked at a glance.
+  await reading.hover();
+  await expect(signedIn.getByRole('tooltip')).not.toContainText('Pending');
 
   await makePendingSpend(card, grocery, -36_147n);
   await signedIn.reload();
 
-  const banner = signedIn.getByRole('status');
-  await expect(banner).toContainText('Balanced');
-  await expect(banner).toContainText('− Pending $361.47');
+  await expect(reading).toContainText('Balanced');
+  // The working is a hover away now rather than printed beside the reading, so
+  // the term has to be found where it actually lives.
+  await expect(signedIn.getByRole('tooltip')).toHaveCount(0);
+  await reading.hover();
+  await expect(signedIn.getByRole('tooltip')).toContainText('− Pending $361.47');
 });
 
 test('a delegation is created by typing a name and pressing Enter', async ({ signedIn }) => {
@@ -133,7 +138,7 @@ test('editing a balance records the difference and updates the identity', async 
 
   await expect(signedIn.getByRole('button', { name: 'Grocery balance' })).toContainText('$650.00');
   // Assets 1000 − Delegations 650 = 350 still to delegate.
-  await expect(signedIn.getByRole('status')).toContainText('$350.00 to delegate');
+  await expect(signedIn.getByRole('status')).toContainText('To delegate $350.00');
 });
 
 test('an unparseable amount is kept on screen rather than discarded', async ({ signedIn, api }) => {
@@ -209,7 +214,7 @@ test('Delegate previews, distributes, and can be undone', async ({ signedIn, api
   await undo.click();
 
   await expect(signedIn.getByRole('button', { name: 'Grocery balance' })).toContainText('$0.00');
-  await expect(signedIn.getByRole('status')).toContainText('$300.00 to delegate');
+  await expect(signedIn.getByRole('status')).toContainText('To delegate $300.00');
 
   // And back to Delegate, with the offer gone.
   await expect(signedIn.getByRole('button', { name: 'Delegate', exact: true })).toBeVisible();
@@ -422,7 +427,7 @@ test('surplus is moved into a line, and the reading lands on zero', async ({ sig
   await signedIn.reload();
 
   // $300 in the bank, nothing delegated.
-  await expect(signedIn.getByRole('status')).toContainText('$300.00 to delegate');
+  await expect(signedIn.getByRole('status')).toContainText('To delegate $300.00');
 
   await signedIn
     .getByRole('row', { name: /Grocery/ })
@@ -450,7 +455,7 @@ test('a deficit is covered from a line that can afford it', async ({ signedIn, a
   await signedIn.reload();
 
   // $300 in the bank against $500 delegated.
-  await expect(signedIn.getByRole('status')).toContainText('$200.00 over-delegated');
+  await expect(signedIn.getByRole('status')).toContainText('Over delegated $200.00');
 
   await signedIn
     .getByRole('row', { name: /Grocery/ })
@@ -480,7 +485,7 @@ test('a line too small to cover it opens on emptying itself', async ({ signedIn,
   await api.post(`/api/delegations/${odds}/adjust`, { data: { deltaCents: '5000' } });
   await signedIn.reload();
 
-  await expect(signedIn.getByRole('status')).toContainText('$200.00 over-delegated');
+  await expect(signedIn.getByRole('status')).toContainText('Over delegated $200.00');
 
   await signedIn
     .getByRole('row', { name: /Odds and Ends/ })
@@ -497,7 +502,7 @@ test('a line too small to cover it opens on emptying itself', async ({ signedIn,
     '$0.00',
   );
   // $50 of the $200 closed.
-  await expect(signedIn.getByRole('status')).toContainText('$150.00 over-delegated');
+  await expect(signedIn.getByRole('status')).toContainText('Over delegated $150.00');
 });
 
 test('a custom amount moves only part of the surplus', async ({ signedIn, api }) => {
@@ -516,5 +521,36 @@ test('a custom amount moves only part of the surplus', async ({ signedIn, api })
   await dialog.getByRole('button', { name: 'Apply' }).click();
 
   await expect(signedIn.getByRole('button', { name: 'Grocery balance' })).toContainText('$120.00');
-  await expect(signedIn.getByRole('status')).toContainText('$180.00 to delegate');
+  await expect(signedIn.getByRole('status')).toContainText('To delegate $180.00');
+});
+
+/**
+ * The reading used to be a full-width bar carrying the state on the left and the
+ * equation on the right. It is a chip beside the title now, and the equation —
+ * the reason to trust the number — is one hover away.
+ */
+test('the reading states itself, and shows its working on demand', async ({ signedIn, api }) => {
+  await makeAccount('Frontier Checking', 'asset', 100_000n);
+  await makeDelegation(api, 'Grocery', '40000');
+
+  await signedIn.goto('/');
+
+  const reading = signedIn.getByRole('status');
+  await expect(reading).toHaveText('To delegate $1,000.00');
+
+  // The working is not on the page until it is asked for.
+  await expect(signedIn.getByRole('tooltip')).toHaveCount(0);
+
+  await reading.hover();
+  const working = signedIn.getByRole('tooltip');
+  await expect(working).toBeVisible();
+  await expect(working).toContainText('Assets $1,000.00');
+  await expect(working).toContainText('= $1,000.00');
+
+  // And by keyboard, because a reading only a mouse can reach is one some people
+  // never get. It takes focus without being a button: there is nothing to press.
+  await signedIn.mouse.move(0, 0);
+  await expect(working).toBeHidden();
+  await reading.focus();
+  await expect(signedIn.getByRole('tooltip')).toBeVisible();
 });

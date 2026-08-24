@@ -75,24 +75,40 @@ on the left, primary actions on the right.
 
 ## 5. Budget
 
-### Balance banner
+### The balance reading
 
-A full-width 8px-radius bar with a status dot and one line stating the identity.
+A chip **beside the page title**, baseline-aligned with the controls across the
+header. Button-shaped so it sits in that row's rhythm, and deliberately not a
+button: there is nothing to press, so it takes `cursor: default`.
+
+It was a full-width bar carrying the state on the left and the equation on the
+right. The equation is the reason to trust the figure, but it is not read twice a
+day, and a bar's worth of page for it pushed the budget itself down the screen.
+The state stays visible; the working is one hover away.
 
 Thresholds derive from the **configured tolerance** — set in Settings, default
 $5.00 — rather than being fixed. `T` below is that value.
 
-| Condition  | State       | Look                                      | Label                    |
-| ---------- | ----------- | ----------------------------------------- | ------------------------ |
-| ≥ +T       | To delegate | Accent blue on accent-soft; dot `#2783DE` | `$4,890.00 to delegate`  |
-| Within ±T  | Balanced    | Green                                     | `Balanced`               |
-| −T to −2T  | Warning     | Yellow; shows the shortfall               | `$7.40 over-delegated`   |
-| Beyond −2T | Danger      | Red; shows the shortfall                  | `$212.00 over-delegated` |
+| Condition  | State       | Look                        | Label                    |
+| ---------- | ----------- | --------------------------- | ------------------------ |
+| ≥ +T       | To delegate | Accent blue on accent-soft  | `To delegate $4,890.00`  |
+| Within ±T  | Balanced    | Green                       | `Balanced`               |
+| −T to −2T  | Warning     | Yellow; shows the shortfall | `Over delegated $7.40`   |
+| Beyond −2T | Danger      | Red; shows the shortfall    | `Over delegated $212.00` |
+
+State first, then the figure. It is a label on a chip now rather than a sentence
+in a bar, and it reads as one.
+
+**The working appears on hover _and_ on focus.** The chip takes `tabIndex` and
+carries the equation as its `aria-describedby`, so the justification for the
+number is reachable without a mouse — a reading only a pointer can interrogate is
+one some people never get. The tooltip sits outside the `role="status"` live
+region, or revealing it would re-announce the whole reading on every hover.
 
 **A positive reading is not a warning.** It is the ordinary state on payday:
 money has landed and has not been distributed yet, and that figure _is_ the
 amount available to delegate. Colouring the most common healthy state yellow
-would teach the owner to ignore the one banner that has to be read. Yellow and
+would teach the owner to ignore the one reading that has to be read. Yellow and
 red are reserved for over-delegation — the direction that is genuinely wrong.
 
 ### Tables
@@ -561,8 +577,8 @@ e2e test measures the right edges and holds them within a pixel.
 Column headings survive only where there are two money columns to tell apart.
 Assets and Debts have one, under a heading that already says what it is.
 
-The identity banner reads as a statement and its working: the figure on the left,
-the equation right-aligned against it, no bullet between them.
+The identity reading states itself and keeps its working in a tooltip: the label
+and figure on the chip, the equation on hover or focus.
 
 ## A transaction is one line
 
