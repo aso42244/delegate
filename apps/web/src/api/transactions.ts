@@ -26,6 +26,8 @@ export interface TransactionDto {
   readonly archivedAt: string | null;
   /** Set once a pair is confirmed; both halves point at each other. */
   readonly pairedTransactionId: string | null;
+  /** The outstanding check this payment settled, if it settled one. */
+  readonly settledCheckNumber: string | null;
   readonly account: { readonly id: string; readonly name: string; readonly type: 'asset' | 'debt' };
   readonly allocations: readonly AllocationDto[];
 }

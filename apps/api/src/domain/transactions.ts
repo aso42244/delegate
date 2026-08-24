@@ -122,6 +122,10 @@ export const TRANSACTION_LIST_SELECT = {
   kind: true,
   archivedAt: true,
   pairedTransactionId: true,
+  // The check this payment settled, if it settled one. The number rather than
+  // the id: the register shows a mark, and what a reader wants behind it is
+  // "check 1062", not a uuid.
+  settledCheck: { select: { checkNumber: true } },
   account: { select: { id: true, name: true, nickname: true, type: true, archivedAt: true } },
   allocations: {
     select: {

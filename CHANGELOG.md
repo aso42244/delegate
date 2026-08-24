@@ -6,7 +6,47 @@ phase (`v0.1.0-phase1`, and so on).
 
 ## [Unreleased]
 
-Nothing yet.
+### Changed
+
+- **Every chip is one letter.** The marks beside a row's name were words —
+  `Pending`, `income`, `manual`, `utility`, `needs review`, `stale` — and at
+  eleven pixels a word costs a row's width while saying no more than its initial
+  does once the initial is known. The register and the budget are the two places
+  where width is scarcest, and they carried the most of them.
+
+  `p` pending (still yellow), `i` income, `t` transfer, `m` kept by hand,
+  `s` stale, `r` needs review, `u` utility. Two rules keep a vocabulary of
+  letters legible and both are enforced rather than promised: **one letter, one
+  meaning across the whole application** — a unit test fails if two chips ever
+  share a mark — and **the word is always there**, as real text for a screen
+  reader and as a `title` for anyone who hovers.
+
+  A mark never repeats what the row already says. The register printed "Split
+  across 2: Grocery, Household"; `sp` says the first three words in two
+  characters, so the row reads `Costco Run  sp  Grocery, Household` and the
+  merchant name keeps the width those words were spending.
+
+### Added
+
+- **Five new marks**, for things the interface knew and never said:
+  - **`c`** — this payment settled an outstanding check. `clearCheck` allocates
+    to the delegation the check was drawn on and archives the check line, which
+    is right and left nothing on the row saying a check was involved. The
+    transaction remembers the check it settled now. Null on everything that
+    predates the column: which payment settled which check cannot be
+    reconstructed afterwards, and guessing from amounts and dates is the loose
+    matching [ADR 030](docs/decisions/030-a-cleared-check-is-confirmed-not-assumed.md)
+    exists to avoid, so older rows simply carry no mark.
+  - **`btc`** and **`h`** — a Bitcoin holding and a property, on the budget.
+    Neither figure is a bank balance: a holding is a quantity times a price and
+    is revalued daily with no transaction behind it, and a property is a dated
+    valuation. Both read as ordinary balances until something says otherwise.
+    `h` for house, because `p` is spent on pending.
+  - **`sp`** — split across more than one delegation.
+  - **`n`** — this delegation has a note. Previously only visible by opening the
+    row menu.
+  - **`s`** now appears on the **budget** as well as in Settings, which is where
+    you read the number it is warning you about.
 
 ## [0.26.0] — 2026-08-24
 

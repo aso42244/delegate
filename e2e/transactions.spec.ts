@@ -251,3 +251,54 @@ test('a deposit marked as income leaves the queue and offers no envelope', async
   await expect(signedIn.getByText('ACH Deposit PAYROLL')).toBeVisible();
   await expect(signedIn.getByLabel('Categorize ACH Deposit PAYROLL')).toHaveCount(0);
 });
+
+/**
+ * The chip vocabulary, on the register.
+ *
+ * Every mark is one letter, and every one carries its meaning for anyone who
+ * cannot see it. These assert on the meanings rather than the letters: the
+ * letter is what is painted, the meaning is what it is for.
+ */
+test('a register row is marked with letters that carry their meaning', async ({
+  signedIn,
+  api,
+}) => {
+  const accountId = await makeAccount('Everyday Checking', 'asset', 500000n);
+  await makeDelegation(api, 'Grocery');
+  await makeDelegation(api, 'Household');
+
+  await api.post('/api/transactions', {
+    data: {
+      accountId,
+      amountCents: '489000',
+      description: 'Paycheck',
+      postedAt: '2026-08-05T00:00:00Z',
+      kind: 'income',
+    },
+  });
+  await makeTransaction(api, accountId, '-10000', 'Costco Run');
+
+  await signedIn.goto('/transactions');
+
+  // Income allocates to nothing, so it is what it is and nothing more.
+  await expect(signedIn.getByTitle('Income — allocates to nothing')).toBeVisible();
+
+  // A split earns its own mark: one row, two envelopes.
+  await signedIn.getByRole('button', { name: 'Options for Costco Run' }).click();
+  await signedIn.getByRole('menuitem', { name: 'Split between delegations' }).click();
+
+  const first = signedIn.getByLabel('Delegation for split line 1');
+  await first.fill('gro');
+  await first.press('Enter');
+  await signedIn.getByLabel('Amount for split line 1').fill('60.00');
+
+  const second = signedIn.getByLabel('Delegation for split line 2');
+  await second.fill('hou');
+  await second.press('Enter');
+  await signedIn.getByLabel('Amount for split line 2').fill('40.00');
+
+  await signedIn.getByRole('button', { name: 'Save split' }).click();
+  await expect(signedIn.getByRole('dialog')).toHaveCount(0);
+
+  await expect(signedIn.getByTitle('Split across more than one delegation')).toBeVisible();
+});

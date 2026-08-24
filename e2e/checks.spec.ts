@@ -153,6 +153,17 @@ test('a check the bank has cashed waits to be confirmed', async ({ signedIn: pag
   await expect(page.getByText('Check 1062')).toBeHidden();
   await expect(page.getByRole('button', { name: 'Piano Lessons balance' })).toContainText('$0.00');
   await expect(page.getByText('looks like it has been cashed')).toBeHidden();
+
+  /*
+   * And the payment carries the `c` mark.
+   *
+   * The allocation points at Piano Lessons rather than at the check line, which
+   * is right — money spent on piano lessons was spent on piano lessons — and
+   * left nothing on the row saying a check was involved. The transaction
+   * remembers the check it settled now, which is what the mark reads.
+   */
+  await page.goto('/transactions');
+  await expect(page.getByTitle('Settled an outstanding check')).toBeVisible();
 });
 
 /**

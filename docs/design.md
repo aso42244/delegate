@@ -609,6 +609,55 @@ the comparison. Colour still marks a shortfall, but the label says it too.
 envelope. A second word for it in one corner of the application is a second
 concept as far as the reader is concerned.
 
+## A chip is one letter
+
+Every mark that sits beside a row's name is **one letter** — two where one would
+collide, and `btc`, which is a word before it is an abbreviation. At eleven
+pixels a word costs a row's width and says no more than its initial does once
+the initial is known, and the register and the budget are the two places where
+width is scarcest.
+
+| Mark  | Means                                      | Where            |
+| ----- | ------------------------------------------ | ---------------- |
+| `p`   | Pending — the bank has not settled it yet  | Transactions     |
+| `i`   | Income — allocates to nothing              | Transactions     |
+| `t`   | Transfer between your own accounts         | Transactions     |
+| `c`   | Settled an outstanding check               | Transactions     |
+| `sp`  | Split across more than one delegation      | Transactions     |
+| `m`   | Kept by hand                               | Budget, Settings |
+| `s`   | Not confirmed recently                     | Budget, Settings |
+| `r`   | Discovered by a sync — its type is a guess | Budget, Settings |
+| `btc` | Bitcoin holding — quantity × price         | Budget           |
+| `h`   | Property — a valuation, not a balance      | Budget           |
+| `u`   | Utility — tracked on the Utilities page    | Budget, Settings |
+| `n`   | Has a note                                 | Budget           |
+
+`p`, `s` and `r` take the yellow; the rest are the quiet grey. Yellow means
+something is worth noticing, not that something is broken.
+
+Two rules make a vocabulary of letters legible, and both are enforced rather
+than promised.
+
+**One letter, one meaning, across the whole application** — not per page. A `p`
+that means pending in the register and property on the budget is a vocabulary
+nobody can learn. That is why property is `h`, for house. A unit test fails if
+two chips ever share a mark.
+
+**The word is always there.** Every chip paints its letter and carries its full
+meaning as real text for a screen reader, with the same words as a `title` for
+anyone who hovers. A letter with no expansion is a private joke. Locate one in a
+test by its meaning rather than its letter: the letter is what is painted, the
+meaning is what it is for.
+
+**A mark never repeats what the row already says.** The register used to print
+"Split across 2: Grocery, Household"; `sp` says the first three words in two
+characters, so the row now reads `Costco Run  sp  Grocery, Household` and the
+merchant name keeps the width those words were spending.
+
+Order is what a row **is** before what is **wrong with it** — `btc s`, not
+`s btc`, and `c p` for a settled check the account has not caught up with. That
+is the order somebody would say it out loud.
+
 ## Purple is the fourth banner colour
 
 Blue says "here is a fact", yellow "this needs attention", red "this is wrong".
