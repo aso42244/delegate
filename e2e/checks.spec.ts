@@ -75,7 +75,7 @@ test('a check is voided back to where the money came from', async ({ signedIn: p
   await expect(page.getByText('Check 1062')).toBeHidden();
 });
 
-test('a payment naming the check settles it on the next sync', async ({ signedIn: page, api }) => {
+test('a check is settled by hand when the bank never named it', async ({ signedIn: page, api }) => {
   const accountId = await makeAccount('Everyday Checking', 'asset', 100000n);
   await makeDelegation(api, 'Piano Lessons', '12000');
 
@@ -85,8 +85,8 @@ test('a payment naming the check settles it on the next sync', async ({ signedIn
   await writeCheck(page);
   await expect(page.getByText('Check 1062')).toBeVisible();
 
-  // The bank posts it. Matching by hand is the same path the automatic match
-  // takes, and is the one a person can drive.
+  // The bank posts it. This is the path for a description that never names the
+  // check number — the proposal below cannot be made, so the person picks.
   await api.post('/api/transactions', {
     data: {
       accountId,
@@ -106,4 +106,96 @@ test('a payment naming the check settles it on the next sync', async ({ signedIn
   await page.goto('/');
   await expect(page.getByText('Check 1062')).toBeHidden();
   await expect(page.getByRole('button', { name: 'Piano Lessons balance' })).toContainText('$0.00');
+});
+
+/**
+ * The behaviour ADR 030 exists for.
+ *
+ * A sync used to settle a check on its own the moment the amount and the number
+ * both agreed. It moved money between envelopes and archived a line while
+ * nobody was watching. Now it proposes and waits.
+ */
+test('a check the bank has cashed waits to be confirmed', async ({ signedIn: page, api }) => {
+  const accountId = await makeAccount('Everyday Checking', 'asset', 100000n);
+  await makeDelegation(api, 'Piano Lessons', '12000');
+
+  await page.goto('/');
+  await fundPianoLessons(page);
+  await writeCheck(page);
+  await expect(page.getByText('Check 1062')).toBeVisible();
+
+  await api.post('/api/transactions', {
+    data: {
+      accountId,
+      amountCents: '-12000',
+      description: 'CHECK 1062',
+      postedAt: '2026-08-06T00:00:00Z',
+    },
+  });
+
+  await page.goto('/');
+
+  // Proposed, and nothing more: the money is still on the check line.
+  await expect(page.getByText('Check 1062 looks like it has been cashed')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Check 1062 balance' })).toContainText('$120.00');
+
+  await page.getByRole('button', { name: 'Confirm it cleared' }).click();
+
+  const dialog = page.getByRole('dialog', { name: 'Confirm that check 1062 was cashed' });
+  // Both sides shown, because the point of asking is that he can disagree.
+  await expect(dialog).toContainText('CHECK 1062');
+  await expect(dialog).toContainText('Piano Lessons');
+  await dialog.getByRole('button', { name: 'Yes, it cleared' }).click();
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+
+  // Settled: the line is gone, the spending landed on the envelope rather than
+  // on a line called "Check 1062", and the banner has nothing left to say.
+  await expect(page.getByText('Check 1062')).toBeHidden();
+  await expect(page.getByRole('button', { name: 'Piano Lessons balance' })).toContainText('$0.00');
+  await expect(page.getByText('looks like it has been cashed')).toBeHidden();
+});
+
+/**
+ * The way to say no. There is no reject button, because a proposal is recomputed
+ * from the data rather than remembered — it would simply come back.
+ */
+test('categorizing the payment as something else withdraws the proposal', async ({
+  signedIn: page,
+  api,
+}) => {
+  const accountId = await makeAccount('Everyday Checking', 'asset', 100000n);
+  await makeDelegation(api, 'Piano Lessons', '12000');
+  await makeDelegation(api, 'Grocery');
+
+  await page.goto('/');
+  await fundPianoLessons(page);
+  await writeCheck(page);
+
+  await api.post('/api/transactions', {
+    data: {
+      accountId,
+      amountCents: '-12000',
+      description: 'CHECK 1062',
+      postedAt: '2026-08-06T00:00:00Z',
+    },
+  });
+
+  await page.goto('/');
+  await expect(page.getByText('Check 1062 looks like it has been cashed')).toBeVisible();
+
+  await page.goto('/transactions');
+  const picker = page.getByLabel('Categorize CHECK 1062');
+  await picker.fill('gro');
+  await picker.press('Enter');
+
+  // Wait for the write to land before navigating: the Budget page reads its
+  // banners once on arrival, so getting there mid-write asserts on a stale one.
+  // The picker shows what a row is categorized as in its placeholder, keeping
+  // the field itself empty to type into.
+  await expect(picker).toHaveAttribute('placeholder', 'Grocery');
+
+  await page.goto('/');
+  await expect(page.getByText('looks like it has been cashed')).toBeHidden();
+  // And the check is untouched, still holding its money.
+  await expect(page.getByRole('button', { name: 'Check 1062 balance' })).toContainText('$120.00');
 });

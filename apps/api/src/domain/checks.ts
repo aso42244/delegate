@@ -377,32 +377,55 @@ export function textNamesCheck(text: string, checkNumber: string): boolean {
   return new RegExp(`(?<![0-9])${escaped}(?![0-9])`).test(text);
 }
 
-export interface CheckMatch {
+export interface CheckMatchProposal {
   readonly checkId: string;
-  readonly transactionId: string;
   readonly checkNumber: string;
+  readonly memo: string | null;
+  readonly checkBalanceCents: Cents;
+  readonly sourceName: string | null;
+  readonly transactionId: string;
+  readonly description: string;
+  readonly amountCents: Cents;
+  readonly postedAt: Date;
+  readonly accountName: string;
 }
 
 /**
- * Settles every check whose bank transaction has arrived.
+ * Every check whose bank transaction appears to have arrived — **proposed, not
+ * settled**.
  *
- * Run after a sync. A match needs **both** the exact amount and the check number
- * as a whole token, and the transaction must still be uncategorized. Requiring
- * both is what makes this safe to apply without asking: an amount alone would
- * match any payment that happened to be for the same figure, and a number alone
- * would match a coincidence in a description.
+ * This used to clear each one outright after a sync, on the reasoning that
+ * needing the exact amount *and* the check number as a whole token made it safe
+ * to apply without asking. The criteria were sound and no wrong check was ever
+ * settled by them. What was wrong was the silence: settling a check moves money
+ * between envelopes and archives a line, and it happened at 3am inside a sync
+ * whose only trace was a log entry. The owner asked to confirm every one, and he
+ * is right to — a thing that moves his money should not do it while nobody is
+ * looking. See ADR 030.
  *
- * Anything it cannot resolve is left alone for the manual path, which is the
- * right failure — an unmatched check is visible on the budget, whereas a wrongly
- * matched one is money quietly moved to the wrong place.
+ * So this is now a pure read. It writes nothing, which is what lets the
+ * notification be computed on demand like every other one rather than stored and
+ * then needing something to clear it. `clearCheck` is still the only thing that
+ * settles a check, and now only a person calls it.
+ *
+ * The criteria stay strict for the same reason they were chosen. A proposal
+ * shown as "this cleared" is one somebody will confirm without reading, so a
+ * loose one is barely safer than a loose auto-match. An amount alone would match
+ * any payment for the same figure; a number alone would match a coincidence in a
+ * description. Anything it cannot resolve is left to the manual path on the
+ * Transactions page, exactly as before.
  */
-export async function matchClearedChecks(
-  db: Db,
-  options: { readonly actorId?: string | null } = {},
-): Promise<CheckMatch[]> {
+export async function proposeCheckMatches(db: Db): Promise<CheckMatchProposal[]> {
   const checks = await db.delegation.findMany({
     where: { kind: 'check', archivedAt: null },
-    select: { id: true, checkNumber: true, balanceCents: true },
+    select: {
+      id: true,
+      checkNumber: true,
+      checkMemo: true,
+      balanceCents: true,
+      checkSource: { select: { name: true } },
+    },
+    orderBy: { checkIssuedAt: 'asc' },
   });
   if (checks.length === 0) return [];
 
@@ -414,29 +437,46 @@ export async function matchClearedChecks(
       allocations: { none: {} },
       account: { archivedAt: null, inBudget: true },
     },
-    select: { id: true, amountCents: true, description: true },
+    select: {
+      id: true,
+      amountCents: true,
+      description: true,
+      postedAt: true,
+      account: { select: { name: true } },
+    },
     orderBy: { postedAt: 'asc' },
   });
 
-  const matches: CheckMatch[] = [];
+  const proposals: CheckMatchProposal[] = [];
   const used = new Set<string>();
 
   for (const check of checks) {
-    if (!check.checkNumber) continue;
+    const checkNumber = check.checkNumber;
+    if (!checkNumber) continue;
 
     const hit = candidates.find(
       (candidate) =>
         !used.has(candidate.id) &&
         // The check line holds what was written; the payment is its negative.
         candidate.amountCents === -check.balanceCents &&
-        textNamesCheck(candidate.description, check.checkNumber!),
+        textNamesCheck(candidate.description, checkNumber),
     );
     if (!hit) continue;
 
     used.add(hit.id);
-    await clearCheck(db, check.id, hit.id, options);
-    matches.push({ checkId: check.id, transactionId: hit.id, checkNumber: check.checkNumber });
+    proposals.push({
+      checkId: check.id,
+      checkNumber,
+      memo: check.checkMemo,
+      checkBalanceCents: check.balanceCents,
+      sourceName: check.checkSource?.name ?? null,
+      transactionId: hit.id,
+      description: hit.description,
+      amountCents: hit.amountCents,
+      postedAt: hit.postedAt,
+      accountName: hit.account.name,
+    });
   }
 
-  return matches;
+  return proposals;
 }

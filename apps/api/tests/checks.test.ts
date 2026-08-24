@@ -6,7 +6,7 @@ import { loadConfig } from '../src/config.js';
 import { prisma } from '../src/db/client.js';
 import {
   clearCheck,
-  matchClearedChecks,
+  proposeCheckMatches,
   textNamesCheck,
   writeCheck,
 } from '../src/domain/checks.js';
@@ -250,21 +250,72 @@ describe('clearing a check', () => {
   });
 });
 
-describe('matching automatically', () => {
+/**
+ * Proposing, not settling. The criteria are the ones the old automatic match
+ * used — exact amount and the check number as a whole token — but nothing moves
+ * until a person calls `clearCheck`. ADR 030.
+ */
+describe('proposing a match', () => {
   async function payment(accountId: string, description: string, cents: bigint): Promise<string> {
     const row = await makeTransaction({ accountId, amountCents: cents, description });
     return row.id;
   }
 
-  it('settles a check when the amount and the number both agree', async () => {
+  it('proposes a check when the amount and the number both agree', async () => {
     const { pianoId, accountId } = await household();
     const checkId = await write(pianoId);
     const transactionId = await payment(accountId, 'CHECK #1062', -12_000n);
 
-    const matched = await prisma.$transaction((tx) => matchClearedChecks(tx));
+    const proposed = await proposeCheckMatches(prisma);
 
-    expect(matched).toEqual([{ checkId, transactionId, checkNumber: '1062' }]);
+    expect(proposed).toHaveLength(1);
+    expect(proposed[0]).toMatchObject({
+      checkId,
+      transactionId,
+      checkNumber: '1062',
+      checkBalanceCents: 12_000n,
+      amountCents: -12_000n,
+      description: 'CHECK #1062',
+      sourceName: 'Piano Lessons',
+    });
+  });
+
+  it('settles nothing by itself — the money stays on the check line', async () => {
+    const { pianoId, accountId } = await household();
+    const checkId = await write(pianoId);
+    const transactionId = await payment(accountId, 'CHECK #1062', -12_000n);
+
+    await proposeCheckMatches(prisma);
+
+    // The whole point of the change: a sync used to do this unattended.
+    expect(await balanceOf(checkId)).toBe(12_000n);
+    expect(
+      await prisma.delegation.findUniqueOrThrow({
+        where: { id: checkId },
+        select: { archivedAt: true },
+      }),
+    ).toEqual({ archivedAt: null });
+    expect(await prisma.transactionAllocation.count({ where: { transactionId } })).toBe(0);
+
+    // And it keeps proposing until somebody says yes, because it is recomputed
+    // rather than remembered.
+    expect(await proposeCheckMatches(prisma)).toHaveLength(1);
+  });
+
+  it('is what clearCheck settles, once confirmed', async () => {
+    const { pianoId, accountId } = await household();
+    const checkId = await write(pianoId);
+    const transactionId = await payment(accountId, 'CHECK #1062', -12_000n);
+
+    const [proposal] = await proposeCheckMatches(prisma);
+    await prisma.$transaction((tx) =>
+      clearCheck(tx, proposal!.checkId, proposal!.transactionId, {}),
+    );
+
     expect(await balanceOf(checkId)).toBe(0n);
+    expect(await prisma.transactionAllocation.count({ where: { transactionId } })).toBe(1);
+    // Nothing left to propose, because the condition stopped being true.
+    expect(await proposeCheckMatches(prisma)).toEqual([]);
   });
 
   it('leaves a payment for the wrong amount alone', async () => {
@@ -272,7 +323,7 @@ describe('matching automatically', () => {
     const checkId = await write(pianoId);
     await payment(accountId, 'CHECK 1062', -9_900n);
 
-    expect(await prisma.$transaction((tx) => matchClearedChecks(tx))).toEqual([]);
+    expect(await proposeCheckMatches(prisma)).toEqual([]);
     expect(await balanceOf(checkId)).toBe(12_000n);
   });
 
@@ -281,10 +332,10 @@ describe('matching automatically', () => {
     await write(pianoId);
     await payment(accountId, 'CORNER MARKET', -12_000n);
 
-    expect(await prisma.$transaction((tx) => matchClearedChecks(tx))).toEqual([]);
+    expect(await proposeCheckMatches(prisma)).toEqual([]);
   });
 
-  it('never touches a transaction that is already categorized', async () => {
+  it('never proposes a transaction that is already categorized', async () => {
     const { pianoId, foodId, accountId } = await household();
     await write(pianoId);
     const transactionId = await payment(accountId, 'CHECK 1062', -12_000n);
@@ -292,7 +343,9 @@ describe('matching automatically', () => {
     const { categorizeTransaction } = await import('../src/domain/allocations.js');
     await prisma.$transaction((tx) => categorizeTransaction(tx, transactionId, foodId));
 
-    expect(await prisma.$transaction((tx) => matchClearedChecks(tx))).toEqual([]);
+    // Also the way to say "no, that is not the check": categorize it as what it
+    // was and the proposal stops being made.
+    expect(await proposeCheckMatches(prisma)).toEqual([]);
   });
 });
 

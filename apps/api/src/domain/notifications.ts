@@ -1,6 +1,7 @@
 import { isBalanceStale } from '@budget/shared';
 import type { Db } from '../db/client.js';
 import { latestPrice } from './bitcoin.js';
+import { proposeCheckMatches } from './checks.js';
 
 /**
  * The banners the application raises about itself.
@@ -16,7 +17,13 @@ import { latestPrice } from './bitcoin.js';
  * anybody dismissed it.
  */
 
-export type NotificationSeverity = 'info' | 'warning' | 'danger';
+/**
+ * `confirm` is not a fault and not merely information: it is something the
+ * application has worked out and will not act on until a person says so. Purple,
+ * because blue, yellow and red already mean "here is a fact", "this needs
+ * attention" and "this is wrong", and none of those is what a proposal is.
+ */
+export type NotificationSeverity = 'info' | 'confirm' | 'warning' | 'danger';
 
 export interface Notification {
   /** Stable, so the UI can key and test on it rather than on prose. */
@@ -26,7 +33,8 @@ export interface Notification {
     | 'stale_balances'
     | 'uncategorized_backlog'
     | 'bitcoin_price_stale'
-    | 'accounts_need_review';
+    | 'accounts_need_review'
+    | 'checks_awaiting_confirmation';
   readonly severity: NotificationSeverity;
   readonly message: string;
   /** Where to go to do something about it. */
@@ -43,25 +51,27 @@ function daysBetween(from: Date, to: Date): number {
 export async function buildNotifications(db: Db, now: Date = new Date()): Promise<Notification[]> {
   const notifications: Notification[] = [];
 
-  const [latestRun, accounts, uncategorized, oldestUncategorized, price] = await Promise.all([
-    db.syncRun.findFirst({
-      orderBy: { startedAt: 'desc' },
-      select: { status: true, error: true, startedAt: true },
-    }),
-    db.account.findMany({
-      where: { archivedAt: null },
-      select: { name: true, balanceAsOf: true, stalenessIntervalDays: true, needsReview: true },
-    }),
-    db.transaction.count({
-      where: { archivedAt: null, allocations: { none: {} }, kind: 'normal' },
-    }),
-    db.transaction.findFirst({
-      where: { archivedAt: null, allocations: { none: {} }, kind: 'normal' },
-      orderBy: { postedAt: 'asc' },
-      select: { postedAt: true },
-    }),
-    latestPrice(db, now),
-  ]);
+  const [latestRun, accounts, uncategorized, oldestUncategorized, price, checkMatches] =
+    await Promise.all([
+      db.syncRun.findFirst({
+        orderBy: { startedAt: 'desc' },
+        select: { status: true, error: true, startedAt: true },
+      }),
+      db.account.findMany({
+        where: { archivedAt: null },
+        select: { name: true, balanceAsOf: true, stalenessIntervalDays: true, needsReview: true },
+      }),
+      db.transaction.count({
+        where: { archivedAt: null, allocations: { none: {} }, kind: 'normal' },
+      }),
+      db.transaction.findFirst({
+        where: { archivedAt: null, allocations: { none: {} }, kind: 'normal' },
+        orderBy: { postedAt: 'asc' },
+        select: { postedAt: true },
+      }),
+      latestPrice(db, now),
+      proposeCheckMatches(db),
+    ]);
 
   // A failed sync must be visible in the UI, not only in the logs — §13.
   if (latestRun?.status === 'failed') {
@@ -128,6 +138,33 @@ export async function buildNotifications(db: Db, now: Date = new Date()): Promis
       message: `${needReview.length} ${needReview.length === 1 ? 'account was' : 'accounts were'} discovered by a sync and ${needReview.length === 1 ? 'its type is' : 'their types are'} a guess.`,
       actionPath: '/settings/accounts',
       actionLabel: 'Review',
+    });
+  }
+
+  /*
+   * A check the bank appears to have cashed, waiting to be confirmed.
+   *
+   * Above the backlog and below the faults: it is not something that has gone
+   * wrong, but it is money sitting in the wrong place until somebody looks. The
+   * check line still holds the funds and the payment is still uncategorized, so
+   * nothing is lost by leaving it — it is simply not finished.
+   */
+  if (checkMatches.length > 0) {
+    const numbers = checkMatches
+      .slice(0, 3)
+      .map((match) => match.checkNumber)
+      .join(', ');
+    notifications.push({
+      kind: 'checks_awaiting_confirmation',
+      severity: 'confirm',
+      message:
+        checkMatches.length === 1
+          ? `Check ${numbers} looks like it has been cashed. Confirm the match to settle it.`
+          : checkMatches.length <= 3
+            ? `Checks ${numbers} look like they have been cashed. Confirm each match to settle it.`
+            : `${checkMatches.length} checks look like they have been cashed, including ${numbers}.`,
+      actionPath: '/',
+      actionLabel: 'Confirm',
     });
   }
 

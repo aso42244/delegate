@@ -38,6 +38,7 @@ once real data is on screen.
 | Positive / balanced                        | `#46A171` on `#E8F1EC`                                  |
 | Warning                                    | `#8A6A14` on `#FFF4D6`, border `#EFDFAF`, dot `#D5803B` |
 | Danger                                     | `#93332B` on `#FCE9E7`, border `#F2C4BF`, dot `#E56458` |
+| Awaiting confirmation                      | `#6B3FA0` on `#F4ECFB`, border `#D8C2EC`, dot `#8B63B8` |
 | Negative amounts                           | `#E56458`, text only, semibold                          |
 
 ### Grouping colours
@@ -468,7 +469,8 @@ actually wanted to know. The dialog opens on the first choice that can be
 applied.
 
 An outstanding check never offers it. A check holds a specific sum written on a
-specific cheque and is settled by matching the payment that cashes it.
+specific cheque and is settled by matching the payment that cashes it — and that
+match is always confirmed by a person, never applied by a sync (ADR 030).
 
 ## Delegate, and undoing it
 
@@ -590,6 +592,24 @@ the comparison. Colour still marks a shortfall, but the label says it too.
 **Delegated, never funded.** Delegate has one verb for putting money in an
 envelope. A second word for it in one corner of the application is a second
 concept as far as the reader is concerned.
+
+## Purple is the fourth banner colour
+
+Blue says "here is a fact", yellow "this needs attention", red "this is wrong".
+None of those is what a **proposal** is — something the application has worked
+out and will not act on until somebody says so.
+
+The one that exists today is a check the bank appears to have cashed. A sync used
+to settle those by itself; now it proposes and waits ([ADR 030](decisions/030-a-cleared-check-is-confirmed-not-assumed.md)).
+`#6B3FA0` on `#F4ECFB` is 6.41:1, which sits with danger rather than scraping the
+4.5 floor, and the dot reuses the grouping purple so the hue is one the palette
+already owns.
+
+It appears twice, and deliberately. The banner names the checks; the check's own
+row carries a **Confirm it cleared** button in the slot beside Remaining that the
+absorb affordance uses. That button is **always visible**, unlike the absorb one
+— it is a standing state rather than an offer, and a state nobody can see until
+they hover the right row is one the banner would be pointing at in vain.
 
 ## Banners can be put away, not cleared
 

@@ -12,6 +12,26 @@ export interface OutstandingCheckDto {
   readonly sourceName: string | null;
 }
 
+/**
+ * A check the bank appears to have cashed, waiting to be confirmed.
+ *
+ * Computed on demand and never stored, so it disappears the moment it stops
+ * being true — either because it was confirmed, or because the transaction was
+ * categorized as something else.
+ */
+export interface CheckMatchDto {
+  readonly checkId: string;
+  readonly checkNumber: string;
+  readonly memo: string | null;
+  readonly checkBalanceCents: string;
+  readonly sourceName: string | null;
+  readonly transactionId: string;
+  readonly description: string;
+  readonly amountCents: string;
+  readonly postedAt: string;
+  readonly accountName: string;
+}
+
 export interface WriteCheckInput {
   readonly checkNumber: string;
   readonly amountCents: string;
@@ -23,12 +43,15 @@ export interface WriteCheckInput {
 export const checksApi = {
   list: () => api.get<{ checks: OutstandingCheckDto[] }>('/api/checks'),
 
+  /** Proposals only. Nothing is settled until `match` is called. */
+  matches: () => api.get<{ matches: CheckMatchDto[] }>('/api/checks/matches'),
+
   write: (input: WriteCheckInput) => api.post<{ check: OutstandingCheckDto }>('/api/checks', input),
 
   /** The check will never be cashed; the money goes back where it came from. */
   void: (id: string) => api.post<{ ok: boolean }>(`/api/checks/${id}/void`),
 
-  /** The manual path, when the automatic match could not resolve one. */
+  /** Settles a check. The only thing that does, and only a person calls it. */
   match: (id: string, transactionId: string) =>
     api.post<{ checkId: string; transactionId: string; differenceCents: string }>(
       `/api/checks/${id}/match`,

@@ -7,12 +7,14 @@ import {
   type BudgetSectionDto,
   type BudgetViewDto,
 } from '../api/budget.js';
+import { checksApi, type CheckMatchDto } from '../api/checks.js';
 import { ApiError } from '../api/client.js';
 import { AccountRowMenu } from '../components/AccountRowMenu.jsx';
 import { BalanceBanner } from '../components/BalanceBanner.jsx';
 import { AbsorbDialog } from '../components/AbsorbDialog.jsx';
 import { BudgetSection } from '../components/BudgetSection.jsx';
 import { CheckRowMenu } from '../components/CheckRowMenu.jsx';
+import { ConfirmCheckMatchDialog } from '../components/ConfirmCheckMatchDialog.jsx';
 import { DelegationRowMenu } from '../components/DelegationRowMenu.jsx';
 import { NewCheckDialog } from '../components/NewCheckDialog.jsx';
 import { NewTransactionDialog } from '../components/NewTransactionDialog.jsx';
@@ -247,10 +249,22 @@ export function MainBudget(): ReactNode {
   const [transferFrom, setTransferFrom] = useState<string | null>(null);
   /** The line the budget's reading is being closed against, if any. */
   const [absorbing, setAbsorbing] = useState<BudgetRowDto | null>(null);
+  /** The proposed check match being confirmed, if any. */
+  const [confirmingCheck, setConfirmingCheck] = useState<CheckMatchDto | null>(null);
 
   const [newGrouping, setNewGrouping] = useState(false);
 
   const view = useQuery({ queryKey: ['budget'], queryFn: budgetApi.view });
+
+  /*
+   * Checks the bank appears to have cashed. A sync proposes these and never
+   * settles them — ADR 030 — so the row has to offer the confirmation, and the
+   * purple banner at the top of the page has to have something to point at.
+   */
+  const checkMatches = useQuery({ queryKey: ['checkMatches'], queryFn: checksApi.matches });
+  const matchByCheckId = new Map(
+    (checkMatches.data?.matches ?? []).map((match) => [match.checkId, match]),
+  );
 
   const refresh = async (): Promise<void> => {
     await queryClient.invalidateQueries();
@@ -590,6 +604,19 @@ export function MainBudget(): ReactNode {
               onAbsorb: setAbsorbing,
               absorbLabel: difference > 0n ? 'Move surplus here' : 'Fix deficit from here',
             })}
+        rowAffordance={(row) => {
+          const match = matchByCheckId.get(row.id);
+          if (row.kind !== 'check' || !match) return null;
+          return (
+            <button
+              type="button"
+              onClick={() => setConfirmingCheck(match)}
+              className="rounded border border-confirm-line bg-confirm-soft px-1.5 py-0.5 text-label font-semibold whitespace-nowrap text-confirm hover:brightness-95"
+            >
+              Confirm it cleared
+            </button>
+          );
+        }}
         rowMenu={(row) =>
           // A check is not a delegation to rename, re-file or adjust; its menu
           // offers only what the bank can decide.
@@ -616,6 +643,10 @@ export function MainBudget(): ReactNode {
           onClose={() => setAbsorbing(null)}
           onProblem={setProblem}
         />
+      )}
+
+      {confirmingCheck && (
+        <ConfirmCheckMatchDialog match={confirmingCheck} onClose={() => setConfirmingCheck(null)} />
       )}
 
       {dialog === 'transaction' && (

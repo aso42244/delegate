@@ -6,7 +6,41 @@ phase (`v0.1.0-phase1`, and so on).
 
 ## [Unreleased]
 
-Nothing yet.
+### Changed
+
+- **A check the bank has cashed is now confirmed, never settled unasked.** A sync
+  used to clear an outstanding check by itself the moment a payment matched its
+  exact amount and named its number. The criteria were strict and as far as
+  anyone can tell never settled the wrong check — the problem was that settling
+  one moves money between envelopes and archives a line, and it happened at three
+  in the morning with a log entry as its only trace.
+
+  A sync now **proposes**, and a person settles. It is surfaced twice: a **purple
+  banner** at the top of every page naming the checks, and a **Confirm it
+  cleared** button on the check's own row, beside its Remaining figure. The row
+  button is always visible rather than shown on hover, because a state nobody can
+  see until they hover the right row is one the banner points at in vain.
+
+  The confirmation shows both sides in full — what you wrote, and what the bank
+  took — because the point of asking is that you can disagree. There is no reject
+  button: a proposal is recomputed from the data rather than remembered, so it
+  would only come back. Declining is categorizing the payment as whatever it
+  actually was, which the dialog says.
+
+  The matching criteria are unchanged and deliberately still strict. A proposal
+  shown as "this cleared" is one somebody confirms without reading, so a loose
+  proposal is barely safer than a loose auto-match. A check whose bank text never
+  named it still goes through the manual path on the Transactions page.
+
+  [ADR 030](docs/decisions/030-a-cleared-check-is-confirmed-not-assumed.md).
+
+### Added
+
+- **Purple, as a fourth banner colour**, for something the application has
+  worked out and will not act on until somebody says so. Blue, yellow and red
+  were already "here is a fact", "this needs attention" and "this is wrong", and
+  a proposal is none of those. `#6B3FA0` on `#F4ECFB` is 6.41:1, in line with
+  danger rather than scraping the 4.5 floor.
 
 ## [0.25.0] — 2026-08-23
 

@@ -4,6 +4,7 @@ import { prisma } from '../db/client.js';
 import {
   clearCheck,
   listOutstandingChecks,
+  proposeCheckMatches,
   voidCheck,
   writeCheck,
   type OutstandingCheck,
@@ -49,6 +50,28 @@ export const checkRoutes: FastifyPluginCallback = (fastify, _options, done) => {
     checks: (await listOutstandingChecks(prisma)).map(present),
   }));
 
+  /*
+   * Checks the bank appears to have cashed, computed on demand and never stored.
+   *
+   * Registered before `/api/checks/:id`-shaped routes would be a concern if any
+   * existed on GET; there are none, and `matches` is a literal segment either
+   * way. It writes nothing: confirming is `POST /api/checks/:id/match`.
+   */
+  fastify.get('/api/checks/matches', async () => ({
+    matches: (await proposeCheckMatches(prisma)).map((match) => ({
+      checkId: match.checkId,
+      checkNumber: match.checkNumber,
+      memo: match.memo,
+      checkBalanceCents: centsOut(match.checkBalanceCents),
+      sourceName: match.sourceName,
+      transactionId: match.transactionId,
+      description: match.description,
+      amountCents: centsOut(match.amountCents),
+      postedAt: dateOut(match.postedAt),
+      accountName: match.accountName,
+    })),
+  }));
+
   fastify.post('/api/checks', async (request, reply) => {
     const body = writeSchema.parse(request.body);
     const actorId = request.currentUser?.id ?? null;
@@ -79,7 +102,14 @@ export const checkRoutes: FastifyPluginCallback = (fastify, _options, done) => {
     return { ok: true };
   });
 
-  /** The manual path, for a check the automatic match could not resolve. */
+  /**
+   * Settles a check against the payment that cashed it.
+   *
+   * The only thing that settles one, and only a person calls it — from the
+   * purple banner's confirmation, or by hand from the Transactions page when the
+   * bank's description never named the check number. A sync proposes; it does
+   * not settle. See ADR 030.
+   */
   fastify.post('/api/checks/:id/match', async (request) => {
     const { id } = z.object({ id: z.string().uuid() }).parse(request.params);
     const { transactionId } = z.object({ transactionId: z.string().uuid() }).parse(request.body);
