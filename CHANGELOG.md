@@ -6,6 +6,10 @@ phase (`v0.1.0-phase1`, and so on).
 
 ## [Unreleased]
 
+Nothing yet.
+
+## [0.25.0] — 2026-08-23
+
 ### Changed
 
 - **Settings → Accounts is one line per account.** A row was 77px — a name, a
