@@ -6,6 +6,10 @@ phase (`v0.1.0-phase1`, and so on).
 
 ## [Unreleased]
 
+Nothing yet.
+
+## [0.26.0] — 2026-08-24
+
 ### Changed
 
 - **A check the bank has cashed is now confirmed, never settled unasked.** A sync
