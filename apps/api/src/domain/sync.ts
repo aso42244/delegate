@@ -4,7 +4,7 @@ import type { FeedAccount, FeedTransaction } from '../simplefin/protocol.js';
 import type { SimpleFinClient } from '../simplefin/client.js';
 import { fetchAccountsInWindows } from '../simplefin/backfill.js';
 import { ConflictError } from './errors.js';
-import { matchClearedChecks } from './checks.js';
+import { proposeCheckMatches } from './checks.js';
 import { applyRules } from './rules.js';
 import { markEventsReversed } from './ledger.js';
 import {
@@ -296,19 +296,23 @@ export async function runSync(db: Db, options: RunSyncOptions): Promise<SyncRunS
     }
 
     /**
-     * Checks are matched after the rules, and against everything uncategorized
-     * rather than only this run's imports.
+     * Checks are looked at after the rules, and against everything uncategorized
+     * rather than only this run's imports — a check written last month clears
+     * whenever the bank gets round to it.
      *
-     * Unlike a rule, this cannot fire on the wrong row by being too eager: a
-     * match needs the exact amount and the check number as a whole token. And a
-     * check written last month clears whenever the bank gets round to it, so
-     * restricting the search to this run's imports would simply miss it.
+     * A sync no longer settles them. It proposes, and a person confirms; the
+     * purple banner is how the proposal reaches him. Settling moves money
+     * between envelopes and archives a line, and doing that unattended at 3am
+     * left a log entry as its only trace. See ADR 030.
+     *
+     * Logged here all the same, because "the bank cashed check 1062 during this
+     * run" is the sort of thing worth being able to find afterwards.
      */
-    const matched = await matchClearedChecks(db, { actorId: options.actorId ?? null });
-    if (matched.length > 0) {
+    const proposed = await proposeCheckMatches(db);
+    if (proposed.length > 0) {
       logger.info(
-        { correlationId, checks: matched.map((match) => match.checkNumber) },
-        'outstanding checks cleared',
+        { correlationId, checks: proposed.map((proposal) => proposal.checkNumber) },
+        'outstanding checks appear to have cleared, awaiting confirmation',
       );
     }
 

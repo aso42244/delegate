@@ -60,6 +60,16 @@ export interface BudgetSectionProps {
   readonly onAbsorb?: (row: BudgetRowDto) => void;
   /** What the button says: which direction the money is going. */
   readonly absorbLabel?: string;
+  /**
+   * A control hung beside a row's Remaining figure, in the same place as the
+   * absorb button but **always visible** rather than revealed on hover.
+   *
+   * The absorb button is an offer; this is a standing state — a check the bank
+   * appears to have cashed. A state nobody can see until they happen to hover
+   * the right row is one nobody acts on, and the banner at the top of the page
+   * would be pointing at something invisible.
+   */
+  readonly rowAffordance?: (row: BudgetRowDto) => ReactNode;
 }
 
 function parseCents(value: string | null): bigint | null {
@@ -80,6 +90,7 @@ export function BudgetSection({
   onPlace,
   onAbsorb,
   absorbLabel,
+  rowAffordance,
 }: BudgetSectionProps): ReactNode {
   const [newName, setNewName] = useState('');
 
@@ -254,6 +265,14 @@ export function BudgetSection({
               >
                 {absorbLabel}
               </button>
+            )}
+
+            {/* The same slot, and never both: the absorb button is not offered
+                on a check, which is the only row this returns anything for. */}
+            {rowAffordance && (
+              <span className="absolute top-1/2 right-full mr-2 -translate-y-1/2">
+                {rowAffordance(row)}
+              </span>
             )}
 
             <MoneyCell

@@ -23,6 +23,20 @@
   --color-positive: #46a171;
   --color-positive-soft: #e8f1ec;
 
+  /*
+   * Purple: something worked out but not acted on, waiting for a person to say
+   * yes. Blue, yellow and red were taken by "here is a fact", "this needs
+   * attention" and "this is wrong", and a proposal is none of those.
+   *
+   * #6b3fa0 on #f4ecfb is 6.41:1, which sits with danger (6.53) rather than
+   * scraping the 4.5 floor. The dot reuses the grouping purple, so the hue is
+   * one the palette already owns.
+   */
+  --color-confirm: #6b3fa0;
+  --color-confirm-soft: #f4ecfb;
+  --color-confirm-line: #d8c2ec;
+  --color-confirm-dot: #8b63b8;
+
   --color-warning: #8a6a14;
   --color-warning-soft: #fff4d6;
   --color-warning-line: #efdfaf;

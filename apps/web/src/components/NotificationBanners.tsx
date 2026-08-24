@@ -18,7 +18,7 @@ import { api } from '../api/client.js';
  * still the case. What makes it go away for good is fixing it.
  */
 
-type Severity = 'info' | 'warning' | 'danger';
+type Severity = 'info' | 'confirm' | 'warning' | 'danger';
 
 interface NotificationDto {
   readonly kind: string;
@@ -30,6 +30,8 @@ interface NotificationDto {
 
 const TONES: Record<Severity, string> = {
   info: 'border-accent bg-accent-soft text-accent',
+  // Purple: worked out, not yet acted on, waiting on a person.
+  confirm: 'border-confirm-line bg-confirm-soft text-confirm',
   warning: 'border-warning-line bg-warning-soft text-warning',
   danger: 'border-danger-line bg-danger-soft text-danger',
 };
