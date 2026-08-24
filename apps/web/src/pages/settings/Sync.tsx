@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState, type FormEvent, type ReactNode } from 'react';
+import { backupsApi } from '../../api/backups.js';
 import { ApiError, syncApi, type SyncStatus } from '../../api/client.js';
 import { Alert, Button, Modal, TextField } from '../../components/ui.jsx';
 import { SettingsCard as Card } from './SettingsCard.jsx';
@@ -126,6 +127,114 @@ function runSummary(run: SyncStatus['runs'][number]): string {
   return parts.length === 0 ? 'nothing new' : parts.join(', ');
 }
 
+/** Bytes as something a person reads, which for a dump means MB. */
+function readableSize(bytes: number): string {
+  if (bytes >= 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  if (bytes >= 1024) return `${Math.round(bytes / 1024)} KB`;
+  return `${bytes} bytes`;
+}
+
+/**
+ * Whether there is a backup, which is a different question from whether the
+ * last attempt succeeded.
+ *
+ * This card exists because the answer used to require an SSH session. The
+ * nightly dump on this deployment failed with a permission error every night
+ * from go-live, logged at error level each time, and nothing anywhere read the
+ * log — so the application was green, the owner assumed backups were running,
+ * and neither impression was reachable from the other.
+ *
+ * A dump only counts with its checksum beside it. `backup.sh` writes to a
+ * `.partial` name and renames both files on success, so a dump without its
+ * sidecar is the wreckage of a failed run rather than a backup.
+ */
+function Backups(): ReactNode {
+  const backups = useQuery({ queryKey: ['backups'], queryFn: backupsApi.status });
+
+  const newest = backups.data?.newestAt ?? null;
+  const hours =
+    newest === null ? null : (Date.now() - new Date(newest).getTime()) / (60 * 60 * 1000);
+  // Nightly, so one missed run is a hiccup and two is a pattern.
+  const failing = backups.data !== undefined && (hours === null || hours > 48);
+
+  return (
+    <Card
+      title="Backups"
+      description="A dump of the whole budget, nightly at 02:30 UTC, kept for 30 days."
+    >
+      {backups.isLoading ? (
+        <p className="text-quiet text-muted">Loading…</p>
+      ) : (
+        <>
+          <p className="flex items-center gap-2 text-quiet">
+            <span
+              aria-hidden
+              className={`h-2 w-2 shrink-0 rounded-full ${failing ? 'bg-danger-dot' : 'bg-positive'}`}
+            />
+            <span className={failing ? 'font-semibold text-danger' : 'text-muted'}>
+              {newest === null
+                ? 'No backup has ever completed.'
+                : `Newest ${new Date(newest).toLocaleString()} · ${backups.data?.count ?? 0} kept`}
+            </span>
+          </p>
+
+          {/* The path, because somebody chasing a missing dump needs to know
+              which directory to look in — and because it is configuration
+              rather than a secret. */}
+          <p className="mt-1 font-mono text-label break-all text-faint">
+            {backups.data?.directory}
+          </p>
+
+          {failing && (
+            <div className="mt-3">
+              <Alert>
+                Everything in this budget exists in one place. The commonest cause is the backup
+                directory not being writable by the container, which runs unprivileged — check that
+                it is owned by uid 1000 on the host.
+              </Alert>
+            </div>
+          )}
+
+          {(backups.data?.recent.length ?? 0) > 0 && (
+            <table className="mt-4 w-full border-t-2 border-ink">
+              <thead>
+                <tr className="text-label uppercase tracking-[0.05em] text-muted">
+                  <th className="row-cell pl-1 text-left font-normal">Dump</th>
+                  <th className="row-cell w-28 pr-2 text-right font-normal">Size</th>
+                  <th className="row-cell w-48 pr-1 text-right font-normal">Written</th>
+                </tr>
+              </thead>
+              <tbody>
+                {backups.data?.recent.map((file) => (
+                  <tr key={file.name} className="border-b border-line last:border-0">
+                    <td className="row-cell overflow-hidden pl-1">
+                      <span className="block truncate font-mono text-quiet text-ink">
+                        {file.name}
+                      </span>
+                    </td>
+                    <td className="row-cell w-28 pr-2 text-right text-quiet text-muted">
+                      {/* A dump with no checksum beside it never completed, and
+                          saying "incomplete" is the whole point of the sidecar. */}
+                      {file.hasChecksum ? (
+                        readableSize(file.bytes)
+                      ) : (
+                        <span className="font-semibold text-warning">incomplete</span>
+                      )}
+                    </td>
+                    <td className="row-cell w-48 pr-1 text-right text-quiet whitespace-nowrap text-muted">
+                      {new Date(file.writtenAt).toLocaleString()}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </>
+      )}
+    </Card>
+  );
+}
+
 export function SyncSection(): ReactNode {
   const queryClient = useQueryClient();
   const [replacing, setReplacing] = useState(false);
@@ -141,96 +250,104 @@ export function SyncSection(): ReactNode {
   const runs = status.data?.runs.slice(0, 5) ?? [];
 
   return (
-    <Card
-      title="SimpleFIN"
-      description="Connects your institutions so balances and transactions arrive automatically, hourly."
-      action={
-        summary?.connected ? (
-          <div className="flex gap-2">
-            <Button onClick={() => setReplacing(true)}>Set up new token</Button>
-            <Button variant="danger" onClick={() => forget.mutate()} disabled={forget.isPending}>
-              Disconnect
-            </Button>
-          </div>
-        ) : undefined
-      }
-    >
-      {/*
+    <>
+      <Card
+        title="SimpleFIN"
+        description="Connects your institutions so balances and transactions arrive automatically, hourly."
+        action={
+          summary?.connected ? (
+            <div className="flex gap-2">
+              <Button onClick={() => setReplacing(true)}>Set up new token</Button>
+              <Button variant="danger" onClick={() => forget.mutate()} disabled={forget.isPending}>
+                Disconnect
+              </Button>
+            </div>
+          ) : undefined
+        }
+      >
+        {/*
         A line, not a bar. The state is one fact and the full-width panel it used
         to sit in said it at the size of a warning on the day nothing was wrong,
         which is most days.
       */}
-      {summary && (
-        <p className="flex items-center gap-2 text-quiet">
-          <span
-            aria-hidden
-            className={`h-2 w-2 shrink-0 rounded-full ${
-              summary.tone === 'positive' ? 'bg-positive' : 'bg-warning-dot'
-            }`}
-          />
-          <span className={summary.tone === 'positive' ? 'text-muted' : 'text-warning'}>
-            {summary.text}
-          </span>
-        </p>
-      )}
+        {summary && (
+          <p className="flex items-center gap-2 text-quiet">
+            <span
+              aria-hidden
+              className={`h-2 w-2 shrink-0 rounded-full ${
+                summary.tone === 'positive' ? 'bg-positive' : 'bg-warning-dot'
+              }`}
+            />
+            <span className={summary.tone === 'positive' ? 'text-muted' : 'text-warning'}>
+              {summary.text}
+            </span>
+          </p>
+        )}
 
-      {/* Before the first connection the token field *is* the page. */}
-      {summary && !summary.connected && status.data?.credentialSource !== 'environment' && (
-        <div className="mt-4 max-w-xl">
-          <TokenField inDialog={false} />
-        </div>
-      )}
+        {/* Before the first connection the token field *is* the page. */}
+        {summary && !summary.connected && status.data?.credentialSource !== 'environment' && (
+          <div className="mt-4 max-w-xl">
+            <TokenField inDialog={false} />
+          </div>
+        )}
 
-      {runs.length > 0 && (
-        <div className="mt-5">
-          <table className="w-full border-t-2 border-ink">
-            <thead>
-              <tr className="text-label uppercase tracking-[0.05em] text-muted">
-                <th className="row-cell pl-1 text-left font-semibold text-ink">Recent syncs</th>
-                <th className="row-cell text-left font-normal">Result</th>
-                <th className="row-cell pr-1 text-right font-normal">When</th>
-              </tr>
-            </thead>
-            <tbody>
-              {runs.map((run) => (
-                <tr key={run.id} className="border-b border-line last:border-0">
-                  <td className="row-cell w-24 pl-1">
-                    <span
-                      className={
-                        run.status === 'failed'
-                          ? 'text-quiet font-semibold text-danger'
-                          : run.status === 'running'
-                            ? 'text-quiet text-muted'
-                            : 'text-quiet text-positive'
-                      }
-                    >
-                      {run.status}
-                    </span>
-                  </td>
-                  <td className="row-cell text-quiet text-muted">
-                    {/* Errors are surfaced, never left in the log alone. */}
-                    {run.error ? <span className="text-danger">{run.error}</span> : runSummary(run)}
-                  </td>
-                  <td className="row-cell w-48 pr-1 text-right text-quiet whitespace-nowrap text-muted">
-                    {new Date(run.startedAt).toLocaleString()}
-                  </td>
+        {runs.length > 0 && (
+          <div className="mt-5">
+            <table className="w-full border-t-2 border-ink">
+              <thead>
+                <tr className="text-label uppercase tracking-[0.05em] text-muted">
+                  <th className="row-cell pl-1 text-left font-semibold text-ink">Recent syncs</th>
+                  <th className="row-cell text-left font-normal">Result</th>
+                  <th className="row-cell pr-1 text-right font-normal">When</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
+              </thead>
+              <tbody>
+                {runs.map((run) => (
+                  <tr key={run.id} className="border-b border-line last:border-0">
+                    <td className="row-cell w-24 pl-1">
+                      <span
+                        className={
+                          run.status === 'failed'
+                            ? 'text-quiet font-semibold text-danger'
+                            : run.status === 'running'
+                              ? 'text-quiet text-muted'
+                              : 'text-quiet text-positive'
+                        }
+                      >
+                        {run.status}
+                      </span>
+                    </td>
+                    <td className="row-cell text-quiet text-muted">
+                      {/* Errors are surfaced, never left in the log alone. */}
+                      {run.error ? (
+                        <span className="text-danger">{run.error}</span>
+                      ) : (
+                        runSummary(run)
+                      )}
+                    </td>
+                    <td className="row-cell w-48 pr-1 text-right text-quiet whitespace-nowrap text-muted">
+                      {new Date(run.startedAt).toLocaleString()}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
 
-      {replacing && (
-        <Modal
-          label="Connect a new SimpleFIN setup token"
-          title="Set up new token"
-          description="Replaces the connection this budget is using. The old one stops working."
-          onClose={() => setReplacing(false)}
-        >
-          <TokenField inDialog onDone={() => setReplacing(false)} />
-        </Modal>
-      )}
-    </Card>
+        {replacing && (
+          <Modal
+            label="Connect a new SimpleFIN setup token"
+            title="Set up new token"
+            description="Replaces the connection this budget is using. The old one stops working."
+            onClose={() => setReplacing(false)}
+          >
+            <TokenField inDialog onDone={() => setReplacing(false)} />
+          </Modal>
+        )}
+      </Card>
+
+      <Backups />
+    </>
   );
 }

@@ -360,6 +360,25 @@ for pair in "$(setting_of TLS_DIR):./tls" "$(setting_of BACKUP_DIR):./backups"; 
   }
 done
 
+# The backup directory has to be writable by the container, which runs as the
+# unprivileged `node` user — uid 1000 in the node Alpine image the Dockerfile
+# builds on.
+#
+# The Dockerfile already chowns /backups, and that does nothing here: a bind
+# mount replaces the image's directory wholesale, and the host's ownership is
+# what the process meets. This directory is created by this script under sudo,
+# so without the chown below it is owned by root and every dump fails with
+# "Permission denied" — which is exactly what happened on this deployment, every
+# night from go-live, while the application stayed green.
+BACKUP_HOST_DIR=$(setting_of BACKUP_DIR)
+BACKUP_HOST_DIR=${BACKUP_HOST_DIR:-./backups}
+if [ "$(id -u)" -eq 0 ]; then
+  chown -R 1000:1000 "$BACKUP_HOST_DIR" || {
+    echo "warning: could not chown $BACKUP_HOST_DIR to uid 1000." >&2
+    echo "         The nightly dump will fail until it is writable by the container." >&2
+  }
+fi
+
 echo 'Starting …'
 $COMPOSE up -d
 
@@ -375,6 +394,23 @@ while [ "$i" -le 60 ]; do
     echo
     echo "Serving on port ${HOST_PORT} over ${SCHEME}."
     echo "Running: $PINNED"
+
+    # Proves the container can write where the dumps go, rather than assuming it.
+    #
+    # A bind-mount permission problem cannot be caught anywhere but here: it does
+    # not exist in the image, it does not exist in `npm run verify`, and the
+    # nightly dump that meets it fails at half past two in the morning into a log
+    # nobody reads. One write, on the machine that matters, at the moment somebody
+    # is watching.
+    if $COMPOSE exec -T app sh -c 'touch /backups/.writable && rm -f /backups/.writable' \
+      >/dev/null 2>&1; then
+      echo 'Backups: the container can write to the backup directory.'
+    else
+      echo >&2
+      echo 'warning: the container cannot write to the backup directory.' >&2
+      echo '         The nightly dump will fail silently until this is fixed:' >&2
+      echo "           sudo chown -R 1000:1000 ${BACKUP_HOST_DIR}" >&2
+    fi
     # Nothing further. The plain-http note and the LAN-only warning that stood
     # here said the same two things on every deploy, and neither survived
     # reading: plain http at the origin is the documented default (ADR 017), and

@@ -202,10 +202,21 @@ been reconciled to actual and run on real data for weeks.
 
 What is genuinely outstanding:
 
-1. **Confirm a backup dump lands** in `/volume1/docker/delegate/backups`, and
-   that the folder is included in whatever backs up off the NAS. A dump on the
-   same disk as the database is not a backup. This is the last item from the
-   original go-live list and the only one that has never been ticked.
+1. **Include the backup directory in whatever backs up off the NAS.** The dumps
+   land in `/volume1/backups/delegate` — a DSM shared folder, set by `BACKUP_DIR`
+   in `.env` on the NAS, and _not_ the path this document claimed for months. A
+   dump on the same disk as the database is not a backup, and this half is still
+   not done.
+
+   The other half — that a dump lands at all — **was broken from go-live until
+   2026-08-24 and is now fixed.** The directory was created by `deploy.sh` under
+   `sudo` and so owned by root, the container runs as uid 1000, and every
+   nightly `pg_dump` failed with "Permission denied". It was logged at error
+   level each time and nothing read the log. Settings → Sync now shows the
+   newest dump and a red banner appears when none has landed in 48 hours, so
+   this cannot go quiet again. `deploy.sh` chowns the directory and proves the
+   container can write to it before it reports success.
+
 2. **Record the onion address** somewhere safe once Tor remote access is turned
    on. It lives in a Docker volume; lose the volume and the address cannot be
    recovered, only replaced, and every device that had it stops working.
