@@ -15,7 +15,11 @@ export const notificationRoutes: FastifyPluginCallback = (fastify, _options, don
   }
 
   fastify.get('/api/notifications', async () => ({
-    notifications: await buildNotifications(prisma),
+    // The backup directory comes from configuration rather than a constant: the
+    // check is about this deployment's disk, not about the code's idea of one.
+    notifications: await buildNotifications(prisma, new Date(), {
+      backupDir: fastify.config.BACKUP_DIR,
+    }),
   }));
 
   done();

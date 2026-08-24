@@ -1,6 +1,7 @@
 import { isBalanceStale } from '@budget/shared';
 import type { Db } from '../db/client.js';
 import { latestPrice } from './bitcoin.js';
+import { newestBackupAt } from './backup.js';
 import { proposeCheckMatches } from './checks.js';
 
 /**
@@ -34,7 +35,8 @@ export interface Notification {
     | 'uncategorized_backlog'
     | 'bitcoin_price_stale'
     | 'accounts_need_review'
-    | 'checks_awaiting_confirmation';
+    | 'checks_awaiting_confirmation'
+    | 'backup_failing';
   readonly severity: NotificationSeverity;
   readonly message: string;
   /** Where to go to do something about it. */
@@ -48,10 +50,33 @@ function daysBetween(from: Date, to: Date): number {
   return Math.floor((to.getTime() - from.getTime()) / DAY_MS);
 }
 
-export async function buildNotifications(db: Db, now: Date = new Date()): Promise<Notification[]> {
+/**
+ * How old the newest dump may be before the backup counts as failing.
+ *
+ * The dump is nightly, so one missed run is a hiccup and two is a pattern. Set
+ * lower and a slow first dump of a year's transactions on a Celeron raises a
+ * false alarm; set higher and a fortnight can pass unnoticed.
+ */
+const BACKUP_STALE_HOURS = 48;
+const STALE_MS = BACKUP_STALE_HOURS * 60 * 60 * 1000;
+
+export interface NotificationOptions {
+  /**
+   * Where the dumps land. Omitted, the backup check does not run at all — which
+   * is what the integration tests want, and what any caller without the
+   * deployment's configuration should get rather than a false alarm.
+   */
+  readonly backupDir?: string;
+}
+
+export async function buildNotifications(
+  db: Db,
+  now: Date = new Date(),
+  options: NotificationOptions = {},
+): Promise<Notification[]> {
   const notifications: Notification[] = [];
 
-  const [latestRun, accounts, uncategorized, oldestUncategorized, price, checkMatches] =
+  const [latestRun, accounts, uncategorized, oldestUncategorized, price, checkMatches, oldestUser] =
     await Promise.all([
       db.syncRun.findFirst({
         orderBy: { startedAt: 'desc' },
@@ -71,7 +96,52 @@ export async function buildNotifications(db: Db, now: Date = new Date()): Promis
       }),
       latestPrice(db, now),
       proposeCheckMatches(db),
+      // The first account created, as a stand-in for when this deployment began.
+      db.user.findFirst({ orderBy: { createdAt: 'asc' }, select: { createdAt: true } }),
     ]);
+
+  /*
+   * The backup, first, because it is the only condition here that can cost the
+   * household its data rather than its accuracy.
+   *
+   * Age of the newest dump rather than the outcome of the last attempt. Those
+   * differ exactly where it matters: this deployment's nightly dump failed with
+   * a permission error every night from go-live, logged at error level each
+   * time, and nothing read the log. "Did it throw" was being answered correctly
+   * and nobody was listening; "is there a recent backup" is the question whose
+   * answer nobody could have got wrong.
+   */
+  if (options.backupDir !== undefined) {
+    const newest = await newestBackupAt(options.backupDir);
+    const hours = newest === null ? null : (now.getTime() - newest.getTime()) / (60 * 60 * 1000);
+
+    /*
+     * A deployment younger than one backup cycle is not failing, it is new.
+     *
+     * The first account's creation is the closest thing to a deployment date
+     * without a column for one: first-run setup is the moment this stopped
+     * being an empty database. Without this an install raises a red banner on
+     * its first evening, before the nightly dump has had a chance to run at
+     * all — and a banner that is wrong on day one is one nobody trusts on day
+     * ninety, which is the day it matters.
+     */
+    const settledIn =
+      oldestUser === null ? false : now.getTime() - oldestUser.createdAt.getTime() > STALE_MS;
+
+    if (settledIn && (hours === null || hours > BACKUP_STALE_HOURS)) {
+      const days = newest === null ? 0 : daysBetween(newest, now);
+      notifications.push({
+        kind: 'backup_failing',
+        severity: 'danger',
+        message:
+          newest === null
+            ? 'No database backup has ever completed. Everything in this budget exists in one place.'
+            : `The newest database backup is ${days === 1 ? 'a day' : `${days} days`} old. The nightly dump is failing.`,
+        actionPath: '/settings/sync',
+        actionLabel: 'Backups',
+      });
+    }
+  }
 
   // A failed sync must be visible in the UI, not only in the logs — §13.
   if (latestRun?.status === 'failed') {

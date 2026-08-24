@@ -6,7 +6,32 @@ phase (`v0.1.0-phase1`, and so on).
 
 ## [Unreleased]
 
-Nothing yet.
+### Fixed
+
+- **The nightly backup has never once run, and now does.** `deploy.sh` creates
+  the backup directory under `sudo`, so it was owned by root; the container runs
+  as the unprivileged `node` user, uid 1000. Every nightly `pg_dump` since
+  go-live failed with `Permission denied`. The Dockerfile's `chown` of
+  `/backups` did nothing about it — a bind mount replaces the image's directory
+  wholesale, and the host's ownership is what the process meets.
+
+  `deploy.sh` now chowns the directory to uid 1000, and — because a bind-mount
+  permission problem cannot be caught in the image or in `npm run verify` —
+  **proves the container can write there** before reporting a successful deploy.
+
+### Added
+
+- **Settings → Sync shows the backups.** The newest dump, how many are kept, the
+  directory they land in, and the last five with their sizes. A dump missing its
+  checksum sidecar reads as `incomplete` rather than as a backup, because that is
+  what `backup.sh` leaves behind when a run dies partway.
+
+- **A red banner when no backup has landed in 48 hours**, or when none ever has.
+  This is the part that matters: the dump failed every night for weeks, was
+  logged at error level every time, and nothing anywhere read the log. The check
+  asks **whether a dump has landed**, not whether the last attempt threw — those
+  differ exactly where it counts, and only one of them was answerable from
+  inside the application.
 
 ## [0.28.0] — 2026-08-24
 

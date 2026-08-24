@@ -14,6 +14,9 @@ import {
 } from './helpers.js';
 import { sessionCookie } from './http.js';
 import { categorizeTransaction } from '../src/domain/allocations.js';
+import { mkdtemp, writeFile, utimes } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 /**
  * The banners the application raises about itself.
@@ -286,6 +289,104 @@ describe('accounts a sync discovered', () => {
     await prisma.account.update({ where: { id: account.id }, data: { needsReview: true } });
 
     expect(await kinds()).toContain('accounts_need_review');
+  });
+});
+
+/**
+ * The backup, which is the only condition here that can cost the household its
+ * data rather than its accuracy.
+ *
+ * These exist because the real deployment's nightly dump failed with a
+ * permission error every night from go-live, was logged at error level each
+ * time, and nothing anywhere read the log. The lesson is in the shape of the
+ * check: it asks whether a dump has landed, not whether the last attempt threw.
+ */
+describe('the backup', () => {
+  async function backupDir(): Promise<string> {
+    return mkdtemp(join(tmpdir(), 'delegate-backups-'));
+  }
+
+  /**
+   * Ages the deployment past one backup cycle.
+   *
+   * The check stays quiet on an install too young for a dump to have been due,
+   * so every test that expects it to speak has to get past that first — which
+   * is the clearest possible statement of the rule.
+   */
+  async function deploymentIsOldEnough(): Promise<void> {
+    await prisma.user.updateMany({
+      data: { createdAt: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) },
+    });
+  }
+
+  /** A dump and its checksum, aged by however many hours. */
+  async function writeDump(directory: string, hoursOld: number): Promise<void> {
+    const name = join(directory, `delegate-2026${String(hoursOld).padStart(4, '0')}-000000.dump`);
+    await writeFile(name, 'x'.repeat(2048));
+    await writeFile(`${name}.sha256`, 'deadbeef');
+    const when = new Date(Date.now() - hoursOld * 60 * 60 * 1000);
+    await utimes(name, when, when);
+  }
+
+  it('says so, in the strongest terms, when none has ever completed', async () => {
+    await deploymentIsOldEnough();
+    const directory = await backupDir();
+    const notifications = await buildNotifications(prisma, new Date(), { backupDir: directory });
+
+    const backup = notifications.find((one) => one.kind === 'backup_failing');
+    expect(backup?.severity).toBe('danger');
+    expect(backup?.message).toContain('exists in one place');
+  });
+
+  it('is quiet when a recent dump is there', async () => {
+    const directory = await backupDir();
+    await writeDump(directory, 3);
+
+    const notifications = await buildNotifications(prisma, new Date(), { backupDir: directory });
+    expect(notifications.find((one) => one.kind === 'backup_failing')).toBeUndefined();
+  });
+
+  it('raises once two nightly runs have been missed', async () => {
+    await deploymentIsOldEnough();
+    const directory = await backupDir();
+    await writeDump(directory, 60);
+
+    const notifications = await buildNotifications(prisma, new Date(), { backupDir: directory });
+    expect(notifications.find((one) => one.kind === 'backup_failing')?.message).toContain(
+      '2 days old',
+    );
+  });
+
+  /*
+   * The failure that actually happened, in miniature.
+   *
+   * `backup.sh` writes to a `.partial` name and renames the dump and its
+   * checksum together, so a dump with no sidecar is the wreckage of a run that
+   * died partway. Counting it would report a backup on the strength of the file
+   * that proves there isn't one.
+   */
+  it('does not count a dump whose checksum never landed', async () => {
+    await deploymentIsOldEnough();
+    const directory = await backupDir();
+    await writeFile(join(directory, 'delegate-20260824-000000.dump'), 'x'.repeat(2048));
+
+    const notifications = await buildNotifications(prisma, new Date(), { backupDir: directory });
+    expect(notifications.find((one) => one.kind === 'backup_failing')).toBeDefined();
+  });
+
+  /*
+   * A deployment younger than one backup cycle is not failing, it is new. A
+   * banner that is wrong on day one is one nobody trusts on day ninety.
+   */
+  it('stays quiet on an install too young for a dump to have been due', async () => {
+    const directory = await backupDir();
+    const notifications = await buildNotifications(prisma, new Date(), { backupDir: directory });
+    expect(notifications.find((one) => one.kind === 'backup_failing')).toBeUndefined();
+  });
+
+  it('does not run at all when no directory is configured', async () => {
+    const notifications = await buildNotifications(prisma, new Date());
+    expect(notifications.find((one) => one.kind === 'backup_failing')).toBeUndefined();
   });
 });
 
