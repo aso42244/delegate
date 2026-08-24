@@ -4,7 +4,12 @@ import { useState, type FormEvent, type ReactNode } from 'react';
 import { budgetApi, type BudgetRowDto } from '../api/budget.js';
 import { ApiError } from '../api/client.js';
 import { DelegationHistory } from './DelegationHistory.jsx';
-import { ITEM_CLASS, RowMenuShell, type GroupingOption } from './RowMenuShell.jsx';
+import {
+  DANGER_ITEM_CLASS,
+  ITEM_CLASS,
+  RowMenuShell,
+  type GroupingOption,
+} from './RowMenuShell.jsx';
 import { Alert, Button, Modal, TextArea, TextField, Toggle } from './ui.jsx';
 
 /**
@@ -455,7 +460,7 @@ export function DelegationRowMenu({
             <button
               type="button"
               role="menuitem"
-              className={`${ITEM_CLASS} text-danger`}
+              className={DANGER_ITEM_CLASS}
               onClick={() => archive.mutate()}
               disabled={archive.isPending}
             >

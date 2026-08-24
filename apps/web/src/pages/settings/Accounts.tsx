@@ -1,10 +1,11 @@
 import { formatCents, formatCentsForInput, isBalanceStale, tryParseMoney } from '@budget/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useState, type FormEvent, type ReactNode } from 'react';
+import { Fragment, useState, type FormEvent, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { accountsApi, type AccountDto } from '../../api/accounts.js';
 import { ApiError } from '../../api/client.js';
-import { Alert, Button, SelectField, TextField, Toggle } from '../../components/ui.jsx';
+import { AccountRowMenu } from '../../components/AccountRowMenu.jsx';
+import { Alert, Button, SelectField, Tag, TextField, Toggle } from '../../components/ui.jsx';
 import { SettingsCard } from './SettingsCard.jsx';
 
 /**
@@ -18,6 +19,13 @@ import { SettingsCard } from './SettingsCard.jsx';
  * A balance is editable only on a manual account. A SimpleFIN balance is
  * whatever the institution last reported, and the next sync would overwrite
  * anything typed here.
+ *
+ * One line per account, in two tables. Assets and debts are separated because
+ * the section a row sits in *is* its type, which is a column's worth of
+ * repetition removed; everything that is read far more often than it is changed
+ * — the type, the short name, Archive — lives in the row menu the Budget page
+ * already uses. What stays on the row is the pair of switches the page exists
+ * for, and a balance you can click on a manual account.
  */
 
 function AddAccountForm({ onDone }: { readonly onDone: () => void }): ReactNode {
@@ -141,48 +149,27 @@ function AddAccountForm({ onDone }: { readonly onDone: () => void }): ReactNode 
   );
 }
 
+/** What the row shows in black, and what the list is ordered by. */
+function displayName(account: AccountDto): string {
+  return account.nickname ?? account.name;
+}
+
 function AccountRow({ account }: { readonly account: AccountDto }): ReactNode {
   const queryClient = useQueryClient();
   const [editingBalance, setEditingBalance] = useState(false);
   const [balanceDraft, setBalanceDraft] = useState('');
-  // Null means "not being edited", so the stored value shows until it is.
-  const [nickname, setNickname] = useState<string | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
-
-  const refresh = async (): Promise<void> => {
-    await queryClient.invalidateQueries({ queryKey: ['accounts'] });
-    await queryClient.invalidateQueries({ queryKey: ['budget'] });
-  };
-
-  const onError = (error: unknown): void =>
-    setProblem(error instanceof ApiError ? error.message : 'Could not update this account.');
 
   const update = useMutation({
     mutationFn: (input: Parameters<typeof accountsApi.update>[1]) =>
       accountsApi.update(account.id, input),
     onSuccess: async () => {
       setProblem(null);
-      await refresh();
+      await queryClient.invalidateQueries({ queryKey: ['accounts'] });
+      await queryClient.invalidateQueries({ queryKey: ['budget'] });
     },
-    onError,
-  });
-
-  const rename = useMutation({
-    mutationFn: (next: string | null) => accountsApi.update(account.id, { nickname: next }),
-    onSuccess: async () => {
-      setProblem(null);
-      await refresh();
-    },
-    onError,
-  });
-
-  const archive = useMutation({
-    mutationFn: () => accountsApi.archive(account.id),
-    onSuccess: async () => {
-      setProblem(null);
-      await refresh();
-    },
-    onError,
+    onError: (error: unknown) =>
+      setProblem(error instanceof ApiError ? error.message : 'Could not update this account.'),
   });
 
   const stale = isBalanceStale(
@@ -201,91 +188,40 @@ function AccountRow({ account }: { readonly account: AccountDto }): ReactNode {
     update.mutate({ balanceCents: magnitude.toString() });
   }
 
-  /*
-   * A Bitcoin holding and a property are still accounts, and belong on this
-   * list — leaving them off would make the list a lie about what the budget is
-   * made of. They are not editable here, though: their own tab owns their
-   * lifecycle, and it is where a quantity or a dated valuation is understood.
-   * The API refuses the edit too, so this is the courtesy rather than the guard.
-   */
-  if (account.managedAs !== 'none') {
-    return (
-      <div className="flex flex-wrap items-center gap-3 border-b border-line py-3 last:border-0">
-        <div className="min-w-48 flex-1">
-          <span className="text-ink">{account.name}</span>
-          <span className="ml-1 rounded bg-surface-2 px-1.5 py-0.5 text-label font-semibold text-muted">
-            {account.managedAs}
-          </span>
-        </div>
-        <span className="money text-ink">{formatCents(BigInt(account.balanceCents))}</span>
-        <Link
-          to={account.managedAs === 'bitcoin' ? '/settings/bitcoin' : '/settings/properties'}
-          className="rounded border border-line px-2 py-0.5 text-quiet font-semibold text-accent"
-        >
-          {account.managedAs === 'bitcoin' ? 'Manage in Bitcoin' : 'Manage in Properties'}
-        </Link>
-      </div>
-    );
-  }
-
   return (
-    <div className="border-b border-line py-3 last:border-0">
-      <div className="flex flex-wrap items-center gap-3">
-        <div className="min-w-48 flex-1">
-          <span className="text-ink">{account.name}</span>
-          <span className="ml-1 rounded bg-surface-2 px-1.5 py-0.5 text-label font-semibold text-muted">
-            {account.source}
-          </span>
-          {account.needsReview && (
-            <span className="ml-2 text-label font-semibold text-warning">needs review</span>
-          )}
-          {/* Stale means the confirmed balance has aged past its own interval —
-              said in words, not by colour alone. */}
-          {stale && <span className="ml-2 text-label font-semibold text-warning">stale</span>}
+    <>
+      {/* `group` so the row's `⋯` can appear on hover of the row rather than of
+          the button, which would be a two-pixel target nobody finds. */}
+      <tr className="group border-b border-line last:border-0 hover:bg-surface">
+        <td className="row-cell overflow-hidden pl-3">
+          <div className="flex items-baseline gap-2 overflow-hidden">
+            <span className="whitespace-nowrap text-ink">{displayName(account)}</span>
 
-          {/* The full name stays here, where identifying which account this is
-              happens to be the point. The nickname is what the budget and the
-              register show instead. */}
-          <input
-            value={nickname ?? account.nickname ?? ''}
-            onChange={(event) => setNickname(event.target.value)}
-            onBlur={() => {
-              const next = (nickname ?? '').trim();
-              if (nickname !== null && next !== (account.nickname ?? '')) {
-                rename.mutate(next === '' ? null : next);
-              }
-              setNickname(null);
-            }}
-            onKeyDown={(event) => {
-              if (event.key === 'Enter') event.currentTarget.blur();
-              if (event.key === 'Escape') setNickname(null);
-            }}
-            placeholder="Short name (optional)"
-            maxLength={40}
-            aria-label={`Short name for ${account.name}`}
-            className="mt-1 block w-full rounded border border-transparent bg-transparent px-2 py-0.5 text-quiet text-muted hover:border-line focus:border-accent focus:bg-canvas focus:text-ink"
-          />
-        </div>
+            {/* The institution's own wording, kept where identifying which
+                account this is happens to be the point — but quiet, and second,
+                now that the short name is the one that reads. */}
+            {account.nickname !== null && (
+              <span className="truncate text-quiet text-faint" title={account.name}>
+                {account.name}
+              </span>
+            )}
 
-        {/* A discovered account's type is a guess, and a wrong one moves the
-            budget identity by twice the balance — §6.1 makes it the owner's to
-            override. */}
-        <div className="w-28">
-          <label className="sr-only" htmlFor={`type-${account.id}`}>
-            Type of {account.name}
-          </label>
-          <select
-            id={`type-${account.id}`}
-            value={account.type}
-            onChange={(event) => update.mutate({ type: event.target.value as 'asset' | 'debt' })}
-            className="w-full rounded-lg border border-line bg-canvas px-2 py-1 text-quiet text-ink"
-          >
-            <option value="asset">Asset</option>
-            <option value="debt">Debt</option>
-          </select>
-        </div>
+            {/* Only `manual`. Eight identical `simplefin` chips say nothing; a
+                manual account is the one whose balance is yours to type and
+                which can go stale, so it is the one worth marking. */}
+            {account.source === 'manual' && <Tag>manual</Tag>}
 
-        <div className="w-40 text-right">
+            {account.needsReview && (
+              <span className="text-label font-semibold whitespace-nowrap text-warning">
+                needs review
+              </span>
+            )}
+            {/* Said in words, not by colour alone. */}
+            {stale && <span className="text-label font-semibold text-warning">stale</span>}
+          </div>
+        </td>
+
+        <td className="w-36 row-cell pr-2">
           {editingBalance ? (
             <input
               autoFocus
@@ -298,7 +234,7 @@ function AccountRow({ account }: { readonly account: AccountDto }): ReactNode {
               }}
               aria-label={`Balance for ${account.name}`}
               inputMode="decimal"
-              className="money w-full rounded border border-accent bg-canvas px-2 py-1"
+              className="money w-full rounded border border-accent bg-canvas px-2 py-0.5"
             />
           ) : (
             <button
@@ -309,57 +245,130 @@ function AccountRow({ account }: { readonly account: AccountDto }): ReactNode {
                 setEditingBalance(true);
               }}
               aria-label={`Balance for ${account.name}`}
-              className={`money w-full rounded px-2 py-1 text-ink ${
+              className={`money w-full rounded px-2 py-0.5 text-ink ${
                 account.source === 'manual' ? 'hover:bg-accent-soft' : 'cursor-default'
               }`}
             >
               {formatCents(BigInt(account.balanceCents))}
             </button>
           )}
-        </div>
+        </td>
 
-        <label className="flex items-center gap-2 text-quiet text-muted">
+        <td className="w-20 row-cell">
           <Toggle
             checked={account.inBudget}
             onChange={(next) => update.mutate({ inBudget: next })}
             label={`${account.name} in budget`}
           />
-          In budget
-        </label>
+        </td>
 
-        <label className="flex items-center gap-2 text-quiet text-muted">
+        <td className="w-28 row-cell">
           <Toggle
             checked={account.inNetWorth}
             onChange={(next) => update.mutate({ inNetWorth: next })}
             label={`${account.name} in net worth`}
           />
-          In net worth
-        </label>
+        </td>
 
-        {account.needsReview && (
-          <Button
-            onClick={() => update.mutate({ needsReview: false })}
-            aria-label={`Mark ${account.name} reviewed`}
-          >
-            Reviewed
-          </Button>
-        )}
-
-        <Button
-          variant="danger"
-          onClick={() => archive.mutate()}
-          disabled={archive.isPending}
-          aria-label={`Archive ${account.name}`}
-        >
-          Archive
-        </Button>
-      </div>
+        <td className="w-10 row-cell pr-3">
+          <AccountRowMenu row={account} />
+        </td>
+      </tr>
 
       {problem && (
-        <div className="mt-2">
-          <Alert>{problem}</Alert>
-        </div>
+        <tr>
+          <td colSpan={5} className="pb-2">
+            <Alert>{problem}</Alert>
+          </td>
+        </tr>
       )}
+    </>
+  );
+}
+
+/**
+ * One section of the list.
+ *
+ * The section name sits in the first column heading rather than in a title row
+ * of its own — the column *is* the list of assets, and saying so there costs a
+ * row less than saying it above.
+ */
+function AccountsTable({
+  section,
+  accounts,
+}: {
+  readonly section: string;
+  readonly accounts: readonly AccountDto[];
+}): ReactNode {
+  if (accounts.length === 0) return null;
+
+  return (
+    <table className="w-full table-fixed border-t-2 border-ink">
+      <thead>
+        <tr className="text-label uppercase tracking-[0.05em] text-muted">
+          <th className="row-cell pl-3 text-left font-semibold text-ink">{section}</th>
+          <th className="w-36 row-cell pr-2 text-right font-normal">Balance</th>
+          <th className="w-20 row-cell text-left font-normal">In budget</th>
+          <th className="w-28 row-cell text-left font-normal">In net worth</th>
+          <th className="w-10 row-cell pr-3" />
+        </tr>
+      </thead>
+      <tbody>
+        {accounts.map((account) => (
+          <AccountRow key={account.id} account={account} />
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
+/**
+ * Whether this row's `balance_cents` is a figure or a placeholder.
+ *
+ * A property's is its valuation and is always written. A holding's is written
+ * only while it is in the budget, because that is the only place the identity
+ * reads it — and taking one *out* of the budget clears it rather than leaving a
+ * number behind that would go on counting (ADR 021). So a net-worth-only
+ * holding reads `0`, which is not a balance of zero but the absence of one.
+ * Printing it as $0.00 beside a wallet worth six figures is a lie, and the
+ * old "Manage in Bitcoin" row printed exactly that.
+ */
+function hasMaintainedBalance(account: AccountDto): boolean {
+  return account.managedAs !== 'bitcoin' || account.inBudget;
+}
+
+/**
+ * Bitcoin and property, in one line rather than a row each.
+ *
+ * ADR 021 listed them here in full so the page could not become "a lie about
+ * what the budget is made of". That reasoning survives; the two rows it was
+ * spending do not. Neither is an account on this page, neither is editable
+ * here, and each name links to the tab that owns it.
+ */
+function ManagedElsewhere({ accounts }: { readonly accounts: readonly AccountDto[] }): ReactNode {
+  if (accounts.length === 0) return null;
+
+  return (
+    <div className="mt-3 flex flex-wrap items-baseline gap-x-2 gap-y-1 border-t border-line px-3 pt-2 text-quiet text-muted">
+      <span>Also counted:</span>
+      {accounts.map((account, index) => (
+        <Fragment key={account.id}>
+          {index > 0 && (
+            <span aria-hidden className="text-faint">
+              ·
+            </span>
+          )}
+          <Link
+            to={account.managedAs === 'bitcoin' ? '/settings/bitcoin' : '/settings/properties'}
+            className="font-semibold text-accent"
+          >
+            {account.name}
+          </Link>
+          {hasMaintainedBalance(account) && (
+            <span className="money text-ink">{formatCents(BigInt(account.balanceCents))}</span>
+          )}
+        </Fragment>
+      ))}
     </div>
   );
 }
@@ -368,6 +377,23 @@ export function AccountsSection(): ReactNode {
   const [adding, setAdding] = useState(false);
   const accounts = useQuery({ queryKey: ['accounts'], queryFn: () => accountsApi.list() });
 
+  const all = accounts.data?.accounts ?? [];
+  const managed = all.filter((account) => account.managedAs !== 'none');
+
+  /*
+   * Ordered by what the row shows, not by what the database sorts on.
+   *
+   * The API orders by `name`, which used to be the black text on this page — so
+   * the list looked sorted. Now the short name reads first, and ordering by the
+   * grey text underneath would put "Frontier Checking" above "Frontier Bank
+   * Little Pioneer Savings", because its real name begins "Big Deal Cash Back".
+   * Alphabetical has to be true to the eye, not only to the column.
+   */
+  const ordinary = all
+    .filter((account) => account.managedAs === 'none')
+    .slice()
+    .sort((a, b) => displayName(a).localeCompare(displayName(b), undefined, { numeric: true }));
+
   return (
     <SettingsCard
       title="Accounts"
@@ -375,15 +401,21 @@ export function AccountsSection(): ReactNode {
     >
       {accounts.isLoading ? (
         <p className="text-quiet text-muted">Loading accounts…</p>
-      ) : accounts.data?.accounts.length === 0 ? (
+      ) : all.length === 0 ? (
         <p className="text-quiet text-muted">
           No accounts yet. Connect SimpleFIN, or add one you keep by hand.
         </p>
       ) : (
-        <div>
-          {accounts.data?.accounts.map((account) => (
-            <AccountRow key={account.id} account={account} />
-          ))}
+        <div className="flex flex-col gap-4">
+          <AccountsTable
+            section="Assets"
+            accounts={ordinary.filter((account) => account.type === 'asset')}
+          />
+          <AccountsTable
+            section="Debts"
+            accounts={ordinary.filter((account) => account.type === 'debt')}
+          />
+          <ManagedElsewhere accounts={managed} />
         </div>
       )}
 

@@ -76,3 +76,45 @@ hiding it.
 
 `account_valuations` is unchanged and still lives on `/api/accounts/:id/valuations`.
 Recording what something was worth is not specific to a house.
+
+## Amendment, 2026-08-23
+
+**A holding and a property are no longer rows on Settings → Accounts. They are
+one line under the tables.**
+
+The original decision kept them in the list and gave the reason in a sentence:
+leaving them off "would make that page a lie about what the budget is made of."
+That reasoning is still right, and this amendment does not overturn it — it
+stops paying two full rows for it.
+
+What the owner asked for was that both be managed _exclusively_ where they live.
+Two read-only rows, each carrying a name, a chip, a figure and a button through
+to another tab, were the largest thing on a page whose whole problem was that it
+was too busy. They also read as accounts you might edit, which is exactly what
+they are not.
+
+So the page now ends with:
+
+    Also counted:  1505 E Otonka Trail  $350,000.00  ·  Ott Multi-Sig
+
+Neither is listed among the accounts, neither has a row menu, and each name
+links to the tab that owns it. The page still shows what the totals are made of
+— in 30px rather than 100.
+
+**A figure appears only where `balance_cents` is maintained**, which is the
+decision above read back honestly. A property's is its valuation and is always
+written. A holding's is written only while it is in the budget; taking one out
+clears it, so a net-worth-only holding carries `0` — the absence of a figure,
+not a balance of zero. The row this line replaces printed that `0` as `$0.00`
+next to a wallet worth six figures, which was wrong every day it shipped. The
+name still links through to where the real quantity lives.
+
+The guard is unchanged and still runs in both directions: `PATCH
+/api/accounts/:id` refuses a managed row and the Bitcoin and property routes
+refuse an unmanaged one. Nothing about the identity, the daily revaluation or
+the defaults moves.
+
+One consequence worth stating. The line is the _only_ place on this page those
+two figures appear, so it must not be dropped in a future tidy-up of the same
+kind. If it ever goes, the page becomes the thing this ADR was written to
+prevent.

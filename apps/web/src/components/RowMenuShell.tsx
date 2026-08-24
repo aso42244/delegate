@@ -26,8 +26,22 @@ export interface RowMenuControls {
   readonly openGroupingPanel: () => void;
 }
 
-export const ITEM_CLASS =
-  'flex w-full items-center justify-between gap-3 rounded-md px-2 py-1.5 text-left text-quiet text-ink hover:bg-surface-2';
+const ITEM_LAYOUT =
+  'flex w-full items-center justify-between gap-3 rounded-md px-2 py-1.5 text-left text-quiet hover:bg-surface-2';
+
+export const ITEM_CLASS = `${ITEM_LAYOUT} text-ink`;
+
+/**
+ * Archive, and nothing else.
+ *
+ * Composed from the shared layout rather than written as `ITEM_CLASS
+ * text-danger`: those two colour utilities have equal specificity, so which one
+ * won depended on the order Tailwind happened to emit them in — and it was
+ * `text-ink`, which left the one destructive item in the menu looking like all
+ * the others. The design asks for it in red, and that is the only signal
+ * separating it from Rename.
+ */
+export const DANGER_ITEM_CLASS = `${ITEM_LAYOUT} text-danger`;
 
 export interface RowMenuShellProps {
   readonly name: string;

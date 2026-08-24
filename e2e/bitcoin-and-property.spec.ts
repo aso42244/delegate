@@ -20,9 +20,17 @@ test('a holding is added on its own tab and becomes an asset', async ({ signedIn
   // Padded to eight places, because that is where Bitcoin stops dividing.
   await expect(signedIn.getByLabel('Hardware wallet quantity')).toHaveValue('0.05000000');
 
-  // It is an account now, listed but not editable where it is not understood.
+  /*
+   * It is an account now — but not a row on the Accounts page. ADR 021 listed
+   * holdings and properties there in full so the page could not become "a lie
+   * about what the budget is made of"; the amendment keeps that promise in one
+   * line under the tables instead of a row apiece.
+   */
   await signedIn.goto('/settings/accounts');
-  await expect(signedIn.getByRole('link', { name: 'Manage in Bitcoin' })).toBeVisible();
+  await expect(signedIn.getByRole('link', { name: 'Hardware wallet' })).toBeVisible();
+  await expect(signedIn.getByRole('button', { name: 'Options for Hardware wallet' })).toHaveCount(
+    0,
+  );
 });
 
 test('a quantity finer than a satoshi is refused rather than rounded', async ({ signedIn }) => {

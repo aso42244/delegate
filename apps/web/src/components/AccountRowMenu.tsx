@@ -2,26 +2,56 @@ import { formatCentsForInput, tryParseMoney } from '@budget/shared';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useState, type FormEvent, type ReactNode } from 'react';
 import { accountsApi } from '../api/accounts.js';
-import type { BudgetRowDto } from '../api/budget.js';
 import { ApiError } from '../api/client.js';
-import { ITEM_CLASS, RowMenuShell, type GroupingOption } from './RowMenuShell.jsx';
+import {
+  DANGER_ITEM_CLASS,
+  ITEM_CLASS,
+  RowMenuShell,
+  type GroupingOption,
+} from './RowMenuShell.jsx';
 import { Alert, Button, Modal, TextField, Toggle } from './ui.jsx';
 
 /**
- * The per-row menu on an asset or debt row.
+ * The per-row menu on an asset or debt row, on the Budget page and in
+ * Settings → Accounts alike.
  *
  * It mirrors Settings → Accounts for that one line, which is what §9.5 asks for:
  * anything configurable elsewhere is configurable there too, and the reverse.
+ * Since Settings became a one-line-per-account table, that parity is what the
+ * menu *is* rather than a courtesy: Type, Archive and the short name have no
+ * other home there.
  *
  * The balance is offered only on a manual account. A SimpleFIN balance belongs
  * to the institution, and the next sync would overwrite anything set here.
  */
 
+/**
+ * What the menu needs of a row, which is less than either caller has.
+ *
+ * `BudgetRowDto` and `AccountDto` both satisfy this without a cast. The one
+ * asymmetry is deliberate: `nickname` is **absent** on the budget row rather
+ * than null, because the budget read model substitutes the nickname into `name`
+ * and so has no raw pair to edit. Absent hides the Short name item; null means
+ * an account that simply has not been given one.
+ */
+export interface AccountMenuRow {
+  readonly id: string;
+  readonly name: string;
+  readonly balanceCents: string;
+  readonly source: string | null;
+  readonly type: 'asset' | 'debt' | null;
+  readonly inBudget: boolean;
+  readonly inNetWorth: boolean;
+  readonly needsReview: boolean;
+  readonly groupingId?: string | null;
+  readonly nickname?: string | null;
+}
+
 function SetBalanceDialog({
   row,
   onClose,
 }: {
-  readonly row: BudgetRowDto;
+  readonly row: AccountMenuRow;
   readonly onClose: () => void;
 }): ReactNode {
   const queryClient = useQueryClient();
@@ -84,7 +114,7 @@ function RenameDialog({
   row,
   onClose,
 }: {
-  readonly row: BudgetRowDto;
+  readonly row: AccountMenuRow;
   readonly onClose: () => void;
 }): ReactNode {
   const queryClient = useQueryClient();
@@ -134,15 +164,93 @@ function RenameDialog({
   );
 }
 
+/**
+ * The short name — what the budget and the register show in place of whatever
+ * the institution calls the account.
+ *
+ * Empty clears it, which is why the Save button is not disabled on an empty
+ * field the way Rename's is: clearing is a real edit, and the only way back to
+ * the full name.
+ */
+function ShortNameDialog({
+  row,
+  onClose,
+}: {
+  readonly row: AccountMenuRow;
+  readonly onClose: () => void;
+}): ReactNode {
+  const queryClient = useQueryClient();
+  const [nickname, setNickname] = useState(row.nickname ?? '');
+  const [problem, setProblem] = useState<string | null>(null);
+
+  const save = useMutation({
+    mutationFn: () => {
+      const next = nickname.trim();
+      return accountsApi.update(row.id, { nickname: next === '' ? null : next });
+    },
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['budget'] });
+      await queryClient.invalidateQueries({ queryKey: ['accounts'] });
+      onClose();
+    },
+    onError: (error: unknown) =>
+      setProblem(error instanceof ApiError ? error.message : 'Could not set the short name.'),
+  });
+
+  function onSubmit(event: FormEvent): void {
+    event.preventDefault();
+    save.mutate();
+  }
+
+  return (
+    <Modal
+      label={`Short name for ${row.name}`}
+      title="Short name"
+      description="Shown on the budget and the register in place of the institution's own wording. Leave it empty to use the full name."
+      onClose={onClose}
+    >
+      <form onSubmit={onSubmit} className="flex flex-col gap-3">
+        <TextField
+          label="Short name"
+          value={nickname}
+          onChange={(event) => setNickname(event.target.value)}
+          placeholder={row.name}
+          maxLength={40}
+          autoComplete="off"
+          autoFocus
+        />
+        {problem && <Alert>{problem}</Alert>}
+        <div className="flex justify-end gap-2">
+          <Button type="button" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button
+            type="submit"
+            variant="primary"
+            disabled={nickname.trim() === (row.nickname ?? '') || save.isPending}
+          >
+            {save.isPending ? 'Saving…' : 'Save'}
+          </Button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
 export function AccountRowMenu({
   row,
   groupings,
 }: {
-  readonly row: BudgetRowDto;
-  readonly groupings: readonly GroupingOption[];
+  readonly row: AccountMenuRow;
+  /**
+   * Omitted in Settings → Accounts, which has no grouped view to move a row
+   * within. Groupings are a Budget-page arrangement and are chosen there, where
+   * they can be seen.
+   */
+  readonly groupings?: readonly GroupingOption[];
 }): ReactNode {
   const queryClient = useQueryClient();
-  const [dialog, setDialog] = useState<'none' | 'rename' | 'balance'>('none');
+  const [dialog, setDialog] = useState<'none' | 'rename' | 'shortName' | 'balance'>('none');
   const [blocked, setBlocked] = useState<string | null>(null);
 
   const refresh = async (): Promise<void> => {
@@ -173,12 +281,19 @@ export function AccountRowMenu({
   return (
     <RowMenuShell
       name={row.name}
-      groupings={groupings}
-      currentGroupingId={row.groupingId}
-      onMoveToGrouping={(groupingId) => moveToGrouping.mutate(groupingId)}
+      {...(groupings
+        ? {
+            groupings,
+            currentGroupingId: row.groupingId ?? null,
+            onMoveToGrouping: (groupingId: string | null) => moveToGrouping.mutate(groupingId),
+          }
+        : {})}
       overlay={
         <>
           {dialog === 'rename' && <RenameDialog row={row} onClose={() => setDialog('none')} />}
+          {dialog === 'shortName' && (
+            <ShortNameDialog row={row} onClose={() => setDialog('none')} />
+          )}
           {dialog === 'balance' && <SetBalanceDialog row={row} onClose={() => setDialog('none')} />}
         </>
       }
@@ -214,6 +329,22 @@ export function AccountRowMenu({
             >
               Rename
             </button>
+
+            {/* Absent rather than null on a budget row, whose `name` is already
+                the short one — there is no pair to edit from there. */}
+            {row.nickname !== undefined && (
+              <button
+                type="button"
+                role="menuitem"
+                className={ITEM_CLASS}
+                onClick={() => {
+                  setDialog('shortName');
+                  controls.close();
+                }}
+              >
+                Short name
+              </button>
+            )}
 
             {/* Offered only on a manual account: a SimpleFIN balance belongs to
                 the institution and the next sync would overwrite it. */}
@@ -278,22 +409,24 @@ export function AccountRowMenu({
               </button>
             )}
 
-            <button
-              type="button"
-              role="menuitem"
-              className={ITEM_CLASS}
-              onClick={controls.openGroupingPanel}
-            >
-              <span>Move to grouping</span>
-              <span aria-hidden>▸</span>
-            </button>
+            {groupings && (
+              <button
+                type="button"
+                role="menuitem"
+                className={ITEM_CLASS}
+                onClick={controls.openGroupingPanel}
+              >
+                <span>Move to grouping</span>
+                <span aria-hidden>▸</span>
+              </button>
+            )}
 
             <div className="my-1 border-t border-line" />
 
             <button
               type="button"
               role="menuitem"
-              className={`${ITEM_CLASS} text-danger`}
+              className={DANGER_ITEM_CLASS}
               onClick={() => archive.mutate()}
               disabled={archive.isPending}
             >
