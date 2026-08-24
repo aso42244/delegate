@@ -6,6 +6,10 @@ phase (`v0.1.0-phase1`, and so on).
 
 ## [Unreleased]
 
+Nothing yet.
+
+## [0.28.1] — 2026-08-24
+
 ### Fixed
 
 - **The nightly backup has never once run, and now does.** `deploy.sh` creates
