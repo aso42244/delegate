@@ -6,6 +6,10 @@ phase (`v0.1.0-phase1`, and so on).
 
 ## [Unreleased]
 
+Nothing yet.
+
+## [0.28.0] — 2026-08-24
+
 ### Changed
 
 - **Settings is quieter, denser, and consistent tab to tab.** Every list obeys
