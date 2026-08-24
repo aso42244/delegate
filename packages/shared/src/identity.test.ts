@@ -26,7 +26,7 @@ describe('computeIdentity', () => {
       delegationsCents: cents(5_110_00),
     });
     expect(result.status).toBe('to_delegate');
-    expect(formatIdentityLabel(result)).toBe('$4,890.00 to delegate');
+    expect(formatIdentityLabel(result)).toBe('To delegate $4,890.00');
   });
 
   it('adds back a categorized pending spend the balance has not caught up with', () => {
@@ -90,7 +90,7 @@ describe('computeIdentity', () => {
       delegationsCents: cents(1_212_00),
     });
     expect(result.status).toBe('over_delegated');
-    expect(formatIdentityLabel(result)).toBe('$212.00 over-delegated');
+    expect(formatIdentityLabel(result)).toBe('Over delegated $212.00');
   });
 
   it('does not let an off-budget mortgage move the identity', () => {

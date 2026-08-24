@@ -129,7 +129,7 @@ test('the tolerance is configurable and the banner follows it', async ({ signedI
   await api.post(`/api/delegations/${grocery}/adjust`, { data: { deltaCents: '740' } });
 
   await signedIn.goto('/');
-  await expect(signedIn.getByRole('status')).toContainText('$7.40 over-delegated');
+  await expect(signedIn.getByRole('status')).toContainText('Over delegated $7.40');
 
   await signedIn.goto('/settings/budget');
   const tolerance = signedIn.getByLabel('Tolerance');

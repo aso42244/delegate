@@ -83,14 +83,24 @@ export function classifyIdentity(differenceCents: Cents, toleranceCents: Cents):
   return differenceCents > ZERO_CENTS ? 'to_delegate' : 'over_delegated';
 }
 
-/** The label rendered on the bottom row of the Budget page. */
+/**
+ * The reading shown beside the Budget page's title.
+ *
+ * State first, then the figure. It reads as a label on a small chip rather than
+ * a sentence in a full-width bar, which is what it used to be — and the working
+ * that justifies the number is a hover away rather than printed beside it.
+ *
+ * This is the one place the wording lives. The Budget page used to build the
+ * same three strings itself and this went uncalled, so there were two of them
+ * and nothing keeping them in step.
+ */
 export function formatIdentityLabel(result: IdentityResult): string {
   switch (result.status) {
     case 'balanced':
       return 'Balanced';
     case 'to_delegate':
-      return `${formatCents(result.differenceCents)} to delegate`;
+      return `To delegate ${formatCents(result.differenceCents)}`;
     case 'over_delegated':
-      return `${formatCents(absCents(result.differenceCents))} over-delegated`;
+      return `Over delegated ${formatCents(absCents(result.differenceCents))}`;
   }
 }

@@ -34,6 +34,24 @@ phase (`v0.1.0-phase1`, and so on).
 
   [ADR 030](docs/decisions/030-a-cleared-check-is-confirmed-not-assumed.md).
 
+- **The balance reading is a chip beside the title, not a bar across the page.**
+  It read as a full-width bar with the state on the left and the equation on the
+  right. The equation is the reason to trust the figure, but it is not read twice
+  a day, and a bar's worth of page for it pushed the budget itself down the
+  screen — roughly 200px of it.
+
+  It now sits immediately right of **Budget**, baseline-aligned with the controls
+  across the header, saying only `Balanced`, `To delegate $1,000.00` or
+  `Over delegated $212.00` — state first, then the figure. Hovering it shows the
+  full equation, and so does tabbing to it: the justification for the number has
+  to be reachable without a mouse. It is not a button and does not pretend to be
+  one; there is nothing to press.
+
+  The three labels now live in `formatIdentityLabel` in `@budget/shared`, which
+  already existed and produced exactly these strings while the Budget page built
+  its own copy and never called it. There was one wording in two places and
+  nothing keeping them in step; there is one now.
+
 ### Added
 
 - **Purple, as a fourth banner colour**, for something the application has
