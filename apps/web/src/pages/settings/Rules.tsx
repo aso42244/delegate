@@ -5,7 +5,7 @@ import { accountsApi } from '../../api/accounts.js';
 import { budgetApi } from '../../api/budget.js';
 import { ApiError } from '../../api/client.js';
 import { rulesApi, type RuleDto, type RuleMatchMode } from '../../api/rules.js';
-import { Alert, Button, SelectField, TextField, Toggle } from '../../components/ui.jsx';
+import { Alert, Button, Modal, SelectField, TextField, Toggle } from '../../components/ui.jsx';
 import { SettingsCard } from './SettingsCard.jsx';
 
 /**
@@ -73,75 +73,99 @@ function RuleRow({
   });
 
   const range = describeAmountRange(rule);
+  const label = rule.name ?? rule.matchValue;
+  const qualifiers = [range, rule.direction !== 'any' ? DIRECTION_LABELS[rule.direction] : null]
+    .filter(Boolean)
+    .join(' · ');
 
   return (
-    <div className="border-b border-line py-3 last:border-0">
-      <div className="flex flex-wrap items-center gap-3">
-        <span className="w-6 text-quiet text-muted">{index + 1}</span>
+    <>
+      <tr className="group border-b border-line last:border-0 hover:bg-surface">
+        {/* The number is the behaviour: first match wins, so where a rule sits
+            in this column is the whole of what it does relative to the others. */}
+        <td className="row-cell w-10 pl-1 text-quiet text-muted">{index + 1}</td>
 
-        <div className="min-w-64 flex-1">
-          <span className="text-ink">
+        <td className="row-cell overflow-hidden">
+          <span className="block truncate text-ink">
             {rule.name ?? `Description ${MATCH_LABELS[rule.matchMode]} “${rule.matchValue}”`}
           </span>
-          <div className="text-quiet text-muted">
-            → {rule.delegation.name}
-            {rule.delegation.archivedAt && ' (archived)'}
-            {range && ` · ${range}`}
-            {rule.direction !== 'any' && ` · ${DIRECTION_LABELS[rule.direction]}`}
-          </div>
-        </div>
+        </td>
 
-        <label className="flex items-center gap-2 text-quiet text-muted">
+        <td className="row-cell w-44 overflow-hidden pr-2">
+          <span className="block truncate text-quiet text-muted">
+            {rule.delegation.name}
+            {rule.delegation.archivedAt && ' (archived)'}
+          </span>
+        </td>
+
+        <td className="row-cell w-44 overflow-hidden pr-2">
+          <span className="block truncate text-quiet text-faint" title={qualifiers}>
+            {qualifiers || '—'}
+          </span>
+        </td>
+
+        <td className="row-cell w-20">
           <Toggle
             checked={rule.enabled}
             onChange={(next) => update.mutate({ enabled: next })}
-            label={`${rule.name ?? rule.matchValue} enabled`}
+            label={`${label} enabled`}
           />
-          Enabled
-        </label>
+        </td>
 
-        {/* Priority is the whole behaviour, so moving a rule is a first-class
-            control rather than something hidden behind drag-and-drop. */}
-        <Button
-          onClick={() => onMove(index, index - 1)}
-          disabled={index === 0}
-          aria-label={`Move ${rule.name ?? rule.matchValue} up`}
-        >
-          ↑
-        </Button>
-        <Button
-          onClick={() => onMove(index, index + 1)}
-          disabled={index === total - 1}
-          aria-label={`Move ${rule.name ?? rule.matchValue} down`}
-        >
-          ↓
-        </Button>
-
-        <Button
-          variant="danger"
-          onClick={() => archive.mutate()}
-          disabled={archive.isPending}
-          aria-label={`Archive ${rule.name ?? rule.matchValue}`}
-        >
-          Archive
-        </Button>
-      </div>
+        {/* Revealed on hover like every other row control, so a list of forty
+            rules is not a hundred and twenty pieces of chrome. */}
+        <td className="row-cell w-28 pr-1">
+          <div className="row-menu-trigger flex items-center justify-end gap-0.5">
+            <button
+              type="button"
+              onClick={() => onMove(index, index - 1)}
+              disabled={index === 0}
+              aria-label={`Move ${label} up`}
+              className="rounded px-1.5 py-0.5 text-quiet text-muted hover:bg-surface-2 disabled:opacity-30"
+            >
+              ↑
+            </button>
+            <button
+              type="button"
+              onClick={() => onMove(index, index + 1)}
+              disabled={index === total - 1}
+              aria-label={`Move ${label} down`}
+              className="rounded px-1.5 py-0.5 text-quiet text-muted hover:bg-surface-2 disabled:opacity-30"
+            >
+              ↓
+            </button>
+            <button
+              type="button"
+              onClick={() => archive.mutate()}
+              disabled={archive.isPending}
+              aria-label={`Archive ${label}`}
+              className="rounded px-1.5 py-0.5 text-label font-semibold text-danger hover:bg-danger-soft"
+            >
+              Archive
+            </button>
+          </div>
+        </td>
+      </tr>
 
       {problem && (
-        <div className="mt-2">
-          <Alert>{problem}</Alert>
-        </div>
+        <tr>
+          <td colSpan={6} className="pb-2">
+            <Alert>{problem}</Alert>
+          </td>
+        </tr>
       )}
-    </div>
+    </>
   );
 }
 
-function AddRuleForm({
+function AddRuleDialog({
   delegations,
   accounts,
+  onDone,
 }: {
   readonly delegations: readonly { id: string; name: string }[];
   readonly accounts: readonly { id: string; name: string }[];
+  readonly onDone: () => void;
 }): ReactNode {
   const queryClient = useQueryClient();
   const [matchMode, setMatchMode] = useState<RuleMatchMode>('contains');
@@ -174,11 +198,9 @@ function AddRuleForm({
       });
     },
     onSuccess: async () => {
-      setMatchValue('');
-      setMin('');
-      setMax('');
       setProblem(null);
       await queryClient.invalidateQueries({ queryKey: ['rules'] });
+      onDone();
     },
     onError: (error: unknown) =>
       setProblem(error instanceof ApiError ? error.message : 'Could not create the rule.'),
@@ -190,116 +212,134 @@ function AddRuleForm({
   }
 
   return (
-    <form onSubmit={onSubmit} className="mt-4 flex flex-col gap-3 rounded-lg bg-surface p-3">
-      <div className="flex gap-3">
-        <div className="w-48">
-          <SelectField
-            label="When the description"
-            value={matchMode}
-            onChange={(value) => setMatchMode(value as RuleMatchMode)}
+    <Modal
+      label="Create an auto-categorization rule"
+      title="Add rule"
+      description="Checked in order with the others; the first rule that matches a transaction wins."
+      onClose={onDone}
+      width="lg"
+    >
+      <form onSubmit={onSubmit} className="flex flex-col gap-3">
+        <div className="flex gap-3">
+          <div className="w-48">
+            <SelectField
+              label="When the description"
+              value={matchMode}
+              onChange={(value) => setMatchMode(value as RuleMatchMode)}
+            >
+              {Object.entries(MATCH_LABELS).map(([value, label]) => (
+                <option key={value} value={value}>
+                  {label}
+                </option>
+              ))}
+            </SelectField>
+          </div>
+          <div className="flex-1">
+            <TextField
+              label="This text"
+              value={matchValue}
+              onChange={(event) => setMatchValue(event.target.value)}
+              placeholder="whole foods"
+              autoComplete="off"
+              {...(matchMode === 'regex'
+                ? {
+                    hint: 'A regular expression. It is checked when you save and rejected if it could run away.',
+                  }
+                : {})}
+            />
+          </div>
+        </div>
+
+        <SelectField label="Categorize as" value={delegationId} onChange={setDelegationId}>
+          <option value="">Choose a delegation</option>
+          {delegations.map((delegation) => (
+            <option key={delegation.id} value={delegation.id}>
+              {delegation.name}
+            </option>
+          ))}
+        </SelectField>
+
+        <div className="flex gap-3">
+          <div className="flex-1">
+            <TextField
+              label="Smallest amount (optional)"
+              value={min}
+              onChange={(event) => setMin(event.target.value)}
+              inputMode="decimal"
+              className="money"
+            />
+          </div>
+          <div className="flex-1">
+            <TextField
+              label="Largest amount (optional)"
+              value={max}
+              onChange={(event) => setMax(event.target.value)}
+              inputMode="decimal"
+              className="money"
+            />
+          </div>
+        </div>
+
+        <div className="flex gap-3">
+          <div className="flex-1">
+            <SelectField label="Account" value={accountId} onChange={setAccountId}>
+              <option value="">Any account</option>
+              {accounts.map((account) => (
+                <option key={account.id} value={account.id}>
+                  {account.name}
+                </option>
+              ))}
+            </SelectField>
+          </div>
+          <div className="flex-1">
+            <SelectField
+              label="Direction"
+              value={direction}
+              onChange={(value) => setDirection(value as 'any' | 'debit' | 'credit')}
+            >
+              {Object.entries(DIRECTION_LABELS).map(([value, label]) => (
+                <option key={value} value={value}>
+                  {label}
+                </option>
+              ))}
+            </SelectField>
+          </div>
+        </div>
+
+        {problem && <Alert>{problem}</Alert>}
+
+        <div className="flex justify-end gap-2">
+          <Button type="button" onClick={onDone}>
+            Cancel
+          </Button>
+          <Button
+            type="submit"
+            variant="primary"
+            disabled={matchValue.trim() === '' || delegationId === '' || create.isPending}
           >
-            {Object.entries(MATCH_LABELS).map(([value, label]) => (
-              <option key={value} value={value}>
-                {label}
-              </option>
-            ))}
-          </SelectField>
+            {create.isPending ? 'Adding…' : 'Add rule'}
+          </Button>
         </div>
-        <div className="flex-1">
-          <TextField
-            label="This text"
-            value={matchValue}
-            onChange={(event) => setMatchValue(event.target.value)}
-            placeholder="whole foods"
-            autoComplete="off"
-            {...(matchMode === 'regex'
-              ? {
-                  hint: 'A regular expression. It is checked when you save and rejected if it could run away.',
-                }
-              : {})}
-          />
-        </div>
-      </div>
-
-      <SelectField label="Categorize as" value={delegationId} onChange={setDelegationId}>
-        <option value="">Choose a delegation</option>
-        {delegations.map((delegation) => (
-          <option key={delegation.id} value={delegation.id}>
-            {delegation.name}
-          </option>
-        ))}
-      </SelectField>
-
-      <div className="flex gap-3">
-        <div className="flex-1">
-          <TextField
-            label="Smallest amount (optional)"
-            value={min}
-            onChange={(event) => setMin(event.target.value)}
-            inputMode="decimal"
-            className="money"
-          />
-        </div>
-        <div className="flex-1">
-          <TextField
-            label="Largest amount (optional)"
-            value={max}
-            onChange={(event) => setMax(event.target.value)}
-            inputMode="decimal"
-            className="money"
-          />
-        </div>
-      </div>
-
-      <div className="flex gap-3">
-        <div className="flex-1">
-          <SelectField label="Account" value={accountId} onChange={setAccountId}>
-            <option value="">Any account</option>
-            {accounts.map((account) => (
-              <option key={account.id} value={account.id}>
-                {account.name}
-              </option>
-            ))}
-          </SelectField>
-        </div>
-        <div className="flex-1">
-          <SelectField
-            label="Direction"
-            value={direction}
-            onChange={(value) => setDirection(value as 'any' | 'debit' | 'credit')}
-          >
-            {Object.entries(DIRECTION_LABELS).map(([value, label]) => (
-              <option key={value} value={value}>
-                {label}
-              </option>
-            ))}
-          </SelectField>
-        </div>
-      </div>
-
-      {problem && <Alert>{problem}</Alert>}
-
-      <div>
-        <Button
-          type="submit"
-          variant="primary"
-          disabled={matchValue.trim() === '' || delegationId === '' || create.isPending}
-        >
-          {create.isPending ? 'Adding…' : 'Add rule'}
-        </Button>
-      </div>
-    </form>
+      </form>
+    </Modal>
   );
 }
 
 /**
- * Apply-to-existing.
+ * Running every rule over transactions already imported.
+ *
+ * A button and a confirmation rather than a card of its own. It was a panel
+ * permanently open at the foot of the page — a preview query running on every
+ * visit, and a toggle that changes what the button does sitting some distance
+ * from the button. That is a lot of page for something pressed a handful of
+ * times a year, and it is the one action here that can rewrite hundreds of rows.
  *
  * The preview is not decoration: "1 of 423" and "397 of 423" are completely
  * different decisions, and this runs across a whole backfilled year. Nothing
- * moves until the number has been shown.
+ * moves until the number has been shown, which is why it is fetched when the
+ * dialog opens rather than being something to remember to look at.
  */
-function ApplyToExisting(): ReactNode {
+function RunRulesDialog({ onDone }: { readonly onDone: () => void }): ReactNode {
   const queryClient = useQueryClient();
   const [includeCategorized, setIncludeCategorized] = useState(false);
   const [result, setResult] = useState<string | null>(null);
@@ -326,12 +366,14 @@ function ApplyToExisting(): ReactNode {
   });
 
   return (
-    <SettingsCard
-      title="Apply to existing transactions"
-      description="Runs every enabled rule over transactions already imported. This is what makes a twelve-month backlog tractable before reconciling."
+    <Modal
+      label="Run every enabled rule over existing transactions"
+      title="Run rules"
+      description="Runs every enabled rule over transactions already imported."
+      onClose={onDone}
     >
       <div className="flex flex-col gap-3">
-        <label className="flex items-center gap-2 text-quiet text-ink">
+        <label className="flex items-start gap-2 text-quiet text-ink">
           <Toggle
             checked={includeCategorized}
             onChange={setIncludeCategorized}
@@ -358,23 +400,28 @@ function ApplyToExisting(): ReactNode {
         {problem && <Alert>{problem}</Alert>}
         {result && <Alert tone="positive">{result}</Alert>}
 
-        <div>
+        <div className="flex justify-end gap-2">
+          <Button type="button" onClick={onDone}>
+            {result ? 'Done' : 'Cancel'}
+          </Button>
           <Button
             variant="primary"
             onClick={() => apply.mutate()}
             disabled={apply.isPending || preview.data?.categorized === 0}
           >
-            {apply.isPending ? 'Applying…' : 'Apply now'}
+            {apply.isPending ? 'Running…' : 'Run rules'}
           </Button>
         </div>
       </div>
-    </SettingsCard>
+    </Modal>
   );
 }
 
 export function RulesSection(): ReactNode {
   const queryClient = useQueryClient();
   const [problem, setProblem] = useState<string | null>(null);
+  const [adding, setAdding] = useState(false);
+  const [running, setRunning] = useState(false);
 
   const rules = useQuery({ queryKey: ['rules'], queryFn: rulesApi.list });
   const view = useQuery({ queryKey: ['budget'], queryFn: budgetApi.view });
@@ -411,36 +458,59 @@ export function RulesSection(): ReactNode {
   const list = rules.data?.rules ?? [];
 
   return (
-    <>
-      <SettingsCard
-        title="Auto-categorization rules"
-        description="Checked in this order, and the first one that matches wins. Nothing is scored or combined."
-      >
-        {rules.isLoading ? (
-          <p className="text-quiet text-muted">Loading rules…</p>
-        ) : list.length === 0 ? (
-          <p className="text-quiet text-muted">
-            No rules yet. The fastest way to build them is “always categorize like this” from a
-            transaction.
-          </p>
-        ) : (
-          <div>
+    <SettingsCard
+      title="Auto-categorization rules"
+      description="Checked in this order, and the first one that matches wins. Nothing is scored or combined."
+      action={
+        <div className="flex gap-2">
+          <Button onClick={() => setRunning(true)} disabled={list.length === 0}>
+            Run rules
+          </Button>
+          <Button onClick={() => setAdding(true)}>Add rule</Button>
+        </div>
+      }
+    >
+      {rules.isLoading ? (
+        <p className="text-quiet text-muted">Loading rules…</p>
+      ) : list.length === 0 ? (
+        <p className="text-quiet text-muted">
+          No rules yet. The fastest way to build them is “always categorize like this” from a
+          transaction.
+        </p>
+      ) : (
+        <table className="w-full table-fixed border-t-2 border-ink">
+          <thead>
+            <tr className="text-label uppercase tracking-[0.05em] text-muted">
+              <th className="row-cell w-10 pl-1 text-left font-normal">#</th>
+              <th className="row-cell text-left font-normal">Rule</th>
+              <th className="row-cell w-44 pr-2 text-left font-normal">Categorizes as</th>
+              <th className="row-cell w-44 pr-2 text-left font-normal text-faint">Only when</th>
+              <th className="row-cell w-20 text-left font-normal">On</th>
+              <th className="row-cell w-28 pr-1" />
+            </tr>
+          </thead>
+          <tbody>
             {list.map((rule, index) => (
               <RuleRow key={rule.id} rule={rule} index={index} total={list.length} onMove={move} />
             ))}
-          </div>
-        )}
+          </tbody>
+        </table>
+      )}
 
-        {problem && (
-          <div className="mt-2">
-            <Alert>{problem}</Alert>
-          </div>
-        )}
+      {problem && (
+        <div className="mt-2">
+          <Alert>{problem}</Alert>
+        </div>
+      )}
 
-        <AddRuleForm delegations={delegations} accounts={accounts.data?.accounts ?? []} />
-      </SettingsCard>
-
-      <ApplyToExisting />
-    </>
+      {adding && (
+        <AddRuleDialog
+          delegations={delegations}
+          accounts={accounts.data?.accounts ?? []}
+          onDone={() => setAdding(false)}
+        />
+      )}
+      {running && <RunRulesDialog onDone={() => setRunning(false)} />}
+    </SettingsCard>
   );
 }

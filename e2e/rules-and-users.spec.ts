@@ -1,5 +1,5 @@
 import { expect, makeAccount, makeDelegation, test } from './fixtures.js';
-import type { APIRequestContext } from '@playwright/test';
+import type { APIRequestContext, Page } from '@playwright/test';
 
 /**
  * Settings → Rules and Settings → Users.
@@ -21,18 +21,29 @@ async function makeTransaction(
   });
 }
 
+/** Creates a rule through the dialog, which is the only route now. */
+async function makeRule(page: Page, text: string, delegation: string): Promise<void> {
+  await page.getByRole('button', { name: 'Add rule' }).click();
+
+  const dialog = page.getByRole('dialog', { name: 'Create an auto-categorization rule' });
+  await dialog.getByLabel('This text').fill(text);
+  await dialog.getByLabel('Categorize as').selectOption({ label: delegation });
+  await dialog.getByRole('button', { name: 'Add rule' }).click();
+
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  await expect(page.getByText(`Description contains “${text}”`)).toBeVisible();
+}
+
 test('a rule is created and shown in the order it fires', async ({ signedIn, api }) => {
   await makeDelegation(api, 'Grocery');
   await makeDelegation(api, 'Dining');
 
   await signedIn.goto('/settings/rules');
+  await makeRule(signedIn, 'whole foods', 'Grocery');
 
-  await signedIn.getByLabel('This text').fill('whole foods');
-  await signedIn.getByLabel('Categorize as').selectOption({ label: 'Grocery' });
-  await signedIn.getByRole('button', { name: 'Add rule' }).click();
-
-  await expect(signedIn.getByText('Description contains “whole foods”')).toBeVisible();
-  await expect(signedIn.getByText('→ Grocery')).toBeVisible();
+  // The delegation it categorizes as is a column of its own now, so it reads as
+  // a name rather than as an arrow glued to the rule's description.
+  await expect(signedIn.getByText('Grocery', { exact: true })).toBeVisible();
 });
 
 test('rules can be reordered, because the first match wins', async ({ signedIn, api }) => {
@@ -40,16 +51,8 @@ test('rules can be reordered, because the first match wins', async ({ signedIn, 
   await makeDelegation(api, 'Dining');
 
   await signedIn.goto('/settings/rules');
-
-  await signedIn.getByLabel('This text').fill('market');
-  await signedIn.getByLabel('Categorize as').selectOption({ label: 'Grocery' });
-  await signedIn.getByRole('button', { name: 'Add rule' }).click();
-  await expect(signedIn.getByText('Description contains “market”')).toBeVisible();
-
-  await signedIn.getByLabel('This text').fill('corner');
-  await signedIn.getByLabel('Categorize as').selectOption({ label: 'Dining' });
-  await signedIn.getByRole('button', { name: 'Add rule' }).click();
-  await expect(signedIn.getByText('Description contains “corner”')).toBeVisible();
+  await makeRule(signedIn, 'market', 'Grocery');
+  await makeRule(signedIn, 'corner', 'Dining');
 
   // Promote the second rule; "Corner Market" then goes to Dining rather than
   // Grocery, which is the whole point of the ordering.
@@ -69,13 +72,13 @@ test('the preview counts before anything moves, and leaves hand-made work alone'
   await makeTransaction(api, accountId, '-900', 'Unmatched thing');
 
   await signedIn.goto('/settings/rules');
-  await signedIn.getByLabel('This text').fill('whole foods');
-  await signedIn.getByLabel('Categorize as').selectOption({ label: 'Grocery' });
-  await signedIn.getByRole('button', { name: 'Add rule' }).click();
+  await makeRule(signedIn, 'whole foods', 'Grocery');
 
-  // "1 of 423" and "397 of 423" are different decisions, so the number comes
-  // first and nothing has moved yet.
+  // "1 of 423" and "397 of 423" are different decisions, so the number is
+  // fetched when the dialog opens and nothing has moved yet.
+  await signedIn.getByRole('button', { name: 'Run rules' }).click();
   await expect(signedIn.getByText('1 of 2 transactions would be categorized.')).toBeVisible();
+  await signedIn.getByRole('button', { name: 'Cancel' }).click();
 
   await signedIn.goto('/');
   await expect(signedIn.getByRole('button', { name: 'Grocery balance' })).toContainText('$0.00');
@@ -87,12 +90,13 @@ test('applying the rules categorizes the backlog', async ({ signedIn, api }) => 
   await makeTransaction(api, accountId, '-4210', 'Whole Foods Market');
 
   await signedIn.goto('/settings/rules');
-  await signedIn.getByLabel('This text').fill('whole foods');
-  await signedIn.getByLabel('Categorize as').selectOption({ label: 'Grocery' });
-  await signedIn.getByRole('button', { name: 'Add rule' }).click();
+  await makeRule(signedIn, 'whole foods', 'Grocery');
 
-  await signedIn.getByRole('button', { name: 'Apply now' }).click();
+  await signedIn.getByRole('button', { name: 'Run rules' }).click();
+  const dialog = signedIn.getByRole('dialog', { name: /Run every enabled rule/ });
+  await dialog.getByRole('button', { name: 'Run rules' }).click();
   await expect(signedIn.getByText('1 of 1 categorized.')).toBeVisible();
+  await signedIn.getByRole('button', { name: 'Done' }).click();
 
   await signedIn.goto('/');
   await expect(signedIn.getByRole('button', { name: 'Grocery balance' })).toContainText('-$42.10');
@@ -104,6 +108,9 @@ test('overwriting hand-made categorizations is opt-in and warns first', async ({
 }) => {
   await makeDelegation(api, 'Grocery');
   await signedIn.goto('/settings/rules');
+  await makeRule(signedIn, 'whole foods', 'Grocery');
+
+  await signedIn.getByRole('button', { name: 'Run rules' }).click();
 
   const toggle = signedIn.getByRole('switch', {
     name: 'Also change transactions already categorized',
@@ -117,10 +124,7 @@ test('overwriting hand-made categorizations is opt-in and warns first', async ({
 });
 
 /** Creates an account through the dialog, which is the only route now. */
-async function createAccount(
-  page: import('@playwright/test').Page,
-  username: string,
-): Promise<void> {
+async function createAccount(page: Page, username: string): Promise<void> {
   await page.getByRole('button', { name: 'Create account' }).click();
 
   const dialog = page.getByRole('dialog', { name: 'Create an account' });
@@ -144,7 +148,7 @@ test('the first account is Super Admin and can create another', async ({ signedI
   // A temporary password reaches exactly one screen until it is changed.
   await expect(signedIn.getByText('Temporary password', { exact: true })).toBeVisible();
   // And a second factor is required of it before even that.
-  await expect(signedIn.getByText('Not set up yet').first()).toBeVisible();
+  await expect(signedIn.getByText('Not set up', { exact: true }).first()).toBeVisible();
 });
 
 /**
@@ -169,18 +173,25 @@ test('an account can be archived and restored, but not your own', async ({ signe
   await createAccount(signedIn, 'second@example.test');
   await expect(signedIn.getByText('second@example.test', { exact: true })).toBeVisible();
 
-  const rows = signedIn.locator('tbody tr');
-  const owner = rows.filter({ hasText: 'e2e-owner@example.test' });
-  const second = rows.filter({ hasText: 'second@example.test' });
+  // Archiving yourself would lock the household out of its own budget, so the
+  // item is not in your own menu at all.
+  await signedIn.getByRole('button', { name: 'Options for e2e-owner@example.test' }).click();
+  await expect(signedIn.getByRole('menuitem', { name: 'Archive' })).toHaveCount(0);
+  await signedIn.keyboard.press('Escape');
 
-  // Archiving yourself would lock the household out of its own budget.
-  await expect(owner.getByRole('button', { name: 'Archive' })).toHaveCount(0);
+  await signedIn.getByRole('button', { name: 'Options for second@example.test' }).click();
+  await signedIn.getByRole('menuitem', { name: 'Archive' }).click();
+  await expect(
+    signedIn.locator('tbody tr').filter({ hasText: 'second@example.test' }),
+  ).toContainText('Archived');
 
-  await second.getByRole('button', { name: 'Archive' }).click();
-  await expect(second.getByRole('button', { name: 'Restore' })).toBeVisible();
-
-  await second.getByRole('button', { name: 'Restore' }).click();
-  await expect(second.getByRole('button', { name: 'Archive' })).toBeVisible();
+  await signedIn.getByRole('button', { name: 'Options for second@example.test' }).click();
+  await signedIn.getByRole('menuitem', { name: 'Restore' }).click();
+  // Back to whatever it was before, which for an account created a moment ago
+  // is "Temporary password" rather than "Active".
+  await expect(
+    signedIn.locator('tbody tr').filter({ hasText: 'second@example.test' }),
+  ).not.toContainText('Archived');
 });
 
 /**
@@ -192,9 +203,10 @@ test('an administrator can reset somebody else’s second factor', async ({ sign
   await signedIn.goto('/settings/users');
 
   const owner = signedIn.locator('tbody tr').filter({ hasText: 'e2e-owner@example.test' });
-  await expect(owner.getByText('Set up')).toBeVisible();
+  await expect(owner.getByText('On', { exact: true })).toBeVisible();
 
-  await owner.getByRole('button', { name: 'Reset two-factor' }).click();
+  await signedIn.getByRole('button', { name: 'Options for e2e-owner@example.test' }).click();
+  await signedIn.getByRole('menuitem', { name: 'Reset two-factor' }).click();
 
   /*
    * Either landing proves it, and which one you get is a race.

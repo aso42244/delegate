@@ -1,9 +1,9 @@
 import { GROUPING_COLORS, isGroupingColor, isHexColor, normalizeHexColor } from '@budget/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useState, type FormEvent, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { budgetApi, type BudgetGroupingDto, type BudgetViewDto } from '../../api/budget.js';
 import { ApiError } from '../../api/client.js';
-import { Alert, Button, SelectField, TextField } from '../../components/ui.jsx';
+import { Alert, Button, Modal, SelectField, TextField } from '../../components/ui.jsx';
 import { SettingsCard } from './SettingsCard.jsx';
 
 /**
@@ -17,6 +17,11 @@ import { SettingsCard } from './SettingsCard.jsx';
  * that it "must not be in your face", and an arbitrary picker is how a dense
  * financial table ends up with a magenta row. Every delegation inside a grouping
  * inherits it; there is no per-delegation colour.
+ *
+ * The palette used to sit open on every row — seven swatches, a None button, a
+ * colour well and a hex field, on each of a dozen rows, for a choice made once
+ * and then left alone for months. It is one swatch now, and the rest is behind
+ * it.
  */
 
 type Section = 'assets' | 'debts' | 'delegations';
@@ -26,6 +31,141 @@ const SECTION_LABELS: Record<Section, string> = {
   debts: 'Debts',
   delegations: 'Delegations',
 };
+
+/**
+ * The current colour, and the whole palette one click away.
+ *
+ * Closes on Escape and on a click elsewhere, like the row menus — a popover that
+ * only closes by choosing something is one that has to be answered.
+ */
+function ColourPicker({
+  grouping,
+  onPick,
+}: {
+  readonly grouping: BudgetGroupingDto;
+  readonly onPick: (color: string | null) => void;
+}): ReactNode {
+  const [open, setOpen] = useState(false);
+  const [typed, setTyped] = useState<string | null>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+
+    function onPointerDown(event: MouseEvent): void {
+      if (!containerRef.current?.contains(event.target as Node)) setOpen(false);
+    }
+    function onKeyDown(event: KeyboardEvent): void {
+      if (event.key === 'Escape') setOpen(false);
+    }
+
+    document.addEventListener('mousedown', onPointerDown);
+    document.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.removeEventListener('mousedown', onPointerDown);
+      document.removeEventListener('keydown', onKeyDown);
+    };
+  }, [open]);
+
+  const isPreset = grouping.color !== null && isGroupingColor(grouping.color);
+  const current = grouping.color ?? '#2783DE';
+
+  function commitHex(value: string): void {
+    const hex = normalizeHexColor(value);
+    if (isHexColor(hex)) onPick(hex);
+    setTyped(null);
+  }
+
+  const named =
+    GROUPING_COLORS.find((option) => option.value === grouping.color)?.name ??
+    (grouping.color === null ? 'No colour' : grouping.color);
+
+  return (
+    <div ref={containerRef} className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen(!open)}
+        aria-expanded={open}
+        aria-label={`Colour for ${grouping.name}: ${named}`}
+        className="flex items-center gap-1.5 rounded border border-line px-1.5 py-0.5 hover:bg-surface"
+      >
+        <span
+          aria-hidden
+          className="h-3.5 w-3.5 rounded-[3px] border border-line"
+          style={{ background: grouping.color ?? 'transparent' }}
+        />
+        {/* Named as well as shown, so the choice is never carried by colour
+            alone for anyone who cannot see the difference. */}
+        <span className="text-label text-muted">{named}</span>
+      </button>
+
+      {open && (
+        <div className="absolute top-full left-0 z-20 mt-1 w-56 rounded-lg border border-line bg-canvas p-2 shadow-lg">
+          <div className="flex flex-wrap gap-1">
+            {GROUPING_COLORS.map((option) => (
+              <button
+                key={option.value}
+                type="button"
+                onClick={() => {
+                  onPick(option.value);
+                  setOpen(false);
+                }}
+                aria-label={`${option.name} for ${grouping.name}`}
+                aria-pressed={grouping.color === option.value}
+                className={`h-6 w-6 rounded-[4px] border ${
+                  grouping.color === option.value ? 'border-ink' : 'border-line'
+                }`}
+                style={{ background: option.value }}
+              />
+            ))}
+            <button
+              type="button"
+              onClick={() => {
+                onPick(null);
+                setOpen(false);
+              }}
+              aria-label={`No colour for ${grouping.name}`}
+              aria-pressed={grouping.color === null}
+              className={`h-6 rounded-[4px] border px-1.5 text-label ${
+                grouping.color === null ? 'border-ink text-ink' : 'border-line text-muted'
+              }`}
+            >
+              None
+            </button>
+          </div>
+
+          {/* The presets are a shortcut, not the whole vocabulary. Anyone
+              matching a grouping to a colour they already think in should not
+              have to settle for the nearest of five. */}
+          <div className="mt-2 flex items-center gap-1 border-t border-line pt-2">
+            <input
+              type="color"
+              value={current}
+              onChange={(event) => onPick(normalizeHexColor(event.target.value))}
+              aria-label={`Custom colour for ${grouping.name}`}
+              className={`h-6 w-6 shrink-0 cursor-pointer rounded-[4px] border bg-transparent ${
+                grouping.color !== null && !isPreset ? 'border-ink' : 'border-line'
+              }`}
+            />
+            <input
+              value={typed ?? grouping.color ?? ''}
+              onChange={(event) => setTyped(event.target.value)}
+              onBlur={(event) => commitHex(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') commitHex(event.currentTarget.value);
+                if (event.key === 'Escape') setTyped(null);
+              }}
+              placeholder="#2783DE"
+              aria-label={`Colour hex for ${grouping.name}`}
+              spellCheck={false}
+              className="w-full rounded border border-line bg-canvas px-1 py-0.5 font-mono text-label text-ink"
+            />
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
 
 function GroupingRow({
   grouping,
@@ -75,9 +215,9 @@ function GroupingRow({
   });
 
   return (
-    <div className="border-b border-line py-3 last:border-0">
-      <div className="flex flex-wrap items-center gap-3">
-        <div className="min-w-48 flex-1">
+    <>
+      <tr className="group border-b border-line last:border-0 hover:bg-surface">
+        <td className="row-cell pl-1">
           <input
             value={name}
             onChange={(event) => setName(event.target.value)}
@@ -85,72 +225,45 @@ function GroupingRow({
               if (name.trim() !== '' && name.trim() !== grouping.name) rename.mutate();
             }}
             aria-label={`Name of ${grouping.name}`}
-            className="w-full rounded border border-transparent bg-transparent px-2 py-1 text-base text-ink hover:border-line focus:border-accent focus:bg-canvas"
+            className="w-full rounded border border-transparent bg-transparent px-1 py-0.5 text-ink hover:border-line focus:border-accent focus:bg-canvas"
           />
-        </div>
+        </td>
 
-        <span className="rounded bg-surface-2 px-1.5 py-0.5 text-label font-semibold text-muted">
-          {SECTION_LABELS[section]}
-        </span>
+        <td className="row-cell w-28 text-quiet text-muted">{SECTION_LABELS[section]}</td>
 
-        {/* Each swatch names its colour, so the choice is not carried by colour
-            alone for anyone who cannot see the difference. */}
-        <div className="flex items-center gap-1">
-          {GROUPING_COLORS.map((option) => (
-            <button
-              key={option.value}
-              type="button"
-              onClick={() => recolour.mutate(option.value)}
-              aria-label={`${option.name} for ${grouping.name}`}
-              aria-pressed={grouping.color === option.value}
-              className={`h-5 w-5 rounded-[4px] border ${
-                grouping.color === option.value ? 'border-ink' : 'border-line'
-              }`}
-              style={{ background: option.value }}
-            />
-          ))}
+        <td className="row-cell w-40">
+          <ColourPicker grouping={grouping} onPick={(color) => recolour.mutate(color)} />
+        </td>
+
+        <td className="row-cell w-20 pr-2 text-right text-quiet text-muted">
+          {grouping.rows.length}
+        </td>
+
+        <td className="row-cell w-24 pr-1 text-right">
           <button
             type="button"
-            onClick={() => recolour.mutate(null)}
-            aria-label={`No colour for ${grouping.name}`}
-            aria-pressed={grouping.color === null}
-            className={`h-5 rounded-[4px] border px-1 text-label ${
-              grouping.color === null ? 'border-ink text-ink' : 'border-line text-muted'
-            }`}
+            onClick={() => archive.mutate()}
+            disabled={archive.isPending}
+            aria-label={`Archive ${grouping.name}`}
+            className="row-menu-trigger rounded px-1.5 py-0.5 text-label font-semibold text-danger hover:bg-danger-soft"
           >
-            None
+            Archive
           </button>
-
-          {/* The presets are a shortcut, not the whole vocabulary. Anyone
-              matching a grouping to a colour they already think in should not
-              have to settle for the nearest of five. */}
-          <CustomColour grouping={grouping} onPick={(hex) => recolour.mutate(hex)} />
-        </div>
-
-        <span className="text-quiet text-muted">
-          {grouping.rows.length} {grouping.rows.length === 1 ? 'line' : 'lines'}
-        </span>
-
-        <Button
-          variant="danger"
-          onClick={() => archive.mutate()}
-          disabled={archive.isPending}
-          aria-label={`Archive ${grouping.name}`}
-        >
-          Archive
-        </Button>
-      </div>
+        </td>
+      </tr>
 
       {problem && (
-        <div className="mt-2">
-          <Alert>{problem}</Alert>
-        </div>
+        <tr>
+          <td colSpan={5} className="pb-2">
+            <Alert>{problem}</Alert>
+          </td>
+        </tr>
       )}
-    </div>
+    </>
   );
 }
 
-function AddGroupingForm(): ReactNode {
+function AddGroupingDialog({ onDone }: { readonly onDone: () => void }): ReactNode {
   const queryClient = useQueryClient();
   const [name, setName] = useState('');
   const [section, setSection] = useState<Section>('delegations');
@@ -159,9 +272,9 @@ function AddGroupingForm(): ReactNode {
   const create = useMutation({
     mutationFn: () => budgetApi.createGrouping(name.trim(), section),
     onSuccess: async () => {
-      setName('');
       setProblem(null);
       await queryClient.invalidateQueries({ queryKey: ['budget'] });
+      onDone();
     },
     onError: (error: unknown) =>
       setProblem(error instanceof ApiError ? error.message : 'Could not create the grouping.'),
@@ -173,35 +286,46 @@ function AddGroupingForm(): ReactNode {
   }
 
   return (
-    <form onSubmit={onSubmit} className="mt-4 flex flex-col gap-3 rounded-lg bg-surface p-3">
-      <TextField
-        label="New grouping"
-        value={name}
-        onChange={(event) => setName(event.target.value)}
-        placeholder="Essentials"
-        autoComplete="off"
-      />
+    <Modal
+      label="Create a grouping"
+      title="New grouping"
+      description="Organizational only. A grouping holds no balance of its own."
+      onClose={onDone}
+    >
+      <form onSubmit={onSubmit} className="flex flex-col gap-3">
+        <TextField
+          label="Name"
+          value={name}
+          onChange={(event) => setName(event.target.value)}
+          placeholder="Essentials"
+          autoComplete="off"
+          autoFocus
+        />
 
-      <SelectField
-        label="Section"
-        value={section}
-        onChange={(value) => setSection(value as Section)}
-      >
-        {Object.entries(SECTION_LABELS).map(([value, label]) => (
-          <option key={value} value={value}>
-            {label}
-          </option>
-        ))}
-      </SelectField>
+        <SelectField
+          label="Section"
+          value={section}
+          onChange={(value) => setSection(value as Section)}
+        >
+          {Object.entries(SECTION_LABELS).map(([value, label]) => (
+            <option key={value} value={value}>
+              {label}
+            </option>
+          ))}
+        </SelectField>
 
-      {problem && <Alert>{problem}</Alert>}
+        {problem && <Alert>{problem}</Alert>}
 
-      <div>
-        <Button type="submit" variant="primary" disabled={name.trim() === '' || create.isPending}>
-          {create.isPending ? 'Adding…' : 'Add grouping'}
-        </Button>
-      </div>
-    </form>
+        <div className="flex justify-end gap-2">
+          <Button type="button" onClick={onDone}>
+            Cancel
+          </Button>
+          <Button type="submit" variant="primary" disabled={name.trim() === '' || create.isPending}>
+            {create.isPending ? 'Adding…' : 'Add grouping'}
+          </Button>
+        </div>
+      </form>
+    </Modal>
   );
 }
 
@@ -215,61 +339,10 @@ function sectionsOf(
   ];
 }
 
-/**
- * A colour well and a hex field, side by side.
- *
- * Two routes to the same value because they suit different people: the native
- * picker is what most reach for, and a hex is what someone copying a colour from
- * elsewhere already has in their clipboard. The field commits on blur or Enter
- * and refuses anything that is not `#RRGGBB`, rather than guessing.
- */
-function CustomColour({
-  grouping,
-  onPick,
-}: {
-  readonly grouping: BudgetGroupingDto;
-  readonly onPick: (hex: string) => void;
-}): ReactNode {
-  const isPreset = grouping.color !== null && isGroupingColor(grouping.color);
-  const current = grouping.color ?? '#2783DE';
-  const [typed, setTyped] = useState<string | null>(null);
-
-  function commit(value: string): void {
-    const hex = normalizeHexColor(value);
-    if (isHexColor(hex)) onPick(hex);
-    setTyped(null);
-  }
-
-  return (
-    <span className="flex items-center gap-1">
-      <input
-        type="color"
-        value={current}
-        onChange={(event) => onPick(normalizeHexColor(event.target.value))}
-        aria-label={`Custom colour for ${grouping.name}`}
-        className={`h-5 w-5 cursor-pointer rounded-[4px] border bg-transparent ${
-          grouping.color !== null && !isPreset ? 'border-ink' : 'border-line'
-        }`}
-      />
-      <input
-        value={typed ?? grouping.color ?? ''}
-        onChange={(event) => setTyped(event.target.value)}
-        onBlur={(event) => commit(event.target.value)}
-        onKeyDown={(event) => {
-          if (event.key === 'Enter') commit(event.currentTarget.value);
-          if (event.key === 'Escape') setTyped(null);
-        }}
-        placeholder="#2783DE"
-        aria-label={`Colour hex for ${grouping.name}`}
-        spellCheck={false}
-        className="w-20 rounded border border-line bg-canvas px-1 py-0.5 font-mono text-label text-ink"
-      />
-    </span>
-  );
-}
-
 export function GroupingsSection(): ReactNode {
   const view = useQuery({ queryKey: ['budget'], queryFn: budgetApi.view });
+  const [adding, setAdding] = useState(false);
+
   const sections = view.data ? sectionsOf(view.data) : [];
   const total = sections.reduce((sum, entry) => sum + entry.groupings.length, 0);
 
@@ -277,22 +350,34 @@ export function GroupingsSection(): ReactNode {
     <SettingsCard
       title="Groupings"
       description="Organizational only. A grouping has no balance of its own; collapsed, it shows the sum of its lines."
+      action={<Button onClick={() => setAdding(true)}>New grouping</Button>}
     >
       {view.isLoading ? (
         <p className="text-quiet text-muted">Loading groupings…</p>
       ) : total === 0 ? (
         <p className="text-quiet text-muted">No groupings yet.</p>
       ) : (
-        <div>
-          {sections.flatMap((entry) =>
-            entry.groupings.map((grouping) => (
-              <GroupingRow key={grouping.id} grouping={grouping} section={entry.section} />
-            )),
-          )}
-        </div>
+        <table className="w-full table-fixed border-t-2 border-ink">
+          <thead>
+            <tr className="text-label uppercase tracking-[0.05em] text-muted">
+              <th className="row-cell pl-1 text-left font-normal">Grouping</th>
+              <th className="row-cell w-28 text-left font-normal">Section</th>
+              <th className="row-cell w-40 text-left font-normal">Colour</th>
+              <th className="row-cell w-20 pr-2 text-right font-normal">Lines</th>
+              <th className="row-cell w-24 pr-1" />
+            </tr>
+          </thead>
+          <tbody>
+            {sections.flatMap((entry) =>
+              entry.groupings.map((grouping) => (
+                <GroupingRow key={grouping.id} grouping={grouping} section={entry.section} />
+              )),
+            )}
+          </tbody>
+        </table>
       )}
 
-      <AddGroupingForm />
+      {adding && <AddGroupingDialog onDone={() => setAdding(false)} />}
     </SettingsCard>
   );
 }

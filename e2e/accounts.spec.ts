@@ -9,18 +9,20 @@ import { expect, makeAccount, test } from './fixtures.js';
  * not swamp the budget.
  *
  * Settings is one line per account in two tables, Assets and Debts. Both
- * switches stay on the row; the type, the short name and Archive are reached
+ * switches stay on the row; the type, the nickname and Archive are reached
  * through the same `⋯` menu the Budget page uses, which is why several of these
  * open it first.
  */
 
 test('a manual account is added and appears on the Budget page', async ({ signedIn }) => {
   await signedIn.goto('/settings/accounts');
-  await signedIn.getByRole('button', { name: '+ Add a manual account' }).click();
+  await signedIn.getByRole('button', { name: 'Add a manual account' }).click();
 
-  await signedIn.getByLabel('Name').fill('Physical Cash');
-  await signedIn.getByLabel('Balance', { exact: true }).fill('200.00');
-  await signedIn.getByRole('button', { name: 'Add account' }).click();
+  const dialog = signedIn.getByRole('dialog', { name: 'Add an account you keep by hand' });
+  await dialog.getByLabel('Name').fill('Physical Cash');
+  await dialog.getByLabel('Balance', { exact: true }).fill('200.00');
+  await dialog.getByRole('button', { name: 'Add account' }).click();
+  await expect(signedIn.getByRole('dialog')).toHaveCount(0);
 
   // The row shows the name, and a manual account carries the `m` mark. Located
   // by its meaning rather than its letter: the letter is what is painted, the
@@ -154,14 +156,26 @@ test('a SimpleFIN account is not offered a balance to set', async ({ signedIn })
   await signedIn.goto('/');
   await signedIn.getByRole('button', { name: 'Options for Everyday Checking' }).click();
 
-  await expect(signedIn.getByRole('menuitem', { name: 'Rename' })).toBeVisible();
+  /*
+   * Neither a balance nor a name. A SimpleFIN account is called whatever the
+   * institution calls it: the next sync would not restore a name typed over it,
+   * it would simply leave the two disagreeing with nothing on the page saying
+   * they ever matched. Nickname is the supported way to call it something else.
+   */
   await expect(signedIn.getByRole('menuitem', { name: 'Set balance' })).toHaveCount(0);
+  await expect(signedIn.getByRole('menuitem', { name: 'Rename' })).toHaveCount(0);
 
-  // Nor from Settings: the cell is there but is not an editable control.
+  // Nor from Settings: the cell is there but is not an editable control. The
+  // nickname is offered there and only there — the budget row already shows the
+  // nickname in place of the name, so it has no pair to edit.
   await signedIn.goto('/settings/accounts');
   await expect(
     signedIn.getByRole('button', { name: 'Balance for Everyday Checking' }),
   ).toBeDisabled();
+
+  await signedIn.getByRole('button', { name: 'Options for Everyday Checking' }).click();
+  await expect(signedIn.getByRole('menuitem', { name: 'Rename' })).toHaveCount(0);
+  await expect(signedIn.getByRole('menuitem', { name: 'Nickname' })).toBeVisible();
 });
 
 /**
@@ -199,4 +213,23 @@ test('an account type can be corrected from the row menu', async ({ signedIn }) 
   await signedIn.getByLabel('Type of Mystery Account').selectOption('debt');
 
   await expect(signedIn.getByRole('status')).toContainText('Over delegated $400.00');
+});
+
+/**
+ * The other half of the same rule: this budget owns a manual account's name, so
+ * renaming it is not a thing the next sync will quietly disagree with.
+ */
+test('a manual account can be renamed', async ({ signedIn }) => {
+  await makeAccount('Physical Cash', 'asset', 20000n);
+
+  await signedIn.goto('/settings/accounts');
+  await signedIn.getByRole('button', { name: 'Options for Physical Cash' }).click();
+  await signedIn.getByRole('menuitem', { name: 'Rename' }).click();
+
+  const dialog = signedIn.getByRole('dialog', { name: 'Rename Physical Cash' });
+  await dialog.getByLabel('Name').fill('Petty Cash');
+  await dialog.getByRole('button', { name: 'Save' }).click();
+  await expect(signedIn.getByRole('dialog')).toHaveCount(0);
+
+  await expect(signedIn.getByText('Petty Cash', { exact: true })).toBeVisible();
 });

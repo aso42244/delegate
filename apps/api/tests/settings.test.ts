@@ -2,17 +2,15 @@ import type { FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { buildApp } from '../src/app.js';
 import { loadConfig } from '../src/config.js';
-import { prisma } from '../src/db/client.js';
-import { makeDelegation, markTwoFactorEnrolled, resetDatabase } from './helpers.js';
+import { markTwoFactorEnrolled, resetDatabase } from './helpers.js';
 import { errorOf, sessionCookie } from './http.js';
 
 /**
- * Settings → Budget, and the go-live stamp.
+ * Settings → Budget.
  *
  * The tolerance decides when the Budget page stops reading "Balanced" and the
  * undo window decides how long a Delegate press can be taken back, so both are
  * bounded rather than free. The go-live date is written once, by the first
- * Reconcile commit, and never moved by a later one.
  */
 
 let app: FastifyInstance;
@@ -129,70 +127,6 @@ describe('PATCH /api/settings', () => {
       expect(response.statusCode).toBe(400);
       expect(errorOf(response).code).toBe('undo_window_out_of_range');
     }
-  });
-});
-
-describe('go-live', () => {
-  it('is stamped by the first reconcile and left alone by the next', async () => {
-    const grocery = await makeDelegation({ name: 'Grocery' });
-
-    const first = await app.inject({
-      method: 'POST',
-      url: '/api/budget/reconcile',
-      headers: { cookie },
-      payload: { lines: [{ delegationId: grocery.id, actualBalanceCents: '72500' }] },
-    });
-    expect(first.statusCode).toBe(200);
-
-    const stamped = (await readSettings()).goLiveAt;
-    expect(stamped).not.toBeNull();
-
-    // A later reconcile is ordinary maintenance. Moving the date would rewrite
-    // which history counts as backfill.
-    const second = await app.inject({
-      method: 'POST',
-      url: '/api/budget/reconcile',
-      headers: { cookie },
-      payload: { lines: [{ delegationId: grocery.id, actualBalanceCents: '80000' }] },
-    });
-    expect(second.statusCode).toBe(200);
-    expect((await readSettings()).goLiveAt).toBe(stamped);
-  });
-
-  it('corrects every line in one batch, and the cached balances agree', async () => {
-    const grocery = await makeDelegation({ name: 'Grocery' });
-    const household = await makeDelegation({ name: 'Household' });
-
-    const response = await app.inject({
-      method: 'POST',
-      url: '/api/budget/reconcile',
-      headers: { cookie },
-      payload: {
-        lines: [
-          { delegationId: grocery.id, actualBalanceCents: '72500' },
-          { delegationId: household.id, actualBalanceCents: '-1200' },
-        ],
-      },
-    });
-
-    expect(response.statusCode).toBe(200);
-    const body = response.json<{ adjustedCount: number; batchId: string }>();
-    expect(body.adjustedCount).toBe(2);
-
-    const events = await prisma.delegationEvent.findMany({
-      where: { batchId: body.batchId },
-      select: { delegationId: true, deltaCents: true, eventType: true },
-    });
-    // One batch, one commit — not sixty separate writes that could half-apply.
-    expect(events).toHaveLength(2);
-    expect(events.every((event) => event.eventType === 'adjust')).toBe(true);
-
-    const balances = await prisma.delegation.findMany({
-      where: { id: { in: [grocery.id, household.id] } },
-      select: { id: true, balanceCents: true },
-      orderBy: { name: 'asc' },
-    });
-    expect(balances.map((row) => row.balanceCents)).toEqual([72500n, -1200n]);
   });
 });
 

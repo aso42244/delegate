@@ -2,7 +2,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useEffect, type ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useSession } from '../auth/SessionProvider.jsx';
-import { SecuritySection } from './settings/Security.jsx';
+import { TwoFactorCard } from './settings/TwoFactor.jsx';
 
 /**
  * The one screen an account without a second factor can reach, when the
@@ -13,7 +13,7 @@ import { SecuritySection } from './settings/Security.jsx';
  * an un-enrolled account out of the application with no way back in but an
  * administrator undoing the setting. This is the way back in.
  *
- * It is the ordinary Security screen, not a copy of it. A second enrolment flow
+ * It is the ordinary two-factor card, not a copy of it. A second enrolment flow
  * would be a second place for the recovery codes to be got wrong, and those are
  * the only thing standing between a lost phone and a lost budget.
  */
@@ -47,7 +47,7 @@ export function SetUpTwoFactor(): ReactNode {
           void queryClient.invalidateQueries({ queryKey: ['session'] });
         }}
       >
-        <SecuritySection />
+        <TwoFactorCard />
       </div>
     </div>
   );

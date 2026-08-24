@@ -18,9 +18,8 @@ const SECTIONS = [
   { to: 'bitcoin', label: 'Bitcoin' },
   { to: 'properties', label: 'Properties' },
   { to: 'budget', label: 'Budget' },
-  { to: 'reconcile', label: 'Reconcile' },
   { to: 'users', label: 'Users' },
-  { to: 'security', label: 'Security' },
+  { to: 'tor', label: 'Tor' },
   { to: 'display', label: 'Display' },
   { to: 'archived', label: 'Archived' },
 ] as const;

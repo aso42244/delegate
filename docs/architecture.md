@@ -191,19 +191,27 @@ that net to zero, so the identity is unchanged — correct, because no account
 balance moved. It may take the source negative; that is allowed and intentional.
 It writes **no transaction row**; see ADR 004.
 
-## Go-live reconciliation
+## Go-live, and correcting a backfill
 
-A first-class feature, not a migration script. At go-live the owner has backfilled
-and categorized twelve months of history, which drives balances deeply negative —
-Grocery may read −$9,000 when its true balance is $725. That is deliberate: it buys
-full history and accurate day-one numbers.
+Backfilling and categorizing twelve months of history drives balances deeply
+negative — Grocery may read −$9,000 when its true balance is $725. That is
+deliberate: it buys full history and accurate day-one numbers, and the difference
+is corrected afterwards.
 
-**Reconcile to Actual** lists every delegation with its computed balance and an
-editable "actual", and one commit writes every `adjust` delta in a single batch.
-Sixty corrections are one screen and one commit, not sixty modals.
+**Reconcile to Actual was the screen that did it in one commit, and it is gone**
+([ADR 031](decisions/031-reconcile-to-actual-is-removed.md)). It existed for a
+single moment in a household's life, that moment has passed here, and correcting
+drift now happens where the drift is visible: **Manually adjust** on the Budget
+row menu, or Settings → Delegations. Both write the same `adjust` event the
+screen wrote, one line at a time.
 
-Order of operations: **sync → build rules → bulk-apply rules → categorize the
-remainder → reconcile.**
+Every event a reconciliation ever wrote is untouched — they are ordinary manual
+adjustments and always were. `budget_settings.go_live_at` still holds the date
+the first commit stamped; nothing writes or reads it any more, and it is kept
+because the value on a live deployment is a real fact about that household.
+
+Order of operations at go-live: **sync → build rules → run rules → categorize
+the remainder → correct the lines that are wrong.**
 
 ## Archiving
 

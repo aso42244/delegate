@@ -6,7 +6,69 @@ phase (`v0.1.0-phase1`, and so on).
 
 ## [Unreleased]
 
-Nothing yet.
+### Changed
+
+- **Settings is quieter, denser, and consistent tab to tab.** Every list obeys
+  Settings → Display like the rest of the app, and every "add" is a button in the
+  card's top right opening a dialog, rather than a form permanently open below
+  the list it adds to.
+
+  - **Sync** — the connection is a line with a dot, not a full-width green bar
+    that shouted on the days nothing was wrong. Once connected, the setup-token
+    field goes away behind **Set up new token**, beside **Disconnect**: a token
+    is claimed once and spent, and an empty box asking to be filled reads as
+    unfinished work. Recent syncs now say what each run actually did — "12
+    imported, 3 updated", or "nothing new", which is the ordinary result on an
+    hourly schedule and should not read as a fault.
+  - **Accounts** — **Rename is offered on manual accounts only.** A SimpleFIN
+    account is called whatever the institution calls it, and the next sync would
+    not restore a name typed over it — it would leave the two disagreeing with
+    nothing on the page saying they ever matched. **Short name is now Nickname**,
+    which is the supported way to call an account something else. The "Also
+    counted" footer is gone, and **Add a manual account** is a header button and
+    a dialog.
+  - **Delegations** — one 32px row per envelope, reading like the Budget page's
+    own table. Opening one gives a single line of controls — name, grouping,
+    utility, amount — with the note on a second line, instead of a stack of
+    labelled fields three hundred pixels tall.
+  - **Groupings** — a table, with the palette behind the current swatch instead
+    of seven controls open on every row for a choice made once and left for
+    months. The trigger names the colour it holds, so the choice is never carried
+    by colour alone. **New grouping** is a header button and a dialog.
+  - **Rules** — a list laid out like the register: order, rule, what it
+    categorizes as, what narrows it, and whether it is on. **Add rule** and **Run
+    rules** are header buttons. Apply-to-existing was a permanently open panel
+    running a preview query on every visit, with the toggle that changes what the
+    button does sitting some distance from the button; it is a confirmation now,
+    and the preview is fetched when it opens.
+  - **Budget** — three settings on one screen without scrolling.
+  - **Users** — row actions are behind the `⋯` menu. A row could carry Edit,
+    Reset password, Reset two-factor and Archive at once: four controls of equal
+    weight, one destructive, on every row of a table read far more often than it
+    is acted on.
+
+- **Two-factor moved from Security to Users**, where it sits beside the account
+  it protects rather than beside a network setting. `/set-up-two-factor` renders
+  the same card, so there is still exactly one enrolment flow.
+
+- **Security is now Tor**, carrying remote access and nothing else. The old
+  `/settings/security` redirects.
+
+### Removed
+
+- **Reconcile to Actual.** It existed for a single moment in a household's life —
+  turning a twelve-month backfill into day-one balances — and that moment has
+  passed. Correcting drift now happens where the drift is visible: **Manually
+  adjust** on a Budget row, or Settings → Delegations. Both write the same
+  `adjust` event the screen wrote.
+
+  **No data is removed.** Every event a reconciliation wrote is untouched: they
+  are ordinary manual adjustments and always were. `go_live_at` keeps the date it
+  holds, because on a live deployment that is a real fact about the household,
+  and migrations here are forward-only. Nothing reads it now, so the Go-live card
+  in Settings → Budget went with the screen.
+
+  [ADR 031](docs/decisions/031-reconcile-to-actual-is-removed.md).
 
 ## [0.27.0] — 2026-08-24
 

@@ -47,8 +47,11 @@ test('clearing the amount makes a line ad hoc rather than zero', async ({ signed
 test('a grouping is created and renamed from Settings', async ({ signedIn }) => {
   await signedIn.goto('/settings/groupings');
 
-  await signedIn.getByLabel('New grouping').fill('Essentials');
-  await signedIn.getByRole('button', { name: 'Add grouping' }).click();
+  await signedIn.getByRole('button', { name: 'New grouping' }).click();
+  const dialog = signedIn.getByRole('dialog', { name: 'Create a grouping' });
+  await dialog.getByLabel('Name').fill('Essentials');
+  await dialog.getByRole('button', { name: 'Add grouping' }).click();
+  await expect(signedIn.getByRole('dialog')).toHaveCount(0);
   await expect(signedIn.getByLabel('Name of Essentials')).toBeVisible();
 
   await signedIn.getByLabel('Name of Essentials').fill('Household costs');
@@ -60,8 +63,11 @@ test('a grouping is created and renamed from Settings', async ({ signedIn }) => 
 
 test('a grouping holding a live line refuses to archive', async ({ signedIn, api }) => {
   await signedIn.goto('/settings/groupings');
-  await signedIn.getByLabel('New grouping').fill('Essentials');
-  await signedIn.getByRole('button', { name: 'Add grouping' }).click();
+  await signedIn.getByRole('button', { name: 'New grouping' }).click();
+  const dialog = signedIn.getByRole('dialog', { name: 'Create a grouping' });
+  await dialog.getByLabel('Name').fill('Essentials');
+  await dialog.getByRole('button', { name: 'Add grouping' }).click();
+  await expect(signedIn.getByRole('dialog')).toHaveCount(0);
   await expect(signedIn.getByLabel('Name of Essentials')).toBeVisible();
 
   // Put a delegation inside it, then try to archive the grouping.

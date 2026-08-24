@@ -3,13 +3,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { buildApp } from '../src/app.js';
 import { loadConfig } from '../src/config.js';
 import { prisma } from '../src/db/client.js';
-import {
-  delegationBalance,
-  ledgerBalances,
-  makeAccount,
-  markTwoFactorEnrolled,
-  resetDatabase,
-} from './helpers.js';
+import { delegationBalance, makeAccount, markTwoFactorEnrolled, resetDatabase } from './helpers.js';
 import { adjustDelegationByDelta } from '../src/domain/adjust.js';
 import { sessionCookie } from './http.js';
 
@@ -17,7 +11,7 @@ import { sessionCookie } from './http.js';
  * The Budget page API.
  *
  * The read model has to agree with the ledger, and every button on the page has
- * to be atomic — a half-applied Delegate or Reconcile would leave the budget in
+ * to be atomic — a half-applied Delegate would leave the budget in
  * a state the owner cannot reason about or unpick.
  */
 
@@ -403,48 +397,6 @@ describe('Transfer', () => {
   });
 });
 
-describe('Reconcile to Actual', () => {
-  it('corrects every line in one commit', async () => {
-    const grocery = await makeDelegationVia('Grocery');
-    const power = await makeDelegationVia('Power');
-    await call('POST', `/api/delegations/${grocery}/adjust`, { targetBalanceCents: '-900000' });
-
-    const result = await call<{ adjustedCount: number; batchId: string }>(
-      'POST',
-      '/api/budget/reconcile',
-      {
-        lines: [
-          { delegationId: grocery, actualBalanceCents: '72500' },
-          { delegationId: power, actualBalanceCents: '0' },
-        ],
-      },
-    );
-
-    // Sixty corrections must be one screen and one commit, sharing a batch.
-    expect(result.adjustedCount).toBe(1);
-    expect(await delegationBalance(grocery)).toBe(72500n);
-
-    const batched = await prisma.delegationEvent.count({ where: { batchId: result.batchId } });
-    expect(batched).toBe(1);
-  });
-
-  it('leaves the cache agreeing with the ledger afterwards', async () => {
-    const grocery = await makeDelegationVia('Grocery');
-    await call('POST', '/api/budget/reconcile', {
-      lines: [{ delegationId: grocery, actualBalanceCents: '72500' }],
-    });
-
-    const fromEvents = await ledgerBalances();
-    expect(await delegationBalance(grocery)).toBe(fromEvents.get(grocery) ?? 0n);
-  });
-});
-
-/**
- * Moving the reading at the top of the page into or out of one line.
- *
- * The arithmetic is the whole feature, so every case here is worked from
- * figures chosen by hand rather than from what the code happens to produce.
- */
 describe('absorbing the difference', () => {
   /** $300 in the bank, `delegated` already in envelopes: the rest is surplus. */
   async function budget(delegated: bigint): Promise<string> {

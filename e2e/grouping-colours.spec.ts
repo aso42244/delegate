@@ -1,4 +1,15 @@
+import type { Page } from '@playwright/test';
 import { expect, makeDelegation, test } from './fixtures.js';
+
+/** Creates a grouping through the dialog the page now opens. */
+async function makeGrouping(page: Page, name: string): Promise<void> {
+  await page.getByRole('button', { name: 'New grouping' }).click();
+  const dialog = page.getByRole('dialog', { name: 'Create a grouping' });
+  await dialog.getByLabel('Name').fill(name);
+  await dialog.getByRole('button', { name: 'Add grouping' }).click();
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  await expect(page.getByLabel(`Name of ${name}`)).toBeVisible();
+}
 
 /**
  * Grouping colour, and moving a line between groupings by dragging it.
@@ -15,41 +26,36 @@ test('a grouping takes a colour from the palette, and the budget tints its rows'
   await makeDelegation(api, 'Grocery');
 
   await signedIn.goto('/settings/groupings');
-  await signedIn.getByLabel('New grouping').fill('Essentials');
-  await signedIn.getByRole('button', { name: 'Add grouping' }).click();
-  await expect(signedIn.getByLabel('Name of Essentials')).toBeVisible();
+  await makeGrouping(signedIn, 'Essentials');
 
   // Each swatch is named, so the choice is not carried by colour alone.
+  await signedIn.getByRole('button', { name: /^Colour for Essentials/ }).click();
   await signedIn.getByRole('button', { name: 'Blue for Essentials' }).click();
-  await expect(signedIn.getByRole('button', { name: 'Blue for Essentials' })).toHaveAttribute(
-    'aria-pressed',
-    'true',
-  );
+
+  // Choosing closes the popover, and the trigger names the colour it now holds —
+  // which is the assertion that matters: the row says "Blue" without being
+  // opened at all.
+  await expect(signedIn.getByRole('button', { name: 'Colour for Essentials: Blue' })).toBeVisible();
 
   await signedIn.reload();
-  await expect(signedIn.getByRole('button', { name: 'Blue for Essentials' })).toHaveAttribute(
-    'aria-pressed',
-    'true',
-  );
+  await expect(signedIn.getByRole('button', { name: 'Colour for Essentials: Blue' })).toBeVisible();
 });
 
 test('colour can be taken off again', async ({ signedIn }) => {
   await signedIn.goto('/settings/groupings');
-  await signedIn.getByLabel('New grouping').fill('Essentials');
-  await signedIn.getByRole('button', { name: 'Add grouping' }).click();
-  await expect(signedIn.getByLabel('Name of Essentials')).toBeVisible();
+  await makeGrouping(signedIn, 'Essentials');
 
+  await signedIn.getByRole('button', { name: /^Colour for Essentials/ }).click();
   await signedIn.getByRole('button', { name: 'Purple for Essentials' }).click();
-  await expect(signedIn.getByRole('button', { name: 'Purple for Essentials' })).toHaveAttribute(
-    'aria-pressed',
-    'true',
-  );
+  await expect(
+    signedIn.getByRole('button', { name: 'Colour for Essentials: Purple' }),
+  ).toBeVisible();
 
+  await signedIn.getByRole('button', { name: /^Colour for Essentials/ }).click();
   await signedIn.getByRole('button', { name: 'No colour for Essentials' }).click();
-  await expect(signedIn.getByRole('button', { name: 'No colour for Essentials' })).toHaveAttribute(
-    'aria-pressed',
-    'true',
-  );
+  await expect(
+    signedIn.getByRole('button', { name: 'Colour for Essentials: No colour' }),
+  ).toBeVisible();
 });
 
 /**

@@ -1,12 +1,18 @@
 import type { PayCadence } from '@budget/shared';
 import { api } from './client.js';
 
-/** Settings → Budget, and the go-live Reconcile commit. Cents are strings — ADR 002. */
+/** Settings → Budget. Cents are strings — ADR 002. */
 
 export interface BudgetSettingsDto {
   readonly undoWindowHours: number;
   readonly identityToleranceCents: string;
-  /** Stamped by the first Reconcile commit, then never moved. */
+  /**
+   * When go-live happened, stamped by the Reconcile screen that used to exist.
+   *
+   * Read-only history now, and nothing writes it. Kept because the date it
+   * holds on a live deployment is a real fact about that household, and the
+   * column outlives the screen that filled it — ADR 031.
+   */
   readonly goLiveAt: string | null;
   /** How often the household is paid. Divides the Utilities suggestion. */
   readonly payCadence: PayCadence;
@@ -19,13 +25,6 @@ export interface BudgetSettingsDto {
   readonly remoteOverTorEnabledAt: string | null;
   /** Null until the Tor service has been started and made one. */
   readonly onionAddress: string | null;
-}
-
-export interface ReconcileResultDto {
-  readonly batchId: string;
-  readonly adjustedCount: number;
-  readonly unchangedCount: number;
-  readonly totalDeltaCents: string;
 }
 
 export interface ArchivedDto {
@@ -58,8 +57,4 @@ export const settingsApi = {
     requireTotp?: boolean;
     remoteOverTorEnabled?: boolean;
   }) => api.patch<BudgetSettingsDto>('/api/settings', input),
-
-  /** Every correction in one commit, sharing a batch. Not sixty separate writes. */
-  reconcile: (lines: readonly { delegationId: string; actualBalanceCents: string }[]) =>
-    api.post<ReconcileResultDto>('/api/budget/reconcile', { lines }),
 };
