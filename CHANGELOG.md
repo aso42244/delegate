@@ -6,6 +6,10 @@ phase (`v0.1.0-phase1`, and so on).
 
 ## [Unreleased]
 
+Nothing yet.
+
+## [0.29.2] — 2026-08-25
+
 ### Changed
 
 - **A closed onion address now says nothing.** With remote access off it answered
