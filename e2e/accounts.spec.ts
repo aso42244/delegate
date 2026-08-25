@@ -233,3 +233,56 @@ test('a manual account can be renamed', async ({ signedIn }) => {
 
   await expect(signedIn.getByText('Petty Cash', { exact: true })).toBeVisible();
 });
+
+/**
+ * How old the feed's own answer is.
+ *
+ * The case behind this: ten charges stayed marked pending for days after the
+ * card had posted them, and the application had nothing to say about it because
+ * the stored balance, the stuck rows and the card's real balance were all behind
+ * *together* and therefore consistent. The bridge reported itself healthy
+ * throughout. See ADR 032.
+ */
+test('a synced balance the feed has not refreshed is marked, and says from when', async ({
+  signedIn,
+}) => {
+  const threeDaysAgo = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000);
+  await makeAccount('Stale Card', 'debt', 560_983n, 'simplefin', threeDaysAgo);
+
+  await signedIn.goto('/settings/accounts');
+
+  // Located by meaning rather than by letter, like every other chip assertion
+  // here: the letter is what is painted, the meaning is what must not drift.
+  await expect(signedIn.getByTitle('Balance may not be current')).toBeVisible();
+
+  // The date beside it, because the mark alone sends somebody looking for a
+  // fault inside this application rather than at the bridge.
+  await expect(
+    signedIn.getByText(`feed from ${threeDaysAgo.toLocaleDateString('en-US')}`),
+  ).toBeVisible();
+});
+
+test('a synced balance the feed refreshed today is not marked', async ({ signedIn }) => {
+  await makeAccount('Fresh Card', 'debt', 560_983n, 'simplefin', new Date());
+
+  await signedIn.goto('/settings/accounts');
+
+  await expect(signedIn.getByText('Fresh Card', { exact: true })).toBeVisible();
+  await expect(signedIn.getByTitle('Balance may not be current')).toHaveCount(0);
+});
+
+/**
+ * Silence is not evidence. A feed that sends no `balance-date` says nothing
+ * about the age of its answer, and warning on that would be the same mistake as
+ * assuming freshness, pointed the other way.
+ */
+test('a feed that sends no date is left unmarked rather than warned about', async ({
+  signedIn,
+}) => {
+  await makeAccount('Quiet Card', 'debt', 560_983n, 'simplefin', null);
+
+  await signedIn.goto('/settings/accounts');
+
+  await expect(signedIn.getByText('Quiet Card', { exact: true })).toBeVisible();
+  await expect(signedIn.getByTitle('Balance may not be current')).toHaveCount(0);
+});

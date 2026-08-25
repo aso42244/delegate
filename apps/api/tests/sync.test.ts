@@ -791,3 +791,92 @@ describe('an institution reconnected at the bridge', () => {
     expect(card.balanceCents).toBe(20000n);
   });
 });
+
+/**
+ * How old the feed's own answer is.
+ *
+ * `balanceAsOf` answers two questions with one column: the feed's own date when
+ * it sends one, and the time of our request when it does not. Those read
+ * identically afterwards, so "the bridge says this balance is current" cannot be
+ * told apart from "the bridge did not say and we filled it in".
+ *
+ * That mattered the day a card's ten most recent charges sat marked pending
+ * while the bridge reported the connection healthy. Balance and pending set were
+ * stale together and consistent with each other, so nothing in the application
+ * could show it. `feedBalanceAsOf` is null exactly when we do not know, which is
+ * what makes the answer usable.
+ */
+describe("the feed's own balance date", () => {
+  it('records what the feed says, not when we asked', async () => {
+    const feedDate = epochDaysAfter(EPOCH_2026_08_01, 3);
+    const client = new ScriptedSimpleFinClient([
+      accountSet([
+        { id: 'acct-1', name: 'Everyday Checking', balance: '2500.00', balanceDate: feedDate },
+      ]),
+    ]);
+
+    await sync(client);
+
+    const account = await prisma.account.findFirstOrThrow({ where: { externalId: 'acct-1' } });
+    expect(account.feedBalanceAsOf?.getTime()).toBe(feedDate * 1000);
+    // `balanceAsOf` has always taken the feed's date when there is one, so here
+    // the two agree. What it could never express is the *other* case, below.
+    expect(account.balanceAsOf?.getTime()).toBe(feedDate * 1000);
+  });
+
+  it('leaves it null when the feed does not say, rather than stamping now', async () => {
+    const client = new ScriptedSimpleFinClient([
+      accountSet([
+        { id: 'acct-1', name: 'Everyday Checking', balance: '2500.00', balanceDate: null },
+      ]),
+    ]);
+
+    await sync(client);
+
+    const account = await prisma.account.findFirstOrThrow({ where: { externalId: 'acct-1' } });
+    // The whole point of the column. `balanceAsOf` falls back to the time of the
+    // request, which is indistinguishable from a feed that genuinely answered
+    // "as of now"; `feedBalanceAsOf` stays null, so unknown reads as unknown.
+    expect(account.balanceAsOf?.getTime()).toBe(NOW.getTime());
+    expect(account.feedBalanceAsOf).toBeNull();
+  });
+
+  it('moves forward on a later sync', async () => {
+    const first = epochDaysAfter(EPOCH_2026_08_01, 1);
+    const second = epochDaysAfter(EPOCH_2026_08_01, 4);
+    const client = new ScriptedSimpleFinClient([
+      accountSet([
+        { id: 'acct-1', name: 'Everyday Checking', balance: '2500.00', balanceDate: first },
+      ]),
+      accountSet([
+        { id: 'acct-1', name: 'Everyday Checking', balance: '2600.00', balanceDate: second },
+      ]),
+    ]);
+
+    await sync(client);
+    await sync(client, new Date(NOW.getTime() + 60 * 60 * 1000));
+
+    const account = await prisma.account.findFirstOrThrow({ where: { externalId: 'acct-1' } });
+    expect(account.feedBalanceAsOf?.getTime()).toBe(second * 1000);
+  });
+
+  /**
+   * The case that produced this column. A bridge that keeps answering with the
+   * same old snapshot must not look fresher every hour just because we keep
+   * asking.
+   */
+  it('does not advance while the bridge repeats an old snapshot', async () => {
+    const frozen = epochDaysAfter(EPOCH_2026_08_01, 1);
+    const stuck = accountSet([
+      { id: 'acct-1', name: 'Everyday Checking', balance: '2500.00', balanceDate: frozen },
+    ]);
+    const client = new ScriptedSimpleFinClient([stuck, stuck, stuck]);
+
+    await sync(client);
+    await sync(client, new Date(NOW.getTime() + 60 * 60 * 1000));
+    await sync(client, new Date(NOW.getTime() + 2 * 60 * 60 * 1000));
+
+    const account = await prisma.account.findFirstOrThrow({ where: { externalId: 'acct-1' } });
+    expect(account.feedBalanceAsOf?.getTime()).toBe(frozen * 1000);
+  });
+});

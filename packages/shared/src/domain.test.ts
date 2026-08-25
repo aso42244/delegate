@@ -8,6 +8,7 @@ import {
   canManageUsers,
   canModifyUser,
   isBalanceStale,
+  isFeedBalanceStale,
   suggestedPerCycleCents,
   groupingTint,
   isGroupingColor,
@@ -161,5 +162,36 @@ describe('grouping colours', () => {
     expect(groupingTint('#FFF', 'header')).toBeUndefined();
     expect(groupingTint('rebeccapurple', 'header')).toBeUndefined();
     expect(groupingTint('2783DE', 'header')).toBeUndefined();
+  });
+});
+
+/**
+ * How old a feed's own answer is, which is not the same question as when
+ * somebody last confirmed a balance by hand.
+ */
+describe('feed balance staleness', () => {
+  const now = new Date('2026-08-25T12:00:00Z');
+
+  it('is not stale within the threshold', () => {
+    expect(isFeedBalanceStale(new Date('2026-08-24T12:00:00Z'), now)).toBe(false);
+    expect(isFeedBalanceStale(new Date('2026-08-23T13:00:00Z'), now)).toBe(false);
+  });
+
+  it('is stale once the feed date has aged past it', () => {
+    expect(isFeedBalanceStale(new Date('2026-08-23T11:00:00Z'), now)).toBe(true);
+    expect(isFeedBalanceStale(new Date('2026-08-20T12:00:00Z'), now)).toBe(true);
+  });
+
+  /**
+   * Silence is not evidence. A bridge that sends no `balance-date` says nothing
+   * about the age of its answer, and inventing a warning out of that would be
+   * the same mistake as inventing freshness — which is the one this replaced.
+   */
+  it('treats an absent date as unknown rather than stale', () => {
+    expect(isFeedBalanceStale(null, now)).toBe(false);
+  });
+
+  it('does not call a date in the future stale', () => {
+    expect(isFeedBalanceStale(new Date('2026-08-26T12:00:00Z'), now)).toBe(false);
   });
 });

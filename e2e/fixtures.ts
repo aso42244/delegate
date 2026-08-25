@@ -186,6 +186,11 @@ export async function makeAccount(
   type: 'asset' | 'debt',
   balanceCents: bigint,
   source: 'manual' | 'simplefin' = 'manual',
+  /**
+   * The date the feed put on this balance, for the staleness cases. Null — the
+   * default — is a feed that did not say, which is not the same as a fresh one.
+   */
+  feedBalanceAsOf: Date | null = null,
 ): Promise<string> {
   const account = await prisma.account.create({
     data: {
@@ -197,6 +202,7 @@ export async function makeAccount(
       inBudget: true,
       inNetWorth: true,
       balanceAsOf: new Date(),
+      feedBalanceAsOf,
     },
     select: { id: true },
   });

@@ -664,7 +664,7 @@ width is scarcest.
 | `c`   | Settled an outstanding check               | Transactions     |
 | `sp`  | Split across more than one delegation      | Transactions     |
 | `m`   | Kept by hand                               | Budget, Settings |
-| `s`   | Not confirmed recently                     | Budget, Settings |
+| `s`   | Balance may not be current                 | Budget, Settings |
 | `r`   | Discovered by a sync — its type is a guess | Budget, Settings |
 | `btc` | Bitcoin holding — quantity × price         | Budget           |
 | `h`   | Property — a valuation, not a balance      | Budget           |
@@ -673,6 +673,12 @@ width is scarcest.
 
 `p`, `s` and `r` take the yellow; the rest are the quiet grey. Yellow means
 something is worth noticing, not that something is broken.
+
+`s` read "Not confirmed recently" until v0.30.0, which was written for a manual
+balance nobody had checked. It now covers a synced one too, where the bridge
+answers with a snapshot several days old and there is nobody to do the
+confirming. One letter, one meaning still holds — the meaning is _this balance
+may not be current_, and both cases are that.
 
 Two rules make a vocabulary of letters legible, and both are enforced rather
 than promised.

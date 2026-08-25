@@ -81,7 +81,8 @@ interface FixtureAccount {
   readonly name: string;
   readonly balance: string;
   readonly currency?: string;
-  readonly balanceDate?: number;
+  /** `null` omits `balance-date` entirely, which some bridges do. */
+  readonly balanceDate?: number | null;
   readonly transactions?: readonly FixtureTransaction[];
 }
 
@@ -106,7 +107,9 @@ export function accountSet(
       conn_id: 'conn-1',
       currency: account.currency ?? 'USD',
       balance: account.balance,
-      'balance-date': account.balanceDate ?? EPOCH_2026_08_01,
+      ...(account.balanceDate === null
+        ? {}
+        : { 'balance-date': account.balanceDate ?? EPOCH_2026_08_01 }),
       transactions: (account.transactions ?? []).map((transaction) => ({
         id: transaction.id,
         // The protocol reports `posted: 0` while a transaction is pending.
