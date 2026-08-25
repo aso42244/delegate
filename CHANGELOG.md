@@ -6,6 +6,10 @@ phase (`v0.1.0-phase1`, and so on).
 
 ## [Unreleased]
 
+Nothing yet.
+
+## [0.29.1] — 2026-08-25
+
 ### Fixed
 
 - **Tor still never started, for a second reason.** v0.28.2 taught the entrypoint
