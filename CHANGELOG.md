@@ -6,6 +6,10 @@ phase (`v0.1.0-phase1`, and so on).
 
 ## [Unreleased]
 
+Nothing yet.
+
+## [0.31.0] — 2026-08-25
+
 ### Added
 
 - **Two-factor enrolment offers the setup key, behind "Can't scan this?"** The QR
