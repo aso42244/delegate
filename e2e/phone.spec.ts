@@ -78,7 +78,9 @@ test.describe('on a phone', () => {
     await page.getByRole('link', { name: /^Accounts/ }).click();
     await expect(page).toHaveURL(/\/settings\/accounts$/);
 
-    await page.getByRole('link', { name: 'Settings', exact: true }).click();
+    // "Back to Settings", not "Settings": the tab bar links there too, and two
+    // links with one name is ambiguous to anyone navigating by name.
+    await page.getByRole('link', { name: 'Back to Settings' }).click();
     await expect(page).toHaveURL(/\/settings$/);
     await expect(page.getByRole('link', { name: /^Rules/ })).toBeVisible();
   });

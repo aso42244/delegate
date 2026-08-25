@@ -45,18 +45,42 @@ beforeEach(async () => {
 });
 
 describe('with remote access off', () => {
-  it('refuses a request arriving on the onion address', async () => {
+  /**
+   * An empty 404, and nothing that says why.
+   *
+   * The reply used to explain itself — "remote access is switched off, turn it
+   * on from Settings" — on the reasoning that whoever read it was the household
+   * having forgotten. To anyone else holding the address it confirmed that a
+   * service is there, that it is this application, that remote access exists,
+   * and that the address is live and worth keeping for later.
+   */
+  it('says nothing at all to a request on the onion address', async () => {
     const response = await app.inject({
       method: 'GET',
       url: '/api/budget',
       headers: { cookie, host: ONION },
     });
 
-    expect(response.statusCode).toBe(403);
-    expect(response.json<{ error: { code: string } }>().error.code).toBe('remote_access_disabled');
-    // Says where to fix it. Whoever reads this is overwhelmingly likely to be
-    // the household, on their own phone, having forgotten to turn it on.
-    expect(response.json<{ error: { message: string } }>().error.message).toContain('home network');
+    expect(response.statusCode).toBe(404);
+    expect(response.body).toBe('');
+    // Neither the state nor the feature nor the way to change it.
+    expect(response.body).not.toContain('remote_access_disabled');
+  });
+
+  /**
+   * Every path, including the one Docker probes.
+   *
+   * `/health` was exempt so a health check would keep working, which sounded
+   * reasonable and was the loudest signal here — a 200 confirms a live service
+   * unconditionally, to anyone with the address. Docker's own check runs inside
+   * the compose network and never carries an onion `Host`, so the exemption
+   * bought nothing.
+   */
+  it('does not answer health either', async () => {
+    const health = await app.inject({ method: 'GET', url: '/health', headers: { host: ONION } });
+
+    expect(health.statusCode).toBe(404);
+    expect(health.body).toBe('');
   });
 
   it('does not refuse the same request from the local network', async () => {
@@ -71,18 +95,32 @@ describe('with remote access off', () => {
     expect(response.statusCode).toBe(200);
   });
 
-  it('still answers health and still lets a session be ended', async () => {
-    // A remote device holding a session must be able to drop it, and a health
-    // check that fails when the door is shut is a health check nobody can read.
-    const health = await app.inject({ method: 'GET', url: '/health', headers: { host: ONION } });
-    expect(health.statusCode).toBe(200);
-
+  /**
+   * Logging out was exempt too, so a remote device could drop its session.
+   *
+   * A session that cannot reach anything does not need ending from here, and it
+   * can be ended from the LAN — or by changing a password, which revokes every
+   * other session outright.
+   */
+  it('does not let a session be ended over Tor either', async () => {
     const logout = await app.inject({
       method: 'POST',
       url: '/api/auth/logout',
       headers: { cookie, host: ONION, origin: `http://${ONION}` },
     });
-    expect(logout.statusCode).toBeLessThan(400);
+
+    expect(logout.statusCode).toBe(404);
+  });
+
+  /** The LAN is unaffected: that is where the switch is, and where it is read. */
+  it('still answers health on the local network', async () => {
+    const health = await app.inject({
+      method: 'GET',
+      url: '/health',
+      headers: { host: '10.0.3.4:8088' },
+    });
+
+    expect(health.statusCode).toBe(200);
   });
 });
 

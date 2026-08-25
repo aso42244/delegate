@@ -103,3 +103,33 @@ somebody concludes a working system is broken.
 **The health check tests the hostname file** rather than the SOCKS port. The port
 answered throughout the failure above; the thing that was missing was the hidden
 service, and that is what the file's existence proves.
+
+## Amendment, 2026-08-25
+
+**While remote access is off, the onion address answers an empty 404 and nothing
+else.**
+
+It used to answer `403` with a plain explanation — "Remote access over Tor is
+switched off. Turn it on from Settings → … while on the home network." The
+reasoning written down at the time was that whoever read it was overwhelmingly
+likely to be the household on their own phone, having forgotten. That is probably
+true, and it is the wrong trade, because of who _else_ it can be.
+
+Anyone reaching this holds the address. To them that reply confirmed four things:
+that a service is really there, that it is this application, that remote access
+is a feature of it, and that it is currently off — which is to say the address is
+live and worth keeping for later. None of those survive an empty 404. Off is
+indistinguishable from nothing ever having been there.
+
+**`/health` and `/api/auth/logout` are no longer exempt**, and the health
+exemption was the louder leak of the two: a `200` confirms a live service
+unconditionally, whatever the switch says. It was exempt so a health check would
+keep working, which sounded reasonable and bought nothing — Docker's own check
+runs inside the compose network and never carries an onion `Host`. Logging out
+was exempt so a remote device could drop its session; a session that cannot reach
+anything does not need ending from there, and it can be ended from the LAN or by
+changing a password, which revokes every other session outright.
+
+The refusal is still logged at `warn` on the server, where the household can read
+it and nobody else can. What they lose is a hint they can get from the LAN in one
+tap, on the page that holds the switch.

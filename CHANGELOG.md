@@ -6,7 +6,35 @@ phase (`v0.1.0-phase1`, and so on).
 
 ## [Unreleased]
 
-Nothing yet.
+### Changed
+
+- **A closed onion address now says nothing.** With remote access off it answered
+  `403` and explained itself: that remote access exists, that it is switched off,
+  and where to switch it on. To anyone holding the address — which is the only
+  way to reach it — that confirmed a live service worth returning to. It is an
+  empty `404` now, and "off" is indistinguishable from "nothing was ever here".
+
+  **`/health` and `/api/auth/logout` are no longer exempt.** The health exemption
+  was the louder of the two leaks: a `200` confirms a running service whatever the
+  switch says. It existed so a health check would keep working, and bought
+  nothing — Docker's own check runs inside the compose network and never carries
+  an onion `Host`.
+
+  The refusal is still logged on the server, where the household can read it and
+  nobody else can. [ADR 027](docs/decisions/027-remote-access-is-an-onion-service.md).
+
+### Fixed
+
+- **The back link out of a settings section is named "Back to Settings".** On a
+  phone the tab bar links to `/settings` too, so two links with the accessible
+  name "Settings" sat on one screen — ambiguous to anyone navigating by name, and
+  one of them is a back button. Found because a test that clicked by name failed
+  intermittently.
+
+- **The settings client no longer declares `requireTotp`.** The field was removed
+  from the API when the second factor became unconditional; the web type still
+  advertised it, so it read as a `boolean` the server never sends and offered it
+  as something `update` would accept — which the strict schema refuses outright.
 
 ## [0.29.1] — 2026-08-25
 

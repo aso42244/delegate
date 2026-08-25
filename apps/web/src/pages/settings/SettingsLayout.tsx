@@ -42,6 +42,11 @@ export function SettingsLayout(): ReactNode {
       {narrow && !atIndex ? (
         <Link
           to="/settings"
+          // Named for what it does, not for where it points. The tab bar also
+          // carries a link to `/settings`, so two links with the accessible name
+          // "Settings" sat on the same phone screen — which is ambiguous to
+          // anyone navigating by name, and one of them is a back button.
+          aria-label="Back to Settings"
           className="mb-4 inline-flex min-h-[44px] items-center gap-1 text-quiet font-semibold text-accent"
         >
           <span aria-hidden>‹</span> Settings
