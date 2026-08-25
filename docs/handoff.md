@@ -337,10 +337,21 @@ are not negotiable by a request, whoever wrote it.
   Two things it still does not prove. It produces an **arm64** image and the
   DS220+ is x86_64, so it shows the Dockerfile is correct rather than that a
   native module has a prebuilt binary for the NAS — which is why the NAS builds
-  its own from source (ADR 019). And `docker-compose.yml` and `tor/` are still
-  reasoned about rather than executed, so say so plainly when changing them. The
-  Tor image and its entrypoint went out on that basis; if the onion address never
-  appears, `sudo docker compose logs tor` on the NAS is the first thing to read.
+  its own from source (ADR 019). And `docker-compose.yml` is still reasoned about
+  rather than executed, so say so plainly when changing it.
+
+  **`tor/` is no longer in that category**, and the cost of it having been there
+  is worth remembering. The image and its entrypoint shipped un-run, carrying
+  `HiddenServicePort 80 app:3000` — a parse error, because tor does no DNS for
+  that directive. The container died at startup and restarted for ever, no onion
+  address was ever created, and the only symptom anywhere was Settings reporting
+  "No onion address yet", which is also what it says when nothing is wrong.
+  Nobody could tell the two apart for two weeks.
+
+  `npm run verify` now runs `tor --verify-config` against the real file. It is
+  offline, takes about a second, and would have caught this before it left the
+  Mac. The whole service can be exercised locally too — build `./tor`, run it on
+  a network with a container aliased `app`, and watch for the address.
 
   **The first thing this caught was a lie in `.dockerignore`**, on its very first
   run. `*.tsbuildinfo` is anchored at the root, so

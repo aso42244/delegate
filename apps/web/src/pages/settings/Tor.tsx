@@ -81,11 +81,28 @@ export function TorSection(): ReactNode {
               <summary className="cursor-pointer text-quiet text-muted">
                 Still nothing after a minute?
               </summary>
+              {/*
+                The whole command, including the directory it must run from and
+                the shell it needs.
+
+                What stood here was `sudo docker compose logs tor` alone. Run
+                from a home directory that answers "no configuration file
+                provided"; run as `sudo docker` on DSM it answers "command not
+                found", because sudo resolves the binary itself and
+                /usr/local/bin is not on the path it uses. Instructions that
+                fail at the moment somebody needs them are worse than none —
+                they look like the diagnosis.
+              */}
+              <p className="mt-2 text-label text-muted">On the NAS, over SSH:</p>
+              <pre className="mt-1 overflow-x-auto rounded bg-surface-2 p-2 font-mono text-label text-ink">
+                sudo -i sh -c &apos;cd /volume1/docker/delegate &amp;&amp; docker compose logs
+                tor&apos;
+              </pre>
               <p className="mt-2 text-label text-muted">
-                On the NAS, <code>sudo docker compose ps tor</code> shows whether it is running and{' '}
-                <code>sudo docker compose logs tor</code> says why not. The commonest cause is a key
-                directory left behind by an older version, which{' '}
-                <code>sudo docker compose up -d --build tor</code> repairs.
+                A configuration error stops tor before it starts, and the container then restarts
+                for ever without ever creating an address — so the logs are the first thing to read,
+                not the last. <code>ps tor</code> in place of <code>logs tor</code> shows whether it
+                is running at all, and <code>up -d --build tor</code> rebuilds it.
               </p>
             </details>
           </div>

@@ -27,7 +27,12 @@ HiddenServiceDir /var/lib/tor/delegate
 # compromise: a v3 onion address *is* a public key, so the connection is already
 # encrypted and authenticated end to end, and no certificate authority issues
 # for .onion anyway.
-HiddenServicePort 80 app:3000
+#
+# `__APP_ADDRESS__` is substituted by entrypoint.sh, which resolves the app's
+# compose hostname before starting tor. It has to be: tor does no DNS for this
+# directive, so a name here is a parse error that stops tor before it starts —
+# which is what shipped, and why no onion address ever appeared.
+HiddenServicePort 80 __APP_ADDRESS__
 
 # v3 is the only version that still exists, and this states it rather than
 # relying on the default.
