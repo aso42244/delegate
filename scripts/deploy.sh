@@ -380,7 +380,18 @@ if [ "$(id -u)" -eq 0 ]; then
 fi
 
 echo 'Starting …'
-$COMPOSE up -d
+# `--build`, always.
+#
+# Compose builds a service with a `build:` section only when its image does not
+# already exist. `tor` is built from source here, so once one image existed every
+# later deploy silently reused it — and the tor configuration is *mounted* while
+# the entrypoint that reads it is *baked in*. A release that changed both shipped
+# the new file to the old script, which is how a placeholder the entrypoint was
+# supposed to substitute reached tor verbatim and stopped it starting.
+#
+# Only `tor` has a `build:` section; the app image is built and tagged above and
+# referenced by digest, so this costs one rebuild of a small Alpine image.
+$COMPOSE up -d --build
 
 HOST_PORT=$(grep -E '^HOST_PORT=' .env | cut -d= -f2- || true)
 HOST_PORT="${HOST_PORT:-8088}"

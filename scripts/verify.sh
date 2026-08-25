@@ -111,22 +111,60 @@ fi
 # and the DS220+ is x86_64. That proves the Dockerfile is correct, not that a
 # native module has a prebuilt binary for the NAS — which is why ADR 019 has the
 # NAS build its own image from source.
-# The tor configuration, checked by tor itself.
+# Tor, started the way compose starts it.
 #
-# `HiddenServicePort 80 app:3000` shipped and was a parse error: tor does no DNS
-# for that directive, so the container died at startup and no onion address was
-# ever created. The only symptom anywhere was Settings saying "No onion address
-# yet", which is also what it says when nothing is wrong.
+# The check that stood here ran `tor --verify-config` over the torrc with the
+# address substituted by hand. It passed on the very release whose tor container
+# was restarting for ever, because it proved the *file* was valid and never that
+# the *entrypoint* produced it: the substitution is done by a script baked into
+# the image, and a deploy that reused an older image handed the new file to the
+# old script.
 #
-# `--verify-config` catches exactly that, offline, in about a second. The
-# substitution mirrors what tor/entrypoint.sh does at runtime — this checks the
-# file as tor will actually read it, not as it sits on disk.
-step 'Tor configuration parses'
+# So this runs the real image and the real entrypoint against a container
+# answering to `app`, exactly as compose arranges it, and asks tor whether it
+# started. Roughly twenty seconds, and it is the only thing here that would have
+# caught that.
+step 'Tor starts'
 docker build -q -t delegate-tor:verify ./tor >/dev/null || fail 'tor image build'
-sed 's|__APP_ADDRESS__|127.0.0.1:3000|' tor/torrc \
-  | docker run --rm -i --entrypoint sh delegate-tor:verify \
-      -c 'cat > /tmp/torrc && tor --verify-config -f /tmp/torrc' >/dev/null 2>&1 \
-  || fail 'tor --verify-config'
+
+TOR_NET='delegate-verify-tor-net'
+docker rm -f delegate-verify-tor delegate-verify-app >/dev/null 2>&1 || true
+docker network rm "$TOR_NET" >/dev/null 2>&1 || true
+docker network create "$TOR_NET" >/dev/null || fail 'tor test network'
+
+cleanup_tor() {
+  docker rm -f delegate-verify-tor delegate-verify-app >/dev/null 2>&1 || true
+  docker network rm "$TOR_NET" >/dev/null 2>&1 || true
+}
+
+# Something for the entrypoint to resolve. It never connects to it — the
+# hidden service is not reachable from here — it only has to have an address.
+docker run -d --name delegate-verify-app --network "$TOR_NET" --network-alias app \
+  alpine:3.21 sleep 120 >/dev/null || { cleanup_tor; fail 'tor test stub'; }
+
+docker run -d --name delegate-verify-tor --network "$TOR_NET" \
+  -v "$PWD/tor/torrc:/etc/tor/torrc:ro" delegate-tor:verify >/dev/null \
+  || { cleanup_tor; fail 'tor container'; }
+
+# Tor reports its configuration verdict within a second or two of starting.
+sleep 8
+TOR_LOG=$(docker logs delegate-verify-tor 2>&1 || true)
+cleanup_tor
+
+case "$TOR_LOG" in
+  *'Reading config failed'*|*'__APP_ADDRESS__'*)
+    printf '%s\n' "$TOR_LOG" >&2
+    fail 'tor did not start'
+    ;;
+esac
+
+case "$TOR_LOG" in
+  *'forwarding the hidden service to'*) ;;
+  *)
+    printf '%s\n' "$TOR_LOG" >&2
+    fail 'the tor entrypoint never resolved the app address'
+    ;;
+esac
 
 step 'Container image builds and serves'
 docker build -t delegate:verify . >/dev/null || fail 'image build'
