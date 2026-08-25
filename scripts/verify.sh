@@ -111,6 +111,23 @@ fi
 # and the DS220+ is x86_64. That proves the Dockerfile is correct, not that a
 # native module has a prebuilt binary for the NAS — which is why ADR 019 has the
 # NAS build its own image from source.
+# The tor configuration, checked by tor itself.
+#
+# `HiddenServicePort 80 app:3000` shipped and was a parse error: tor does no DNS
+# for that directive, so the container died at startup and no onion address was
+# ever created. The only symptom anywhere was Settings saying "No onion address
+# yet", which is also what it says when nothing is wrong.
+#
+# `--verify-config` catches exactly that, offline, in about a second. The
+# substitution mirrors what tor/entrypoint.sh does at runtime — this checks the
+# file as tor will actually read it, not as it sits on disk.
+step 'Tor configuration parses'
+docker build -q -t delegate-tor:verify ./tor >/dev/null || fail 'tor image build'
+sed 's|__APP_ADDRESS__|127.0.0.1:3000|' tor/torrc \
+  | docker run --rm -i --entrypoint sh delegate-tor:verify \
+      -c 'cat > /tmp/torrc && tor --verify-config -f /tmp/torrc' >/dev/null 2>&1 \
+  || fail 'tor --verify-config'
+
 step 'Container image builds and serves'
 docker build -t delegate:verify . >/dev/null || fail 'image build'
 

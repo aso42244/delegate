@@ -1,6 +1,6 @@
 import { CYCLES_PER_YEAR, PAY_CADENCES } from '@budget/shared';
 import { readFileSync } from 'node:fs';
-import type { FastifyPluginCallback } from 'fastify';
+import type { FastifyBaseLogger, FastifyPluginCallback } from 'fastify';
 import { z } from 'zod';
 import { prisma } from '../db/client.js';
 import { listArchivedEntities } from '../domain/archive.js';
@@ -37,7 +37,7 @@ const updateSchema = z
    */
   .strict();
 
-function present(settings: BudgetSettings): Record<string, unknown> {
+function present(settings: BudgetSettings, logger: FastifyBaseLogger): Record<string, unknown> {
   return {
     undoWindowHours: settings.undoWindowHours,
     identityToleranceCents: centsOut(settings.identityToleranceCents),
@@ -50,25 +50,37 @@ function present(settings: BudgetSettings): Record<string, unknown> {
     remoteOverTorEnabledAt: dateOut(settings.remoteOverTorEnabledAt),
     // The address itself, when the onion service has been started. Read from
     // the file Tor writes; absent means nobody has started it.
-    onionAddress: readOnionAddress(),
+    onionAddress: readOnionAddress(logger),
   };
 }
 
 /**
  * The onion address, if there is one.
  *
- * Tor writes it to a `hostname` file when it first creates the service. Read on
+ * The tor entrypoint republishes it here once the hidden service exists. Read on
  * every request rather than cached at boot: the service can be started long
  * after the application, and an operator who has just started it should not have
  * to restart Delegate to see the address.
  *
- * A missing file is the ordinary state — it means the Tor service has not been
- * started, which is the default.
+ * `/tor/hostname`, not the key directory. That directory is 0700 and owned by
+ * tor — necessarily, since the private key is in it — and this process is a
+ * different unprivileged user, so reading from it failed with EACCES on every
+ * request. Silently, because the catch below returned null and null is also what
+ * "no service yet" looks like.
+ *
+ * Which is why only a missing file is quiet now. Anything else is a
+ * misconfiguration, and it says so rather than presenting itself as the ordinary
+ * state.
  */
-function readOnionAddress(): string | null {
+function readOnionAddress(logger: FastifyBaseLogger): string | null {
   try {
-    return readFileSync('/tor/delegate/hostname', 'utf8').trim() || null;
-  } catch {
+    return readFileSync('/tor/hostname', 'utf8').trim() || null;
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    // The ordinary state: Tor has not created the service, which is the default.
+    if (code === 'ENOENT') return null;
+
+    logger.error({ err: error, code }, 'could not read the onion address');
     return null;
   }
 }
@@ -78,7 +90,9 @@ export const settingsRoutes: FastifyPluginCallback = (fastify, _options, done) =
     fastify.addHook('preHandler', guard);
   }
 
-  fastify.get('/api/settings', async () => present(await getBudgetSettings(prisma)));
+  fastify.get('/api/settings', async (request) =>
+    present(await getBudgetSettings(prisma), request.log),
+  );
 
   /**
    * Reading is for everyone; changing is not.
@@ -109,7 +123,7 @@ export const settingsRoutes: FastifyPluginCallback = (fastify, _options, done) =
       },
       'budget settings updated',
     );
-    return present(settings);
+    return present(settings, request.log);
   });
 
   /**

@@ -6,7 +6,45 @@ phase (`v0.1.0-phase1`, and so on).
 
 ## [Unreleased]
 
-Nothing yet.
+### Fixed
+
+- **Tor has never started, and now does.** `torrc` carried
+  `HiddenServicePort 80 app:3000`. Tor does no name resolution for that
+  directive, so a compose hostname is a parse error — the container died before
+  starting, restarted for ever, and no hidden service was ever created. The only
+  symptom anywhere was Settings saying "No onion address yet", which is also what
+  it says when nothing is wrong.
+
+  The entrypoint now resolves the app's address before tor starts and writes it
+  into a runtime configuration. Confirmed by running the service locally against
+  a stub: it bootstraps, creates the hidden service, and reports the address.
+
+- **The app could not have read the address even once tor worked.** It mounted
+  the key volume and read `/tor/delegate/hostname` — a directory tor keeps at
+  0700 and owns, necessarily, because the private key is in it. The app runs as a
+  different unprivileged user, so every read failed with `EACCES`, and the catch
+  around it returned `null`, which renders identically to "no service yet".
+
+  The address is republished to a volume of its own, world-readable, and the app
+  no longer mounts the key volume at all — **less** access to the key than
+  before, not more. A v3 onion address is a public key; the thing worth guarding
+  is the secret beside it.
+
+  `readOnionAddress` now stays quiet only for a missing file. Anything else is
+  logged as the misconfiguration it is.
+
+- **The troubleshooting instructions on that page did not work.** They said
+  `sudo docker compose logs tor` with no directory, which answers "no
+  configuration file provided" from anywhere but the deploy folder, and
+  `sudo docker` on DSM answers "command not found" because sudo resolves the
+  binary itself against a path without `/usr/local/bin`. The page now gives the
+  whole command.
+
+### Added
+
+- **`npm run verify` checks the Tor configuration**, with `tor --verify-config`
+  against the real file. Offline, about a second, and it would have caught the
+  above before it ever left the Mac.
 
 ## [0.28.1] — 2026-08-24
 
