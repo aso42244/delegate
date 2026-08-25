@@ -16,8 +16,9 @@ import { PairSuggestions } from '../components/PairSuggestions.jsx';
 import { MatchCheckDialog } from '../components/MatchCheckDialog.jsx';
 import { TransactionRowMenu } from '../components/TransactionRowMenu.jsx';
 import { SplitDialog } from '../components/SplitDialog.jsx';
-import { Alert, Button } from '../components/ui.jsx';
-import { NO_HOVER, useMediaQuery } from '../useMediaQuery.js';
+import { TransactionCard } from '../components/TransactionCard.jsx';
+import { Alert, Button, Modal } from '../components/ui.jsx';
+import { NARROW, useMediaQuery } from '../useMediaQuery.js';
 import { useRowKeyboard } from '../useRowKeyboard.js';
 
 /**
@@ -98,6 +99,8 @@ export function Transactions(): ReactNode {
   const [splitting, setSplitting] = useState<TransactionDto | null>(null);
   // The transaction being matched to an outstanding check, if any.
   const [matching, setMatching] = useState<TransactionDto | null>(null);
+  /** The row whose picker is open in a sheet. Phone only. */
+  const [picking, setPicking] = useState<TransactionDto | null>(null);
 
   const query = { ...filters, search, limit: PAGE_SIZE, offset };
   const list = useQuery({
@@ -105,7 +108,15 @@ export function Transactions(): ReactNode {
     queryFn: () => transactionsApi.list(query),
   });
 
-  const noHover = useMediaQuery(NO_HOVER);
+  /*
+   * Which layout, rather than both with one hidden.
+   *
+   * Rendering the table and the cards together and hiding one in CSS puts two
+   * copies of every transaction in the document — four hundred rows for a page
+   * of two hundred — and both are read by a screen reader, which does not care
+   * what `display` says about the one it has already reached.
+   */
+  const narrow = useMediaQuery(NARROW);
   const rows = list.data?.transactions ?? [];
 
   /**
@@ -214,14 +225,16 @@ export function Transactions(): ReactNode {
         </Button>
       </header>
 
-      {/* Touch and hold is the only route to the row menu on a phone, and a
-          gesture with nothing on screen to suggest it is a gesture nobody finds.
-          One quiet line, and only where it applies. */}
-      {noHover && (
-        <p className="mb-4 text-quiet text-muted">
-          Touch and hold a transaction for more, including splitting it.
-        </p>
-      )}
+      {/*
+        Gone.
+
+        This said "touch and hold a transaction for more", which was true when
+        the ⋯ was hidden behind a hover a phone cannot perform and the gesture
+        was the only way in. The ⋯ is drawn on every row on a touchscreen now,
+        so the line explained a gesture nobody needs — and a hint that is no
+        longer necessary is one more thing between the reader and the queue.
+        Touch and hold still works; it is a shortcut rather than the route.
+      */}
 
       <PairSuggestions />
 
@@ -277,6 +290,32 @@ export function Transactions(): ReactNode {
 
       {list.isLoading ? (
         <p className="text-quiet text-muted">Loading transactions…</p>
+      ) : /*
+          Two layouts, not one taught to reflow. Six columns do not become two
+          lines by wrapping: the decision is which facts share a line and which
+          are dropped, and that reads better as its own component than as eight
+          breakpoints threaded through a `<tr>`.
+        */
+      narrow ? (
+        <ul className="border-t-2 border-ink">
+          {(list.data?.transactions ?? []).map((transaction) => (
+            <TransactionCard
+              key={transaction.id}
+              transaction={transaction}
+              chips={chipsFor(transaction)}
+              categorizedAs={transaction.allocations[0]?.delegation.name ?? null}
+              onCategorize={() => setPicking(transaction)}
+              menu={
+                <TransactionRowMenu
+                  transaction={transaction}
+                  onSplit={() => setSplitting(transaction)}
+                  onMatchCheck={() => setMatching(transaction)}
+                  onProblem={setProblem}
+                />
+              }
+            />
+          ))}
+        </ul>
       ) : (
         <table className="w-full border-t-2 border-ink md:table-fixed">
           <thead>
@@ -458,6 +497,53 @@ export function Transactions(): ReactNode {
       {adding && (
         <NewTransactionDialog delegations={delegations} onClose={() => setAdding(false)} />
       )}
+      {/*
+        The picker, given a sheet.
+        
+        The same control the desktop row carries, in the frame a thumb wants:
+        the field at the top with the keyboard already up, and the matches
+        listed beneath it at a size that can be hit. Choosing closes it, because
+        on a phone one decision at a time is the whole interaction.
+      */}
+      {picking && (
+        <Modal
+          label={`Categorize ${picking.description}`}
+          title="Categorize"
+          description={`${picking.description} · ${formatCents(BigInt(picking.amountCents), { explicitPlus: true })}`}
+          onClose={() => setPicking(null)}
+        >
+          <DelegationPicker
+            variant="sheet"
+            autoFocus
+            options={delegations}
+            {...(picking.allocations[0]?.delegation.name
+              ? { currentName: picking.allocations[0].delegation.name }
+              : {})}
+            label={`Categorize ${picking.description}`}
+            onChoose={(delegationId) => {
+              categorize.mutate({ id: picking.id, delegationId });
+              setPicking(null);
+            }}
+          />
+
+          <div className="mt-4 flex gap-2">
+            <Button className="flex-1" onClick={() => setPicking(null)}>
+              Cancel
+            </Button>
+            <Button
+              className="flex-1"
+              onClick={() => {
+                const row = picking;
+                setPicking(null);
+                setSplitting(row);
+              }}
+            >
+              Split…
+            </Button>
+          </div>
+        </Modal>
+      )}
+
       {splitting && (
         <SplitDialog
           transaction={splitting}

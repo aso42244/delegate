@@ -98,12 +98,17 @@ export function RowMenuShell({
   /**
    * The row this menu belongs to, found rather than passed.
    *
-   * Every caller renders this inside a cell of the row it acts on, so the
-   * relationship is already true — threading a ref through each one would only
-   * be a second place for it to be stated, and to be stated wrongly.
+   * Every caller renders this inside the row it acts on, so the relationship is
+   * already true — threading a ref through each one would only be a second place
+   * for it to be stated, and to be stated wrongly.
+   *
+   * `tr, li` because a row is not always a table row. On a phone the register is
+   * a list of cards rather than a six-column table, and looking only for `tr`
+   * there found nothing — which silently cost the long-press on exactly the
+   * device the long-press exists for.
    */
   useEffect(() => {
-    rowRef.current = containerRef.current?.closest('tr') ?? null;
+    rowRef.current = containerRef.current?.closest('tr, li') ?? null;
   });
 
   useLongPress(

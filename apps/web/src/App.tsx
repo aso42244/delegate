@@ -1,9 +1,11 @@
 import { useQuery } from '@tanstack/react-query';
-import type { ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import { Navigate, Outlet, Route, Routes, useLocation } from 'react-router-dom';
 import { api } from './api/client.js';
 import { useSession } from './auth/SessionProvider.jsx';
 import { NotificationBanners } from './components/NotificationBanners.jsx';
+import { TabBar } from './components/TabBar.jsx';
+import { NARROW, useMediaQuery } from './useMediaQuery.js';
 import { Sidebar } from './components/Sidebar.jsx';
 import { ChangePassword } from './pages/ChangePassword.jsx';
 import { SetUpTwoFactor } from './pages/SetUpTwoFactor.jsx';
@@ -43,12 +45,45 @@ function useAppName(): string {
   return query.data?.appName ?? 'Delegate';
 }
 
+/**
+ * What `/settings` shows, which depends on how wide the screen is.
+ *
+ * On a phone it is an index list — rendered by the layout in place of the
+ * outlet, so this renders nothing. On a wider screen there is a tab row and no
+ * section chosen, so Sync lands: it is the one that has to work before anything
+ * else on that page means anything.
+ *
+ * A plain redirect would send every phone straight past the index, and the back
+ * link from a section would then reach a page that immediately bounced forward
+ * again.
+ */
+function SettingsLanding(): ReactNode {
+  const narrow = useMediaQuery(NARROW);
+  return narrow ? null : <Navigate to="sync" replace />;
+}
+
 /** Everything behind a session, wrapped in the shell. */
 function AppShell({ appName }: { appName: string }): ReactNode {
+  /*
+   * The scrolling element, handed to the tab bar so it can watch it.
+   *
+   * `<main>` scrolls here, not the window — the shell is a full-height flex row
+   * — so a listener on `window` would never fire. State rather than a ref
+   * because the bar has to re-subscribe when the node first exists.
+   */
+  const [scroller, setScroller] = useState<HTMLElement | null>(null);
+
   return (
     <div className="flex h-full">
+      {/* Below `sm` the sidebar is replaced by the tab bar, not squeezed. */}
       <Sidebar appName={appName} />
-      <main className="flex-1 overflow-auto px-6 py-8 md:px-12">
+
+      <main
+        ref={setScroller}
+        // The bottom padding is the tab bar's height plus its safe-area inset,
+        // so the last row of a table is never underneath it.
+        className="flex-1 overflow-auto px-4 py-6 pb-[calc(3.5rem+env(safe-area-inset-bottom,0px)+1rem)] sm:px-6 sm:py-8 sm:pb-8 md:px-12"
+      >
         <div className="mx-auto w-full max-w-[1200px]">
           {/* Above the page rather than on one of them: a failing sync is not a
               fact about the Transactions page. */}
@@ -56,6 +91,8 @@ function AppShell({ appName }: { appName: string }): ReactNode {
           <Outlet />
         </div>
       </main>
+
+      <TabBar scroller={scroller} />
     </div>
   );
 }
@@ -105,9 +142,7 @@ export function App(): ReactNode {
           <Route path="utilities" element={<Utilities />} />
           <Route path="insights" element={<Insights />} />
           <Route path="settings" element={<SettingsLayout />}>
-            {/* Sync is the landing section: it is the one that has to work
-                before anything else on this page means anything. */}
-            <Route index element={<Navigate to="sync" replace />} />
+            <Route index element={<SettingsLanding />} />
             <Route path="sync" element={<SyncSection />} />
             <Route path="accounts" element={<AccountsSection />} />
             <Route path="delegations" element={<DelegationsSection />} />

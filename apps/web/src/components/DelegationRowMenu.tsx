@@ -251,6 +251,8 @@ export function DelegationRowMenu({
   groupings,
   onTransferFrom,
   onNudge,
+  onAbsorb,
+  absorbLabel,
 }: {
   readonly row: BudgetRowDto;
   readonly groupings: readonly GroupingOption[];
@@ -264,6 +266,19 @@ export function DelegationRowMenu({
    * alternative — it is the one that always works, including under a thumb.
    */
   readonly onNudge: (row: BudgetRowDto, direction: -1 | 1) => void;
+  /**
+   * Closes the budget's reading against this line, when it is not already zero.
+   *
+   * The same action the button hung beside the Remaining figure offers. That
+   * button sits in the gutter left of a 160px column, over space the name is
+   * not using — which is true on a desktop and false on a phone, where it lands
+   * on the name. So on a touchscreen it is hidden and this is the route, and on
+   * a pointer both exist: §9.5 asks that anything reachable by gesture is
+   * reachable from the menu.
+   */
+  readonly onAbsorb?: (row: BudgetRowDto) => void;
+  /** What that action is called right now — the reading decides the direction. */
+  readonly absorbLabel?: string;
 }): ReactNode {
   const queryClient = useQueryClient();
   const [dialog, setDialog] = useState<Dialog>('none');
@@ -364,6 +379,20 @@ export function DelegationRowMenu({
           </div>
         ) : (
           <>
+            {onAbsorb && absorbLabel && (
+              <button
+                type="button"
+                role="menuitem"
+                className={ITEM_CLASS}
+                onClick={() => {
+                  onAbsorb(row);
+                  controls.close();
+                }}
+              >
+                {absorbLabel}
+              </button>
+            )}
+
             <button
               type="button"
               role="menuitem"

@@ -166,15 +166,36 @@ export function Modal({
   }, [onClose]);
 
   return (
-    <div className="fixed inset-0 z-10 flex items-center justify-center bg-black/20 p-4">
+    /*
+     * A centred card on a pointer, a bottom sheet on a phone.
+     *
+     * Not decoration: a centred card puts its buttons wherever its own height
+     * lands them, which on a tall form is the middle of the screen and out of
+     * thumb reach. A sheet is anchored to the bottom edge, so Save is always in
+     * the same place and always reachable. It also leaves the page visible
+     * above it, which says what is being acted on.
+     *
+     * `items-end` and the full width come from the breakpoint; everything else
+     * is shared, so there is one dialog rather than two.
+     */
+    <div
+      // Above the tab bar, which is `z-20` and fixed to the same edge a sheet
+      // rises from. Below it, a sheet's own buttons sit behind navigation.
+      className="fixed inset-0 z-30 flex items-end justify-center bg-black/20 sm:items-center sm:p-4"
+    >
       <div
         role="dialog"
         aria-modal="true"
         aria-label={label}
-        className={`max-h-full w-full overflow-auto rounded-lg border border-line bg-canvas p-4 ${
-          width === 'lg' ? 'max-w-2xl' : 'max-w-md'
+        className={`max-h-[88%] w-full overflow-auto rounded-t-2xl border border-line bg-canvas p-4 pb-[calc(1.5rem+env(safe-area-inset-bottom,0px))] sm:max-h-full sm:rounded-lg sm:pb-4 ${
+          width === 'lg' ? 'sm:max-w-2xl' : 'sm:max-w-md'
         }`}
       >
+        {/* The grabber says "this came from the bottom and goes back there".
+            Decorative, so it is hidden from the accessibility tree and gone
+            entirely where the dialog is a centred card. */}
+        <div aria-hidden className="mx-auto mb-3 h-1 w-9 rounded-full bg-line sm:hidden" />
+
         <h2 className="mb-1 text-section font-bold text-ink">{title}</h2>
         {description ? <p className="mb-4 text-quiet text-muted">{description}</p> : null}
         {children}

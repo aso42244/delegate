@@ -297,10 +297,49 @@ the repository stays free of it. Confirmed by the owner.
 
 ## On a phone
 
+**Navigation is a bar along the bottom**, not a sidebar. The five destinations
+and the five icons are the sidebar's own; the difference is 56px of height and
+an inset rather than 232px of width, which on a 390px screen is 59% of it. It
+hides as the page scrolls down and returns as it scrolls up — the gesture for
+seeing more of a list gives the list more room — and never hides in the first
+screenful, where there is nothing to reclaim and hiding reads as a fault.
+
+**Dialogs arrive from the bottom.** A centred card puts its buttons wherever its
+own height lands them, which on a tall form is out of thumb reach; a sheet is
+anchored to the edge and leaves the page visible above it.
+
+**Anything hidden until hover is drawn**, because a phone cannot hover. That
+applies to every row menu and to the reorder and archive controls in Settings.
+Touch and hold still opens a row menu — it is a shortcut now rather than the only
+route.
+
+**The absorb button is for a pointer only.** It hangs out of flow in the gutter
+left of the Remaining column, over space the name is not using at 1200px and on
+top of the name at 390px. The same action is in the row menu, which has room to
+say what it does.
+
+**Targets are 44px where there is no hover.** The control keeps its size and the
+target grows around it: a 20px switch that is 20px to hit is the problem, not a
+20px switch.
+
 Below 640px there is not room for a name and two money columns, so the
 Delegations table shows **one amount at a time** — Remaining first, because that
 is the number the budget is read for. Swiping horizontally across the table
 switches to To delegate and back.
+
+**The register is two lines rather than six columns.** What the charge is and
+what it cost share the first; the date, the account and the decision share the
+second. Categorizing is a **chip**, not a field — a full-width box on every row
+reads as sixty things waiting to be typed into, and on a phone nobody types into
+it. Tapping opens the picker as a sheet, with the field at the top and the
+matches beneath it at a size a thumb can hit.
+
+**Settings is an index list.** About four of thirteen tabs fit at this width, and
+scrolling the other nine sideways hides them behind a gesture with nothing to
+suggest it. One row reports its state — Sync, where "is it working" is the whole
+question — and it reports a fact rather than a verdict, because whether the
+backup counts as failing is decided in one place and repeating that judgement is
+how two places come to disagree.
 
 Swipe is never the only route. A two-button switch sits above the table doing the
 same job, which is what a screen reader, a keyboard, and anyone who does not

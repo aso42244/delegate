@@ -158,6 +158,65 @@ body {
   opacity: 1;
 }
 
+/**
+ * On a touchscreen, always.
+ *
+ * The rule above reveals these on hover, and a phone cannot hover — so every one
+ * of them was simply an invisible control there. Touch-and-hold was wired on the
+ * Budget and Transactions rows and nowhere else, which left a grouping's Archive
+ * and a rule's reorder arrows unreachable by any means at all.
+ *
+ * `(hover: none)` rather than a width: a touchscreen laptop is wide and still
+ * cannot hover, and a narrow window on a desktop can.
+ */
+@media (hover: none) {
+  .row-menu-trigger {
+    opacity: 1;
+  }
+}
+
+/**
+ * A comfortable target for a finger.
+ *
+ * 44px is the figure both platforms publish, and the buttons here are 36px
+ * because that is right for a pointer. Applied only where there is no hover, so
+ * the dense tables a mouse works well in are not loosened for everyone.
+ *
+ * The control keeps its size; the *target* grows around it. A 20px-tall switch
+ * that is 20px to hit is the problem, not a 20px-tall switch.
+ */
+/**
+ * Hung out of flow beside a figure, and therefore only for a pointer.
+ *
+ * The absorb button sits in the gutter left of the Remaining column, over space
+ * the name column is not using — which is true at 1200px and false at 390px,
+ * where it lands on top of the delegation's name. Revealing it on touch (as the
+ * rule above now does for row menus) put it permanently over the thing it
+ * covers. On a touchscreen the same action lives in the row menu instead, which
+ * is reachable and has room for the words.
+ */
+@media (hover: none) {
+  .pointer-only {
+    display: none;
+  }
+}
+
+@media (hover: none) {
+  .touch-target {
+    position: relative;
+  }
+
+  .touch-target::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: max(100%, 44px);
+    height: max(100%, 44px);
+    transform: translate(-50%, -50%);
+  }
+}
+
 /* Visible keyboard focus everywhere, in the accent colour. */
 :focus-visible {
   outline: 2px solid var(--color-accent);

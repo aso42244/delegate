@@ -285,7 +285,7 @@ export function BudgetSection({
               <button
                 type="button"
                 onClick={() => onAbsorb(row)}
-                className="row-menu-trigger absolute top-1/2 right-full mr-2 -translate-y-1/2 rounded border border-line bg-canvas px-1.5 py-0.5 text-label font-semibold whitespace-nowrap text-muted hover:bg-surface"
+                className="row-menu-trigger pointer-only absolute top-1/2 right-full mr-2 -translate-y-1/2 rounded border border-line bg-canvas px-1.5 py-0.5 text-label font-semibold whitespace-nowrap text-muted hover:bg-surface"
               >
                 {absorbLabel}
               </button>

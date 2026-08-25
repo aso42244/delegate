@@ -6,7 +6,52 @@ phase (`v0.1.0-phase1`, and so on).
 
 ## [Unreleased]
 
-Nothing yet.
+### Added
+
+- **Delegate works on a phone.** It has never had a layout for one: the sidebar
+  was a fixed 232px with no breakpoint — 59% of a 390px screen before a number
+  was drawn — and there were seven breakpoint utilities in the whole application.
+
+  - **A bottom tab bar** below `sm`, with the same five destinations and the same
+    icons the sidebar carries. It **hides as you scroll down and returns as you
+    scroll up**: the gesture for seeing more of a list gives the list more room,
+    and the one for going back to the top brings navigation with it. It never
+    hides in the first screenful, where there is nothing to reclaim.
+  - **The register is a two-line card** on a phone rather than six columns.
+    Description and amount on the first line, date and account on the second —
+    and **categorizing is a chip, not a field**, opening the picker in a bottom
+    sheet with the matches at a size a thumb can hit. A full-width text box on
+    every row read as sixty things waiting to be typed into, and nobody types
+    into it on a phone.
+  - **Settings is an index list**, because about four of thirteen tabs fit.
+    Tapping a section replaces it, and a back link returns. Tabs are unchanged
+    above `sm`, where every destination fits at once.
+  - **Dialogs are bottom sheets** below `sm`, anchored to the edge a thumb
+    reaches rather than centred wherever their own height lands them.
+  - **The Budget header keeps Delegate** and folds the other four actions into a
+    sheet. Five buttons cannot sit in a row at 390px, and Delegate is the one
+    with a moment attached.
+
+- **Sync now on Settings → Sync, and Sign out on Settings → Users.** Both existed
+  only in the sidebar, so the page named after the connection could report on it
+  and not run it — a gap regardless of screen width.
+
+### Fixed
+
+- **Controls hidden behind hover are reachable on a touchscreen.** Every row
+  menu, the absorb button, a grouping's Archive and a rule's reorder arrows were
+  `opacity: 0` until hovered, and a phone cannot hover. Touch-and-hold was wired
+  on two pages and nowhere else, which left several of them unreachable by any
+  means at all. They are drawn where `(hover: none)` matches.
+
+- **The absorb button no longer covers the name it sits beside.** It is hung out
+  of flow in the gutter left of the Remaining column — over space the name is not
+  using at 1200px, and directly on top of it at 390px. It is a pointer control
+  now, and the same action is offered in the row menu, which has room for the
+  words.
+
+- **Touch targets are 44px** where there is no hover, which is the figure both
+  platforms publish. The controls keep their size; the target grows around them.
 
 ## [0.28.2] — 2026-08-24
 

@@ -18,7 +18,7 @@ import { ConfirmCheckMatchDialog } from '../components/ConfirmCheckMatchDialog.j
 import { DelegationRowMenu } from '../components/DelegationRowMenu.jsx';
 import { NewCheckDialog } from '../components/NewCheckDialog.jsx';
 import { NewTransactionDialog } from '../components/NewTransactionDialog.jsx';
-import { Alert, Button } from '../components/ui.jsx';
+import { Alert, Button, Modal } from '../components/ui.jsx';
 
 /**
  * The Budget page — the page that replaces the spreadsheet.
@@ -241,9 +241,9 @@ function DelegateDialog({ onClose }: { onClose: () => void }): ReactNode {
 
 export function MainBudget(): ReactNode {
   const queryClient = useQueryClient();
-  const [dialog, setDialog] = useState<'none' | 'delegate' | 'transfer' | 'check' | 'transaction'>(
-    'none',
-  );
+  const [dialog, setDialog] = useState<
+    'none' | 'delegate' | 'transfer' | 'check' | 'transaction' | 'more'
+  >('none');
   const [problem, setProblem] = useState<string | null>(null);
   // Set when Transfer was opened from a line whose archive was blocked.
   const [transferFrom, setTransferFrom] = useState<string | null>(null);
@@ -489,7 +489,10 @@ export function MainBudget(): ReactNode {
 
   return (
     <div>
-      <header className="mb-6 flex items-baseline justify-between gap-4">
+      {/* Stacked on a phone, one row from `sm`. Side by side at 390px the
+          title collapses to a single letter and the subtitle wraps a word to a
+          line, because `min-w-0` lets it give up everything to the controls. */}
+      <header className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-baseline sm:justify-between sm:gap-4">
         {/* `min-w-0` so the subtitle wraps instead of pushing the controls
             around: with the undo offer in it, that line is long enough to shove
             a button onto a second row otherwise. */}
@@ -517,45 +520,68 @@ export function MainBudget(): ReactNode {
         </div>
 
         {/* `shrink-0`: the controls keep their row, and the prose gives way. */}
-        <div className="flex shrink-0 flex-wrap justify-end gap-2">
-          {newGrouping ? (
-            <input
-              autoFocus
-              placeholder="Grouping name, then Enter"
-              aria-label="Add a grouping"
-              onKeyDown={(event) => {
-                if (event.key === 'Escape') setNewGrouping(false);
-                if (event.key !== 'Enter') return;
-                const name = event.currentTarget.value.trim();
-                if (name !== '') createGrouping.mutate(name);
-              }}
-              className="rounded-lg border border-line bg-canvas px-2 py-1 text-quiet"
-            />
-          ) : (
-            <Button onClick={() => setNewGrouping(true)}>Add grouping</Button>
-          )}
-          {/* Same wording as the button on the Transactions page: two controls
-              that open the same dialog should read the same. */}
-          <Button onClick={() => setDialog('transaction')}>Add transaction</Button>
-          <Button onClick={() => setDialog('check')}>New check</Button>
-          {/* Transfer sits to the left of Delegate, per the design. */}
-          <Button onClick={() => setDialog('transfer')}>Transfer</Button>
+        <div className="flex shrink-0 flex-wrap gap-2 sm:justify-end">
+          {/*
+            Four of the five fold away on a phone.
+            
+            Five buttons cannot sit in a row at 390px, and choosing which stays
+            is not arbitrary: Delegate is the one with a moment attached. The
+            rest are things done when you are already sitting down.
+          */}
+          <div className="hidden flex-wrap justify-end gap-2 sm:flex">
+            {newGrouping ? (
+              <input
+                autoFocus
+                placeholder="Grouping name, then Enter"
+                aria-label="Add a grouping"
+                onKeyDown={(event) => {
+                  if (event.key === 'Escape') setNewGrouping(false);
+                  if (event.key !== 'Enter') return;
+                  const name = event.currentTarget.value.trim();
+                  if (name !== '') createGrouping.mutate(name);
+                }}
+                className="rounded-lg border border-line bg-canvas px-2 py-1 text-quiet"
+              />
+            ) : (
+              <Button onClick={() => setNewGrouping(true)}>Add grouping</Button>
+            )}
+            {/* Same wording as the button on the Transactions page: two controls
+                that open the same dialog should read the same. */}
+            <Button onClick={() => setDialog('transaction')}>Add transaction</Button>
+            <Button onClick={() => setDialog('check')}>New check</Button>
+            {/* Transfer sits to the left of Delegate, per the design. */}
+            <Button onClick={() => setDialog('transfer')}>Transfer</Button>
+          </div>
+
           {/* One slot, two jobs. While the run can still be undone there is
               nothing sensible to delegate — the money has just gone out — so
               offering both would be offering the wrong one first. */}
           {undoRunId !== null ? (
             <Button
               variant="danger"
+              className="flex-1 sm:flex-none"
               onClick={() => undoDelegate.mutate(undoRunId)}
               disabled={undoDelegate.isPending}
             >
               {undoDelegate.isPending ? 'Undoing…' : 'Undo Delegation'}
             </Button>
           ) : (
-            <Button variant="primary" onClick={() => setDialog('delegate')}>
+            <Button
+              variant="primary"
+              className="flex-1 sm:flex-none"
+              onClick={() => setDialog('delegate')}
+            >
               Delegate
             </Button>
           )}
+
+          <Button
+            className="w-11 shrink-0 px-0 sm:hidden"
+            aria-label="More budget actions"
+            onClick={() => setDialog('more')}
+          >
+            ⋯
+          </Button>
         </div>
       </header>
 
@@ -630,6 +656,12 @@ export function MainBudget(): ReactNode {
               row={row}
               groupings={groupingOptions}
               onNudge={nudge}
+              {...(difference === 0n
+                ? {}
+                : {
+                    onAbsorb: setAbsorbing,
+                    absorbLabel: difference > 0n ? 'Move surplus here' : 'Fix deficit from here',
+                  })}
               onTransferFrom={(delegationId) => {
                 setTransferFrom(delegationId);
                 setDialog('transfer');
@@ -650,6 +682,39 @@ export function MainBudget(): ReactNode {
 
       {confirmingCheck && (
         <ConfirmCheckMatchDialog match={confirmingCheck} onClose={() => setConfirmingCheck(null)} />
+      )}
+
+      {/* The four the header folds away on a phone. A sheet rather than a menu:
+          each of these opens a dialog of its own, so they are choices about
+          what to do next rather than settings on something. */}
+      {dialog === 'more' && (
+        <Modal label="More budget actions" title="Budget" onClose={() => setDialog('none')}>
+          <div className="flex flex-col gap-2">
+            <Button
+              className="w-full"
+              onClick={() => {
+                setDialog('transaction');
+              }}
+            >
+              Add transaction
+            </Button>
+            <Button className="w-full" onClick={() => setDialog('check')}>
+              New check
+            </Button>
+            <Button className="w-full" onClick={() => setDialog('transfer')}>
+              Transfer
+            </Button>
+            <Button
+              className="w-full"
+              onClick={() => {
+                setDialog('none');
+                setNewGrouping(true);
+              }}
+            >
+              Add grouping
+            </Button>
+          </div>
+        </Modal>
       )}
 
       {dialog === 'transaction' && (
