@@ -6,6 +6,10 @@ phase (`v0.1.0-phase1`, and so on).
 
 ## [Unreleased]
 
+Nothing yet.
+
+## [0.28.2] — 2026-08-24
+
 ### Fixed
 
 - **Tor has never started, and now does.** `torrc` carried
