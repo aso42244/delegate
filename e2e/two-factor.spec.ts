@@ -15,6 +15,24 @@ import { expect, OWNER, test } from './fixtures.js';
  * at all.
  */
 
+/**
+ * The setup key, from behind "Can't scan this?".
+ *
+ * The QR code is the offered path and the key is folded away behind a button,
+ * so reaching it is a click. It is displayed in groups of four for reading and
+ * typing; the spaces are for the eye and come straight back out here, which is
+ * the same thing the Copy button does.
+ */
+async function revealSecret(page: Page): Promise<string> {
+  await expect(page.getByRole('img', { name: /QR code/ })).toBeVisible();
+  await page.getByRole('button', { name: /Can.t scan this/ }).click();
+
+  const shown = (await page.locator('p.font-mono').first().innerText()).trim();
+  const secret = shown.replace(/\s+/g, '');
+  expect(secret).toMatch(/^[A-Z2-7]+$/);
+  return secret;
+}
+
 /** Removes the factor the fixture enrolled, leaving the real screen to re-do it. */
 async function turnItOff(page: Page): Promise<void> {
   await page.goto('/settings/users');
@@ -44,10 +62,7 @@ test('enrols, then requires a code on the next sign-in', async ({ signedIn: page
   await page.getByLabel('Current password').fill(OWNER.password);
   await page.getByRole('button', { name: 'Set up two-factor' }).click();
 
-  // The secret is offered as text beside the QR code, for anyone typing it in.
-  await expect(page.getByRole('img', { name: /QR code/ })).toBeVisible();
-  const secret = (await page.locator('p.font-mono').first().innerText()).trim();
-  expect(secret).toMatch(/^[A-Z2-7]+$/);
+  const secret = await revealSecret(page);
 
   await page.getByLabel('Code from the app').fill(await generateOtp({ secret }));
   await page.getByRole('button', { name: 'Confirm' }).click();
@@ -84,7 +99,7 @@ test('a recovery code gets in when the phone is gone, and is then spent', async 
   await page.getByLabel('Current password').fill(OWNER.password);
   await page.getByRole('button', { name: 'Set up two-factor' }).click();
 
-  const secret = (await page.locator('p.font-mono').first().innerText()).trim();
+  const secret = await revealSecret(page);
   await page.getByLabel('Code from the app').fill(await generateOtp({ secret }));
   await page.getByRole('button', { name: 'Confirm' }).click();
 
@@ -115,7 +130,7 @@ test('refuses a wrong code without giving up the session', async ({ signedIn: pa
   await page.getByLabel('Current password').fill(OWNER.password);
   await page.getByRole('button', { name: 'Set up two-factor' }).click();
 
-  const secret = (await page.locator('p.font-mono').first().innerText()).trim();
+  const secret = await revealSecret(page);
   await page.getByLabel('Code from the app').fill(await generateOtp({ secret }));
   await page.getByRole('button', { name: 'Confirm' }).click();
   await expect(page.getByText('Two-factor is on.', { exact: false })).toBeVisible();
@@ -132,4 +147,80 @@ test('refuses a wrong code without giving up the session', async ({ signedIn: pa
 
   await expect(page.getByText('That code is not correct.')).toBeVisible();
   expect(page.url()).toContain('/login');
+});
+
+/**
+ * Enrolling without a second device.
+ *
+ * A QR code is useless in exactly the case a household hits most: setting the
+ * second factor up in a password manager on the machine already showing the
+ * screen, or on the phone that is holding it. There is no second camera to point
+ * at anything.
+ */
+test('the setup key is folded away until asked for, then offered to be copied', async ({
+  signedIn: page,
+}) => {
+  await turnItOff(page);
+  await page.getByLabel('Current password').fill(OWNER.password);
+  await page.getByRole('button', { name: 'Set up two-factor' }).click();
+
+  // The QR code is the offered path and stays first.
+  await expect(page.getByRole('img', { name: /QR code/ })).toBeVisible();
+  await expect(page.locator('p.font-mono')).toHaveCount(0);
+
+  await page.getByRole('button', { name: /Can.t scan this/ }).click();
+
+  const shown = (await page.locator('p.font-mono').first().innerText()).trim();
+  // Grouped in fours for reading and typing.
+  expect(shown.replace(/\s+/g, ' ')).toMatch(/^[A-Z2-7]{4}( [A-Z2-7]{1,4})+$/);
+
+  await page.context().grantPermissions(['clipboard-read', 'clipboard-write']);
+  await page.getByRole('button', { name: 'Copy the setup key' }).click();
+  await expect(page.getByRole('status')).toContainText('Copied.');
+
+  // What lands on the clipboard is the key without the spaces. A password
+  // manager given "ABCD EFGH" may keep the space, and a second factor producing
+  // codes that match nothing is found out at the worst possible moment.
+  const clipboard = await page.evaluate(() => navigator.clipboard.readText());
+  expect(clipboard).toBe(shown.replace(/\s+/g, ''));
+  expect(clipboard).toMatch(/^[A-Z2-7]+$/);
+
+  // And it is the real secret, not a rendering of one.
+  await page.getByLabel('Code from the app').fill(await generateOtp({ secret: clipboard }));
+  await page.getByRole('button', { name: 'Confirm' }).click();
+  await expect(page.getByText('Two-factor is on.', { exact: false })).toBeVisible();
+});
+
+/**
+ * The case the fallback exists for.
+ *
+ * `navigator.clipboard` is only present in a secure context, and this
+ * application serves plain http at the origin by decision (ADR 017) — so on the
+ * LAN address, which is the one used most, it is absent. A copy button written
+ * against it alone would do nothing on the very device it was added for, and do
+ * it silently.
+ */
+test('the copy button still says something useful where there is no clipboard API', async ({
+  signedIn: page,
+}) => {
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, 'clipboard', { value: undefined, configurable: true });
+  });
+
+  await turnItOff(page);
+  await page.getByLabel('Current password').fill(OWNER.password);
+  await page.getByRole('button', { name: 'Set up two-factor' }).click();
+  await page.getByRole('button', { name: /Can.t scan this/ }).click();
+
+  await expect(page.evaluate(() => navigator.clipboard)).resolves.toBeUndefined();
+
+  await page.getByRole('button', { name: 'Copy the setup key' }).click();
+
+  // Either it copied by selection or it asked the reader to press the key. What
+  // it must never do is nothing at all, silently.
+  await expect(page.getByRole('status')).toContainText(/Copied|press .* to copy it/);
+
+  // Selected either way, so the keystroke it names actually works.
+  const selected = await page.evaluate(() => window.getSelection()?.toString() ?? '');
+  expect(selected.replace(/\s+/g, '')).toMatch(/^[A-Z2-7]+$/);
 });

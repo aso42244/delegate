@@ -1,8 +1,10 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import QRCode from 'qrcode';
-import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { ApiError, authApi, type TotpEnrolmentDto } from '../../api/client.js';
 import { Alert, Button, TextField } from '../../components/ui.jsx';
+import { CopyButton } from '../../components/CopyButton.jsx';
+import { groupSecret } from '../../components/clipboard.js';
 import { SettingsCard } from './SettingsCard.jsx';
 
 /**
@@ -211,10 +213,7 @@ function Enrol({
         />
       )}
 
-      <div>
-        <p className="text-label font-semibold text-muted">Or type this key in by hand</p>
-        <p className="mt-1 font-mono text-quiet break-all text-ink">{offer.secret}</p>
-      </div>
+      <SetupKey secret={offer.secret} />
 
       <TextField
         label="Code from the app"
@@ -234,6 +233,67 @@ function Enrol({
         </Button>
       </div>
     </form>
+  );
+}
+
+/**
+ * The key behind "I can't scan this".
+ *
+ * A QR code is the fast path and stays the first thing offered. It is also
+ * useless in the case this exists for: enrolling on the phone that is holding
+ * the screen, or setting the second factor up in a password manager on the same
+ * machine, where there is no second camera to point at anything.
+ *
+ * Folded away rather than shown outright, which is the change. The key used to
+ * sit under the QR code permanently, as unbroken text with nothing to copy it —
+ * so the common case carried clutter and the uncommon case still meant
+ * transcribing thirty-two characters by hand or dragging a selection across
+ * them on a phone.
+ *
+ * Nothing here is newly exposed: the QR code above already encodes this exact
+ * secret, and anyone who can read the pixels can read the letters.
+ */
+function SetupKey({ secret }: { readonly secret: string }): ReactNode {
+  const [shown, setShown] = useState(false);
+  const keyRef = useRef<HTMLParagraphElement | null>(null);
+
+  if (!shown) {
+    return (
+      <div>
+        {/* A button, not a hover reveal. Half the reason to want this is being
+            on a touchscreen, where there is no hover — see the phone notes in
+            docs/design.md. */}
+        <Button type="button" variant="ghost" onClick={() => setShown(true)} aria-expanded={false}>
+          Can&rsquo;t scan this?
+        </Button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-col gap-2 rounded border border-line bg-surface-2 p-3">
+      <p className="text-label font-semibold text-muted">
+        Enter this key in your authenticator or password manager
+      </p>
+
+      {/* Spaced in fours to be read and typed. `CopyButton` is handed the
+          unspaced secret: a password manager given "ABCD EFGH" may keep the
+          space, and a second factor producing codes that match nothing is
+          discovered at the worst possible moment. */}
+      {/* Wraps between groups, never inside one. `break-all` would split "XRXM"
+          across two lines as "X" and "RXM", which is exactly the wrong place for
+          a string somebody is reading a character at a time — and on a phone,
+          where this affordance is needed most, it wrapped every time. */}
+      <p ref={keyRef} className="font-mono text-quiet tracking-[0.08em] text-ink">
+        {groupSecret(secret)}
+      </p>
+
+      <CopyButton value={secret} displayRef={keyRef} describes="Copy the setup key" />
+
+      <p className="text-quiet text-muted">
+        The key and the QR code are the same thing — use whichever your app takes.
+      </p>
+    </div>
   );
 }
 

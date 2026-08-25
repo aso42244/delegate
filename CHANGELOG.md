@@ -6,7 +6,35 @@ phase (`v0.1.0-phase1`, and so on).
 
 ## [Unreleased]
 
-Nothing yet.
+### Added
+
+- **Two-factor enrolment offers the setup key, behind "Can't scan this?"** The QR
+  code is still the first thing offered and is unchanged. What it could never
+  serve is the case a household hits most: enrolling in a password manager on the
+  machine already showing the screen, or on the phone that is holding it. There is
+  no second camera to point at anything.
+
+  The key was previously printed under the QR code permanently, as thirty-two
+  unbroken characters with nothing to copy it — so the common case carried clutter
+  and the uncommon case still meant transcribing it by hand or dragging a
+  selection across it on a phone. It is now folded away behind a button, shown in
+  groups of four, and has a Copy button.
+
+  **What is copied is the key without the spaces.** The grouping is for the eye;
+  a password manager handed `ABCD EFGH` may keep the space, and a second factor
+  producing codes that match nothing is discovered at the worst possible moment.
+
+  Nothing is newly exposed. The QR code encodes this exact secret, and anyone who
+  can read the pixels can read the letters.
+
+  **The Copy button works on a plain-http origin**, which is the interesting part.
+  `navigator.clipboard` exists only in a secure context, and this application
+  serves plain http at the origin by decision ([ADR 017](docs/decisions/017-plain-http-is-the-default-and-tls-is-optional.md))
+  — encrypted from away by the tunnel or by Tor, plain on the LAN. A copy button
+  written against that API alone would do nothing on the LAN address, which is the
+  one used most, and would do it silently. It falls back to selecting the text and
+  asking the document to copy it, and if even that is refused it leaves the key
+  selected and names the keystroke. Three outcomes, none of them silence.
 
 ## [0.30.0] — 2026-08-25
 
