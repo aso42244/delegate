@@ -246,7 +246,7 @@ test.describe('the row menu on a phone', () => {
   /** Presses and holds the first transaction row, in real touch events. */
   async function hold(page: Page, ms: number): Promise<void> {
     await page.evaluate(() => {
-      const row = document.querySelector('tbody tr');
+      const row = document.querySelector('main li');
       if (!row) throw new Error('no transaction row');
       const touch = new Touch({ identifier: 1, target: row, clientX: 120, clientY: 200 });
       row.dispatchEvent(new TouchEvent('touchstart', { touches: [touch], bubbles: true }));
@@ -287,7 +287,7 @@ test.describe('the row menu on a phone', () => {
 
     await hold(page, 150);
     await page.evaluate(() => {
-      const row = document.querySelector('tbody tr');
+      const row = document.querySelector('main li');
       const touch = new Touch({ identifier: 1, target: row!, clientX: 120, clientY: 200 });
       row!.dispatchEvent(new TouchEvent('touchend', { changedTouches: [touch], bubbles: true }));
     });
@@ -302,7 +302,7 @@ test.describe('the row menu on a phone', () => {
 
     await hold(page, 150);
     await page.evaluate(() => {
-      const row = document.querySelector('tbody tr');
+      const row = document.querySelector('main li');
       const moved = new Touch({ identifier: 1, target: row!, clientX: 120, clientY: 40 });
       row!.dispatchEvent(new TouchEvent('touchmove', { touches: [moved], bubbles: true }));
     });

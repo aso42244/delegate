@@ -22,6 +22,16 @@ export interface DelegationPickerProps {
   readonly onAdvance?: () => void;
   readonly label: string;
   readonly autoFocus?: boolean;
+  /**
+   * `inline` is the register's own row: a bare field that becomes a field only
+   * on focus, with the matches in a popover beside it.
+   *
+   * `sheet` is the same control given a whole bottom sheet — a real field and
+   * the matches listed in flow beneath it, at a size a thumb can hit. The
+   * matching, the ordering and every key are identical; only the frame differs,
+   * because a popover anchored to a 13px field is a pointer's idea of a menu.
+   */
+  readonly variant?: 'inline' | 'sheet';
 }
 
 export function DelegationPicker({
@@ -31,7 +41,9 @@ export function DelegationPicker({
   onAdvance,
   label,
   autoFocus = false,
+  variant = 'inline',
 }: DelegationPickerProps): ReactNode {
+  const asSheet = variant === 'sheet';
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
   const [highlighted, setHighlighted] = useState(0);
@@ -90,7 +102,7 @@ export function DelegationPicker({
   }
 
   return (
-    <div className="relative">
+    <div className={asSheet ? '' : 'relative'}>
       <input
         ref={inputRef}
         value={query}
@@ -101,7 +113,11 @@ export function DelegationPicker({
         }}
         onFocus={() => setOpen(true)}
         // A short delay so a click on an option lands before the list closes.
-        onBlur={() => setTimeout(() => setOpen(false), 120)}
+        // In a sheet the list is always shown, so there is nothing to close and
+        // blurring must not hide the only thing on screen.
+        onBlur={() => {
+          if (!asSheet) setTimeout(() => setOpen(false), 120);
+        }}
         onKeyDown={onKeyDown}
         placeholder={currentName ?? 'Uncategorized'}
         aria-label={label}
@@ -112,17 +128,25 @@ export function DelegationPicker({
         aria-controls={listboxId}
         role="combobox"
         autoFocus={autoFocus}
-        className={`w-full rounded border border-transparent bg-transparent px-2 py-0.5 text-quiet hover:border-line focus:border-accent focus:bg-canvas ${
-          currentName ? 'text-ink' : 'text-faint'
-        }`}
+        className={
+          asSheet
+            ? 'w-full rounded-lg border border-line bg-canvas px-3 py-2.5 text-base text-ink placeholder:text-faint'
+            : `w-full rounded border border-transparent bg-transparent px-2 py-0.5 text-quiet hover:border-line focus:border-accent focus:bg-canvas ${
+                currentName ? 'text-ink' : 'text-faint'
+              }`
+        }
       />
 
-      {open && matches.length > 0 && (
+      {(asSheet || open) && matches.length > 0 && (
         <ul
           id={listboxId}
           role="listbox"
           aria-label="Delegations"
-          className="absolute z-20 mt-1 max-h-64 w-64 overflow-auto rounded-lg border border-line bg-canvas py-1 shadow-lg"
+          className={
+            asSheet
+              ? 'mt-2 max-h-[45vh] overflow-auto'
+              : 'absolute z-20 mt-1 max-h-64 w-64 overflow-auto rounded-lg border border-line bg-canvas py-1 shadow-lg'
+          }
         >
           {matches.map((option, index) => (
             <li key={option.id}>
@@ -136,9 +160,11 @@ export function DelegationPicker({
                   choose(option);
                 }}
                 onMouseEnter={() => setHighlighted(index)}
-                className={`block w-full px-3 py-1.5 text-left text-quiet ${
-                  index === highlighted ? 'bg-accent-soft text-accent' : 'text-ink'
-                }`}
+                className={`block w-full text-left ${
+                  asSheet
+                    ? 'min-h-[48px] rounded-lg px-3 py-2.5 text-base'
+                    : 'px-3 py-1.5 text-quiet'
+                } ${index === highlighted ? 'bg-accent-soft text-accent' : 'text-ink'}`}
               >
                 {option.name}
               </button>

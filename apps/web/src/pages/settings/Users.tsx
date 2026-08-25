@@ -78,6 +78,25 @@ function YourAccount(): ReactNode {
   const [name, setName] = useState<string | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
+  const [signingOut, setSigningOut] = useState(false);
+
+  /*
+   * A plain handler rather than a mutation, and `finally` rather than the
+   * success path.
+   *
+   * React Query would retry a failed logout, which is a request to end a session
+   * the server may already have destroyed. And if it failed outright the browser
+   * is in an unknown state — which is the last moment to leave somebody's budget
+   * on screen.
+   */
+  async function signOut(): Promise<void> {
+    setSigningOut(true);
+    try {
+      await authApi.logout();
+    } finally {
+      window.location.assign('/login');
+    }
+  }
 
   // Null means "not edited yet", so the server's value shows until it is.
   const value = name ?? user?.displayName ?? '';
@@ -122,9 +141,23 @@ function YourAccount(): ReactNode {
         {problem && <Alert>{problem}</Alert>}
         {saved && <Alert tone="positive">Saved.</Alert>}
 
-        <div>
+        <div className="flex flex-wrap items-center gap-2">
           <Button type="submit" variant="primary" disabled={save.isPending}>
             {save.isPending ? 'Saving…' : 'Save'}
+          </Button>
+
+          {/*
+            Sign out, which lived only in the sidebar — and the sidebar is not on
+            screen at all on a phone. Beside the account it ends the session for,
+            which is a better home than a corner of the navigation anyway.
+          */}
+          <Button
+            type="button"
+            variant="ghost"
+            onClick={() => void signOut()}
+            disabled={signingOut}
+          >
+            {signingOut ? 'Signing out…' : 'Sign out'}
           </Button>
         </div>
       </form>

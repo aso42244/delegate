@@ -246,6 +246,18 @@ export function SyncSection(): ReactNode {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['sync'] }),
   });
 
+  /*
+   * Running a sync by hand.
+   *
+   * It existed only in the sidebar, which is not on screen at all on a phone —
+   * so the page named after the connection could report on it and not run it.
+   * It belongs here whatever the width.
+   */
+  const run = useMutation({
+    mutationFn: syncApi.run,
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['sync'] }),
+  });
+
   const summary = status.data ? connectionSummary(status.data) : null;
   const runs = status.data?.runs.slice(0, 5) ?? [];
 
@@ -256,7 +268,14 @@ export function SyncSection(): ReactNode {
         description="Connects your institutions so balances and transactions arrive automatically, hourly."
         action={
           summary?.connected ? (
-            <div className="flex gap-2">
+            <div className="flex flex-wrap gap-2">
+              <Button
+                variant="primary"
+                onClick={() => run.mutate()}
+                disabled={run.isPending || status.data?.syncing === true}
+              >
+                {run.isPending || status.data?.syncing ? 'Syncing…' : 'Sync now'}
+              </Button>
               <Button onClick={() => setReplacing(true)}>Set up new token</Button>
               <Button variant="danger" onClick={() => forget.mutate()} disabled={forget.isPending}>
                 Disconnect

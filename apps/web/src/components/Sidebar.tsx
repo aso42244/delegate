@@ -24,7 +24,7 @@ const COLLAPSE_KEY = 'budget.sidebar.collapsed';
  * are one stroke weight, one grid, one visual language, and they take their
  * colour from the link they sit in.
  */
-function Icon({ name }: { readonly name: PageIcon }): ReactNode {
+export function Icon({ name }: { readonly name: PageIcon }): ReactNode {
   const shapes: Record<PageIcon, ReactNode> = {
     // A ledger: rows in a frame.
     budget: (
@@ -78,9 +78,9 @@ function Icon({ name }: { readonly name: PageIcon }): ReactNode {
   );
 }
 
-type PageIcon = 'budget' | 'transactions' | 'utilities' | 'insights' | 'settings';
+export type PageIcon = 'budget' | 'transactions' | 'utilities' | 'insights' | 'settings';
 
-const PAGES = [
+export const PAGES = [
   { to: '/', label: 'Budget', icon: 'budget', end: true },
   { to: '/transactions', label: 'Transactions', icon: 'transactions', end: false },
   { to: '/utilities', label: 'Utilities', icon: 'utilities', end: false },
@@ -167,7 +167,11 @@ export function Sidebar({ appName }: { appName: string }): ReactNode {
   return (
     <nav
       aria-label="Main"
-      className={`${width} flex shrink-0 flex-col border-r border-line bg-canvas transition-[width]`}
+      // Gone below `sm`, where the tab bar is the navigation. Not narrowed:
+      // even the 64px rail is 16% of a phone's width for something a bottom bar
+      // does in 9% of its height, and the rail is a manual toggle nobody has
+      // found yet on their first run.
+      className={`${width} hidden shrink-0 flex-col border-r border-line bg-canvas transition-[width] sm:flex`}
     >
       <div className="flex items-center gap-2 px-3 py-3">
         {!collapsed && <span className="truncate font-semibold text-ink">{appName}</span>}
