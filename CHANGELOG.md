@@ -6,6 +6,10 @@ phase (`v0.1.0-phase1`, and so on).
 
 ## [Unreleased]
 
+Nothing yet.
+
+## [0.29.0] — 2026-08-24
+
 ### Added
 
 - **Delegate works on a phone.** It has never had a layout for one: the sidebar
