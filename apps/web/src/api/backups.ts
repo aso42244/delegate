@@ -12,6 +12,13 @@ export interface BackupFileDto {
 
 export interface BackupStatusDto {
   readonly directory: string;
+  /** The same directory as the host names it, or null when nothing said. */
+  readonly hostDirectory: string | null;
+  /** The schedule as configured, so the card can describe this deployment. */
+  readonly cron: string;
+  /** The IANA zone the expression above is read in. */
+  readonly timezone: string;
+  readonly retentionDays: number;
   readonly count: number;
   readonly newestAt: string | null;
   readonly recent: readonly BackupFileDto[];

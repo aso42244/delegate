@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState, type FormEvent, type ReactNode } from 'react';
 import { backupsApi } from '../../api/backups.js';
+import { describeBackupSchedule } from './backup-schedule.js';
 import { ApiError, syncApi, type SyncStatus } from '../../api/client.js';
 import { Alert, Button, Modal, TextField } from '../../components/ui.jsx';
 import { SettingsCard as Card } from './SettingsCard.jsx';
@@ -160,7 +161,15 @@ function Backups(): ReactNode {
   return (
     <Card
       title="Backups"
-      description="A dump of the whole budget, nightly at 02:30 UTC, kept for 30 days."
+      description={
+        backups.data
+          ? describeBackupSchedule(
+              backups.data.cron,
+              backups.data.timezone,
+              backups.data.retentionDays,
+            )
+          : 'A dump of the whole budget.'
+      }
     >
       {backups.isLoading ? (
         <p className="text-quiet text-muted">Loading…</p>
@@ -180,9 +189,14 @@ function Backups(): ReactNode {
 
           {/* The path, because somebody chasing a missing dump needs to know
               which directory to look in — and because it is configuration
-              rather than a secret. */}
+              rather than a secret.
+
+              The host's name for it when compose passed one through, because
+              that is the one you can act on. `BACKUP_DIR` inside the container
+              is `/backups`, which is true and useless when you are standing on
+              the NAS looking for the file. */}
           <p className="mt-1 font-mono text-label break-all text-faint">
-            {backups.data?.directory}
+            {backups.data?.hostDirectory ?? backups.data?.directory}
           </p>
 
           {failing && (

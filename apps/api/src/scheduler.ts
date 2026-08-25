@@ -18,6 +18,11 @@ import { HttpSimpleFinClient } from './simplefin/client.js';
  *
  * SimpleFIN publishes no rate limits and no guidance on sync frequency, so the
  * hourly cadence from the specification stands. See ADR 009.
+ *
+ * Every expression is read in `SCHEDULE_TIMEZONE`, which defaults to UTC. Only
+ * the backup cares — the other two run hourly and land at the same instant in
+ * any zone — but passing it to one task and not the others would leave a future
+ * reader working out which of three schedules meant local time.
  */
 
 export interface Scheduler {
@@ -26,6 +31,7 @@ export interface Scheduler {
 
 export function startScheduler(config: AppConfig, logger: FastifyBaseLogger): Scheduler {
   const tasks: ScheduledTask[] = [];
+  const options = { timezone: config.SCHEDULE_TIMEZONE };
 
   if (!cron.validate(config.SIMPLEFIN_SYNC_CRON)) {
     // Loud rather than silently never running: a mistyped expression that simply
@@ -36,24 +42,38 @@ export function startScheduler(config: AppConfig, logger: FastifyBaseLogger): Sc
   }
 
   tasks.push(
-    cron.schedule(config.SIMPLEFIN_SYNC_CRON, () => {
-      void runScheduledSync(config, logger);
-    }),
+    cron.schedule(
+      config.SIMPLEFIN_SYNC_CRON,
+      () => {
+        void runScheduledSync(config, logger);
+      },
+      options,
+    ),
   );
 
-  logger.info({ cron: config.SIMPLEFIN_SYNC_CRON }, 'scheduled sync enabled');
+  logger.info(
+    { cron: config.SIMPLEFIN_SYNC_CRON, timezone: options.timezone },
+    'scheduled sync enabled',
+  );
 
   if (!cron.validate(config.BACKUP_CRON)) {
     throw new Error(`BACKUP_CRON is not a valid cron expression: "${config.BACKUP_CRON}"`);
   }
 
   tasks.push(
-    cron.schedule(config.BACKUP_CRON, () => {
-      void runScheduledBackup(config, logger);
-    }),
+    cron.schedule(
+      config.BACKUP_CRON,
+      () => {
+        void runScheduledBackup(config, logger);
+      },
+      options,
+    ),
   );
 
-  logger.info({ cron: config.BACKUP_CRON, directory: config.BACKUP_DIR }, 'nightly backup enabled');
+  logger.info(
+    { cron: config.BACKUP_CRON, timezone: options.timezone, directory: config.BACKUP_DIR },
+    'nightly backup enabled',
+  );
 
   if (!cron.validate(config.BITCOIN_PRICE_CRON)) {
     throw new Error(
@@ -62,12 +82,19 @@ export function startScheduler(config: AppConfig, logger: FastifyBaseLogger): Sc
   }
 
   tasks.push(
-    cron.schedule(config.BITCOIN_PRICE_CRON, () => {
-      void runScheduledPriceFetch(config, logger);
-    }),
+    cron.schedule(
+      config.BITCOIN_PRICE_CRON,
+      () => {
+        void runScheduledPriceFetch(config, logger);
+      },
+      options,
+    ),
   );
 
-  logger.info({ cron: config.BITCOIN_PRICE_CRON }, 'Bitcoin price fetch enabled');
+  logger.info(
+    { cron: config.BITCOIN_PRICE_CRON, timezone: options.timezone },
+    'Bitcoin price fetch enabled',
+  );
 
   return {
     stop: () => {

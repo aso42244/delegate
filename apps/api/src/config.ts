@@ -16,6 +16,32 @@ const booleanFromString = z
   .transform((value) => value === 'true')
   .describe('"true" or "false"');
 
+/**
+ * The IANA zones this runtime knows, plus UTC.
+ *
+ * `Intl.supportedValuesOf` lists the canonical region zones and deliberately
+ * omits `UTC`, so it is added back — it is the default here and has to be
+ * spellable.
+ */
+const KNOWN_TIME_ZONES = new Set(['UTC', ...Intl.supportedValuesOf('timeZone')]);
+
+/**
+ * Whether a string names a real IANA zone.
+ *
+ * Stricter than `new Intl.DateTimeFormat({ timeZone })`, which also accepts
+ * abbreviations like `CST` and fixed offsets like `-05:00`. Both are refused
+ * here, because neither carries daylight saving rules: a job set for half past
+ * two in the morning against an offset runs at half past one for half the year,
+ * and `CST` names two different zones on two different continents.
+ *
+ * A typo would otherwise be silent in the worst way available — an unknown zone
+ * falls back to the process default, so the job still runs, just never at the
+ * hour the operator set.
+ */
+function isKnownTimeZone(zone: string): boolean {
+  return KNOWN_TIME_ZONES.has(zone);
+}
+
 const environmentSchema = z
   .object({
     NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
@@ -84,6 +110,33 @@ const environmentSchema = z
     // proxy fronts it under a different name. See plugins/csrf.ts.
     TRUSTED_ORIGINS: z.string().default(''),
 
+    /**
+     * The time zone every cron expression below is read in.
+     *
+     * Governs *when* scheduled jobs fire and nothing else. The process itself
+     * stays on whatever `TZ` it was given — deliberately, because moving the
+     * process clock would also move every date the domain computes, and dates
+     * here decide which month a transaction lands in and which day a Bitcoin
+     * holding is valued on. A backup running an hour earlier is a preference; a
+     * transaction changing months is a defect.
+     *
+     * Defaults to UTC, which is what every deployment did before this existed,
+     * so an upgrade changes nothing until somebody sets it.
+     *
+     * A household's time zone is a fact about that household, so the real value
+     * belongs in `.env` rather than in this repository — the same reason
+     * `APP_NAME` exists.
+     */
+    SCHEDULE_TIMEZONE: z
+      .string()
+      .default('UTC')
+      .refine(isKnownTimeZone, {
+        message:
+          'SCHEDULE_TIMEZONE must be an IANA time zone name, such as "America/Chicago" or ' +
+          '"UTC". Abbreviations ("CST") and fixed offsets ("-05:00") are refused: neither ' +
+          'observes daylight saving, so a job set for a civil hour would drift.',
+      }),
+
     // A bearer credential for the household's bank data: it embeds Basic Auth and
     // anyone holding it can read every transaction. Empty is valid — the app runs
     // without it and reports sync as unconfigured.
@@ -119,6 +172,18 @@ const environmentSchema = z
     // Nightly pg_dump. §14 puts this in Phase 1 rather than Phase 3, because data
     // loss during the move off the spreadsheet would be unrecoverable.
     BACKUP_DIR: z.string().default('./backups'),
+
+    /**
+     * The same directory, named as the *host* knows it.
+     *
+     * `BACKUP_DIR` is the path inside the container, and inside the container
+     * that is the only true one — but it is no use to somebody standing on the
+     * NAS looking for the file, which is exactly what a person chasing a missing
+     * dump is doing. Compose knows both halves of the bind mount and passes this
+     * one through; empty when nothing set it, and then the card shows the
+     * container path as before rather than inventing a host path.
+     */
+    BACKUP_HOST_DIR: z.string().default(''),
     BACKUP_CRON: z.string().default('30 2 * * *'),
     BACKUP_RETENTION_DAYS: z.coerce.number().int().positive().max(3650).default(30),
   })
