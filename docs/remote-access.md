@@ -56,11 +56,12 @@ number.
 Either confine `HOST_PORT` to the LAN in the DSM firewall, or stop publishing it
 at all and let `cloudflared` reach the container over the Docker network.
 
-**Turn on the two-factor requirement.** Settings → Security, once both accounts
-have enrolled. Without Cloudflare Access in front, Delegate's sign-in page is on
-the public internet; what stands between a stranger and the household's finances
-is the password, the second factor, and the rate limit. The application warns at
-every boot while a proxy is trusted and the requirement is off.
+**A second factor is required of every account, always.** There is no setting to
+turn on — `requireTotp` was removed, because it never did what its name said and
+its only effect was to permit accounts without one. Without Cloudflare Access in
+front, Delegate's sign-in page is on the public internet; what stands between a
+stranger and the household's finances is the password, the second factor, and the
+rate limit.
 
 ## What Cloudflare Access would add
 

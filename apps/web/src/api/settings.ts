@@ -18,8 +18,6 @@ export interface BudgetSettingsDto {
   readonly payCadence: PayCadence;
   /** Payments a year at that cadence, resolved by the server. */
   readonly cyclesPerYear: number;
-  /** Whether every account must have a second factor before it can be used. */
-  readonly requireTotp: boolean;
   /** Whether a request over the onion address is answered at all. */
   readonly remoteOverTorEnabled: boolean;
   readonly remoteOverTorEnabledAt: string | null;
@@ -54,7 +52,6 @@ export const settingsApi = {
     undoWindowHours?: number;
     identityToleranceCents?: string;
     payCadence?: PayCadence;
-    requireTotp?: boolean;
     remoteOverTorEnabled?: boolean;
   }) => api.patch<BudgetSettingsDto>('/api/settings', input),
 };
