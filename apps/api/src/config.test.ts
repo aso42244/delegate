@@ -47,3 +47,34 @@ describe('TLS configuration', () => {
     );
   });
 });
+
+/**
+ * The zone scheduled jobs are read in.
+ *
+ * Worth a test because a mistyped zone fails in the quietest way available: an
+ * unknown one falls back to the process default, so the job still runs, just
+ * never at the hour the operator set — and nothing anywhere would say so.
+ */
+describe('the schedule timezone', () => {
+  it('defaults to UTC, which is what every deployment did before it existed', () => {
+    expect(loadConfig({ ...MINIMAL }).SCHEDULE_TIMEZONE).toBe('UTC');
+  });
+
+  it('accepts an IANA zone name', () => {
+    const config = loadConfig({ ...MINIMAL, SCHEDULE_TIMEZONE: 'America/Chicago' });
+    expect(config.SCHEDULE_TIMEZONE).toBe('America/Chicago');
+  });
+
+  it('refuses one this runtime does not know', () => {
+    expect(() => loadConfig({ ...MINIMAL, SCHEDULE_TIMEZONE: 'America/Sioux_Falls' })).toThrow(
+      /IANA time zone/i,
+    );
+    expect(() => loadConfig({ ...MINIMAL, SCHEDULE_TIMEZONE: 'CST' })).toThrow(/IANA time zone/i);
+  });
+
+  it('refuses an offset, which is not a zone and does not observe daylight saving', () => {
+    expect(() => loadConfig({ ...MINIMAL, SCHEDULE_TIMEZONE: '-05:00' })).toThrow(
+      /IANA time zone/i,
+    );
+  });
+});

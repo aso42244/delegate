@@ -83,9 +83,16 @@ services:
       BITCOIN_PRICE_PRIMARY: ${BITCOIN_PRICE_PRIMARY:-coingecko}
       BITCOIN_PRICE_FALLBACK: ${BITCOIN_PRICE_FALLBACK:-coinbase}
       SIMPLEFIN_ACCESS_URL: ${SIMPLEFIN_ACCESS_URL:-}
+      # The zone every cron expression here is read in. UTC unless .env says
+      # otherwise, which is what every deployment did before this existed.
+      SCHEDULE_TIMEZONE: ${SCHEDULE_TIMEZONE:-UTC}
       SIMPLEFIN_SYNC_CRON: ${SIMPLEFIN_SYNC_CRON:-0 * * * *}
       SIMPLEFIN_BACKFILL_MONTHS: ${SIMPLEFIN_BACKFILL_MONTHS:-12}
       BACKUP_DIR: /backups
+      # The same directory as the host names it, so the Backups card can show a
+      # path somebody on the NAS can actually use. `/backups` above is true only
+      # from inside this container.
+      BACKUP_HOST_DIR: ${BACKUP_DIR:-./backups}
       BACKUP_CRON: ${BACKUP_CRON:-30 2 * * *}
       BACKUP_RETENTION_DAYS: ${BACKUP_RETENTION_DAYS:-30}
     ports:

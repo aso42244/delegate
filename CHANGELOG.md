@@ -8,6 +8,26 @@ phase (`v0.1.0-phase1`, and so on).
 
 ### Added
 
+- **Scheduled jobs run in a configured time zone.** `SCHEDULE_TIMEZONE` — an IANA
+  name, defaulting to `UTC` — is the zone every cron expression is read in, so the
+  nightly backup can run at half past two in the morning where the household
+  actually lives rather than at half past nine the previous evening.
+
+  It governs **when jobs fire and nothing else**. The process clock is untouched,
+  deliberately: moving it would also move every date the domain computes, and
+  which month a transaction lands in is not a preference. Applied to all three
+  schedules rather than only the backup — the other two are hourly and land at the
+  same instant in any zone, but passing it to one and not the others would leave a
+  future reader working out which of three schedules meant local time.
+
+  Abbreviations (`CST`) and fixed offsets (`-05:00`) are refused, because neither
+  observes daylight saving: a job set for a civil hour against an offset drifts by
+  an hour for half the year, and `CST` names two zones on two continents. An
+  unknown zone silently falls back to the process default, so it fails at startup
+  instead.
+
+  Defaulting to `UTC` means an upgrade changes nothing until `.env` says otherwise.
+
 - **A synced account now shows how old the feed's own answer is.** `balanceAsOf`
   was answering two questions at once: it holds the feed's `balance-date` when
   the feed sends one, and the time of our request when it does not — and
@@ -34,6 +54,22 @@ phase (`v0.1.0-phase1`, and so on).
   recently" — wording written for a manual balance, and wrong for a synced one
   where there is nobody to do the confirming. The letter and its single meaning
   are unchanged; the wording was narrower than the meaning.
+
+### Fixed
+
+- **The Backups card describes this deployment rather than the defaults.** It read
+  "nightly at 02:30 UTC, kept for 30 days" whatever `BACKUP_CRON`,
+  `SCHEDULE_TIMEZONE` and `BACKUP_RETENTION_DAYS` were set to — a small version of
+  the problem the card exists to solve, which is an interface asserting something
+  nothing checks. It now reads all three, and says "daily" rather than "nightly",
+  which stays true if the job is ever moved to the afternoon.
+
+  **And it names the directory as the host knows it.** The card showed
+  `/backups`, which is the path _inside the container_ and no use to somebody
+  standing on the NAS looking for the file — which is exactly what a person
+  chasing a missing dump is doing. Compose knows both halves of the bind mount
+  and passes the host's name through as `BACKUP_HOST_DIR`; when nothing sets it
+  the card shows the container path as before rather than inventing one.
 
 ## [0.29.2] — 2026-08-25
 
