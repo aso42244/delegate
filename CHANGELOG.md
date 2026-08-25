@@ -6,6 +6,10 @@ phase (`v0.1.0-phase1`, and so on).
 
 ## [Unreleased]
 
+Nothing yet.
+
+## [0.30.0] — 2026-08-25
+
 ### Added
 
 - **Scheduled jobs run in a configured time zone.** `SCHEDULE_TIMEZONE` — an IANA
