@@ -493,6 +493,20 @@ does.
   end-to-end test accepts either. Worth making deterministic if it ever matters:
   the choice is to destroy the actor's session deliberately, which is arguably
   what removing your own credential should do.
+- **`compose up -d` does not rebuild a service it already has an image for.**
+  `tor` is the one service built from source here, and its configuration is
+  _mounted_ while the entrypoint that reads it is _baked in_. A release changed
+  both; the deploy shipped the new file to the old script, which knew nothing
+  about the placeholder in it, and tor reported an unparseable port and restarted
+  for ever. `deploy.sh` passes `--build` now. **When one half of a pair is
+  mounted and the other is in the image, a deploy can ship one without the
+  other.**
+- **A check that exercises the artefact is not the same as one that exercises
+  the thing.** `tor --verify-config` over a hand-substituted torrc passed on the
+  very release whose container was crash-looping, because it proved the file was
+  valid and never that the entrypoint produced it. `npm run verify` starts the
+  real image against a container aliased `app` and asks tor whether it started.
+  Twenty seconds, and the only thing that would have caught it.
 - **A bind mount replaces the image's directory, ownership and all.** The
   Dockerfile ran `chown -R node:node /backups` and it counted for nothing: at
   runtime the host directory takes that path, and the host's ownership is what

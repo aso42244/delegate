@@ -6,7 +6,29 @@ phase (`v0.1.0-phase1`, and so on).
 
 ## [Unreleased]
 
-Nothing yet.
+### Fixed
+
+- **Tor still never started, for a second reason.** v0.28.2 taught the entrypoint
+  to resolve the app's address and substitute it into the configuration, and the
+  deploy never shipped that entrypoint: `compose up -d` builds a service from
+  source only when no image for it exists, and one did. The configuration is
+  bind-mounted and updated; the script that reads it is baked into the image and
+  did not. Tor received the placeholder verbatim, reported an unparseable port,
+  and restarted for ever.
+
+  `deploy.sh` passes `--build` now, so the one service built from source is
+  rebuilt on every deploy. The entrypoint also refuses to start if the
+  placeholder survives its own substitution, and says which two files disagree
+  rather than leaving tor to complain about a port.
+
+### Changed
+
+- **`npm run verify` starts Tor rather than parsing its configuration.** The
+  check that stood there ran `tor --verify-config` over a hand-substituted file,
+  and passed on the very release whose container was crash-looping — it proved
+  the file was valid, never that the entrypoint produced it. It now runs the real
+  image against a container answering to `app`, exactly as compose arranges it,
+  and asks tor whether it started.
 
 ## [0.29.0] — 2026-08-24
 
