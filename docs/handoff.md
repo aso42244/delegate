@@ -88,7 +88,7 @@ These are non-negotiable. Violating one is a build failure.
 
 ## Where things stand
 
-**Live on the NAS, currently at `v0.28.1`.** 169 unit, 502 integration and 151
+**Live on the NAS, currently at `v0.29.2`.** 173 unit, 510 integration and 160
 end-to-end tests. There is no CI: GitHub stores the code and nothing else
 ([ADR 022](decisions/022-the-checks-run-here-not-on-github.md)), and every gate
 runs locally through `npm run verify`.
@@ -234,11 +234,32 @@ the container can write to it** before reporting success. And Settings → Sync
 shows the newest dump, with a red banner when none has landed in 48 hours — the
 check asks whether a dump is on disk, never whether the last attempt threw.
 
-The half this project cannot verify is whether `/volume1/backups` is included in
-whatever backs up **off** the NAS. A dump on the same disk as the database is not
-a backup. That was closed on the owner's word rather than by inspection — it is
-DSM configuration, invisible from here — so a future session should treat it as
-reported rather than as checked.
+**Confirmed on 2026-08-25.** Both halves, and each is recorded here as what it
+is — because this item festered for months behind a document asserting something
+nobody had looked at, and a confirmation nobody can audit is the same trap set
+again.
+
+**Checked.** Settings → Sync showed `delegate-20260825-023000.dump`, 199 KB,
+written 2026-08-24 at 21:30 Central — which is 02:30 UTC on the 25th, the
+scheduled time. That is the **nightly job firing on its own**, not a forced run:
+the forced repair of the 24th is the other row, `delegate-20260824-231646.dump`
+at 18:16. Two dumps, both counted, so both carry their `.sha256` — the card only
+counts a dump with its checksum beside it. Green, no banner. The first
+unattended dump this deployment has ever produced.
+
+**Reported, not checked.** `/volume1/backups` being included in whatever backs
+up **off** the NAS. The owner confirmed it on 2026-08-25. It is DSM
+configuration and invisible from here — no SSH, no DSM API — so this line is his
+word, and a future session should treat it as reported rather than verified. If
+it ever matters enough to be sure, the check is Hyper Backup → the task → Backup
+Source, and whether the `backups` shared folder is ticked with a destination
+that is not on `/volume1`.
+
+Worth knowing why the dump card names `/backups`: that is the path **inside the
+container**, which is all `BACKUP_DIR` means there. Compose mounts the host's
+`${BACKUP_DIR}` — `/volume1/backups/delegate` on the NAS — onto it. Two names for
+one directory, and the card shows the one that is no use if you are standing on
+the NAS looking for the file.
 
 What is genuinely outstanding:
 
@@ -406,9 +427,9 @@ cannot collide.
 npm run verify            # everything, in the order CI used to run it
 npm run verify:quick      # the same, minus the container image build
 
-npm run test              # 166 unit
-npm run test:integration  # 502 integration
-npm run test:e2e          # 154 end-to-end, needs a build first
+npm run test              # 173 unit
+npm run test:integration  # 510 integration
+npm run test:e2e          # 160 end-to-end, needs a build first
 ```
 
 `npm run verify` is the gate. It runs migrations, typecheck, lint, formatting,
