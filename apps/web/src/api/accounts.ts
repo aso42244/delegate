@@ -14,6 +14,11 @@ export interface AccountDto {
   readonly inNetWorth: boolean;
   readonly needsReview: boolean;
   readonly balanceAsOf: string | null;
+  /**
+   * The date the feed put on this balance, not the time we last asked for it.
+   * Null when the feed omits it and for every manual account.
+   */
+  readonly feedBalanceAsOf: string | null;
   readonly stalenessIntervalDays: number | null;
   readonly groupingId: string | null;
   /** The mortgage secured against this property, if it is one. */

@@ -41,6 +41,8 @@ export interface BudgetRow {
   readonly inNetWorth: boolean;
   readonly needsReview: boolean;
   readonly balanceAsOf: Date | null;
+  /** The date the feed put on this balance; null for a manual account. */
+  readonly feedBalanceAsOf: Date | null;
   readonly stalenessIntervalDays: number | null;
   /** `check` rows are outstanding checks — see domain/checks.ts. */
   readonly kind: 'envelope' | 'check';
@@ -173,6 +175,7 @@ export async function buildBudgetView(db: Db): Promise<BudgetView> {
         groupingId: true,
         needsReview: true,
         balanceAsOf: true,
+        feedBalanceAsOf: true,
         stalenessIntervalDays: true,
         inBudget: true,
         inNetWorth: true,
@@ -235,6 +238,7 @@ export async function buildBudgetView(db: Db): Promise<BudgetView> {
     inNetWorth: account.inNetWorth,
     needsReview: account.needsReview,
     balanceAsOf: account.balanceAsOf,
+    feedBalanceAsOf: account.feedBalanceAsOf,
     stalenessIntervalDays: account.stalenessIntervalDays,
     kind: 'envelope',
     checkNumber: null,
@@ -259,6 +263,7 @@ export async function buildBudgetView(db: Db): Promise<BudgetView> {
     inNetWorth: false,
     needsReview: false,
     balanceAsOf: null,
+    feedBalanceAsOf: null,
     stalenessIntervalDays: null,
     kind: delegation.kind,
     checkNumber: delegation.checkNumber,

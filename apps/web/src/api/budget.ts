@@ -25,6 +25,8 @@ export interface BudgetRowDto {
   readonly inNetWorth: boolean;
   readonly needsReview: boolean;
   readonly balanceAsOf: string | null;
+  /** The date the feed put on this balance; null for a manual account. */
+  readonly feedBalanceAsOf: string | null;
   readonly stalenessIntervalDays: number | null;
   /** `check` rows are outstanding checks: money written but not yet cashed. */
   readonly kind: 'envelope' | 'check';

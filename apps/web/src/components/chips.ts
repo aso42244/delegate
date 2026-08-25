@@ -41,7 +41,7 @@ export const CHIPS = {
 
   // ── Accounts, on the budget and in Settings ───────────────────────────────
   manual: { mark: 'm', meaning: 'Kept by hand', tone: 'quiet' },
-  stale: { mark: 's', meaning: 'Not confirmed recently', tone: 'warning' },
+  stale: { mark: 's', meaning: 'Balance may not be current', tone: 'warning' },
   review: { mark: 'r', meaning: 'Discovered by a sync — its type is a guess', tone: 'warning' },
   /** The only three-letter mark, because it is already read as a word. The
       figure on these rows is a quantity times a price and moves on its own once

@@ -1,4 +1,10 @@
-import { formatCents, formatCentsForInput, isBalanceStale, tryParseMoney } from '@budget/shared';
+import {
+  formatCents,
+  formatCentsForInput,
+  isBalanceStale,
+  isFeedBalanceStale,
+  tryParseMoney,
+} from '@budget/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState, type FormEvent, type ReactNode } from 'react';
 import { accountsApi, type AccountDto } from '../../api/accounts.js';
@@ -179,10 +185,22 @@ function AccountRow({ account }: { readonly account: AccountDto }): ReactNode {
       setProblem(error instanceof ApiError ? error.message : 'Could not update this account.'),
   });
 
-  const stale = isBalanceStale(
-    account.balanceAsOf === null ? null : new Date(account.balanceAsOf),
-    account.stalenessIntervalDays,
-  );
+  /*
+   * How old this balance is, asked two ways.
+   *
+   * A manual balance goes stale when nobody has confirmed it inside its own
+   * interval. A synced one goes stale when the bridge answers with an old
+   * snapshot — which used to be undetectable, because the sync stamped
+   * `balanceAsOf` with the time of its own request and an account days behind
+   * read as current.
+   */
+  const feedDate = account.feedBalanceAsOf === null ? null : new Date(account.feedBalanceAsOf);
+  const feedStale = isFeedBalanceStale(feedDate);
+  const stale =
+    isBalanceStale(
+      account.balanceAsOf === null ? null : new Date(account.balanceAsOf),
+      account.stalenessIntervalDays,
+    ) || feedStale;
 
   function commitBalance(): void {
     const parsed = tryParseMoney(balanceDraft);
@@ -224,6 +242,18 @@ function AccountRow({ account }: { readonly account: AccountDto }): ReactNode {
                 ...(account.needsReview ? (['review'] as const) : []),
               ]}
             />
+
+            {/* The date itself beside the mark, because "stale" on its own sends
+                somebody looking in the application for a fault that is not here.
+                Naming the day the institution's own answer came from moves the
+                question to the bridge, which is where it can be acted on. Shown
+                only when it is old — every account carrying a date every day is
+                noise, and this page is deliberately quiet. */}
+            {feedStale && feedDate !== null && (
+              <span className="whitespace-nowrap text-quiet text-faint">
+                feed from {feedDate.toLocaleDateString()}
+              </span>
+            )}
           </div>
         </td>
 

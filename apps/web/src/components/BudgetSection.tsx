@@ -1,4 +1,4 @@
-import { formatCents, groupingTint, isBalanceStale } from '@budget/shared';
+import { formatCents, groupingTint, isBalanceStale, isFeedBalanceStale } from '@budget/shared';
 import {
   Fragment,
   useRef,
@@ -95,11 +95,15 @@ function chipsFor(row: BudgetRowDto): ChipKind[] {
   if (row.source === 'manual' && row.managedAs === 'none') kinds.push('manual');
   if (row.isUtility) kinds.push('utility');
   if (row.notes !== null && row.notes.trim() !== '') kinds.push('note');
+  // Two ways a balance stops being current, one mark. A manual one nobody has
+  // confirmed lately, and a synced one whose feed is answering with an old
+  // snapshot — the second was invisible until the feed's own date was kept.
   if (
     isBalanceStale(
       row.balanceAsOf === null ? null : new Date(row.balanceAsOf),
       row.stalenessIntervalDays,
-    )
+    ) ||
+    isFeedBalanceStale(row.feedBalanceAsOf === null ? null : new Date(row.feedBalanceAsOf))
   ) {
     kinds.push('stale');
   }

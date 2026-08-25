@@ -6,7 +6,34 @@ phase (`v0.1.0-phase1`, and so on).
 
 ## [Unreleased]
 
-Nothing yet.
+### Added
+
+- **A synced account now shows how old the feed's own answer is.** `balanceAsOf`
+  was answering two questions at once: it holds the feed's `balance-date` when
+  the feed sends one, and the time of our request when it does not — and
+  afterwards those are the same value. So "the bridge says this is current" could
+  not be told from "the bridge said nothing and we filled it in".
+
+  `accounts.feed_balance_as_of` records only what the feed actually said, and is
+  **null when it said nothing**. That third state is the whole point: unknown must
+  not read as fresh. Settings → Accounts marks a synced balance more than two days
+  old with the `s` chip and names the day it came from, so the question lands on
+  the bridge rather than on this application.
+
+  Found chasing ten charges that stayed marked pending for days after the card
+  had posted them. Nothing about the pending lifecycle was wrong — the stored
+  balance, the stuck rows and the card's real balance agreed to the cent, and all
+  three were behind together while the bridge reported itself healthy. The
+  application was right about everything it had been told and had no way to show
+  that what it had been told was old.
+  [ADR 032](docs/decisions/032-a-feed-date-is-kept-apart-from-the-one-we-stamp.md).
+
+### Changed
+
+- **The `s` chip reads "Balance may not be current"**, having read "Not confirmed
+  recently" — wording written for a manual balance, and wrong for a synced one
+  where there is nobody to do the confirming. The letter and its single meaning
+  are unchanged; the wording was narrower than the meaning.
 
 ## [0.29.2] — 2026-08-25
 

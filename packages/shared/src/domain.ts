@@ -66,6 +66,34 @@ export function canModifyUser(actorRole: UserRole, targetRole: UserRole): boolea
   return true;
 }
 
+/**
+ * How old a feed's own snapshot may be before its balance is worth doubting.
+ *
+ * Two days rather than one. Bridges refresh roughly daily, so a one-day
+ * threshold would mark most accounts most mornings — and a warning that fires in
+ * the ordinary case is one nobody reads, which is how a nightly backup failed
+ * for weeks in plain sight.
+ */
+export const FEED_BALANCE_STALE_DAYS = 2;
+
+/**
+ * A synced balance whose feed date has aged past that.
+ *
+ * Distinct from `isBalanceStale`, which asks when a person last confirmed a
+ * balance by hand. This one asks how old the institution's own answer is, and
+ * the two are unrelated: a bridge can reply within the second with a snapshot
+ * from Tuesday.
+ *
+ * Null is not stale. A feed that sends no `balance-date` says nothing about the
+ * age of its answer, and manufacturing a warning out of silence is the mirror of
+ * the bug this exists to end — the point is to stop guessing in either
+ * direction.
+ */
+export function isFeedBalanceStale(feedBalanceAsOf: Date | null, now: Date = new Date()): boolean {
+  if (feedBalanceAsOf === null) return false;
+  return now.getTime() - feedBalanceAsOf.getTime() > FEED_BALANCE_STALE_DAYS * 24 * 60 * 60 * 1000;
+}
+
 /** An account is stale when its confirmed balance has aged past its own interval. */
 export function isBalanceStale(
   balanceAsOf: Date | null,

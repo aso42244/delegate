@@ -161,7 +161,7 @@ model User {
 
   // Accounts created by an Admin start with a temporary password that must be
   // replaced at first login.
-  mustChangePassword Boolean   @default(false) @map("must_change_password")
+  mustChangePassword Boolean @default(false) @map("must_change_password")
 
   /// The TOTP shared secret, encrypted at rest (AES-256-GCM, key derived from
   /// SESSION_SECRET). Every nightly pg_dump contains this table, and a
@@ -170,10 +170,10 @@ model User {
   /// Set when a code from the authenticator has actually been verified. Until
   /// then enrolment is incomplete and the secret must not gate a sign-in.
   totpConfirmedAt     DateTime? @map("totp_confirmed_at")
-  lastLoginAt        DateTime? @map("last_login_at")
-  archivedAt         DateTime? @map("archived_at")
-  createdAt          DateTime  @default(now()) @map("created_at")
-  updatedAt          DateTime  @updatedAt @map("updated_at")
+  lastLoginAt         DateTime? @map("last_login_at")
+  archivedAt          DateTime? @map("archived_at")
+  createdAt           DateTime  @default(now()) @map("created_at")
+  updatedAt           DateTime  @updatedAt @map("updated_at")
 
   sessions            Session[]
   totpUsedCodes       TotpUsedCode[]
@@ -182,11 +182,11 @@ model User {
   delegateRuns        DelegateRun[]
   delegationTransfers DelegationTransfer[]
   accountValuations   AccountValuation[]
+  insightLayouts      InsightLayout[]
+  recoveryCodes       RecoveryCode[]
 
   @@index([archivedAt])
   @@map("users")
-  insightLayouts InsightLayout[]
-  recoveryCodes  RecoveryCode[]
 }
 
 /// A single-use code that bypasses the second factor when the authenticator is
@@ -288,6 +288,17 @@ model Account {
   balanceAsOf           DateTime? @map("balance_as_of")
   stalenessIntervalDays Int?      @map("staleness_interval_days")
 
+  /// The timestamp the feed itself put on this balance, and only that.
+  ///
+  /// `balanceAsOf` above cannot answer this. It takes the feed's date when there
+  /// is one and the time of the request when there is not, so afterwards a
+  /// bridge that reported a fresh snapshot is indistinguishable from one that
+  /// reported nothing about freshness at all.
+  ///
+  /// Null when the feed omits `balance-date`, and deliberately left null rather
+  /// than filled in. An unknown age must not read as a fresh one.
+  feedBalanceAsOf DateTime? @map("feed_balance_as_of")
+
   // Set when a sync discovers an account, cleared once the owner has reviewed
   // the guessed type and the in-budget / in-net-worth defaults.
   needsReview Boolean @default(false) @map("needs_review")
@@ -328,9 +339,9 @@ model Account {
   createdAt  DateTime  @default(now()) @map("created_at")
   updatedAt  DateTime  @updatedAt @map("updated_at")
 
-  grouping          Grouping?            @relation(fields: [groupingId], references: [id])
-  mortgageAccount   Account?             @relation("PropertyMortgage", fields: [mortgageAccountId], references: [id])
-  securedProperties Account[]            @relation("PropertyMortgage")
+  grouping          Grouping?             @relation(fields: [groupingId], references: [id])
+  mortgageAccount   Account?              @relation("PropertyMortgage", fields: [mortgageAccountId], references: [id])
+  securedProperties Account[]             @relation("PropertyMortgage")
   transactions      Transaction[]
   rules             CategorizationRule[]
   valuations        AccountValuation[]
@@ -385,11 +396,11 @@ model Delegation {
   kind DelegationKind @default(envelope)
 
   /// The identifier when several checks are outstanding at once.
-  checkNumber   String?   @map("check_number")
-  checkMemo     String?   @map("check_memo")
-  checkIssuedAt DateTime? @map("check_issued_at")
+  checkNumber             String?   @map("check_number")
+  checkMemo               String?   @map("check_memo")
+  checkIssuedAt           DateTime? @map("check_issued_at")
   /// Where the money came from, and where any residue returns on void.
-  checkSourceDelegationId String? @map("check_source_delegation_id") @db.Uuid
+  checkSourceDelegationId String?   @map("check_source_delegation_id") @db.Uuid
 
   // Nullable on purpose. Null means "ad hoc line — add nothing when Delegate is
   // pressed", and renders as an empty cell rather than $0. Null is not zero.
@@ -686,15 +697,15 @@ model SyncRun {
 /// catalog is deliberately not user-extensible, so a table would only be a
 /// second place for the list to disagree with itself.
 model InsightLayout {
-  id        String   @id @default(uuid()) @db.Uuid
-  userId    String   @map("user_id") @db.Uuid
-  widgetKey String   @map("widget_key")
+  id        String @id @default(uuid()) @db.Uuid
+  userId    String @map("user_id") @db.Uuid
+  widgetKey String @map("widget_key")
   position  Int
 
   /// Which chart this tile is drawn as. Null means the widget's own default;
   /// the options are per widget, because which charts suit which data is a fact
   /// about the widget.
-  display String?
+  display   String?
   createdAt DateTime @default(now()) @map("created_at")
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -808,10 +819,10 @@ model BitcoinWallet {
   /// every wallet uses.
   gapLimit Int @default(20) @map("gap_limit")
 
-  lastScannedAt DateTime? @map("last_scanned_at")
-  lastError     String?   @map("last_error")
+  lastScannedAt   DateTime? @map("last_scanned_at")
+  lastError       String?   @map("last_error")
   /// What the last scan found, so a scan that changes nothing is still visible.
-  lastBalanceSats BigInt? @map("last_balance_sats")
+  lastBalanceSats BigInt?   @map("last_balance_sats")
 
   archivedAt DateTime? @map("archived_at")
   createdAt  DateTime  @default(now()) @map("created_at")

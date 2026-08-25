@@ -400,11 +400,19 @@ async function upsertAccount(
   if (existing) {
     // The type is never re-guessed. The owner may have overridden it, and a sync
     // silently flipping an account between asset and debt would move the identity.
+    //
+    // Two dates, deliberately. `balanceAsOf` takes the feed's date when there is
+    // one and falls back to now when there is not, which makes those two cases
+    // indistinguishable afterwards. `feedBalanceAsOf` records only what the feed
+    // actually said, so null means unknown rather than current — the difference
+    // between a bridge that reports a fresh snapshot and one that reports
+    // nothing about freshness at all.
     await db.account.update({
       where: { id: existing.id },
       data: {
         balanceCents: storedBalance(existing.type, feedAccount.balanceCents),
         balanceAsOf: feedAccount.balanceAsOf ?? now,
+        feedBalanceAsOf: feedAccount.balanceAsOf ?? null,
       },
     });
     return { accountId: existing.id, discovered: false };
@@ -456,6 +464,7 @@ async function upsertAccount(
         externalId: feedAccount.externalId,
         balanceCents: storedBalance(replaced.type, feedAccount.balanceCents),
         balanceAsOf: feedAccount.balanceAsOf ?? now,
+        feedBalanceAsOf: feedAccount.balanceAsOf ?? null,
       },
     });
 
@@ -482,6 +491,7 @@ async function upsertAccount(
       externalId: feedAccount.externalId,
       balanceCents: storedBalance(type, feedAccount.balanceCents),
       balanceAsOf: feedAccount.balanceAsOf ?? now,
+      feedBalanceAsOf: feedAccount.balanceAsOf ?? null,
       // Defaults per §7; `needsReview` prompts the owner to confirm the guess.
       inBudget: true,
       inNetWorth: true,

@@ -92,6 +92,7 @@ export const accountRoutes: FastifyPluginCallback = (fastify, _options, done) =>
         inNetWorth: true,
         needsReview: true,
         balanceAsOf: true,
+        feedBalanceAsOf: true,
         stalenessIntervalDays: true,
         groupingId: true,
         mortgageAccountId: true,
@@ -127,6 +128,9 @@ export const accountRoutes: FastifyPluginCallback = (fastify, _options, done) =>
         inNetWorth: account.inNetWorth,
         needsReview: account.needsReview,
         balanceAsOf: dateOut(account.balanceAsOf),
+        // How old the feed says its own snapshot is, null when it does not say
+        // and for every manual account. Never inferred from when we last synced.
+        feedBalanceAsOf: dateOut(account.feedBalanceAsOf),
         stalenessIntervalDays: account.stalenessIntervalDays,
         groupingId: account.groupingId,
         mortgageAccountId: account.mortgageAccountId,
