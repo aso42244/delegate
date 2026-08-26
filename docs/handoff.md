@@ -88,8 +88,7 @@ These are non-negotiable. Violating one is a build failure.
 
 ## Where things stand
 
-**`main` is at `v0.32.0`; the NAS is running `v0.29.2`** and needs the deploy
-below. 192 unit, 514 integration and 164 end-to-end tests. There is no CI: GitHub stores the code and nothing else
+**Live on the NAS at `v0.32.0`**, deployed 2026-08-26, and `main` is the same. 192 unit, 514 integration and 164 end-to-end tests. There is no CI: GitHub stores the code and nothing else
 ([ADR 022](decisions/022-the-checks-run-here-not-on-github.md)), and every gate
 runs locally through `npm run verify`.
 
@@ -209,6 +208,31 @@ service; ADR 017 carries the amendment.
 - **The nightly backup runs**, and says so when it does not. See below — it had
   never run once
 
+**Since v0.29.2:**
+
+- **A synced account shows how old the feed's own answer is.**
+  `accounts.feed_balance_as_of` records what the bridge said about its own
+  freshness and is **null when it said nothing** — `balanceAsOf` could not tell a
+  fresh answer from an absent one, because it falls back to the time of the
+  request. Found chasing ten charges that stayed pending for days while the
+  bridge reported itself healthy; nothing about the pending lifecycle was wrong
+  ([ADR 032](decisions/032-a-feed-date-is-kept-apart-from-the-one-we-stamp.md))
+- **Scheduled jobs run in `SCHEDULE_TIMEZONE`**, an IANA name defaulting to UTC.
+  It governs when jobs fire and nothing else — the process clock is untouched,
+  because moving it would move every date the domain computes
+- **The two-factor setup key is offered behind "Can't scan this?"**, grouped and
+  copyable, for enrolling in a password manager on the machine already showing
+  the screen. The Copy button works on a plain-http origin, where
+  `navigator.clipboard` does not exist
+- **One UI system across every screen**
+  ([ADR 033](decisions/033-one-ui-system-with-a-test-that-holds-it.md)). A
+  four-value spacing scale, field widths chosen by content, `New <noun>` at every
+  create entry point, and a text budget. **`docs/ui-system.md` is the
+  measurements and `ui-system.test.ts` enforces them** — read it before any
+  interface change
+- **Dark mode**, on Settings → Display beside row height
+  ([ADR 034](decisions/034-dark-mode-is-a-second-palette-not-an-inversion.md))
+
 ### Known gaps to fix
 
 None outstanding.
@@ -234,8 +258,8 @@ the container can write to it** before reporting success. And Settings → Sync
 shows the newest dump, with a red banner when none has landed in 48 hours — the
 check asks whether a dump is on disk, never whether the last attempt threw.
 
-**Confirmed on 2026-08-25.** Both halves, and each is recorded here as what it
-is — because this item festered for months behind a document asserting something
+**Closed on 2026-08-26.** Both halves, and each is recorded here as what it is —
+because this item festered for months behind a document asserting something
 nobody had looked at, and a confirmation nobody can audit is the same trap set
 again.
 
@@ -255,11 +279,20 @@ it ever matters enough to be sure, the check is Hyper Backup → the task → Ba
 Source, and whether the `backups` shared folder is ticked with a destination
 that is not on `/volume1`.
 
-Worth knowing why the dump card names `/backups`: that is the path **inside the
-container**, which is all `BACKUP_DIR` means there. Compose mounts the host's
-`${BACKUP_DIR}` — `/volume1/backups/delegate` on the NAS — onto it. Two names for
-one directory, and the card shows the one that is no use if you are standing on
-the NAS looking for the file.
+**Reported, and the last piece.** On 2026-08-26, after `v0.32.0` and the
+`SCHEDULE_TIMEZONE` line went onto the NAS, the owner confirmed the nightly dump
+ran at **02:30 Central** and landed in `/volume1/backups/delegate`. That closes
+the item: it runs unattended, at a civil hour, in the directory the off-device
+backup covers.
+
+His word again rather than an inspection, for the same reason as above — but the
+evidence is now on a screen either of us can read. Settings → Sync names the
+schedule and the zone it is actually configured with, and names the directory as
+**the host** knows it. Until `v0.30.0` that card said "nightly at 02:30 UTC"
+whatever the deployment was set to, and showed `/backups` — the path inside the
+container, which is true and useless to somebody standing on the NAS looking for
+the file. Both were assertions nothing checked, which is how this item stayed
+untickable for months in the first place.
 
 What is genuinely outstanding:
 
