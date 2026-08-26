@@ -10,6 +10,7 @@ import {
 import { checksApi, type CheckMatchDto } from '../api/checks.js';
 import { ApiError } from '../api/client.js';
 import { AccountRowMenu } from '../components/AccountRowMenu.jsx';
+import { PageHeader } from '../components/layout.jsx';
 import { BalanceReading } from '../components/BalanceReading.jsx';
 import { AbsorbDialog } from '../components/AbsorbDialog.jsx';
 import { BudgetSection } from '../components/BudgetSection.jsx';
@@ -130,7 +131,7 @@ function TransferDialog({
           line stays where it is. The source may go negative.
         </p>
 
-        <div className="flex flex-col gap-3">
+        <div className="flex flex-col gap-2">
           <label className="block">
             <span className="mb-1 block text-quiet font-medium">From</span>
             <select
@@ -492,98 +493,91 @@ export function MainBudget(): ReactNode {
       {/* Stacked on a phone, one row from `sm`. Side by side at 390px the
           title collapses to a single letter and the subtitle wraps a word to a
           line, because `min-w-0` lets it give up everything to the controls. */}
-      <header className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-baseline sm:justify-between sm:gap-4">
-        {/* `min-w-0` so the subtitle wraps instead of pushing the controls
-            around: with the undo offer in it, that line is long enough to shove
-            a button onto a second row otherwise. */}
-        <div className="min-w-0">
-          {/* The reading sits beside the title rather than in a bar of its own,
-              baseline-aligned with the controls across the header. */}
-          <div className="flex flex-wrap items-baseline gap-x-3 gap-y-2">
-            <h1 className="text-page font-bold text-ink">Budget</h1>
-            <BalanceReading view={view.data} />
-          </div>
-          <p className="mt-1 text-quiet text-muted">
+      <PageHeader
+        title="Budget"
+        beside={<BalanceReading view={view.data} />}
+        subtitle={
+          <>
             {view.data.cycleStartedAt
               ? `This cycle began ${new Date(view.data.cycleStartedAt).toLocaleDateString()}.`
-              : 'No delegate run yet — press Delegate on payday to start a cycle.'}
+              : 'No delegate run yet.'}
             {/* Beside the cycle date rather than in a bar of its own, and gone
                 the moment the window closes — while the date stays, because
                 the cycle did not end when the chance to undo it did. */}
             {undoRunId !== null && (
               <span className="ml-2">
                 Delegated {formatCents(BigInt(undo.data?.totalCents ?? '0'))} across{' '}
-                {undo.data?.lineCount} lines. Undoing also rolls the budget cycle back.
+                {undo.data?.lineCount} lines. Undo rolls the cycle back too.
               </span>
             )}
-          </p>
-        </div>
-
-        {/* `shrink-0`: the controls keep their row, and the prose gives way. */}
-        <div className="flex shrink-0 flex-wrap gap-2 sm:justify-end">
-          {/*
+          </>
+        }
+        actions={
+          <>
+            {/*
             Four of the five fold away on a phone.
             
             Five buttons cannot sit in a row at 390px, and choosing which stays
             is not arbitrary: Delegate is the one with a moment attached. The
             rest are things done when you are already sitting down.
           */}
-          <div className="hidden flex-wrap justify-end gap-2 sm:flex">
-            {newGrouping ? (
-              <input
-                autoFocus
-                placeholder="Grouping name, then Enter"
-                aria-label="Add a grouping"
-                onKeyDown={(event) => {
-                  if (event.key === 'Escape') setNewGrouping(false);
-                  if (event.key !== 'Enter') return;
-                  const name = event.currentTarget.value.trim();
-                  if (name !== '') createGrouping.mutate(name);
-                }}
-                className="rounded-lg border border-line bg-canvas px-2 py-1 text-quiet"
-              />
-            ) : (
-              <Button onClick={() => setNewGrouping(true)}>Add grouping</Button>
-            )}
-            {/* Same wording as the button on the Transactions page: two controls
+            <div className="hidden flex-wrap justify-end gap-2 sm:flex">
+              {newGrouping ? (
+                <input
+                  autoFocus
+                  placeholder="Grouping name, then Enter"
+                  aria-label="New grouping"
+                  onKeyDown={(event) => {
+                    if (event.key === 'Escape') setNewGrouping(false);
+                    if (event.key !== 'Enter') return;
+                    const name = event.currentTarget.value.trim();
+                    if (name !== '') createGrouping.mutate(name);
+                  }}
+                  className="rounded-lg border border-line bg-canvas px-2 py-1 text-quiet"
+                />
+              ) : (
+                <Button onClick={() => setNewGrouping(true)}>New grouping</Button>
+              )}
+              {/* Same wording as the button on the Transactions page: two controls
                 that open the same dialog should read the same. */}
-            <Button onClick={() => setDialog('transaction')}>Add transaction</Button>
-            <Button onClick={() => setDialog('check')}>New check</Button>
-            {/* Transfer sits to the left of Delegate, per the design. */}
-            <Button onClick={() => setDialog('transfer')}>Transfer</Button>
-          </div>
+              <Button onClick={() => setDialog('transaction')}>New transaction</Button>
+              <Button onClick={() => setDialog('check')}>New check</Button>
+              {/* Transfer sits to the left of Delegate, per the design. */}
+              <Button onClick={() => setDialog('transfer')}>Transfer</Button>
+            </div>
 
-          {/* One slot, two jobs. While the run can still be undone there is
+            {/* One slot, two jobs. While the run can still be undone there is
               nothing sensible to delegate — the money has just gone out — so
               offering both would be offering the wrong one first. */}
-          {undoRunId !== null ? (
-            <Button
-              variant="danger"
-              className="flex-1 sm:flex-none"
-              onClick={() => undoDelegate.mutate(undoRunId)}
-              disabled={undoDelegate.isPending}
-            >
-              {undoDelegate.isPending ? 'Undoing…' : 'Undo Delegation'}
-            </Button>
-          ) : (
-            <Button
-              variant="primary"
-              className="flex-1 sm:flex-none"
-              onClick={() => setDialog('delegate')}
-            >
-              Delegate
-            </Button>
-          )}
+            {undoRunId !== null ? (
+              <Button
+                variant="danger"
+                className="flex-1 sm:flex-none"
+                onClick={() => undoDelegate.mutate(undoRunId)}
+                disabled={undoDelegate.isPending}
+              >
+                {undoDelegate.isPending ? 'Undoing…' : 'Undo Delegation'}
+              </Button>
+            ) : (
+              <Button
+                variant="primary"
+                className="flex-1 sm:flex-none"
+                onClick={() => setDialog('delegate')}
+              >
+                Delegate
+              </Button>
+            )}
 
-          <Button
-            className="w-11 shrink-0 px-0 sm:hidden"
-            aria-label="More budget actions"
-            onClick={() => setDialog('more')}
-          >
-            ⋯
-          </Button>
-        </div>
-      </header>
+            <Button
+              className="w-11 shrink-0 px-0 sm:hidden"
+              aria-label="More budget actions"
+              onClick={() => setDialog('more')}
+            >
+              ⋯
+            </Button>
+          </>
+        }
+      />
 
       {problem && (
         <div className="mb-4">

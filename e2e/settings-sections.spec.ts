@@ -50,7 +50,7 @@ test('a grouping is created and renamed from Settings', async ({ signedIn }) => 
   await signedIn.getByRole('button', { name: 'New grouping' }).click();
   const dialog = signedIn.getByRole('dialog', { name: 'Create a grouping' });
   await dialog.getByLabel('Name').fill('Essentials');
-  await dialog.getByRole('button', { name: 'Add grouping' }).click();
+  await dialog.getByRole('button', { name: 'Add' }).click();
   await expect(signedIn.getByRole('dialog')).toHaveCount(0);
   await expect(signedIn.getByLabel('Name of Essentials')).toBeVisible();
 
@@ -66,7 +66,7 @@ test('a grouping holding a live line refuses to archive', async ({ signedIn, api
   await signedIn.getByRole('button', { name: 'New grouping' }).click();
   const dialog = signedIn.getByRole('dialog', { name: 'Create a grouping' });
   await dialog.getByLabel('Name').fill('Essentials');
-  await dialog.getByRole('button', { name: 'Add grouping' }).click();
+  await dialog.getByRole('button', { name: 'Add' }).click();
   await expect(signedIn.getByRole('dialog')).toHaveCount(0);
   await expect(signedIn.getByLabel('Name of Essentials')).toBeVisible();
 

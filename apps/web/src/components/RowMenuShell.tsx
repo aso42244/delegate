@@ -27,7 +27,7 @@ export interface RowMenuControls {
 }
 
 const ITEM_LAYOUT =
-  'flex w-full items-center justify-between gap-3 rounded-md px-2 py-1.5 text-left text-quiet hover:bg-surface-2';
+  'flex w-full items-center justify-between gap-2 rounded-md px-2 py-1.5 text-left text-quiet hover:bg-surface-2';
 
 export const ITEM_CLASS = `${ITEM_LAYOUT} text-ink`;
 
@@ -275,9 +275,7 @@ export function RowMenuShell({
               ))}
 
               {(groupings ?? []).length === 0 && (
-                <p className="px-2 py-1.5 text-quiet text-muted">
-                  No groupings yet. Add one above the table.
-                </p>
+                <p className="px-2 py-1.5 text-quiet text-muted">No groupings yet.</p>
               )}
             </>
           )}

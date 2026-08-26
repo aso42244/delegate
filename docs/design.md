@@ -1,5 +1,11 @@
 # Visual design
 
+> **The measurements live in [ui-system.md](ui-system.md).** This document is the
+> visual language — colour, chips, tone, and the record of decisions. That one is
+> the spacing scale, field widths, button rules and the text budget every screen
+> must use, and `ui-system.test.ts` enforces it. Where the two touch, this
+> document says _why_ and that one says _how much_.
+
 The owner's design specification. **Visual only** — it describes nothing about
 behaviour. Where a design specification and a functional requirement disagree,
 **functionality wins and the design bends around it.**

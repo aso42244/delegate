@@ -337,7 +337,7 @@ export function BudgetSection({
   const columnCount = 1 + (showRemaining ? 1 : 0) + (showToDelegate ? 1 : 0) + (rowMenu ? 1 : 0);
 
   return (
-    <section className="mb-8">
+    <section className="mb-6">
       <table className="w-full" onTouchStart={onTouchStart} onTouchEnd={onTouchEnd}>
         {/*
           The section's total is a row of this table rather than a heading above

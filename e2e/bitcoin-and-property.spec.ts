@@ -11,6 +11,7 @@ import { expect, makeAccount, test } from './fixtures.js';
 
 test('a holding is added on its own tab and becomes an asset', async ({ signedIn }) => {
   await signedIn.goto('/settings/bitcoin');
+  await signedIn.getByRole('button', { name: 'New holding' }).click();
 
   // No account beforehand — this used to need one created under Accounts.
   await signedIn.getByLabel('Name').fill('Hardware wallet');
@@ -39,6 +40,8 @@ test('a holding is added on its own tab and becomes an asset', async ({ signedIn
 test('a quantity finer than a satoshi is refused rather than rounded', async ({ signedIn }) => {
   await signedIn.goto('/settings/bitcoin');
 
+  await signedIn.getByRole('button', { name: 'New holding' }).click();
+
   await signedIn.getByLabel('Name').fill('Hardware wallet');
   await signedIn.getByLabel('Quantity').fill('0.000000001');
   await signedIn.getByRole('button', { name: 'Add' }).click();
@@ -53,6 +56,7 @@ test('a quantity finer than a satoshi is refused rather than rounded', async ({ 
  */
 test('putting Bitcoin in the budget warns once, and not again', async ({ signedIn }) => {
   await signedIn.goto('/settings/bitcoin');
+  await signedIn.getByRole('button', { name: 'New holding' }).click();
 
   // `click`, not `check`: the box deliberately does not move until the warning
   // has been read, which is the behaviour under test.
@@ -64,12 +68,15 @@ test('putting Bitcoin in the budget warns once, and not again', async ({ signedI
   await expect(signedIn.getByLabel('Budget')).toBeChecked();
 
   await signedIn.reload();
+  await signedIn.getByRole('button', { name: 'New holding' }).click();
   await signedIn.getByLabel('Budget').click();
   await expect(signedIn.getByText('changes what the banner means')).toBeHidden();
 });
 
 test('a property is added on its own tab, with its opening value', async ({ signedIn }) => {
   await signedIn.goto('/settings/properties');
+
+  await signedIn.getByRole('button', { name: 'New property' }).click();
 
   await signedIn.getByLabel('Name').fill('The house');
   await signedIn.getByLabel('Value').fill('450000.00');
@@ -91,17 +98,20 @@ test('a property is added on its own tab, with its opening value', async ({ sign
  */
 test('a backdated value is history, and says it changed nothing', async ({ signedIn }) => {
   await signedIn.goto('/settings/properties');
+  await signedIn.getByRole('button', { name: 'New property' }).click();
   await signedIn.getByLabel('Name').fill('The house');
   await signedIn.getByLabel('Value').fill('450000.00');
   await signedIn.getByLabel('As of').fill('2026-06-15');
   await signedIn.getByRole('button', { name: 'Add' }).click();
   await expect(signedIn.getByRole('heading', { name: 'The house' })).toBeVisible();
 
-  await signedIn.getByLabel('New value').fill('420000.00');
-  await signedIn.getByLabel('As of').first().fill('2026-03-15');
+  await signedIn.getByRole('button', { name: 'New value' }).click();
+  const valuing = signedIn.getByRole('dialog', { name: 'New value for The house' });
+  await valuing.getByLabel('Value').fill('420000.00');
+  await valuing.getByLabel('As of').fill('2026-03-15');
   await signedIn.getByRole('button', { name: 'Record' }).click();
 
-  await expect(signedIn.getByText('the current figure is unchanged')).toBeVisible();
+  await expect(signedIn.getByText('the current value is unchanged')).toBeVisible();
   await expect(signedIn.getByText('Worth $450,000.00 as of 2026-06-15.')).toBeVisible();
 });
 
@@ -109,12 +119,13 @@ test('equity follows the mortgage down without anything being restated', async (
   await makeAccount('Mortgage', 'debt', 25_000_000n);
 
   await signedIn.goto('/settings/properties');
+  await signedIn.getByRole('button', { name: 'New property' }).click();
   await signedIn.getByLabel('Name').fill('The house');
   await signedIn.getByLabel('Value').fill('450000.00');
   await signedIn.getByLabel('Mortgage against it').selectOption({ label: 'Mortgage' });
   await signedIn.getByRole('button', { name: 'Add' }).click();
 
-  await expect(signedIn.getByText(/Equity is/)).toContainText('$200,000.00');
+  await expect(signedIn.getByText(/^Equity/)).toContainText('$200,000.00');
 });
 
 /**
@@ -125,6 +136,7 @@ test('equity follows the mortgage down without anything being restated', async (
  */
 test('a historic purchase is recorded with what it cost', async ({ signedIn }) => {
   await signedIn.goto('/settings/bitcoin');
+  await signedIn.getByRole('button', { name: 'New holding' }).click();
   await signedIn.getByLabel('Name').fill('Hardware wallet');
   await signedIn.getByRole('button', { name: 'Add' }).click();
   await expect(signedIn.getByLabel('Hardware wallet quantity')).toBeVisible();
@@ -149,6 +161,7 @@ test('a historic purchase is recorded with what it cost', async ({ signedIn }) =
 
 test('moving Bitcoin between your own wallets asks for no price', async ({ signedIn }) => {
   await signedIn.goto('/settings/bitcoin');
+  await signedIn.getByRole('button', { name: 'New holding' }).click();
   await signedIn.getByLabel('Name').fill('Hardware wallet');
   await signedIn.getByRole('button', { name: 'Add' }).click();
   await signedIn.getByRole('button', { name: 'Hardware wallet' }).click();
@@ -164,6 +177,7 @@ test('moving Bitcoin between your own wallets asks for no price', async ({ signe
 
 test('a mistake is backed out rather than deleted', async ({ signedIn }) => {
   await signedIn.goto('/settings/bitcoin');
+  await signedIn.getByRole('button', { name: 'New holding' }).click();
   await signedIn.getByLabel('Name').fill('Hardware wallet');
   await signedIn.getByRole('button', { name: 'Add' }).click();
   await signedIn.getByRole('button', { name: 'Hardware wallet' }).click();

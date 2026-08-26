@@ -311,3 +311,78 @@ test.describe('the row menu on a phone', () => {
     await expect(page.getByRole('menu', { name: 'Options for Corner Shop' })).toBeHidden();
   });
 });
+
+/**
+ * Dark mode.
+ *
+ * Per device, like row density, and for the same reason: this describes the
+ * screen somebody is looking at, not the household's budget. One person reading
+ * in a dark room must not put the other's phone into dark mode.
+ */
+test.describe('theme', () => {
+  test('light and dark are real palettes, not one with the colours inverted', async ({
+    signedIn: page,
+  }) => {
+    await page.goto('/settings/display');
+
+    const canvas = (): Promise<string> =>
+      page.evaluate(() =>
+        getComputedStyle(document.documentElement).getPropertyValue('--color-canvas').trim(),
+      );
+    const ink = (): Promise<string> =>
+      page.evaluate(() =>
+        getComputedStyle(document.documentElement).getPropertyValue('--color-ink').trim(),
+      );
+
+    await page.getByLabel('Light').check();
+    await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
+    const lightCanvas = await canvas();
+    const lightInk = await ink();
+
+    await page.getByLabel('Dark').check();
+    await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
+    expect(await canvas()).not.toBe(lightCanvas);
+    expect(await ink()).not.toBe(lightInk);
+
+    // The ground genuinely darkened and the type genuinely lightened, rather
+    // than the tokens merely differing.
+    const body = await page.evaluate(() => getComputedStyle(document.body).backgroundColor);
+    const [r, g, b] = /(\d+), (\d+), (\d+)/.exec(body)!.slice(1).map(Number) as [
+      number,
+      number,
+      number,
+    ];
+    expect((r + g + b) / 3).toBeLessThan(60);
+
+    // `color-scheme` so the browser draws checkboxes, selects and scrollbars
+    // dark too. Without it those stay white rectangles in a dark page.
+    expect(await page.evaluate(() => getComputedStyle(document.documentElement).colorScheme)).toBe(
+      'dark',
+    );
+  });
+
+  test('the choice survives a reload, and System follows the device', async ({
+    signedIn: page,
+  }) => {
+    await page.goto('/settings/display');
+    await page.getByLabel('Dark').check();
+
+    await page.reload();
+    await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
+    await expect(page.getByLabel('Dark')).toBeChecked();
+
+    // System resolves against the device rather than being stored as a third
+    // value the stylesheet would have to understand.
+    await page.emulateMedia({ colorScheme: 'dark' });
+    await page.getByLabel('System').check();
+    await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
+
+    await page.emulateMedia({ colorScheme: 'light' });
+    await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
+
+    // And an explicit choice is not overruled by the device changing.
+    await page.getByLabel('Dark').check();
+    await page.emulateMedia({ colorScheme: 'light' });
+    await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
+  });
+});

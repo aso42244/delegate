@@ -209,7 +209,7 @@ test('Delegate previews, distributes, and can be undone', async ({ signedIn, api
   // What was delegated, and the cycle rollback, sit beside the cycle date.
   await expect(signedIn.getByText(/This cycle began/)).toBeVisible();
   await expect(signedIn.getByText(/Delegated \$300\.00 across 2 lines/)).toBeVisible();
-  await expect(signedIn.getByText(/Undoing also rolls the budget cycle back/)).toBeVisible();
+  await expect(signedIn.getByText(/Undo rolls the cycle back too/)).toBeVisible();
 
   await undo.click();
 
@@ -218,7 +218,7 @@ test('Delegate previews, distributes, and can be undone', async ({ signedIn, api
 
   // And back to Delegate, with the offer gone.
   await expect(signedIn.getByRole('button', { name: 'Delegate', exact: true })).toBeVisible();
-  await expect(signedIn.getByText(/Undoing also rolls the budget cycle back/)).toHaveCount(0);
+  await expect(signedIn.getByText(/Undo rolls the cycle back too/)).toHaveCount(0);
 });
 
 /**
@@ -248,7 +248,7 @@ test('the undo offer expires back into a Delegate button', async ({ signedIn, ap
 
   await signedIn.reload();
   await expect(signedIn.getByRole('button', { name: 'Delegate', exact: true })).toBeVisible();
-  await expect(signedIn.getByText(/Undoing also rolls the budget cycle back/)).toHaveCount(0);
+  await expect(signedIn.getByText(/Undo rolls the cycle back too/)).toHaveCount(0);
   // The cycle did not end when the chance to undo it did.
   await expect(signedIn.getByText(/This cycle began/)).toBeVisible();
 });

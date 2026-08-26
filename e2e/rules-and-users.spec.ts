@@ -23,12 +23,12 @@ async function makeTransaction(
 
 /** Creates a rule through the dialog, which is the only route now. */
 async function makeRule(page: Page, text: string, delegation: string): Promise<void> {
-  await page.getByRole('button', { name: 'Add rule' }).click();
+  await page.getByRole('button', { name: 'New rule' }).click();
 
   const dialog = page.getByRole('dialog', { name: 'Create an auto-categorization rule' });
   await dialog.getByLabel('This text').fill(text);
   await dialog.getByLabel('Categorize as').selectOption({ label: delegation });
-  await dialog.getByRole('button', { name: 'Add rule' }).click();
+  await dialog.getByRole('button', { name: 'Add' }).click();
 
   await expect(page.getByRole('dialog')).toHaveCount(0);
   await expect(page.getByText(`Description contains “${text}”`)).toBeVisible();
@@ -125,12 +125,12 @@ test('overwriting hand-made categorizations is opt-in and warns first', async ({
 
 /** Creates an account through the dialog, which is the only route now. */
 async function createAccount(page: Page, username: string): Promise<void> {
-  await page.getByRole('button', { name: 'Create account' }).click();
+  await page.getByRole('button', { name: 'New person' }).click();
 
   const dialog = page.getByRole('dialog', { name: 'Create an account' });
   await dialog.getByLabel('Username').fill(username);
   await dialog.getByLabel('Temporary password').fill('temporary-passphrase-here');
-  await dialog.getByRole('button', { name: 'Create account' }).click();
+  await dialog.getByRole('button', { name: 'Save' }).click();
 
   // The dialog closing is the signal the write landed and the list refetched.
   await expect(page.getByRole('dialog')).toHaveCount(0);

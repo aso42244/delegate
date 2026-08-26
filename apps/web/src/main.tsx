@@ -5,6 +5,7 @@ import { BrowserRouter } from 'react-router-dom';
 import { App } from './App.jsx';
 import { SessionProvider } from './auth/SessionProvider.jsx';
 import { initDensity } from './display.js';
+import { initTheme } from './theme.js';
 import './styles.css';
 
 /**
@@ -18,8 +19,10 @@ const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: false, refetchOnWindowFocus: false } },
 });
 
-// Before the first render, so rows are not drawn at one height and then jump.
+// Before the first render, so rows are not drawn at one height and then jump,
+// and the page is not painted light and then repainted dark.
 initDensity();
+initTheme();
 
 const container = document.getElementById('root');
 if (!container) throw new Error('No #root element to mount into');

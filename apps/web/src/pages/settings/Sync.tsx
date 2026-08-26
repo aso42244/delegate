@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState, type FormEvent, type ReactNode } from 'react';
 import { backupsApi } from '../../api/backups.js';
+import { StatusLine } from '../../components/layout.jsx';
 import { describeBackupSchedule } from './backup-schedule.js';
 import { ApiError, syncApi, type SyncStatus } from '../../api/client.js';
 import { Alert, Button, Modal, TextField } from '../../components/ui.jsx';
@@ -79,8 +80,9 @@ function TokenField({
   }
 
   return (
-    <form onSubmit={onSubmit} className="flex flex-col gap-3">
+    <form onSubmit={onSubmit} className="flex flex-col gap-2">
       <TextField
+        width="lg"
         label="Setup token"
         value={setupToken}
         onChange={(event) => setSetupToken(event.target.value)}
@@ -175,17 +177,11 @@ function Backups(): ReactNode {
         <p className="text-quiet text-muted">Loading…</p>
       ) : (
         <>
-          <p className="flex items-center gap-2 text-quiet">
-            <span
-              aria-hidden
-              className={`h-2 w-2 shrink-0 rounded-full ${failing ? 'bg-danger-dot' : 'bg-positive'}`}
-            />
-            <span className={failing ? 'font-semibold text-danger' : 'text-muted'}>
-              {newest === null
-                ? 'No backup has ever completed.'
-                : `Newest ${new Date(newest).toLocaleString()} · ${backups.data?.count ?? 0} kept`}
-            </span>
-          </p>
+          <StatusLine tone={failing ? 'danger' : 'positive'}>
+            {newest === null
+              ? 'No backup has ever completed.'
+              : `Newest ${new Date(newest).toLocaleString()} · ${backups.data?.count ?? 0} kept`}
+          </StatusLine>
 
           {/* The path, because somebody chasing a missing dump needs to know
               which directory to look in — and because it is configuration
@@ -200,11 +196,10 @@ function Backups(): ReactNode {
           </p>
 
           {failing && (
-            <div className="mt-3">
+            <div className="mt-4">
               <Alert>
-                Everything in this budget exists in one place. The commonest cause is the backup
-                directory not being writable by the container, which runs unprivileged — check that
-                it is owned by uid 1000 on the host.
+                Usually the backup directory is not writable by the container. Check it is owned by
+                uid 1000 on the host.
               </Alert>
             </div>
           )}
@@ -290,7 +285,7 @@ export function SyncSection(): ReactNode {
               >
                 {run.isPending || status.data?.syncing ? 'Syncing…' : 'Sync now'}
               </Button>
-              <Button onClick={() => setReplacing(true)}>Set up new token</Button>
+              <Button onClick={() => setReplacing(true)}>New token</Button>
               <Button variant="danger" onClick={() => forget.mutate()} disabled={forget.isPending}>
                 Disconnect
               </Button>
@@ -304,17 +299,9 @@ export function SyncSection(): ReactNode {
         which is most days.
       */}
         {summary && (
-          <p className="flex items-center gap-2 text-quiet">
-            <span
-              aria-hidden
-              className={`h-2 w-2 shrink-0 rounded-full ${
-                summary.tone === 'positive' ? 'bg-positive' : 'bg-warning-dot'
-              }`}
-            />
-            <span className={summary.tone === 'positive' ? 'text-muted' : 'text-warning'}>
-              {summary.text}
-            </span>
-          </p>
+          <StatusLine tone={summary.tone === 'positive' ? 'positive' : 'warning'}>
+            {summary.text}
+          </StatusLine>
         )}
 
         {/* Before the first connection the token field *is* the page. */}
@@ -325,7 +312,7 @@ export function SyncSection(): ReactNode {
         )}
 
         {runs.length > 0 && (
-          <div className="mt-5">
+          <div className="mt-4">
             <table className="w-full border-t-2 border-ink">
               <thead>
                 <tr className="text-label uppercase tracking-[0.05em] text-muted">

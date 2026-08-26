@@ -29,7 +29,7 @@ async function writeCheck(page: Page, memo?: string): Promise<void> {
   await dialog.getByLabel('Amount').fill('120.00');
   await dialog.getByLabel('Money comes from').selectOption({ label: 'Piano Lessons' });
   if (memo) await dialog.getByLabel('Memo').fill(memo);
-  await dialog.getByRole('button', { name: 'Record check' }).click();
+  await dialog.getByRole('button', { name: 'Record' }).click();
 }
 
 test('a check moves money out of its envelope and onto its own line', async ({

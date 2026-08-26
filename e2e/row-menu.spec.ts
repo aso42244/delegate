@@ -140,9 +140,9 @@ test('a line can be moved into a grouping created on this page', async ({ signed
   await makeDelegation(api, 'Grocery');
   await signedIn.goto('/');
 
-  await signedIn.getByRole('button', { name: 'Add grouping' }).click();
-  await signedIn.getByLabel('Add a grouping').fill('Essentials');
-  await signedIn.getByLabel('Add a grouping').press('Enter');
+  await signedIn.getByRole('button', { name: 'New grouping' }).click();
+  await signedIn.getByLabel('New grouping').fill('Essentials');
+  await signedIn.getByLabel('New grouping').press('Enter');
 
   await expect(signedIn.getByRole('button', { name: /Essentials/ })).toBeVisible();
 

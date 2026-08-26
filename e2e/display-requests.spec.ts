@@ -12,14 +12,16 @@ test.describe('insights tiles', () => {
   test('a tile can be drawn a different way, and remembers it', async ({ signedIn: page }) => {
     await page.goto('/insights');
 
-    const donut = page.getByRole('button', { name: 'Show Spending by grouping as Donut' });
+    // A radio now rather than a toggle button: picking one of a few is what
+    // this is, and `toBeChecked` is the assertion that follows from saying so.
+    const donut = page.getByRole('radio', { name: 'Show Spending by grouping as Donut' });
     await donut.click();
-    await expect(donut).toHaveAttribute('aria-pressed', 'true');
+    await expect(donut).toBeChecked();
 
     await page.reload();
     await expect(
-      page.getByRole('button', { name: 'Show Spending by grouping as Donut' }),
-    ).toHaveAttribute('aria-pressed', 'true');
+      page.getByRole('radio', { name: 'Show Spending by grouping as Donut' }),
+    ).toBeChecked();
   });
 
   test('drag a tile onto another and it takes that place', async ({ signedIn: page }) => {

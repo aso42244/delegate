@@ -2,6 +2,7 @@ import { formatCents, INSIGHT_DISPLAYS, defaultInsightDisplay } from '@budget/sh
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState, type DragEvent, type ReactNode } from 'react';
 import { api } from '../api/client.js';
+import { PageHeader, SegmentedControl } from '../components/layout.jsx';
 import { Button } from '../components/ui.jsx';
 
 /**
@@ -163,7 +164,7 @@ function Card({
         drag.isTarget ? 'border-accent outline-2 outline-accent' : 'border-line'
       }`}
     >
-      <header className="mb-3 flex items-start justify-between gap-2">
+      <header className="mb-4 flex items-start justify-between gap-2">
         {/* The handle says the card is draggable. Outside the heading, because
             it is not part of the tile's name — putting it inside made the
             accessible name "⠿ Spending by grouping". */}
@@ -172,26 +173,21 @@ function Card({
         </span>
         <h2 className="flex-1 text-base font-semibold text-ink">{title}</h2>
 
-        <div className="flex shrink-0 items-center gap-1">
+        <div className="flex shrink-0 items-center gap-2">
           {/* Only when there is a choice to make. A single-option switch is a
               control that does nothing. */}
           {displays.length > 1 && (
-            <span className="mr-1 flex rounded-md bg-surface-2 p-0.5">
-              {displays.map((option) => (
-                <button
-                  key={option}
-                  type="button"
-                  onClick={() => onDisplay(option)}
-                  aria-pressed={display === option}
-                  aria-label={`Show ${title} as ${DISPLAY_LABELS[option] ?? option}`}
-                  className={`rounded px-1.5 py-0.5 text-label font-semibold ${
-                    display === option ? 'bg-canvas text-ink' : 'text-muted'
-                  }`}
-                >
-                  {DISPLAY_LABELS[option] ?? option}
-                </button>
-              ))}
-            </span>
+            <SegmentedControl
+              size="sm"
+              label={`How to show ${title}`}
+              value={display}
+              options={displays.map((option) => ({
+                value: option,
+                label: DISPLAY_LABELS[option] ?? option,
+              }))}
+              onChange={onDisplay}
+              describeOption={(option) => `Show ${title} as ${option.label}`}
+            />
           )}
 
           <button
@@ -478,7 +474,7 @@ function CycleBars({
 
       <ul className="mt-2 flex flex-col gap-1">
         {recent.map((cycle, index) => (
-          <li key={cycle.startedAt} className="flex items-baseline justify-between gap-3">
+          <li key={cycle.startedAt} className="flex items-baseline justify-between gap-2">
             <span className="text-quiet text-muted">
               {new Date(cycle.startedAt).toLocaleDateString()}
               {cycle.partial && <span className="ml-1">(in progress)</span>}
@@ -535,7 +531,7 @@ function RankedBars({
 
         return (
           <li key={entry.key}>
-            <div className="flex items-baseline justify-between gap-3">
+            <div className="flex items-baseline justify-between gap-2">
               <span className="text-quiet text-ink">{entry.name}</span>
               <span className="money text-quiet text-ink">{formatCents(value)}</span>
             </div>
@@ -668,9 +664,9 @@ export function Insights(): ReactNode {
               {formatCents(BigInt(composition.totalAssetsCents))} held,{' '}
               {formatCents(BigInt(composition.totalDebtsCents))} owed.
             </p>
-            <ul className="mt-3 flex flex-col gap-1">
+            <ul className="mt-4 flex flex-col gap-1">
               {composition.assets.slice(0, 6).map((entry) => (
-                <li key={entry.name} className="flex items-baseline justify-between gap-3">
+                <li key={entry.name} className="flex items-baseline justify-between gap-2">
                   <span className="text-quiet text-ink">{entry.name}</span>
                   <span className="money text-quiet text-muted">
                     {formatCents(BigInt(entry.balanceCents))} ·{' '}
@@ -687,7 +683,7 @@ export function Insights(): ReactNode {
         const note =
           insights.spending_by_grouping.since === null
             ? 'No Delegate press yet, so there is no cycle to report on.'
-            : 'Nothing categorized in this window yet.';
+            : 'Nothing categorized in this window.';
         return display === 'donut' ? (
           <Donut entries={insights.spending_by_grouping.entries} emptyNote={note} />
         ) : (
@@ -699,7 +695,7 @@ export function Insights(): ReactNode {
         const note =
           insights.spending_by_delegation.since === null
             ? 'No Delegate press yet, so there is no cycle to report on.'
-            : 'Nothing categorized in this window yet.';
+            : 'Nothing categorized in this window.';
         return display === 'donut' ? (
           <Donut entries={insights.spending_by_delegation.entries} emptyNote={note} />
         ) : (
@@ -713,7 +709,7 @@ export function Insights(): ReactNode {
         ) : (
           <ul className="flex flex-col gap-1">
             {insights.delegations_negative.map((row) => (
-              <li key={row.id} className="flex items-baseline justify-between gap-3">
+              <li key={row.id} className="flex items-baseline justify-between gap-2">
                 <span className="text-quiet text-ink">{row.name}</span>
                 <span className="money text-quiet font-semibold text-negative">
                   {formatCents(BigInt(row.balanceCents))}
@@ -745,7 +741,7 @@ export function Insights(): ReactNode {
         ) : (
           <ul className="flex flex-col gap-1">
             {insights.utilities_vs_delegated.map((utility) => (
-              <li key={utility.name} className="flex items-baseline justify-between gap-3">
+              <li key={utility.name} className="flex items-baseline justify-between gap-2">
                 <span className="text-quiet text-ink">{utility.name}</span>
                 <span className="money text-quiet text-muted">
                   {formatCents(BigInt(utility.suggestedPerCycleCents))} suggested ·{' '}
@@ -763,9 +759,7 @@ export function Insights(): ReactNode {
         return series.data?.net_worth_over_time ? (
           <SeriesChart series={series.data.net_worth_over_time} display={display} />
         ) : (
-          <p className="text-quiet text-muted">
-            No history yet. This is rebuilt from your transactions, so it starts where they do.
-          </p>
+          <p className="text-quiet text-muted">No history yet.</p>
         );
 
       case 'credit_card_trend':
@@ -785,9 +779,7 @@ export function Insights(): ReactNode {
             <SeriesChart series={series.data.home_equity_over_time} display={display} />
           </>
         ) : (
-          <p className="text-quiet text-muted">
-            No property with a mortgage linked to it. Link one in Settings → Bitcoin &amp; Property.
-          </p>
+          <p className="text-quiet text-muted">No property with a mortgage linked to it.</p>
         );
 
       case 'bitcoin_value_over_time':
@@ -804,10 +796,7 @@ export function Insights(): ReactNode {
             </p>
           </>
         ) : (
-          <p className="text-quiet text-muted">
-            No holding recorded yet. Set one in Settings → Bitcoin &amp; Property, and the price
-            feed fills in the rest.
-          </p>
+          <p className="text-quiet text-muted">No holding recorded yet.</p>
         );
 
       case 'income_vs_spending':
@@ -831,7 +820,7 @@ export function Insights(): ReactNode {
             {insights.income_vs_spending.slice(-6).map((cycle) => {
               const surplus = BigInt(cycle.surplusCents);
               return (
-                <li key={cycle.startedAt} className="flex items-baseline justify-between gap-3">
+                <li key={cycle.startedAt} className="flex items-baseline justify-between gap-2">
                   <span className="text-quiet text-ink">
                     {new Date(cycle.startedAt).toLocaleDateString()}
                     {/* A cycle still running is not comparable with finished ones. */}
@@ -856,33 +845,30 @@ export function Insights(): ReactNode {
 
   return (
     <div>
-      <header className="mb-4 flex flex-wrap items-baseline justify-between gap-3">
-        <h1 className="text-page font-bold text-ink">Insights</h1>
+      <PageHeader
+        title="Insights"
+        actions={
+          <>
+            {/* One control rather than five buttons with one of them turned
+                primary — which put a second, differently-built segmented control
+                directly above the ones in every tile header. */}
+            <SegmentedControl
+              label="Time window"
+              value={window}
+              options={WINDOWS}
+              onChange={setWindow}
+            />
 
-        <div className="flex flex-wrap items-center gap-1">
-          {WINDOWS.map((option) => (
-            <Button
-              key={option.value}
-              variant={window === option.value ? 'primary' : 'default'}
-              onClick={() => setWindow(option.value)}
-            >
-              {option.label}
+            {/* Up here rather than a dashed tile at the end of the grid. Adding a
+                card is an action on the page, and it was sitting wherever the
+                last card happened to leave it — below the fold once enough were
+                on. */}
+            <Button onClick={() => setShowCatalog(!showCatalog)} aria-expanded={showCatalog}>
+              New tile
             </Button>
-          ))}
-
-          {/* Up here rather than a dashed tile at the end of the grid. Adding a
-              card is an action on the page, and it was sitting wherever the
-              last card happened to leave it — below the fold once enough were
-              on. */}
-          <Button
-            className="ml-2"
-            onClick={() => setShowCatalog(!showCatalog)}
-            aria-expanded={showCatalog}
-          >
-            Add from catalog
-          </Button>
-        </div>
-      </header>
+          </>
+        }
+      />
 
       {data.isLoading ? (
         <p className="text-quiet text-muted">Loading…</p>

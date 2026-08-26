@@ -56,6 +56,7 @@ export function ChangePassword(): ReactNode {
 
         <form onSubmit={onSubmit} className="flex flex-col gap-4">
           <TextField
+            width="full"
             label="Temporary password"
             type="password"
             value={currentPassword}
@@ -65,6 +66,7 @@ export function ChangePassword(): ReactNode {
             required
           />
           <TextField
+            width="full"
             label="New password"
             type="password"
             value={newPassword}
@@ -74,6 +76,7 @@ export function ChangePassword(): ReactNode {
             required
           />
           <TextField
+            width="full"
             label="Confirm new password"
             type="password"
             value={confirmation}

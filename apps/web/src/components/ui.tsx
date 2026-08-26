@@ -19,9 +19,33 @@ type ButtonVariant = 'default' | 'primary' | 'danger' | 'ghost';
 
 const BUTTON_VARIANTS: Record<ButtonVariant, string> = {
   default: 'border-line bg-canvas text-ink hover:bg-surface',
-  primary: 'border-accent bg-accent text-white hover:brightness-95',
+  primary: 'border-accent bg-accent text-on-accent hover:brightness-95',
   danger: 'border-danger-line bg-danger-soft text-danger hover:brightness-95',
   ghost: 'border-transparent bg-transparent text-muted hover:bg-surface-2',
+};
+
+/**
+ * How wide a field is, decided by what goes in it.
+ *
+ * Never inherited from whatever container the field happens to sit in, which is
+ * how one text input came to be 384px wide on Settings → Users, 576px on Sync
+ * and 918px on Two-factor — three widths for the same kind of thing on three
+ * tabs of one page.
+ *
+ * `max-w-full` on every one of them: a 384px field inside a 343px phone card
+ * used to run off the edge, which is exactly what Settings → Bitcoin did.
+ */
+export type FieldWidth = 'sm' | 'md' | 'lg' | 'full';
+
+const FIELD_WIDTHS: Record<FieldWidth, string> = {
+  // 128px — money, dates, counts, anything under ten characters.
+  sm: 'w-32 max-w-full',
+  // 256px — names, single words, a delegation, a person.
+  md: 'w-64 max-w-full',
+  // 384px — tokens, addresses, descriptions, anything pasted.
+  lg: 'w-96 max-w-full',
+  // Only inside a dialog, where the dialog decides the width.
+  full: 'w-full',
 };
 
 export function Button({
@@ -52,9 +76,15 @@ export function Button({
 export function TextField({
   label,
   hint,
+  width = 'md',
   className = '',
   ...props
-}: InputHTMLAttributes<HTMLInputElement> & { label: string; hint?: string }): ReactNode {
+}: InputHTMLAttributes<HTMLInputElement> & {
+  label: string;
+  /** At most one short line, and only when the label cannot carry the meaning. */
+  hint?: string;
+  width?: FieldWidth;
+}): ReactNode {
   const generatedId = useId();
   const id = props.id ?? generatedId;
   const hintId = `${id}-hint`;
@@ -67,7 +97,7 @@ export function TextField({
       <input
         id={id}
         {...(hint ? { 'aria-describedby': hintId } : {})}
-        className={`w-full rounded-lg border border-line bg-canvas px-3 py-2 text-base text-ink placeholder:text-faint ${className}`}
+        className={`${FIELD_WIDTHS[width]} rounded-lg border border-line bg-canvas px-3 py-2 text-base text-ink placeholder:text-faint ${className}`}
         {...props}
       />
       {hint ? (
@@ -88,9 +118,13 @@ export function TextField({
  */
 export function TextArea({
   label,
+  width = 'full',
   className = '',
   ...props
-}: TextareaHTMLAttributes<HTMLTextAreaElement> & { label: string }): ReactNode {
+}: TextareaHTMLAttributes<HTMLTextAreaElement> & {
+  label: string;
+  width?: FieldWidth;
+}): ReactNode {
   const generatedId = useId();
   const id = props.id ?? generatedId;
 
@@ -101,7 +135,7 @@ export function TextArea({
       </label>
       <textarea
         id={id}
-        className={`w-full rounded-lg border border-line bg-canvas px-3 py-2 text-base text-ink placeholder:text-faint ${className}`}
+        className={`${FIELD_WIDTHS[width]} rounded-lg border border-line bg-canvas px-3 py-2 text-base text-ink placeholder:text-faint ${className}`}
         {...props}
       />
     </div>
@@ -194,7 +228,7 @@ export function Modal({
         {/* The grabber says "this came from the bottom and goes back there".
             Decorative, so it is hidden from the accessibility tree and gone
             entirely where the dialog is a centred card. */}
-        <div aria-hidden className="mx-auto mb-3 h-1 w-9 rounded-full bg-line sm:hidden" />
+        <div aria-hidden className="mx-auto mb-4 h-1 w-9 rounded-full bg-line sm:hidden" />
 
         <h2 className="mb-1 text-section font-bold text-ink">{title}</h2>
         {description ? <p className="mb-4 text-quiet text-muted">{description}</p> : null}
@@ -207,19 +241,25 @@ export function Modal({
 /** A labelled `<select>`, wired the same way as TextField. */
 export function SelectField({
   label,
+  hint,
   value,
   onChange,
   children,
+  width = 'md',
   id: providedId,
 }: {
   label: string;
+  /** At most one short line. A select that saves on change needs one. */
+  hint?: string;
   value: string;
   onChange: (value: string) => void;
   children: ReactNode;
+  width?: FieldWidth;
   id?: string;
 }): ReactNode {
   const generatedId = useId();
   const id = providedId ?? generatedId;
+  const hintId = `${id}-hint`;
 
   return (
     <div className="block">
@@ -230,10 +270,16 @@ export function SelectField({
         id={id}
         value={value}
         onChange={(event) => onChange(event.target.value)}
-        className="w-full rounded-lg border border-line bg-canvas px-3 py-2 text-base text-ink"
+        {...(hint ? { 'aria-describedby': hintId } : {})}
+        className={`${FIELD_WIDTHS[width]} rounded-lg border border-line bg-canvas px-3 py-2 text-base text-ink`}
       >
         {children}
       </select>
+      {hint ? (
+        <p id={hintId} className="mt-1 block text-quiet text-muted">
+          {hint}
+        </p>
+      ) : null}
     </div>
   );
 }

@@ -107,7 +107,7 @@ export function NotificationBanners(): ReactNode {
           // assertive live region would interrupt a screen reader every time the
           // poll came back.
           role="status"
-          className={`flex flex-wrap items-center gap-3 rounded-lg border px-3 py-2 text-quiet ${TONES[notification.severity]}`}
+          className={`flex flex-wrap items-center gap-2 rounded-lg border px-3 py-2 text-quiet ${TONES[notification.severity]}`}
         >
           {/* The message takes the slack, so the two controls stay together at
               the right rather than drifting apart on a wide screen. */}

@@ -101,21 +101,18 @@ export function BitcoinNodeSection(): ReactNode {
   }
 
   return (
-    <SettingsCard
-      title="Where address data comes from"
-      description="Needed to watch a wallet. Nothing here is used until one is set."
-    >
+    <SettingsCard title="Where address data comes from" description="Needed to watch a wallet.">
       {problem && <Alert tone="danger">{problem}</Alert>}
 
-      <form onSubmit={submit} className="flex flex-wrap items-end gap-3">
-        <div className="min-w-96 flex-1">
-          <TextField
-            label="Node address"
-            value={value}
-            onChange={(event) => setTyped(event.target.value)}
-            placeholder="192.168.1.50:3002 · mempool.space · abc…xyz.onion"
-          />
-        </div>
+      <form onSubmit={submit} className="flex flex-wrap items-end gap-2">
+        <TextField
+          width="lg"
+          label="Node address"
+          value={value}
+          onChange={(event) => setTyped(event.target.value)}
+          placeholder="192.168.1.50:3002 · mempool.space · abc…xyz.onion"
+          hint="A LAN address, a domain name, or an onion address."
+        />
         <div className="flex gap-2">
           <Button type="submit" variant="primary" disabled={save.isPending}>
             {save.isPending ? 'Checking…' : 'Save'}
@@ -129,20 +126,14 @@ export function BitcoinNodeSection(): ReactNode {
         </div>
       </form>
 
-      <p className="mt-1 text-label text-muted">
-        A LAN address, a domain name, or an onion address. The scheme and the API path are worked
-        out for you, and saving tries it.
-      </p>
-
       {route && <p className="mt-2 text-quiet text-muted">{ROUTE_NOTE[route]}</p>}
 
       {/* Said where the endpoint is chosen, not in a footnote: this is the
           decision that costs something, and it is not reversible afterwards. */}
       {route === 'prefer-tor' && (
         <p className="mt-1 text-quiet text-muted">
-          A public server sees every address Delegate asks about and can keep them, which over time
-          is the whole of your wallet. Tor hides who is asking, not what is being asked about — your
-          own node is the only answer to that.
+          A public server sees every address you look up. Tor hides who is asking, not what is asked
+          — only your own node answers that.
         </p>
       )}
 
@@ -159,7 +150,7 @@ export function BitcoinNodeSection(): ReactNode {
       )}
 
       {data && data.suggestions.length > 0 && (
-        <div className="mt-3">
+        <div className="mt-4">
           <p className="text-label uppercase tracking-[0.05em] text-muted">Public options</p>
           <ul className="mt-1 flex flex-col gap-1">
             {data.suggestions.map((suggestion) => (

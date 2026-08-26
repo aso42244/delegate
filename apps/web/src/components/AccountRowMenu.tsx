@@ -87,8 +87,9 @@ function SetBalanceDialog({
       description="Confirming a balance you keep by hand. This also restarts its staleness clock."
       onClose={onClose}
     >
-      <form onSubmit={onSubmit} className="flex flex-col gap-3">
+      <form onSubmit={onSubmit} className="flex flex-col gap-2">
         <TextField
+          width="full"
           label="Balance"
           value={amount}
           onChange={(event) => setAmount(event.target.value)}
@@ -139,8 +140,9 @@ function RenameDialog({
 
   return (
     <Modal label={`Rename ${row.name}`} title="Rename" onClose={onClose}>
-      <form onSubmit={onSubmit} className="flex flex-col gap-3">
+      <form onSubmit={onSubmit} className="flex flex-col gap-2">
         <TextField
+          width="full"
           label="Name"
           value={name}
           onChange={(event) => setName(event.target.value)}
@@ -209,8 +211,9 @@ function NicknameDialog({
       description="Shown on the budget and the register in place of the institution's own wording. Leave it empty to use the full name."
       onClose={onClose}
     >
-      <form onSubmit={onSubmit} className="flex flex-col gap-3">
+      <form onSubmit={onSubmit} className="flex flex-col gap-2">
         <TextField
+          width="full"
           label="Nickname"
           value={nickname}
           onChange={(event) => setNickname(event.target.value)}

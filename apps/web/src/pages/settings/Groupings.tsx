@@ -5,6 +5,7 @@ import { budgetApi, type BudgetGroupingDto, type BudgetViewDto } from '../../api
 import { ApiError } from '../../api/client.js';
 import { Alert, Button, Modal, SelectField, TextField } from '../../components/ui.jsx';
 import { SettingsCard } from './SettingsCard.jsx';
+import { EmptyState } from '../../components/layout.jsx';
 
 /**
  * Settings → Groupings.
@@ -292,8 +293,9 @@ function AddGroupingDialog({ onDone }: { readonly onDone: () => void }): ReactNo
       description="Organizational only. A grouping holds no balance of its own."
       onClose={onDone}
     >
-      <form onSubmit={onSubmit} className="flex flex-col gap-3">
+      <form onSubmit={onSubmit} className="flex flex-col gap-2">
         <TextField
+          width="full"
           label="Name"
           value={name}
           onChange={(event) => setName(event.target.value)}
@@ -303,6 +305,7 @@ function AddGroupingDialog({ onDone }: { readonly onDone: () => void }): ReactNo
         />
 
         <SelectField
+          width="full"
           label="Section"
           value={section}
           onChange={(value) => setSection(value as Section)}
@@ -321,7 +324,7 @@ function AddGroupingDialog({ onDone }: { readonly onDone: () => void }): ReactNo
             Cancel
           </Button>
           <Button type="submit" variant="primary" disabled={name.trim() === '' || create.isPending}>
-            {create.isPending ? 'Adding…' : 'Add grouping'}
+            {create.isPending ? 'Adding…' : 'Add'}
           </Button>
         </div>
       </form>
@@ -349,13 +352,13 @@ export function GroupingsSection(): ReactNode {
   return (
     <SettingsCard
       title="Groupings"
-      description="Organizational only. A grouping has no balance of its own; collapsed, it shows the sum of its lines."
+      description="Organizational only — a grouping has no balance of its own."
       action={<Button onClick={() => setAdding(true)}>New grouping</Button>}
     >
       {view.isLoading ? (
         <p className="text-quiet text-muted">Loading groupings…</p>
       ) : total === 0 ? (
-        <p className="text-quiet text-muted">No groupings yet.</p>
+        <EmptyState>No groupings yet.</EmptyState>
       ) : (
         <table className="w-full table-fixed border-t-2 border-ink">
           <thead>

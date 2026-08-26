@@ -43,7 +43,7 @@ export function SettingsIndex(): ReactNode {
           <li key={section.to}>
             <Link
               to={section.to}
-              className="flex min-h-[52px] items-center gap-3 border-b border-line py-2 text-ink last:border-0"
+              className="flex min-h-[52px] items-center gap-2 border-b border-line py-2 text-ink last:border-0"
             >
               <span className="flex-1">{section.label}</span>
               {state && (

@@ -99,6 +99,7 @@ export function SignIn({ appName }: { appName: string }): ReactNode {
         <form onSubmit={onSubmit} className="flex flex-col gap-4">
           {challenge ? (
             <TextField
+              width="full"
               label="Authentication code"
               value={code}
               onChange={(event) => setCode(event.target.value)}
@@ -113,6 +114,7 @@ export function SignIn({ appName }: { appName: string }): ReactNode {
           ) : (
             <>
               <TextField
+                width="full"
                 label="Username"
                 value={username}
                 onChange={(event) => setUsername(event.target.value)}
@@ -121,6 +123,7 @@ export function SignIn({ appName }: { appName: string }): ReactNode {
                 required
               />
               <TextField
+                width="full"
                 label="Password"
                 type="password"
                 value={password}
@@ -131,6 +134,7 @@ export function SignIn({ appName }: { appName: string }): ReactNode {
               />
               {needsSetup && (
                 <TextField
+                  width="full"
                   label="Confirm password"
                   type="password"
                   value={confirmation}

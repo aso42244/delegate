@@ -14,12 +14,12 @@ test('a manual transaction moves the account balance', async ({ signedIn }) => {
   await makeAccount('Physical Cash', 'asset', 20000n);
 
   await signedIn.goto('/transactions');
-  await signedIn.getByRole('button', { name: 'Add transaction' }).click();
+  await signedIn.getByRole('button', { name: 'New transaction' }).click();
 
   await signedIn.getByLabel('Account').selectOption({ label: 'Physical Cash' });
   await signedIn.getByLabel('Description').fill('Farmers market');
   await signedIn.getByLabel('Amount').fill('42.10');
-  await signedIn.getByRole('button', { name: 'Save transaction' }).click();
+  await signedIn.getByRole('button', { name: 'Save' }).click();
 
   // The dialog closes only once the write and the refetch have both landed, so
   // this is the signal that it is safe to read a balance elsewhere.
@@ -37,13 +37,13 @@ test('money in raises the balance instead of lowering it', async ({ signedIn }) 
   await makeAccount('Physical Cash', 'asset', 20000n);
 
   await signedIn.goto('/transactions');
-  await signedIn.getByRole('button', { name: 'Add transaction' }).click();
+  await signedIn.getByRole('button', { name: 'New transaction' }).click();
 
   await signedIn.getByLabel('Account').selectOption({ label: 'Physical Cash' });
   await signedIn.getByLabel('Description').fill('Sold the old bicycle');
   await signedIn.getByLabel('Amount').fill('75');
-  await signedIn.getByRole('button', { name: 'Money in' }).click();
-  await signedIn.getByRole('button', { name: 'Save transaction' }).click();
+  await signedIn.getByRole('radio', { name: 'Money in' }).click();
+  await signedIn.getByRole('button', { name: 'Save' }).click();
 
   await expect(signedIn.getByRole('dialog')).toHaveCount(0);
   await signedIn.goto('/');
@@ -57,7 +57,7 @@ test('a delegation chosen while entering is applied to the new row', async ({ si
   await makeDelegation(api, 'Grocery');
 
   await signedIn.goto('/transactions');
-  await signedIn.getByRole('button', { name: 'Add transaction' }).click();
+  await signedIn.getByRole('button', { name: 'New transaction' }).click();
 
   await signedIn.getByLabel('Account').selectOption({ label: 'Physical Cash' });
   await signedIn.getByLabel('Description').fill('Farmers market');
@@ -67,7 +67,7 @@ test('a delegation chosen while entering is applied to the new row', async ({ si
   await picker.fill('gro');
   await picker.press('Enter');
 
-  await signedIn.getByRole('button', { name: 'Save transaction' }).click();
+  await signedIn.getByRole('button', { name: 'Save' }).click();
 
   await expect(signedIn.getByRole('dialog')).toHaveCount(0);
   await signedIn.goto('/');
@@ -78,7 +78,7 @@ test('income allocates to nothing, so no delegation is offered', async ({ signed
   await makeAccount('Everyday Checking', 'asset', 500000n);
 
   await signedIn.goto('/transactions');
-  await signedIn.getByRole('button', { name: 'Add transaction' }).click();
+  await signedIn.getByRole('button', { name: 'New transaction' }).click();
   await signedIn.getByLabel('Kind').selectOption({ label: 'Income' });
 
   await expect(signedIn.getByLabel('Delegation for this transaction')).toHaveCount(0);
@@ -155,7 +155,7 @@ test('splitting evenly hands the odd cent to the first line', async ({ signedIn,
   await second.fill('hou');
   await second.press('Enter');
 
-  await signedIn.getByRole('button', { name: 'Add a line' }).click();
+  await signedIn.getByRole('button', { name: 'Add line' }).click();
   const third = signedIn.getByLabel('Delegation for split line 3');
   await third.fill('fue');
   await third.press('Enter');
@@ -204,13 +204,13 @@ test('a transaction can be entered from the Budget page, which then updates', as
     '$200.00',
   );
 
-  await signedIn.getByRole('button', { name: 'Add transaction' }).click();
+  await signedIn.getByRole('button', { name: 'New transaction' }).click();
   const dialog = signedIn.getByRole('dialog');
 
   await dialog.getByLabel('Account').selectOption({ label: 'Physical Cash' });
   await dialog.getByLabel('Description').fill('Farmers market');
   await dialog.getByLabel('Amount').fill('42.10');
-  await dialog.getByRole('button', { name: 'Save transaction' }).click();
+  await dialog.getByRole('button', { name: 'Save' }).click();
 
   await expect(signedIn.getByRole('dialog')).toHaveCount(0);
 
@@ -237,13 +237,13 @@ test('the Budget page picker does not offer outstanding checks', async ({ signed
   await checkDialog.getByLabel('Check number').fill('1042');
   await checkDialog.getByLabel('Amount').fill('120.00');
   await checkDialog.getByLabel('Money comes from').selectOption({ label: 'Grocery' });
-  await checkDialog.getByRole('button', { name: 'Record check' }).click();
+  await checkDialog.getByRole('button', { name: 'Record' }).click();
 
   // The check appearing on the page is the signal that the write landed.
   await expect(signedIn.getByRole('dialog')).toHaveCount(0);
   await expect(signedIn.getByRole('button', { name: 'Check 1042 balance' })).toBeVisible();
 
-  await signedIn.getByRole('button', { name: 'Add transaction' }).click();
+  await signedIn.getByRole('button', { name: 'New transaction' }).click();
   const dialog = signedIn.getByRole('dialog');
 
   // Focusing the picker opens the list with everything it is willing to offer.

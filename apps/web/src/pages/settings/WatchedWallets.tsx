@@ -80,7 +80,7 @@ export function WatchedWallets({ accountId }: { readonly accountId: string }): R
   const list = wallets.data?.wallets ?? [];
 
   return (
-    <div className="mt-3">
+    <div className="mt-4">
       <p className="text-label uppercase tracking-[0.05em] text-muted">Watched wallets</p>
 
       {problem && <Alert tone="danger">{problem}</Alert>}
@@ -139,8 +139,9 @@ export function WatchedWallets({ accountId }: { readonly accountId: string }): R
         </table>
       )}
 
-      <form onSubmit={submit} className="mt-2 flex flex-wrap items-end gap-3">
+      <form onSubmit={submit} className="mt-2 flex flex-wrap items-end gap-2">
         <TextField
+          width="lg"
           label="Wallet name"
           value={label}
           onChange={(event) => setLabel(event.target.value)}
@@ -148,6 +149,7 @@ export function WatchedWallets({ accountId }: { readonly accountId: string }): R
         />
         <div className="min-w-96 flex-1">
           <TextField
+            width="lg"
             label="Extended public key or descriptor"
             value={key}
             onChange={(event) => setKey(event.target.value)}
