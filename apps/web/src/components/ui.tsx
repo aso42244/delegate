@@ -37,6 +37,14 @@ const BUTTON_VARIANTS: Record<ButtonVariant, string> = {
  */
 export type FieldWidth = 'sm' | 'md' | 'lg' | 'full';
 
+/**
+ * Applied to the field's **wrapper**, never to the control inside it.
+ *
+ * `max-w-full` on the control resolves against a wrapper the control itself
+ * sized, so it can never clamp anything — which is how a 384px node address
+ * still ran off the side of a 326px card. On the wrapper it resolves against the
+ * real container and gives way as it should.
+ */
 const FIELD_WIDTHS: Record<FieldWidth, string> = {
   // 128px — money, dates, counts, anything under ten characters.
   sm: 'w-32 max-w-full',
@@ -90,14 +98,14 @@ export function TextField({
   const hintId = `${id}-hint`;
 
   return (
-    <div className="block">
+    <div className={`${FIELD_WIDTHS[width]} min-w-0`}>
       <label htmlFor={id} className="mb-1 block text-quiet font-medium text-ink">
         {label}
       </label>
       <input
         id={id}
         {...(hint ? { 'aria-describedby': hintId } : {})}
-        className={`${FIELD_WIDTHS[width]} rounded-lg border border-line bg-canvas px-3 py-2 text-base text-ink placeholder:text-faint ${className}`}
+        className={`w-full rounded-lg border border-line bg-canvas px-3 py-2 text-base text-ink placeholder:text-faint ${className}`}
         {...props}
       />
       {hint ? (
@@ -129,13 +137,13 @@ export function TextArea({
   const id = props.id ?? generatedId;
 
   return (
-    <div className="block">
+    <div className={`${FIELD_WIDTHS[width]} min-w-0`}>
       <label htmlFor={id} className="mb-1 block text-quiet font-medium text-ink">
         {label}
       </label>
       <textarea
         id={id}
-        className={`${FIELD_WIDTHS[width]} rounded-lg border border-line bg-canvas px-3 py-2 text-base text-ink placeholder:text-faint ${className}`}
+        className={`w-full rounded-lg border border-line bg-canvas px-3 py-2 text-base text-ink placeholder:text-faint ${className}`}
         {...props}
       />
     </div>
@@ -262,7 +270,7 @@ export function SelectField({
   const hintId = `${id}-hint`;
 
   return (
-    <div className="block">
+    <div className={`${FIELD_WIDTHS[width]} min-w-0`}>
       <label htmlFor={id} className="mb-1 block text-quiet font-medium text-ink">
         {label}
       </label>
@@ -271,7 +279,7 @@ export function SelectField({
         value={value}
         onChange={(event) => onChange(event.target.value)}
         {...(hint ? { 'aria-describedby': hintId } : {})}
-        className={`${FIELD_WIDTHS[width]} rounded-lg border border-line bg-canvas px-3 py-2 text-base text-ink`}
+        className={`w-full rounded-lg border border-line bg-canvas px-3 py-2 text-base text-ink`}
       >
         {children}
       </select>

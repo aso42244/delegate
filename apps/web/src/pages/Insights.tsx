@@ -171,7 +171,9 @@ function Card({
         <span aria-hidden className="mt-0.5 cursor-grab text-quiet text-faint">
           ⠿
         </span>
-        <h2 className="flex-1 text-base font-semibold text-ink">{title}</h2>
+        <h2 className="min-w-0 flex-1 truncate text-base font-semibold text-ink" title={title}>
+          {title}
+        </h2>
 
         <div className="flex shrink-0 items-center gap-2">
           {/* Only when there is a choice to make. A single-option switch is a
@@ -532,7 +534,7 @@ function RankedBars({
         return (
           <li key={entry.key}>
             <div className="flex items-baseline justify-between gap-2">
-              <span className="text-quiet text-ink">{entry.name}</span>
+              <span className="min-w-0 truncate text-quiet text-ink">{entry.name}</span>
               <span className="money text-quiet text-ink">{formatCents(value)}</span>
             </div>
             <div
@@ -667,7 +669,7 @@ export function Insights(): ReactNode {
             <ul className="mt-4 flex flex-col gap-1">
               {composition.assets.slice(0, 6).map((entry) => (
                 <li key={entry.name} className="flex items-baseline justify-between gap-2">
-                  <span className="text-quiet text-ink">{entry.name}</span>
+                  <span className="min-w-0 truncate text-quiet text-ink">{entry.name}</span>
                   <span className="money text-quiet text-muted">
                     {formatCents(BigInt(entry.balanceCents))} ·{' '}
                     {(entry.shareBasisPoints / 100).toFixed(1)}%
@@ -710,7 +712,7 @@ export function Insights(): ReactNode {
           <ul className="flex flex-col gap-1">
             {insights.delegations_negative.map((row) => (
               <li key={row.id} className="flex items-baseline justify-between gap-2">
-                <span className="text-quiet text-ink">{row.name}</span>
+                <span className="min-w-0 truncate text-quiet text-ink">{row.name}</span>
                 <span className="money text-quiet font-semibold text-negative">
                   {formatCents(BigInt(row.balanceCents))}
                 </span>
@@ -802,11 +804,7 @@ export function Insights(): ReactNode {
       case 'income_vs_spending':
       case 'cycle_surplus':
         if (insights.income_vs_spending.length === 0) {
-          return (
-            <p className="text-quiet text-muted">
-              No Delegate press yet, so there are no cycles to compare.
-            </p>
-          );
+          return <p className="text-quiet text-muted">No cycles yet.</p>;
         }
 
         if (display === 'bars') {

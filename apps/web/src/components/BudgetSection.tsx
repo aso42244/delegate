@@ -261,21 +261,25 @@ export function BudgetSection({
         }}
       >
         <td className={`row-cell pr-3 ${inGrouping ? 'pl-8' : 'pl-3'}`}>
-          <span className="text-ink">{row.name}</span>
-
           {/*
-            Marks, never words. Nearly everything on this page comes from the
-            feed, so labelling *those* said nothing while taking a row's width;
-            what is worth knowing at a glance is the opposite — which balances
-            somebody keeps true by hand, which are guesses, and which are not
-            bank balances at all. Every mark carries its meaning for a screen
-            reader and on hover; see components/chips.ts.
+            A flex line rather than inline content, so the name gives way and the
+            chip never does. Inline, a narrow screen wrapped the chip onto a line
+            of its own and doubled the row's height — on the Budget page that
+            turned a column of figures read together into a ragged list.
           */}
-          {chipsFor(row).length > 0 && (
-            <span className="ml-2 inline-flex align-middle">
-              <Chips kinds={chipsFor(row)} />
-            </span>
-          )}
+          <div className="flex min-w-0 items-center gap-2">
+            <span className="truncate text-ink">{row.name}</span>
+
+            {/*
+              Marks, never words. Nearly everything on this page comes from the
+              feed, so labelling *those* said nothing while taking a row's width;
+              what is worth knowing at a glance is the opposite — which balances
+              somebody keeps true by hand, which are guesses, and which are not
+              bank balances at all. Every mark carries its meaning for a screen
+              reader and on hover; see components/chips.ts.
+            */}
+            <Chips kinds={chipsFor(row)} />
+          </div>
         </td>
 
         {showRemaining && (

@@ -6,7 +6,47 @@ phase (`v0.1.0-phase1`, and so on).
 
 ## [Unreleased]
 
-Nothing yet.
+### Fixed
+
+- **Nothing runs off the side of a phone any more.** Measured across all sixteen
+  screens at 390px, not eyeballed. A table of fixed columns came to 456px inside a
+  326px card and drew `NAME` and `ROLE` on top of each other; the Insights window
+  picker put 138px and its last option past the edge, unreachable; a 384px field
+  overflowed its card because `max-w-full` sat on the control rather than the
+  wrapper, where it resolved against a box the control had itself sized and so
+  could never clamp anything.
+
+- **A chip no longer wraps onto a line of its own**, which doubled the height of
+  whichever Budget row it happened to and made a column of figures read as a
+  ragged list. The name gives way now; the chip never does.
+
+- **A phone shows a table's identity column, its money, and the row menu.**
+  Everything else waits in that menu, which already carried it — the two account
+  toggles, a person's role and status. Three fixed columns of secondary facts do
+  not fit beside a name in 326px, and were not worth the name being unreadable.
+
+- **No heading, cell, label or control takes a second line at 390px.** Copy that
+  needed two was cut to fit one: the SimpleFIN and Accounts descriptions, the
+  sync status, the backups schedule line, two node notes, and a field label
+  carrying its unit — `Undo window (hours)` became `Undo window`, with the unit in
+  the hint where it does not have to fit a 128px column.
+
+- **The Transactions row leads with the control.** The delegation chip is the one
+  thing you tap on a phone and it sat on the right, where a variable-width pill
+  under right-aligned amounts made a ragged edge and moved sideways on every row.
+  It starts in the same place every row now, with the date and account quiet
+  after it.
+
+- **A utility with nothing spent in the window draws no chart**, rather than 64px
+  of empty box — which was the largest thing on the card and the part with
+  nothing in it.
+
+### Added
+
+- **`e2e/phone.spec.ts` measures both rules on every route** — nothing past the
+  edge that is not inside something built to scroll, and nothing that lines up in
+  a column taking two lines. Every fault above was visible in a screenshot for
+  weeks and none of them was noticed, so this is counted rather than looked at.
 
 ## [0.32.0] — 2026-08-26
 

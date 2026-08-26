@@ -14,9 +14,9 @@ import type { ChipKind } from './chips.js';
  *
  * Two lines, and the split is what the row is *for*. The first says what the
  * charge is and what it cost: the two facts that identify it, with the amount
- * keeping its tabular alignment down the column. The second is what to do about
- * it — a chip that opens the picker, which is the only reason this page is open
- * on a phone at all.
+ * keeping its tabular alignment down the column. The second leads with what to
+ * do about it — a chip that opens the picker, which is the only reason this page
+ * is open on a phone at all — and the date and account follow it, quiet.
  */
 export function TransactionCard({
   transaction,
@@ -54,17 +54,15 @@ export function TransactionCard({
         </span>
       </div>
 
+      {/*
+        The control leads the second line, the facts follow it.
+        
+        It used to sit on the right, where a variable-width pill under a column
+        of right-aligned amounts made a ragged edge down the page — and the one
+        thing on the row you are meant to tap moved sideways with every row. On
+        the left it starts in the same place every time.
+      */}
       <div className="mt-1.5 flex items-center gap-2">
-        <span className="shrink-0 text-label whitespace-nowrap text-faint">
-          {new Date(transaction.postedAt).toLocaleDateString(undefined, {
-            month: 'numeric',
-            day: 'numeric',
-          })}{' '}
-          · {transaction.account.name}
-        </span>
-
-        <span className="flex-1" />
-
         {decidable ? (
           /*
            * A chip, not a field.
@@ -78,7 +76,7 @@ export function TransactionCard({
             type="button"
             onClick={onCategorize}
             aria-label={`Categorize ${transaction.description}`}
-            className={`touch-target max-w-[55%] shrink-0 truncate rounded-full border px-3 py-1 text-quiet font-semibold ${
+            className={`touch-target max-w-[60%] shrink-0 truncate rounded-full border px-3 py-1 text-quiet font-semibold ${
               categorizedAs
                 ? 'border-line bg-surface-2 text-ink'
                 : 'border-accent bg-accent-soft text-accent'
@@ -89,8 +87,16 @@ export function TransactionCard({
               : (categorizedAs ?? 'Categorize')}
           </button>
         ) : (
-          <span className="text-quiet text-muted">—</span>
+          <span className="shrink-0 text-quiet text-muted">—</span>
         )}
+
+        <span className="min-w-0 flex-1 truncate text-label text-faint">
+          {new Date(transaction.postedAt).toLocaleDateString(undefined, {
+            month: 'numeric',
+            day: 'numeric',
+          })}{' '}
+          · {transaction.account.name}
+        </span>
 
         {/* The real row menu — split, match a check, archive, say what the row
             is. Its trigger is always drawn here, because the rule that hides it

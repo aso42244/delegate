@@ -387,9 +387,11 @@ function UserRow({
           </div>
         </td>
 
-        <td className="row-cell w-32 text-quiet text-muted">{ROLE_LABELS[user.role]}</td>
+        <td className="hidden row-cell w-32 text-quiet text-muted sm:table-cell">
+          {ROLE_LABELS[user.role]}
+        </td>
 
-        <td className="row-cell w-32 text-quiet">
+        <td className="hidden row-cell w-32 text-quiet sm:table-cell">
           {user.hasTotp ? (
             <span className="text-muted">On</span>
           ) : (
@@ -397,7 +399,7 @@ function UserRow({
           )}
         </td>
 
-        <td className="row-cell w-40 text-quiet text-muted">
+        <td className="hidden row-cell w-40 text-quiet text-muted sm:table-cell">
           {archived ? 'Archived' : user.mustChangePassword ? 'Temporary password' : 'Active'}
         </td>
 
@@ -550,9 +552,18 @@ export function UsersSection(): ReactNode {
               <thead>
                 <tr className="text-label uppercase tracking-[0.05em] text-muted">
                   <th className="row-cell pl-1 text-left font-normal">Name</th>
-                  <th className="row-cell w-32 text-left font-normal">Role</th>
-                  <th className="row-cell w-32 text-left font-normal">Two-factor</th>
-                  <th className="row-cell w-40 text-left font-normal">Status</th>
+                  {/* The phone column policy: a name, and the menu that acts on
+                      it. Role, the second factor and whether the account is
+                      active are all reachable from that menu, and three fixed
+                      columns of them came to 456px in a 326px card — the headers
+                      drew on top of each other. */}
+                  <th className="hidden row-cell w-32 text-left font-normal sm:table-cell">Role</th>
+                  <th className="hidden row-cell w-32 text-left font-normal sm:table-cell">
+                    Two-factor
+                  </th>
+                  <th className="hidden row-cell w-40 text-left font-normal sm:table-cell">
+                    Status
+                  </th>
                   <th className="w-10 row-cell pr-1" />
                 </tr>
               </thead>

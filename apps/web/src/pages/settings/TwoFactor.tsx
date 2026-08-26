@@ -72,10 +72,7 @@ export function TwoFactorCard(): ReactNode {
   const enrolled = status.data?.enrolled === true;
 
   return (
-    <SettingsCard
-      title="Two-factor authentication"
-      description="A code from your phone, on top of your password."
-    >
+    <SettingsCard title="Two-factor authentication" description="A code on top of your password.">
       {problem && <Alert>{problem}</Alert>}
 
       {recoveryCodes && (
@@ -147,7 +144,7 @@ export function TwoFactorCard(): ReactNode {
               value={password}
               onChange={(event) => setPassword(event.target.value)}
               autoComplete="current-password"
-              hint="Required, so an open session cannot do this alone."
+              hint="So an open session cannot do it alone."
             />
             <div>
               <Button type="submit" variant="danger" disabled={disable.isPending || !password}>
