@@ -5,6 +5,7 @@ import { accountsApi } from '../api/accounts.js';
 import { ApiError } from '../api/client.js';
 import { transactionsApi } from '../api/transactions.js';
 import { DelegationPicker, type DelegationOption } from './DelegationPicker.jsx';
+import { SegmentedControl } from './layout.jsx';
 import { Alert, Button, Modal, SelectField, TextField } from './ui.jsx';
 
 /**
@@ -124,7 +125,7 @@ export function NewTransactionDialog({
       description="For cash and for the accounts no feed covers. The balance of the account you choose moves by this amount."
       onClose={onClose}
     >
-      <form onSubmit={onSubmit} className="flex flex-col gap-3">
+      <form onSubmit={onSubmit} className="flex flex-col gap-2">
         <SelectField label="Account" value={accountId} onChange={setAccountId}>
           <option value="">Choose an account</option>
           {liveAccounts.map((account) => (
@@ -136,6 +137,7 @@ export function NewTransactionDialog({
         </SelectField>
 
         <TextField
+          width="full"
           label="Description"
           value={description}
           onChange={(event) => setDescription(event.target.value)}
@@ -143,9 +145,10 @@ export function NewTransactionDialog({
           autoComplete="off"
         />
 
-        <div className="flex gap-3">
+        <div className="flex gap-2">
           <div className="flex-1">
             <TextField
+              width="full"
               label="Date"
               type="date"
               value={postedAt}
@@ -154,6 +157,7 @@ export function NewTransactionDialog({
           </div>
           <div className="flex-1">
             <TextField
+              width="full"
               label="Amount"
               value={amount}
               onChange={(event) => setAmount(event.target.value)}
@@ -165,27 +169,24 @@ export function NewTransactionDialog({
           </div>
         </div>
 
-        <fieldset className="flex gap-2">
-          <legend className="mb-1 text-quiet font-medium text-ink">Direction</legend>
-          <Button
-            type="button"
-            variant={direction === 'out' ? 'primary' : 'default'}
-            aria-pressed={direction === 'out'}
-            onClick={() => setDirection('out')}
-          >
-            Money out
-          </Button>
-          <Button
-            type="button"
-            variant={direction === 'in' ? 'primary' : 'default'}
-            aria-pressed={direction === 'in'}
-            onClick={() => setDirection('in')}
-          >
-            Money in
-          </Button>
-        </fieldset>
+        {/* One control, not two buttons with one of them turned primary — the
+            same choice-of-a-few the Insights window and the tile switchers make,
+            so it is the same control. */}
+        <div>
+          <p className="mb-1 text-quiet font-medium text-ink">Direction</p>
+          <SegmentedControl
+            label="Direction"
+            value={direction}
+            options={[
+              { value: 'out', label: 'Money out' },
+              { value: 'in', label: 'Money in' },
+            ]}
+            onChange={setDirection}
+          />
+        </div>
 
         <SelectField
+          width="full"
           label="Kind"
           value={kind}
           onChange={(value) => {
@@ -236,7 +237,7 @@ export function NewTransactionDialog({
             Cancel
           </Button>
           <Button type="submit" variant="primary" disabled={incomplete || save.isPending}>
-            {save.isPending ? 'Saving…' : 'Save transaction'}
+            {save.isPending ? 'Saving…' : 'Save'}
           </Button>
         </div>
       </form>

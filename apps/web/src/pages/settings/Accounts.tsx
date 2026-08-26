@@ -86,12 +86,13 @@ function AddAccountDialog({ onDone }: { readonly onDone: () => void }): ReactNod
   return (
     <Modal
       label="Add an account you keep by hand"
-      title="Add a manual account"
+      title="New account"
       description="For anything no feed reports: physical cash, a hardware wallet, a loan between people."
       onClose={onDone}
     >
-      <form onSubmit={onSubmit} className="flex flex-col gap-3">
+      <form onSubmit={onSubmit} className="flex flex-col gap-2">
         <TextField
+          width="full"
           label="Name"
           value={name}
           onChange={(event) => setName(event.target.value)}
@@ -99,9 +100,10 @@ function AddAccountDialog({ onDone }: { readonly onDone: () => void }): ReactNod
           autoComplete="off"
         />
 
-        <div className="flex gap-3">
+        <div className="flex gap-2">
           <div className="flex-1">
             <SelectField
+              width="full"
               label="Type"
               value={type}
               onChange={(value) => setType(value as 'asset' | 'debt')}
@@ -112,6 +114,7 @@ function AddAccountDialog({ onDone }: { readonly onDone: () => void }): ReactNod
           </div>
           <div className="flex-1">
             <TextField
+              width="full"
               label="Balance"
               value={balance}
               onChange={(event) => setBalance(event.target.value)}
@@ -124,6 +127,7 @@ function AddAccountDialog({ onDone }: { readonly onDone: () => void }): ReactNod
         </div>
 
         <TextField
+          width="full"
           label="Goes stale after (days)"
           value={staleness}
           onChange={(event) => setStaleness(event.target.value)}
@@ -154,7 +158,7 @@ function AddAccountDialog({ onDone }: { readonly onDone: () => void }): ReactNod
             variant="primary"
             disabled={name.trim() === '' || balance.trim() === '' || create.isPending}
           >
-            {create.isPending ? 'Adding…' : 'Add account'}
+            {create.isPending ? 'Adding…' : 'Add'}
           </Button>
         </div>
       </form>
@@ -382,14 +386,12 @@ export function AccountsSection(): ReactNode {
     <SettingsCard
       title="Accounts"
       description="What each account is, whether it counts towards the budget, and whether it counts towards net worth."
-      action={<Button onClick={() => setAdding(true)}>Add a manual account</Button>}
+      action={<Button onClick={() => setAdding(true)}>New account</Button>}
     >
       {accounts.isLoading ? (
         <p className="text-quiet text-muted">Loading accounts…</p>
       ) : all.length === 0 ? (
-        <p className="text-quiet text-muted">
-          No accounts yet. Connect SimpleFIN, or add one you keep by hand.
-        </p>
+        <p className="text-quiet text-muted">No accounts yet.</p>
       ) : (
         <div className="flex flex-col gap-4">
           <AccountsTable

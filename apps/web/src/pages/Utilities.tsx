@@ -2,6 +2,8 @@ import { formatCents } from '@budget/shared';
 import { useQuery } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
 import { api } from '../api/client.js';
+import { PageHeader, EmptyState } from '../components/layout.jsx';
+import { Alert } from '../components/ui.jsx';
 
 /**
  * Utilities.
@@ -106,7 +108,7 @@ function UtilityCard({ utility }: { readonly utility: UtilityDto }): ReactNode {
 
   return (
     <section className="rounded-lg border border-line bg-canvas p-4">
-      <header className="mb-3 flex items-center gap-2">
+      <header className="mb-4 flex items-center gap-2">
         {utility.groupingColor && (
           <span
             aria-hidden
@@ -134,7 +136,7 @@ function UtilityCard({ utility }: { readonly utility: UtilityDto }): ReactNode {
         "Delegated", never "funded": it is the word the rest of the application
         uses for this, and one idea should not have two names.
       */}
-      <dl className="mt-3 grid grid-cols-[1fr_auto] gap-x-4 text-quiet">
+      <dl className="mt-4 grid grid-cols-[1fr_auto] gap-x-4 text-quiet">
         <dt className="text-muted">Average per month</dt>
         <dd className="money font-semibold text-ink">{formatCents(average)}</dd>
 
@@ -184,24 +186,20 @@ export function Utilities(): ReactNode {
 
   return (
     <div>
-      <header className="mb-6">
-        <h1 className="text-page font-bold text-ink">Utilities</h1>
-      </header>
+      <PageHeader title="Utilities" />
 
       {query.isLoading ? (
-        <p className="text-quiet text-muted">Loading…</p>
+        <EmptyState>Loading…</EmptyState>
       ) : utilities.length === 0 ? (
-        <p className="text-quiet text-muted">
-          No delegations are marked as a utility yet. Turn on Utility in a line&rsquo;s row menu on
-          the Budget page.
-        </p>
+        <EmptyState>No delegations are marked as a utility.</EmptyState>
       ) : (
         <>
           {!anyHistory && (
-            <p className="mb-4 rounded-lg border border-accent bg-accent-soft px-3 py-2 text-quiet text-accent">
-              These averages need categorized history to mean anything. Until a backlog has been
-              synced and categorized they will read zero.
-            </p>
+            <div className="mb-4">
+              <Alert tone="info">
+                An average needs categorized history before it means anything.
+              </Alert>
+            </div>
           )}
 
           <div className="grid gap-4 [grid-template-columns:repeat(auto-fill,minmax(330px,1fr))]">

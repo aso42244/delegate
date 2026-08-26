@@ -55,7 +55,7 @@ export function ConfirmCheckMatchDialog({
       description="Both sides in full, so you can say no by simply not saying yes."
       onClose={onClose}
     >
-      <div className="flex flex-col gap-3">
+      <div className="flex flex-col gap-2">
         {problem && <Alert>{problem}</Alert>}
 
         <div className="rounded-lg border border-confirm-line bg-confirm-soft p-3">

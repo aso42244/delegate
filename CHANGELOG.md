@@ -6,7 +6,62 @@ phase (`v0.1.0-phase1`, and so on).
 
 ## [Unreleased]
 
-Nothing yet.
+### Added
+
+- **Dark mode**, on Settings → Display beside row height: System, Light or Dark,
+  remembered per device like every other display preference. System follows the
+  device and keeps following it, rather than meaning whatever it said when the tab
+  was opened.
+
+  The palette is **rotated, not inverted** — the warm neutral greys get warm dark
+  counterparts, so the application reads as itself with the lights off. Every
+  accent is lifted, because the light values sit at 2–3:1 on a dark canvas and
+  that is the usual way a dark mode ends up unreadable, and `color-scheme` is set
+  so the browser draws checkboxes, selects and scrollbars dark too.
+
+  The QR code on two-factor enrolment stays white in both themes. It is scanned
+  rather than read.
+  [ADR 034](docs/decisions/034-dark-mode-is-a-second-palette-not-an-inversion.md).
+
+- **[docs/ui-system.md](docs/ui-system.md)** — the measurements every screen uses,
+  and `ui-system.test.ts`, which enforces the mechanical half by reading the
+  source. Five rules: the spacing scale, the page header, declared field widths,
+  no bare `<details>`, and one verb for creating a thing.
+
+### Changed
+
+- **Every screen was reviewed and brought onto one system.** The look was right;
+  the execution had drifted. The audit found four page-header implementations,
+  five widths for the same kind of text input — 384px, 576px and 918px on three
+  tabs of one page — spacing at every value from 1 to 8, three verbs for creating
+  a thing (including **"Add grouping"** on Budget and **"New grouping"** in
+  Settings, opening the same dialog), four ways of saying a list is empty, and two
+  differently-built segmented controls on one page.
+
+  What changed: a **four-value spacing scale** (4, 8, 16, 24) and nothing else; a
+  **field width chosen by content** rather than inherited from a container;
+  **`New <noun>`** at every create entry point and the bare verb on every dialog
+  submit; and one `PageHeader`, `StatusLine`, `EmptyState`, `SegmentedControl` and
+  `Disclosure` in place of between three and five implementations each.
+
+  **Fewer words throughout.** One line of subtitle per page, one of description
+  per card, one short hint per field, and empty states that say `No rules yet.`
+  rather than explaining where to go instead — because the button that goes there
+  is already a few pixels above the text.
+  [ADR 033](docs/decisions/033-one-ui-system-with-a-test-that-holds-it.md).
+
+- **Settings → Bitcoin and Settings → Properties no longer park a create-form in
+  a card.** Both are a header button and a dialog now, which the settings-card
+  convention already required. On a phone the old forms wrapped a checkbox onto
+  its own line beside a field and pushed an input past the card's edge.
+
+### Fixed
+
+- **A field no longer runs off the edge of a phone card.** Every width now carries
+  `max-w-full`.
+- **The setup key wraps between groups, never inside one.** `break-all` split
+  `XRXM` across two lines as `X` and `RXM`, which is the wrong place to break a
+  string somebody is reading a character at a time.
 
 ## [0.31.0] — 2026-08-25
 

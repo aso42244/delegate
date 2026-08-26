@@ -6,6 +6,7 @@ import { ApiError } from '../../api/client.js';
 import { Chip } from '../../components/Chip.jsx';
 import { Alert, Button, Toggle } from '../../components/ui.jsx';
 import { SettingsCard } from './SettingsCard.jsx';
+import { EmptyState } from '../../components/layout.jsx';
 
 /**
  * Settings → Delegations.
@@ -237,17 +238,11 @@ export function DelegationsSection(): ReactNode {
     })) ?? [];
 
   return (
-    <SettingsCard
-      title="Delegations"
-      description="Every envelope and everything about it. The same settings as the row menu on the Budget page."
-    >
+    <SettingsCard title="Delegations" description="Every envelope, and everything about it.">
       {view.isLoading ? (
-        <p className="text-quiet text-muted">Loading delegations…</p>
+        <EmptyState>Loading…</EmptyState>
       ) : rows.length === 0 ? (
-        <p className="text-quiet text-muted">
-          No delegations yet. Add them inline on the Budget page — it is much faster for sixty of
-          them.
-        </p>
+        <EmptyState>No delegations yet.</EmptyState>
       ) : (
         <table className="w-full table-fixed border-t-2 border-ink">
           <thead>

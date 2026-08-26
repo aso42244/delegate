@@ -33,10 +33,24 @@ async function revealSecret(page: Page): Promise<string> {
   return secret;
 }
 
-/** Removes the factor the fixture enrolled, leaving the real screen to re-do it. */
+/**
+ * Removes the factor the fixture enrolled, leaving the real screen to re-do it.
+ *
+ * The status line is waited for before anything is typed. This card reads its
+ * state from a query, and typing into a controlled input while that query is
+ * still in flight loses the keystrokes to the re-render that follows — the
+ * field ends up empty, the button stays disabled, and the failure reads as a
+ * missing button rather than a race. It passed for weeks and then did not, on
+ * the run after a second card was added to the same page.
+ */
 async function turnItOff(page: Page): Promise<void> {
   await page.goto('/settings/users');
+  await expect(page.getByText('recovery codes left.', { exact: false })).toBeVisible();
+
   await page.getByLabel('Current password').fill(OWNER.password);
+  // Enabled only once the field genuinely holds a password.
+  await expect(page.getByRole('button', { name: 'Turn off two-factor' })).toBeEnabled();
+
   await page.getByRole('button', { name: 'Turn off two-factor' }).click();
   await expect(page.getByRole('button', { name: 'Set up two-factor' })).toBeVisible();
 }

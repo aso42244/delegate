@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import { Link, NavLink, Outlet, useLocation } from 'react-router-dom';
 import { NARROW, useMediaQuery } from '../../useMediaQuery.js';
+import { PageHeader } from '../../components/layout.jsx';
 import { SettingsIndex } from './SettingsIndex.jsx';
 
 /**
@@ -52,18 +53,15 @@ export function SettingsLayout(): ReactNode {
           <span aria-hidden>‹</span> Settings
         </Link>
       ) : (
-        <>
-          <h1 className="text-page font-bold text-ink">Settings</h1>
-          <p className="mt-1 mb-6 text-quiet text-muted">
-            Connections, and how the budget behaves.
-          </p>
-        </>
+        // No subtitle. "Connections, and how the budget behaves" described the
+        // tab row immediately beneath it, which describes itself.
+        <PageHeader title="Settings" />
       )}
 
       {/* The tab row is the better control where every destination fits at
           once, and thirteen never do on a phone. */}
       {!narrow && (
-        <nav aria-label="Settings sections" className="mb-6 flex gap-1 border-b border-line">
+        <nav aria-label="Settings sections" className="mb-6 flex gap-2 border-b border-line">
           {SECTIONS.map((section) => (
             <NavLink
               key={section.to}
@@ -80,7 +78,7 @@ export function SettingsLayout(): ReactNode {
         </nav>
       )}
 
-      <div className="flex flex-col gap-4">
+      <div className="flex flex-col gap-6">
         {narrow && atIndex ? <SettingsIndex /> : <Outlet />}
       </div>
     </div>

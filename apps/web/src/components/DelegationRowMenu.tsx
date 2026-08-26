@@ -56,8 +56,9 @@ function RenameDialog({
 
   return (
     <Modal label={`Rename ${row.name}`} title="Rename" onClose={onClose}>
-      <form onSubmit={onSubmit} className="flex flex-col gap-3">
+      <form onSubmit={onSubmit} className="flex flex-col gap-2">
         <TextField
+          width="full"
           label="Name"
           value={name}
           onChange={(event) => setName(event.target.value)}
@@ -116,12 +117,13 @@ function NoteDialog({
     <Modal
       label={`Note for ${row.name}`}
       title="Note to self"
-      description="Anything you want beside this line. Plain text — nothing here is parsed."
+      description="Plain text. Nothing here is parsed."
       onClose={onClose}
     >
-      <div className="flex flex-col gap-3">
+      <div className="flex flex-col gap-2">
         <TextArea
           label="Note"
+          width="full"
           value={notes}
           onChange={(event) => setNotes(event.target.value)}
           rows={4}
@@ -205,12 +207,13 @@ function AdjustDialog({
       description="Records a movement, not a new total. It appears in this line's history and nowhere else."
       onClose={onClose}
     >
-      <form onSubmit={onSubmit} className="flex flex-col gap-3">
+      <form onSubmit={onSubmit} className="flex flex-col gap-2">
         <p className="text-quiet text-muted">
           {row.name} currently reads <strong className="text-ink">{formatCents(balance)}</strong>.
         </p>
 
         <TextField
+          width="full"
           label="Add or remove"
           value={amount}
           onChange={(event) => setAmount(event.target.value)}

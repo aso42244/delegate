@@ -20,6 +20,7 @@ import { TransactionCard } from '../components/TransactionCard.jsx';
 import { Alert, Button, Modal } from '../components/ui.jsx';
 import { NARROW, useMediaQuery } from '../useMediaQuery.js';
 import { useRowKeyboard } from '../useRowKeyboard.js';
+import { PageHeader } from '../components/layout.jsx';
 
 /**
  * The Transactions page.
@@ -211,19 +212,17 @@ export function Transactions(): ReactNode {
 
   return (
     <div>
-      <header className="mb-4 flex items-baseline justify-between">
-        <div>
-          <h1 className="text-page font-bold text-ink">Transactions</h1>
-          <p className="mt-1 text-quiet text-muted">
-            {total} {total === 1 ? 'transaction' : 'transactions'}
-            {filters.uncategorized ? ' waiting to be categorized' : ''}.
-          </p>
-        </div>
-
-        <Button variant="primary" onClick={() => setAdding(true)}>
-          Add transaction
-        </Button>
-      </header>
+      <PageHeader
+        title="Transactions"
+        subtitle={`${total} ${total === 1 ? 'transaction' : 'transactions'}${
+          filters.uncategorized ? ' waiting to be categorized' : ''
+        }.`}
+        actions={
+          <Button variant="primary" onClick={() => setAdding(true)}>
+            New transaction
+          </Button>
+        }
+      />
 
       {/*
         Gone.
@@ -267,7 +266,7 @@ export function Transactions(): ReactNode {
       </div>
 
       {selected.size > 0 && (
-        <div className="mb-4 flex items-center gap-3 rounded-lg border border-line bg-surface px-3 py-2">
+        <div className="mb-4 flex items-center gap-2 rounded-lg border border-line bg-surface px-3 py-2">
           <span className="text-quiet text-ink">{selected.size} selected — assign all to</span>
           <div className="w-64">
             <DelegationPicker

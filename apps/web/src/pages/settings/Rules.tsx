@@ -219,10 +219,11 @@ function AddRuleDialog({
       onClose={onDone}
       width="lg"
     >
-      <form onSubmit={onSubmit} className="flex flex-col gap-3">
-        <div className="flex gap-3">
+      <form onSubmit={onSubmit} className="flex flex-col gap-2">
+        <div className="flex gap-2">
           <div className="w-48">
             <SelectField
+              width="full"
               label="When the description"
               value={matchMode}
               onChange={(value) => setMatchMode(value as RuleMatchMode)}
@@ -236,6 +237,7 @@ function AddRuleDialog({
           </div>
           <div className="flex-1">
             <TextField
+              width="full"
               label="This text"
               value={matchValue}
               onChange={(event) => setMatchValue(event.target.value)}
@@ -250,7 +252,12 @@ function AddRuleDialog({
           </div>
         </div>
 
-        <SelectField label="Categorize as" value={delegationId} onChange={setDelegationId}>
+        <SelectField
+          width="full"
+          label="Categorize as"
+          value={delegationId}
+          onChange={setDelegationId}
+        >
           <option value="">Choose a delegation</option>
           {delegations.map((delegation) => (
             <option key={delegation.id} value={delegation.id}>
@@ -259,9 +266,10 @@ function AddRuleDialog({
           ))}
         </SelectField>
 
-        <div className="flex gap-3">
+        <div className="flex gap-2">
           <div className="flex-1">
             <TextField
+              width="full"
               label="Smallest amount (optional)"
               value={min}
               onChange={(event) => setMin(event.target.value)}
@@ -271,6 +279,7 @@ function AddRuleDialog({
           </div>
           <div className="flex-1">
             <TextField
+              width="full"
               label="Largest amount (optional)"
               value={max}
               onChange={(event) => setMax(event.target.value)}
@@ -280,9 +289,9 @@ function AddRuleDialog({
           </div>
         </div>
 
-        <div className="flex gap-3">
+        <div className="flex gap-2">
           <div className="flex-1">
-            <SelectField label="Account" value={accountId} onChange={setAccountId}>
+            <SelectField width="full" label="Account" value={accountId} onChange={setAccountId}>
               <option value="">Any account</option>
               {accounts.map((account) => (
                 <option key={account.id} value={account.id}>
@@ -293,6 +302,7 @@ function AddRuleDialog({
           </div>
           <div className="flex-1">
             <SelectField
+              width="full"
               label="Direction"
               value={direction}
               onChange={(value) => setDirection(value as 'any' | 'debit' | 'credit')}
@@ -317,7 +327,7 @@ function AddRuleDialog({
             variant="primary"
             disabled={matchValue.trim() === '' || delegationId === '' || create.isPending}
           >
-            {create.isPending ? 'Adding…' : 'Add rule'}
+            {create.isPending ? 'Adding…' : 'Add'}
           </Button>
         </div>
       </form>
@@ -372,7 +382,7 @@ function RunRulesDialog({ onDone }: { readonly onDone: () => void }): ReactNode 
       description="Runs every enabled rule over transactions already imported."
       onClose={onDone}
     >
-      <div className="flex flex-col gap-3">
+      <div className="flex flex-col gap-2">
         <label className="flex items-start gap-2 text-quiet text-ink">
           <Toggle
             checked={includeCategorized}
@@ -460,23 +470,20 @@ export function RulesSection(): ReactNode {
   return (
     <SettingsCard
       title="Auto-categorization rules"
-      description="Checked in this order, and the first one that matches wins. Nothing is scored or combined."
+      description="Checked in order. The first match wins."
       action={
         <div className="flex gap-2">
           <Button onClick={() => setRunning(true)} disabled={list.length === 0}>
             Run rules
           </Button>
-          <Button onClick={() => setAdding(true)}>Add rule</Button>
+          <Button onClick={() => setAdding(true)}>New rule</Button>
         </div>
       }
     >
       {rules.isLoading ? (
         <p className="text-quiet text-muted">Loading rules…</p>
       ) : list.length === 0 ? (
-        <p className="text-quiet text-muted">
-          No rules yet. The fastest way to build them is “always categorize like this” from a
-          transaction.
-        </p>
+        <p className="text-quiet text-muted">No rules yet.</p>
       ) : (
         <table className="w-full table-fixed border-t-2 border-ink">
           <thead>

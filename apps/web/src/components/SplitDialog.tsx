@@ -203,7 +203,7 @@ export function SplitDialog({
 
         <div className="flex items-center gap-2">
           <Button type="button" onClick={addRow}>
-            Add a line
+            Add line
           </Button>
           <Button type="button" onClick={fillEvenly}>
             Split evenly

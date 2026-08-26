@@ -125,11 +125,11 @@ export function HoldingHistory({
   }
 
   return (
-    <div className="mt-3 rounded-lg bg-surface p-3">
+    <div className="mt-4 rounded-lg bg-surface p-3">
       {problem && <Alert tone="danger">{problem}</Alert>}
 
       {data && (
-        <dl className="mb-3 grid grid-cols-[1fr_auto] gap-x-4 text-quiet">
+        <dl className="mb-4 grid grid-cols-[1fr_auto] gap-x-4 text-quiet">
           <dt className="text-muted">Worth today</dt>
           <dd className="money font-semibold text-ink">
             {data.worthCents === null ? (
@@ -177,8 +177,9 @@ export function HoldingHistory({
         </dl>
       )}
 
-      <form onSubmit={submit} className="flex flex-wrap items-end gap-3 [&>*]:mb-0">
+      <form onSubmit={submit} className="flex flex-wrap items-end gap-2 [&>*]:mb-0">
         <SelectField
+          width="sm"
           label="What happened"
           value={kind}
           onChange={(value) => setKind(value as Exclude<BitcoinEventType, 'adjustment'>)}
@@ -191,6 +192,7 @@ export function HoldingHistory({
         </SelectField>
 
         <TextField
+          width="sm"
           label="How much"
           value={amount}
           onChange={(event) => setAmount(event.target.value)}
@@ -200,6 +202,7 @@ export function HoldingHistory({
         />
 
         <TextField
+          width="sm"
           label="When"
           type="date"
           value={occurredAt}
@@ -210,6 +213,7 @@ export function HoldingHistory({
             wallets buys nothing, and a price there would invent a gain. */}
         {priced && (
           <TextField
+            width="sm"
             label="Price of one Bitcoin"
             value={price}
             onChange={(event) => setPrice(event.target.value)}
@@ -219,6 +223,7 @@ export function HoldingHistory({
         )}
 
         <TextField
+          width="sm"
           label="Note"
           value={note}
           onChange={(event) => setNote(event.target.value)}
@@ -245,7 +250,7 @@ export function HoldingHistory({
       <WatchedWallets accountId={accountId} />
 
       {data && data.events.length > 0 && (
-        <table className="mt-3 w-full">
+        <table className="mt-4 w-full">
           <thead>
             <tr className="text-label uppercase tracking-[0.05em] text-muted">
               <th className="row-cell pl-1 text-left font-normal">Date</th>

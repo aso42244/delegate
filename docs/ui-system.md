@@ -1,0 +1,165 @@
+# The UI system
+
+The measurements. `docs/design.md` says what this application looks like and why;
+this says what every screen must actually use, in numbers a review can check.
+
+It exists because the look was right and the execution drifted. An audit of all
+seventeen screens on 2026-08-25 found four page-header implementations, five
+container widths for the same kind of form, `gap-` and `mb-` at every value from
+1 to 8, three verbs for creating a thing — including **"Add grouping"** on the
+Budget page and **"New grouping"** in Settings for the same action — and four
+different ways of saying a list is empty. No single screen was wrong. Together
+they did not look like one application.
+
+Everything here is normative. `ui-system.test.ts` enforces the mechanical half by
+reading the source, because a rule nobody can check is a rule that lasts until
+the next hurried change.
+
+---
+
+## 1. The scale
+
+**Four spacing values. Nothing else.**
+
+| Step | Tailwind | Used for                                                 |
+| ---- | -------- | -------------------------------------------------------- |
+| 4px  | `1`      | Label to control, control to hint                        |
+| 8px  | `2`      | Controls in a cluster, buttons in a row, chip to chip    |
+| 16px | `4`      | Blocks inside a card, card padding, header to body       |
+| 24px | `6`      | Card to card, page header to content, section to section |
+
+`gap-3`, `gap-5`, `mb-3`, `mb-5`, `mb-8`, `mt-3`, `mt-5`, `space-y-3` and every
+other off-scale value are banned and tested for. Two exceptions, both allowed by
+name in the test: grid gutters may use `gap-4`, and the sidebar keeps its own
+metrics from `design.md` §4.
+
+A gap you cannot express in that scale is a sign the grouping is wrong, not that
+the scale is short.
+
+## 2. Widths
+
+A field's width states what belongs in it. It is never inherited from whatever
+container the field happens to sit in — which is how one text input ended up
+384px wide on Settings → Users, 576px on Sync and 918px on Two-factor.
+
+| Class          | Width | For                                                       |
+| -------------- | ----- | --------------------------------------------------------- |
+| `field-sm`     | 128px | Money, dates, counts, anything under ten characters       |
+| `field-md`     | 256px | Names, single words, a delegation, a person               |
+| `field-lg`     | 384px | Tokens, addresses, descriptions, anything pasted          |
+| _(full width)_ | —     | **Only** inside a dialog, where the dialog sets the width |
+
+Defined in `styles.css` beside the other tokens. Pick by what goes in, not by
+what fits.
+
+## 3. The text budget
+
+The rule the owner asked for, made countable. **Fewer words wherever a word is
+not carrying its weight.**
+
+- **A page** gets a title and **at most one** line of subtitle. The subtitle
+  states the current fact — `469 transactions.` — never instructions.
+- **A card** gets a title and **at most one** line of description, 80 characters
+  or fewer. If it will not fit in 80, the card is doing two things.
+- **A field** gets a label and **at most one** short hint, and only when the
+  label genuinely cannot carry the meaning. Most hints are a label written twice.
+- **An empty state** is **one short sentence and no instructions.** `No rules
+yet.` — not `No rules yet. The fastest way to build them is "always categorize
+like this" from a transaction.` Where to go next belongs on the control that
+  goes there.
+- **No trailing explanatory paragraph.** Settings → Budget carried three lines
+  restating the three hints above it. Anything that genuinely needs more room is
+  a disclosure (§7) or is deleted.
+
+Copy states the fact, then stops. No "please", no "simply", no reassurance, and
+never an apology.
+
+## 4. The page header
+
+One component, `PageHeader`. Every page, no exceptions.
+
+```
+title  [chip]                                    [actions]
+one line of subtitle
+```
+
+- `h1` at `text-page font-bold text-ink`
+- An optional chip or reading sits **beside** the title, baseline-aligned
+- Actions sit right, baseline-aligned with the title, `gap-2`
+- Subtitle 4px under the title, `text-quiet text-muted`
+- **24px** between the header and the content below it, always
+
+## 5. Buttons
+
+**One size.** `min-h-[36px]`, `px-3`, `text-quiet font-semibold`, 8px radius.
+There is no small or large button.
+
+**One primary per screen**, and it is the thing you came to that screen to do —
+Delegate on Budget, New transaction on Transactions. Everything else is
+`default`. A screen with two primaries has not decided what it is for.
+
+`danger` appears only inside a dialog or a row menu, never sitting on a page.
+`ghost` is for a control that must recede: a disclosure toggle, a tertiary
+escape.
+
+**Creating a thing is always `New <noun>`.** Singular, no article. New
+transaction, New grouping, New rule, New account, New check, New holding, New
+property, New person. Not Add, not Create, not Set up. The audit found all four
+in use, twice for the same action.
+
+Buttons in a row: `gap-2`, primary last, destructive never adjacent to the
+confirm.
+
+## 6. Cards
+
+`rounded-lg border border-line bg-canvas p-4`.
+
+- Title `text-base font-semibold text-ink`
+- Description optional, one line, `text-quiet text-muted`
+- An optional action in the header, right, baseline-aligned with the title
+- 16px from the header to the body
+- **24px between cards**
+
+**A card never carries a create-form.** Adding is a header button and a dialog,
+which was already the rule and which Settings → Bitcoin and Settings → Properties
+both broke by parking a permanently-open form where the list should be. A form
+below a list pushes the list off the screen to make room for something that is
+used once.
+
+## 7. The four recurring pieces
+
+Each of these had between three and five implementations. Each is now one
+component.
+
+**Status line** — `StatusLine`. An 8px dot and one short sentence, coloured by
+tone. Used wherever a screen reports what something currently is: connected,
+backed up, enrolled, reachable.
+
+**Empty state** — `EmptyState`. One sentence, `text-quiet text-muted`, in the
+body where the content would be. No illustration, no instructions, no button
+inside it — the button is already in the card header.
+
+**Segmented control** — `SegmentedControl`. A single control for picking one of a
+few options: the Insights window, a tile's view. Not a row of Buttons with one
+turned primary, which is what Insights was doing directly above a real segmented
+control doing the same job.
+
+**Disclosure** — `Disclosure`. A `ghost` button carrying `aria-expanded`, and the
+content below it. Not `<details>`, which Settings → Tor used and which draws its
+own triangle in its own font at its own size.
+
+## 8. Tables
+
+Unchanged from `design.md`, restated because it is part of the system:
+`.row-cell` for height so Settings → Display governs it, a 2px `border-ink` rule
+above the header row, hairline dividers between rows, no rule underneath the
+last one. Column headers `text-label uppercase tracking-[0.05em] text-muted`.
+Money right-aligned in `.money`.
+
+A table's own top rule is the separator. It never also gets a margin above it.
+
+## 9. What this does not change
+
+Colour, the chip vocabulary, row heights, banner tones, the row-menu shell, the
+keyboard map, and every decision recorded in `design.md`. Those were settled and
+are not reopened here. This is the grid they all sit on.

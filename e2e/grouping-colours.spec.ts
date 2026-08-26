@@ -6,7 +6,7 @@ async function makeGrouping(page: Page, name: string): Promise<void> {
   await page.getByRole('button', { name: 'New grouping' }).click();
   const dialog = page.getByRole('dialog', { name: 'Create a grouping' });
   await dialog.getByLabel('Name').fill(name);
-  await dialog.getByRole('button', { name: 'Add grouping' }).click();
+  await dialog.getByRole('button', { name: 'Add' }).click();
   await expect(page.getByRole('dialog')).toHaveCount(0);
   await expect(page.getByLabel(`Name of ${name}`)).toBeVisible();
 }

@@ -58,7 +58,7 @@ export function MatchCheckDialog({
       description={`${transaction.description} — ${formatCents(BigInt(transaction.amountCents))}`}
       onClose={onClose}
     >
-      <div className="flex flex-col gap-3">
+      <div className="flex flex-col gap-2">
         {problem && <Alert>{problem}</Alert>}
 
         {checks.isLoading && <p className="text-quiet text-muted">Loading…</p>}
@@ -75,7 +75,7 @@ export function MatchCheckDialog({
           return (
             <div
               key={check.id}
-              className="flex items-center gap-3 rounded-lg border border-line p-3"
+              className="flex items-center gap-2 rounded-lg border border-line p-3"
             >
               <div className="flex-1">
                 <p className="text-ink">

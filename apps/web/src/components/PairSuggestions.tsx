@@ -68,7 +68,7 @@ export function PairSuggestions(): ReactNode {
         {shown.map((candidate) => (
           <li
             key={candidate.outflow.id}
-            className="flex flex-wrap items-center justify-between gap-3 border-b border-line py-2 last:border-0"
+            className="flex flex-wrap items-center justify-between gap-2 border-b border-line py-2 last:border-0"
           >
             <div className="min-w-64 flex-1 text-quiet">
               <div className="text-ink">

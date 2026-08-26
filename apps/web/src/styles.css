@@ -19,6 +19,9 @@
 
   --color-accent: #2783de;
   --color-accent-soft: #e5f2fc;
+  /* Text and icons sitting on the accent fill. Its own token because the accent
+     lightens in dark mode, where white on it would fall under 3:1. */
+  --color-on-accent: #ffffff;
 
   --color-positive: #46a171;
   --color-positive-soft: #e8f1ec;
@@ -81,6 +84,85 @@
  * best depends on the screen and the eyes in front of it, so the person reading
  * decides.
  */
+/**
+ * Dark.
+ *
+ * The same palette rotated, not a different one: the warm neutral greys of the
+ * light theme have warm dark counterparts, so the application reads as itself
+ * with the lights off rather than as a second design.
+ *
+ * Every accent is lifted until it clears 4.5:1 on the dark canvas — the light
+ * values are tuned for white and sit at 2–3:1 here, which is the usual way a
+ * dark mode ends up unreadable. `--color-on-accent` darkens for the same reason
+ * in reverse: the accent fill is now light enough that white text on it would
+ * not clear 3:1.
+ *
+ * One rule, keyed on an attribute the theme module stamps. "System" is resolved
+ * in JavaScript to an explicit value rather than left to a second
+ * `prefers-color-scheme` block here, because two copies of a palette drift — and
+ * a media query cannot be added to a selector list to avoid that.
+ */
+:root[data-theme='dark'] {
+  /* Tells the browser to draw checkboxes, selects, date pickers and scrollbars
+     dark. Without it those are white rectangles in an otherwise dark page. */
+  color-scheme: dark;
+
+  --color-ink: #eceae6;
+  --color-muted: #a29e97;
+  --color-faint: #6f6b64;
+  --color-canvas: #1c1b1a;
+  --color-surface: #141312;
+  --color-surface-2: #262523;
+  --color-line: #34322f;
+
+  --color-accent: #62aef2;
+  --color-accent-soft: #16283a;
+  --color-on-accent: #0e1922;
+
+  --color-positive: #6cc292;
+  --color-positive-soft: #16261d;
+
+  --color-confirm: #bb92e2;
+  --color-confirm-soft: #221a2e;
+  --color-confirm-line: #3d2f52;
+  --color-confirm-dot: #a87fd4;
+
+  --color-warning: #e0b64c;
+  --color-warning-soft: #2b2411;
+  --color-warning-line: #4a3d1c;
+  --color-warning-dot: #d5803b;
+
+  --color-danger: #f18d83;
+  --color-danger-soft: #2e1917;
+  --color-danger-line: #4d2a26;
+  --color-danger-dot: #e56458;
+
+  --color-negative: #f18d83;
+
+  /* Grouping colours lift too: these are row tints and chip text, and the light
+     values disappear against the dark canvas. */
+  --color-group-green: #6cc292;
+  --color-group-blue: #62aef2;
+  --color-group-orange: #e0954f;
+  --color-group-purple: #a87fd4;
+  --color-group-grey: #a29e97;
+}
+
+/**
+ * Before JavaScript has stamped anything.
+ *
+ * Only the page ground, and only when no choice has been recorded yet — enough
+ * that a dark-preferring device does not flash a white screen on first paint.
+ * The moment the theme module runs, the attribute exists and the rule above
+ * takes over.
+ */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) {
+    color-scheme: dark;
+    background: #141312;
+  }
+}
+
 :root,
 :root[data-density='compact'] {
   --row-height: 32px;

@@ -3,7 +3,8 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState, type FormEvent, type ReactNode } from 'react';
 import { bitcoinApi, type BitcoinHoldingDto } from '../../api/bitcoin.js';
 import { ApiError } from '../../api/client.js';
-import { Alert, Button, TextField } from '../../components/ui.jsx';
+import { EmptyState } from '../../components/layout.jsx';
+import { Alert, Button, Modal, TextField } from '../../components/ui.jsx';
 import { BitcoinNodeSection } from './BitcoinNode.jsx';
 import { HoldingHistory } from './HoldingHistory.jsx';
 import { SettingsCard } from './SettingsCard.jsx';
@@ -151,6 +152,7 @@ export function BitcoinSection(): ReactNode {
   const [inBudget, setInBudget] = useState(false);
   const [inNetWorth, setInNetWorth] = useState(true);
   const [warningOpen, setWarningOpen] = useState(false);
+  const [adding, setAdding] = useState(false);
 
   const data = useQuery({ queryKey: ['bitcoin'], queryFn: bitcoinApi.get });
 
@@ -167,6 +169,7 @@ export function BitcoinSection(): ReactNode {
       setProblem(null);
       setName('');
       setQuantity('');
+      setAdding(false);
       await refresh();
     },
     onError: (error: unknown) =>
@@ -228,11 +231,22 @@ export function BitcoinSection(): ReactNode {
     <>
       <SettingsCard
         title="Bitcoin"
-        description="Quantities held, valued at the price on the day. Adding one here makes it an asset — there is nothing to add under Accounts."
+        description="Quantities held, valued at the price on the day."
+        action={
+          <div className="flex gap-2">
+            <Button onClick={() => refetchPrice.mutate()} disabled={refetchPrice.isPending}>
+              {refetchPrice.isPending ? 'Fetching…' : 'Refresh price'}
+            </Button>
+            <Button onClick={() => setAdding(true)}>New holding</Button>
+          </div>
+        }
       >
         {problem && <Alert tone="danger">{problem}</Alert>}
 
-        <div className="mb-4 flex flex-wrap items-baseline gap-x-6 gap-y-1">
+        {/* The two figures, without a button wedged between them at a different
+            baseline. Refreshing is an action on the card, so it sits with the
+            other action in the header. */}
+        <div className="mb-4 flex flex-wrap items-baseline gap-x-6 gap-y-2">
           <div>
             <p className="text-label uppercase tracking-[0.05em] text-muted">Price</p>
             <p className="money text-hero font-bold text-ink">
@@ -243,23 +257,16 @@ export function BitcoinSection(): ReactNode {
             <p className="text-label uppercase tracking-[0.05em] text-muted">Held</p>
             <p className="money text-hero font-bold text-ink">{formatBitcoin(totalSats)}</p>
           </div>
-          <Button onClick={() => refetchPrice.mutate()} disabled={refetchPrice.isPending}>
-            {refetchPrice.isPending ? 'Fetching…' : 'Refresh price'}
-          </Button>
         </div>
 
         {/* Never hidden and never a zero: a price nobody could refresh today is
             still the best answer available. */}
-        {price?.stale && (
-          <Alert tone="warning">
-            This price is from {price.priceDate}. Holdings are valued at it until a fetch succeeds.
-          </Alert>
-        )}
+        {price?.stale && <Alert tone="warning">Price is from {price.priceDate}.</Alert>}
 
         {holdings.length === 0 ? (
-          <p className="text-quiet text-muted">No holdings yet.</p>
+          <EmptyState>No holdings yet.</EmptyState>
         ) : (
-          <table className="w-full">
+          <table className="w-full border-t-2 border-ink">
             <thead>
               <tr className="text-label uppercase tracking-[0.05em] text-muted">
                 <th className="row-cell pl-3 text-left font-normal">Name</th>
@@ -278,79 +285,87 @@ export function BitcoinSection(): ReactNode {
         )}
       </SettingsCard>
 
-      <SettingsCard
-        title="Add a holding"
-        description="One per wallet or exchange you keep track of."
-      >
-        {/* items-center, not items-end: a checkbox has no label above it, so
-            aligning bottoms put it below the fields rather than beside them. */}
-        <form onSubmit={submit} className="flex flex-wrap items-center gap-3">
-          <TextField
-            label="Name"
-            value={name}
-            onChange={(event) => setName(event.target.value)}
-            placeholder="Hardware wallet"
-            required
-          />
-          <TextField
-            label="Quantity"
-            value={quantity}
-            onChange={(event) => setQuantity(event.target.value)}
-            placeholder="0.05"
-            inputMode="decimal"
-          />
-
-          <label className="flex items-center gap-2 text-quiet text-ink">
-            <input
-              type="checkbox"
-              checked={inNetWorth}
-              onChange={(event) => setInNetWorth(event.target.checked)}
+      {adding && (
+        <Modal
+          label="New holding"
+          title="New holding"
+          description="One per wallet or exchange you keep track of."
+          onClose={() => setAdding(false)}
+        >
+          <form onSubmit={submit} className="flex flex-col gap-4">
+            <TextField
+              label="Name"
+              width="full"
+              value={name}
+              onChange={(event) => setName(event.target.value)}
+              placeholder="Hardware wallet"
+              required
             />
-            Net worth
-          </label>
-
-          <label className="flex items-center gap-2 text-quiet text-ink">
-            <input
-              type="checkbox"
-              checked={inBudget}
-              onChange={(event) => askForBudget(event.target.checked)}
+            <TextField
+              label="Quantity"
+              width="full"
+              value={quantity}
+              onChange={(event) => setQuantity(event.target.value)}
+              placeholder="0.05"
+              inputMode="decimal"
             />
-            Budget
-          </label>
 
-          <div>
-            <Button type="submit" variant="primary" disabled={create.isPending}>
-              Add
-            </Button>
-          </div>
-        </form>
-
-        {warningOpen && (
-          <div className="mt-3 rounded-lg border border-warning-line bg-warning-soft p-3">
-            <p className="text-quiet font-semibold text-warning">
-              Putting Bitcoin in the budget changes what the banner means
-            </p>
-            {IN_BUDGET_WARNING.split('\n\n').map((paragraph) => (
-              <p key={paragraph.slice(0, 24)} className="mt-2 text-quiet text-warning">
-                {paragraph}
-              </p>
-            ))}
-            <div className="mt-3 flex gap-2">
-              <Button
-                variant="primary"
-                onClick={() => {
-                  acknowledge.mutate();
-                  setInBudget(true);
-                  setWarningOpen(false);
-                }}
-              >
-                I understand
-              </Button>
-              <Button onClick={() => setWarningOpen(false)}>Keep it out of the budget</Button>
+            <div className="flex flex-wrap gap-4">
+              <label className="flex items-center gap-2 text-quiet text-ink">
+                <input
+                  type="checkbox"
+                  checked={inNetWorth}
+                  onChange={(event) => setInNetWorth(event.target.checked)}
+                />
+                Net worth
+              </label>
+              <label className="flex items-center gap-2 text-quiet text-ink">
+                <input
+                  type="checkbox"
+                  checked={inBudget}
+                  onChange={(event) => askForBudget(event.target.checked)}
+                />
+                Budget
+              </label>
             </div>
-          </div>
-        )}
-      </SettingsCard>
+
+            {warningOpen && (
+              <div className="rounded-lg border border-warning-line bg-warning-soft p-4">
+                <p className="text-quiet font-semibold text-warning">
+                  Putting Bitcoin in the budget changes what the banner means
+                </p>
+                {IN_BUDGET_WARNING.split('\n\n').map((paragraph) => (
+                  <p key={paragraph.slice(0, 24)} className="mt-2 text-quiet text-warning">
+                    {paragraph}
+                  </p>
+                ))}
+                <div className="mt-4 flex gap-2">
+                  <Button
+                    variant="primary"
+                    onClick={() => {
+                      acknowledge.mutate();
+                      setInBudget(true);
+                      setWarningOpen(false);
+                    }}
+                  >
+                    I understand
+                  </Button>
+                  <Button onClick={() => setWarningOpen(false)}>Keep it out of the budget</Button>
+                </div>
+              </div>
+            )}
+
+            <div className="flex gap-2">
+              <Button type="submit" variant="primary" disabled={create.isPending}>
+                Add
+              </Button>
+              <Button type="button" onClick={() => setAdding(false)}>
+                Cancel
+              </Button>
+            </div>
+          </form>
+        </Modal>
+      )}
 
       <BitcoinNodeSection />
     </>

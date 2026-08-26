@@ -11,7 +11,7 @@ test('says plainly when there are no utilities yet', async ({ signedIn }) => {
   await signedIn.goto('/utilities');
 
   await expect(signedIn.getByRole('heading', { name: 'Utilities' })).toBeVisible();
-  await expect(signedIn.getByText('No delegations are marked as a utility yet.')).toBeVisible();
+  await expect(signedIn.getByText('No delegations are marked as a utility.')).toBeVisible();
 });
 
 test('shows a card per utility, and warns that averages need history', async ({
@@ -25,7 +25,7 @@ test('shows a card per utility, and warns that averages need history', async ({
 
   await expect(signedIn.getByRole('heading', { name: 'Water' })).toBeVisible();
   // Honest about being empty rather than presenting zeros as findings.
-  await expect(signedIn.getByText(/need categorized history/)).toBeVisible();
+  await expect(signedIn.getByText(/needs categorized history/)).toBeVisible();
 });
 
 test('compares the suggestion against what is actually delegated', async ({ signedIn, api }) => {

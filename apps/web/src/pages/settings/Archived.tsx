@@ -39,7 +39,7 @@ function ArchivedList({
       {entries.map((entry) => (
         <div
           key={entry.id}
-          className="flex items-center justify-between gap-3 border-b border-line py-2 last:border-0"
+          className="flex items-center justify-between gap-2 border-b border-line py-2 last:border-0"
         >
           <span className="text-ink">{entry.name}</span>
           <span className="flex-1 text-quiet text-muted">

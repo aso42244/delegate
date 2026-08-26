@@ -98,6 +98,7 @@ export function NewCheckDialog({
         </p>
 
         <TextField
+          width="full"
           label="Check number"
           value={checkNumber}
           onChange={(event) => setCheckNumber(event.target.value)}
@@ -108,6 +109,7 @@ export function NewCheckDialog({
         />
 
         <TextField
+          width="full"
           label="Amount"
           value={amount}
           onChange={(event) => setAmount(event.target.value)}
@@ -117,6 +119,7 @@ export function NewCheckDialog({
         />
 
         <TextField
+          width="full"
           label="Date written"
           type="date"
           value={issuedAt}
@@ -134,6 +137,7 @@ export function NewCheckDialog({
         </SelectField>
 
         <TextField
+          width="full"
           label="Memo"
           value={memo}
           onChange={(event) => setMemo(event.target.value)}
@@ -147,7 +151,7 @@ export function NewCheckDialog({
             Cancel
           </Button>
           <Button type="submit" variant="primary" disabled={write.isPending}>
-            {write.isPending ? 'Recording…' : 'Record check'}
+            {write.isPending ? 'Recording…' : 'Record'}
           </Button>
         </div>
       </form>

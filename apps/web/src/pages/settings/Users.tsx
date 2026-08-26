@@ -122,15 +122,16 @@ function YourAccount(): ReactNode {
           event.preventDefault();
           save.mutate();
         }}
-        className="flex max-w-sm flex-col gap-3"
+        className="flex flex-col gap-4"
       >
         <TextField
+          width="md"
           label="Display name"
           value={value}
           onChange={(event) => setName(event.target.value)}
           maxLength={60}
           placeholder={user?.username ?? ''}
-          hint="Shown instead of your username. Leave it empty to use the username."
+          hint="Empty uses your username."
         />
 
         <p className="text-quiet text-muted">
@@ -224,9 +225,10 @@ function UserDialog({
           event.preventDefault();
           save.mutate();
         }}
-        className="flex flex-col gap-3"
+        className="flex flex-col gap-2"
       >
         <TextField
+          width="full"
           label="Username"
           value={username}
           onChange={(event) => setUsername(event.target.value)}
@@ -235,6 +237,7 @@ function UserDialog({
         />
 
         <TextField
+          width="full"
           label="Display name"
           value={displayName}
           onChange={(event) => setDisplayName(event.target.value)}
@@ -244,6 +247,7 @@ function UserDialog({
 
         {editing === null && (
           <TextField
+            width="full"
             label="Temporary password"
             value={temporaryPassword}
             onChange={(event) => setTemporaryPassword(event.target.value)}
@@ -253,7 +257,12 @@ function UserDialog({
           />
         )}
 
-        <SelectField label="Role" value={role} onChange={(next) => setRole(next as UserRole)}>
+        <SelectField
+          width="full"
+          label="Role"
+          value={role}
+          onChange={(next) => setRole(next as UserRole)}
+        >
           {(['user', 'admin', 'super_admin'] as const)
             // Offering a role the server would refuse is a dead control.
             .filter((option) => canModifyUser(actorRole, option))
@@ -271,7 +280,7 @@ function UserDialog({
             Cancel
           </Button>
           <Button type="submit" variant="primary" disabled={incomplete || save.isPending}>
-            {save.isPending ? 'Saving…' : editing ? 'Save' : 'Create account'}
+            {save.isPending ? 'Saving…' : 'Save'}
           </Button>
         </div>
       </form>
@@ -312,9 +321,10 @@ function ResetPasswordDialog({
           event.preventDefault();
           reset.mutate();
         }}
-        className="flex flex-col gap-3"
+        className="flex flex-col gap-2"
       >
         <TextField
+          width="full"
           label={`Temporary password for ${user.username}`}
           value={temporaryPassword}
           onChange={(event) => setTemporaryPassword(event.target.value)}
@@ -530,8 +540,8 @@ export function UsersSection(): ReactNode {
       ) : (
         <SettingsCard
           title="The household"
-          description="Everyone sees the whole budget. Only account management is restricted."
-          action={<Button onClick={() => setCreating(true)}>Create account</Button>}
+          description="Everyone sees the whole budget."
+          action={<Button onClick={() => setCreating(true)}>New person</Button>}
         >
           {users.isLoading ? (
             <p className="text-quiet text-muted">Loading accounts…</p>

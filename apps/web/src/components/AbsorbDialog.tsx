@@ -167,7 +167,7 @@ export function AbsorbDialog({
           event.preventDefault();
           absorb.mutate();
         }}
-        className="flex flex-col gap-3"
+        className="flex flex-col gap-2"
       >
         <div role="radiogroup" aria-label="How much" className="flex flex-col gap-2">
           {choices.map((choice) => (
@@ -200,6 +200,7 @@ export function AbsorbDialog({
 
         {mode === 'custom' && (
           <TextField
+            width="full"
             label={surplus ? 'Amount to move here' : 'Amount to take from this line'}
             value={amount}
             onChange={(event) => setAmount(event.target.value)}

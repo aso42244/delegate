@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'rea
 import { ApiError, authApi, type TotpEnrolmentDto } from '../../api/client.js';
 import { Alert, Button, TextField } from '../../components/ui.jsx';
 import { CopyButton } from '../../components/CopyButton.jsx';
+import { StatusLine } from '../../components/layout.jsx';
 import { groupSecret } from '../../components/clipboard.js';
 import { SettingsCard } from './SettingsCard.jsx';
 
@@ -87,16 +88,15 @@ export function TwoFactorCard(): ReactNode {
             event.preventDefault();
             begin.mutate();
           }}
-          className="flex flex-col gap-3"
+          className="flex flex-col gap-2"
         >
-          <p className="text-quiet text-muted">
-            Not set up. Your password is the only thing protecting this budget.
-          </p>
+          <StatusLine tone="danger">Not set up.</StatusLine>
           {/* Asked for here as well as to turn it off. Binding an
           authenticator from a session somebody else is holding would give
           them a credential you never issued. */}
           <TextField
             label="Current password"
+            width="md"
             type="password"
             value={enrolPassword}
             onChange={(event) => setEnrolPassword(event.target.value)}
@@ -127,26 +127,27 @@ export function TwoFactorCard(): ReactNode {
       )}
 
       {enrolled && !recoveryCodes && (
-        <div className="flex flex-col gap-3">
-          <p className="text-quiet text-muted">
+        <div className="flex flex-col gap-2">
+          <StatusLine tone="positive">
             On. {status.data?.recoveryCodesRemaining ?? 0} recovery{' '}
             {status.data?.recoveryCodesRemaining === 1 ? 'code' : 'codes'} left.
-          </p>
+          </StatusLine>
 
           <form
             onSubmit={(event: FormEvent) => {
               event.preventDefault();
               disable.mutate();
             }}
-            className="flex flex-col gap-3"
+            className="flex flex-col gap-2"
           >
             <TextField
               label="Current password"
+              width="md"
               type="password"
               value={password}
               onChange={(event) => setPassword(event.target.value)}
               autoComplete="current-password"
-              hint="Required to turn two-factor off, so an open session cannot do it alone."
+              hint="Required, so an open session cannot do this alone."
             />
             <div>
               <Button type="submit" variant="danger" disabled={disable.isPending || !password}>
@@ -200,11 +201,14 @@ function Enrol({
       className="flex flex-col gap-4"
     >
       <p className="text-quiet text-muted">
-        Scan this with an authenticator app, then enter the code it shows to finish.
+        Scan this with an authenticator app, then enter the code it shows.
       </p>
 
       {qr && (
         <img
+          // White in both themes, deliberately: a QR code is scanned rather
+          // than read, and inverting it is the one change that stops a camera
+          // seeing it at all.
           src={qr}
           alt="QR code for setting up two-factor authentication"
           className="rounded border border-line bg-white p-2"
@@ -217,6 +221,7 @@ function Enrol({
 
       <TextField
         label="Code from the app"
+        width="sm"
         value={code}
         onChange={(event) => onCodeChange(event.target.value)}
         autoComplete="one-time-code"
@@ -289,10 +294,6 @@ function SetupKey({ secret }: { readonly secret: string }): ReactNode {
       </p>
 
       <CopyButton value={secret} displayRef={keyRef} describes="Copy the setup key" />
-
-      <p className="text-quiet text-muted">
-        The key and the QR code are the same thing — use whichever your app takes.
-      </p>
     </div>
   );
 }
@@ -306,7 +307,7 @@ function RecoveryCodes({
   readonly onDone: () => void;
 }): ReactNode {
   return (
-    <div className="flex flex-col gap-3">
+    <div className="flex flex-col gap-2">
       <Alert tone="positive">
         Two-factor is on. Write these recovery codes down now — they will not be shown again.
       </Alert>

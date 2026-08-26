@@ -34,7 +34,7 @@ test('a widget can be added back from the catalog', async ({ signedIn }) => {
   await signedIn.getByRole('button', { name: 'Remove Assets and debts' }).click();
   await expect(signedIn.getByRole('heading', { name: 'Assets and debts' })).toHaveCount(0);
 
-  await signedIn.getByRole('button', { name: 'Add from catalog' }).click();
+  await signedIn.getByRole('button', { name: 'New tile' }).click();
   await signedIn.getByRole('button', { name: 'Assets and debts', exact: true }).click();
 
   await expect(signedIn.getByRole('heading', { name: 'Assets and debts' })).toBeVisible();
@@ -65,7 +65,7 @@ test('names the over-spent lines, and says so when there are none', async ({ sig
 /** Before the first Delegate press there is no cycle, and none is invented. */
 test('says there is no cycle rather than showing an empty one', async ({ signedIn }) => {
   await signedIn.goto('/insights');
-  await signedIn.getByRole('button', { name: 'This cycle' }).click();
+  await signedIn.getByRole('radio', { name: 'This cycle' }).click();
 
   await expect(
     signedIn.getByText('No Delegate press yet, so there is no cycle to report on.').first(),

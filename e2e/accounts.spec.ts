@@ -16,12 +16,12 @@ import { expect, makeAccount, test } from './fixtures.js';
 
 test('a manual account is added and appears on the Budget page', async ({ signedIn }) => {
   await signedIn.goto('/settings/accounts');
-  await signedIn.getByRole('button', { name: 'Add a manual account' }).click();
+  await signedIn.getByRole('button', { name: 'New account' }).click();
 
   const dialog = signedIn.getByRole('dialog', { name: 'Add an account you keep by hand' });
   await dialog.getByLabel('Name').fill('Physical Cash');
   await dialog.getByLabel('Balance', { exact: true }).fill('200.00');
-  await dialog.getByRole('button', { name: 'Add account' }).click();
+  await dialog.getByRole('button', { name: 'Add' }).click();
   await expect(signedIn.getByRole('dialog')).toHaveCount(0);
 
   // The row shows the name, and a manual account carries the `m` mark. Located
