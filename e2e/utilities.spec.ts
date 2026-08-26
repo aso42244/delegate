@@ -25,7 +25,7 @@ test('shows a card per utility, and warns that averages need history', async ({
 
   await expect(signedIn.getByRole('heading', { name: 'Water' })).toBeVisible();
   // Honest about being empty rather than presenting zeros as findings.
-  await expect(signedIn.getByText(/needs categorized history/)).toBeVisible();
+  await expect(signedIn.getByText(/categorized history/)).toBeVisible();
 });
 
 test('compares the suggestion against what is actually delegated', async ({ signedIn, api }) => {

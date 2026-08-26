@@ -29,10 +29,12 @@ export function describeBackupSchedule(
   // "daily", never "nightly": the same expression with a different hour is a
   // lunchtime job, and the copy has to stay true when somebody changes it.
   const when = daily
-    ? `daily at ${daily[2]!.padStart(2, '0')}:${daily[1]!.padStart(2, '0')} ${timezone}`
-    : `on the schedule ${cron} (${timezone})`;
+    ? `Daily at ${daily[2]!.padStart(2, '0')}:${daily[1]!.padStart(2, '0')} ${timezone}`
+    : `On the schedule ${cron} (${timezone})`;
 
-  const kept = retentionDays === 1 ? 'kept for a day' : `kept for ${retentionDays} days`;
+  const kept = retentionDays === 1 ? 'kept a day' : `kept ${retentionDays} days`;
 
-  return `A dump of the whole budget, ${when}, ${kept}.`;
+  // Two facts and a separator rather than a sentence. The sentence took two
+  // lines on a phone to say the same thing.
+  return `${when} · ${kept}.`;
 }

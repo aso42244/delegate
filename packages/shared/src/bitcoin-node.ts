@@ -192,11 +192,11 @@ export const SUGGESTED_NODES = [
   {
     label: 'mempool.space',
     url: 'mempool.space',
-    note: 'Well maintained, no sign-up. It will see every address you look up.',
+    note: 'No sign-up. Sees every address.',
   },
   {
     label: 'blockstream.info',
     url: 'blockstream.info',
-    note: 'The original Esplora. Same trade as above.',
+    note: 'The original Esplora. Same trade.',
   },
 ] as const;

@@ -223,14 +223,20 @@ function AccountRow({ account }: { readonly account: AccountDto }): ReactNode {
           the button, which would be a two-pixel target nobody finds. */}
       <tr className="group border-b border-line last:border-0 hover:bg-surface">
         <td className="row-cell overflow-hidden pl-3">
-          <div className="flex items-baseline gap-2 overflow-hidden">
-            <span className="whitespace-nowrap text-ink">{displayName(account)}</span>
+          {/* The name gives way; nothing else does. `whitespace-nowrap` here
+              held the name at full width and pushed the chips off the row on a
+              phone. */}
+          <div className="flex min-w-0 items-center gap-2">
+            <span className="min-w-0 truncate text-ink">{displayName(account)}</span>
 
             {/* The institution's own wording, kept where identifying which
                 account this is happens to be the point — but quiet, and second,
                 now that the short name is the one that reads. */}
             {account.nickname !== null && (
-              <span className="truncate text-quiet text-faint" title={account.name}>
+              <span
+                className="hidden truncate text-quiet text-faint sm:inline"
+                title={account.name}
+              >
                 {account.name}
               </span>
             )}
@@ -254,7 +260,7 @@ function AccountRow({ account }: { readonly account: AccountDto }): ReactNode {
                 only when it is old — every account carrying a date every day is
                 noise, and this page is deliberately quiet. */}
             {feedStale && feedDate !== null && (
-              <span className="whitespace-nowrap text-quiet text-faint">
+              <span className="hidden shrink-0 whitespace-nowrap text-quiet text-faint sm:inline">
                 feed from {feedDate.toLocaleDateString()}
               </span>
             )}
@@ -294,7 +300,7 @@ function AccountRow({ account }: { readonly account: AccountDto }): ReactNode {
           )}
         </td>
 
-        <td className="w-20 row-cell">
+        <td className="hidden w-20 row-cell sm:table-cell">
           <Toggle
             checked={account.inBudget}
             onChange={(next) => update.mutate({ inBudget: next })}
@@ -302,7 +308,7 @@ function AccountRow({ account }: { readonly account: AccountDto }): ReactNode {
           />
         </td>
 
-        <td className="w-28 row-cell">
+        <td className="hidden w-28 row-cell sm:table-cell">
           <Toggle
             checked={account.inNetWorth}
             onChange={(next) => update.mutate({ inNetWorth: next })}
@@ -348,8 +354,8 @@ function AccountsTable({
         <tr className="text-label uppercase tracking-[0.05em] text-muted">
           <th className="row-cell pl-3 text-left font-semibold text-ink">{section}</th>
           <th className="w-36 row-cell pr-2 text-right font-normal">Balance</th>
-          <th className="w-20 row-cell text-left font-normal">In budget</th>
-          <th className="w-28 row-cell text-left font-normal">In net worth</th>
+          <th className="hidden w-20 row-cell text-left font-normal sm:table-cell">In budget</th>
+          <th className="hidden w-28 row-cell text-left font-normal sm:table-cell">In net worth</th>
           <th className="w-10 row-cell pr-3" />
         </tr>
       </thead>
@@ -385,7 +391,7 @@ export function AccountsSection(): ReactNode {
   return (
     <SettingsCard
       title="Accounts"
-      description="What each account is, whether it counts towards the budget, and whether it counts towards net worth."
+      description="What counts, and towards what."
       action={<Button onClick={() => setAdding(true)}>New account</Button>}
     >
       {accounts.isLoading ? (

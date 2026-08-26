@@ -55,6 +55,11 @@ function MiniChart({
   const values = months.map((month) => BigInt(month.spendCents));
   const peak = values.reduce((max, value) => (value > max ? value : max), 0n);
 
+  // Nothing spent in the whole window is not a chart of zeroes, it is no chart.
+  // Sixty-four pixels of empty box is the largest thing on the card on a phone,
+  // and it is the part with nothing in it.
+  if (peak <= 0n) return null;
+
   return (
     <div className="flex h-16 items-end gap-1">
       {months.map((month, index) => {
@@ -196,9 +201,7 @@ export function Utilities(): ReactNode {
         <>
           {!anyHistory && (
             <div className="mb-4">
-              <Alert tone="info">
-                An average needs categorized history before it means anything.
-              </Alert>
+              <Alert tone="info">Averages need categorized history.</Alert>
             </div>
           )}
 

@@ -44,8 +44,12 @@ export function PageHeader({
         </div>
         {subtitle !== undefined && <p className="mt-1 text-quiet text-muted">{subtitle}</p>}
       </div>
+      {/* No `shrink-0`. Holding the actions at their natural width is what put
+          138px of the Insights window picker off the side of a phone, with the
+          last option unreachable — the header must give way before the screen
+          does. `min-w-0` so a child that scrolls can. */}
       {actions !== undefined && (
-        <div className="flex shrink-0 flex-wrap items-center gap-2">{actions}</div>
+        <div className="flex min-w-0 max-w-full flex-wrap items-center gap-2">{actions}</div>
       )}
     </header>
   );
@@ -138,7 +142,14 @@ export function SegmentedControl<T extends string>({
     <div
       role="radiogroup"
       aria-label={label}
-      className={`inline-flex items-center rounded-md bg-surface-2 ${small ? 'p-0.5' : 'p-1'}`}
+      /*
+       * `max-w-full` and a scroll of its own: five time windows do not fit
+       * across a phone, and the choice between clipping them and scrolling them
+       * is the choice between an option nobody can reach and one they can.
+       * `no-scrollbar` because a visible bar inside a 32px control is louder
+       * than the control.
+       */
+      className={`no-scrollbar inline-flex max-w-full items-center overflow-x-auto rounded-md bg-surface-2 ${small ? 'p-0.5' : 'p-1'}`}
     >
       {options.map((option) => {
         const selected = option.value === value;
@@ -150,7 +161,7 @@ export function SegmentedControl<T extends string>({
             aria-checked={selected}
             {...(describeOption ? { 'aria-label': describeOption(option) } : {})}
             onClick={() => onChange(option.value)}
-            className={`rounded font-semibold transition-colors ${
+            className={`shrink-0 rounded font-semibold whitespace-nowrap transition-colors ${
               small ? 'px-1.5 py-0.5 text-label' : 'min-h-[28px] px-3 text-quiet'
             } ${selected ? 'bg-canvas text-ink shadow-sm' : 'text-muted hover:text-ink'}`}
           >

@@ -121,12 +121,12 @@ export function BudgetSection(): ReactNode {
           />
 
           <TextField
-            label="Undo window (hours)"
+            label="Undo window"
             width="sm"
             value={undoValue}
             onChange={(event) => setUndoHours(event.target.value)}
             inputMode="numeric"
-            hint="1 to 168."
+            hint="Hours, 1 to 168."
           />
 
           {/*

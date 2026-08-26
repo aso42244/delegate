@@ -85,6 +85,20 @@
  * decides.
  */
 /**
+ * A container that scrolls sideways without saying so.
+ *
+ * Used where the alternative is clipping — a segmented control wider than a
+ * phone. The bar itself would be taller than the thing it is scrolling.
+ */
+.no-scrollbar {
+  scrollbar-width: none;
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+/**
  * Dark.
  *
  * The same palette rotated, not a different one: the warm neutral greys of the

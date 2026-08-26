@@ -35,7 +35,7 @@ function connectionSummary(status: SyncStatus): Connection {
       return {
         tone: 'warning',
         connected: false,
-        text: 'Not connected — sync is idle until you connect an account',
+        text: 'Not connected.',
       };
   }
 }
@@ -87,7 +87,7 @@ function TokenField({
         value={setupToken}
         onChange={(event) => setSetupToken(event.target.value)}
         placeholder="Paste the token from bridge.simplefin.org"
-        hint="A setup token can only be claimed once. If this fails, request a new one."
+        hint="Claimable once."
         autoComplete="off"
         spellCheck={false}
         autoFocus={inDialog}
@@ -209,29 +209,47 @@ function Backups(): ReactNode {
               <thead>
                 <tr className="text-label uppercase tracking-[0.05em] text-muted">
                   <th className="row-cell pl-1 text-left font-normal">Dump</th>
-                  <th className="row-cell w-28 pr-2 text-right font-normal">Size</th>
-                  <th className="row-cell w-48 pr-1 text-right font-normal">Written</th>
+                  <th className="hidden row-cell w-28 pr-2 text-right font-normal sm:table-cell">
+                    Size
+                  </th>
+                  <th className="row-cell pr-1 text-right font-normal sm:w-48">Written</th>
                 </tr>
               </thead>
               <tbody>
                 {backups.data?.recent.map((file) => (
                   <tr key={file.name} className="border-b border-line last:border-0">
                     <td className="row-cell overflow-hidden pl-1">
-                      <span className="block truncate font-mono text-quiet text-ink">
-                        {file.name}
-                      </span>
+                      <div className="flex min-w-0 items-center gap-2">
+                        <span className="truncate font-mono text-quiet text-ink">{file.name}</span>
+                        {/* A dump with no checksum beside it never completed, and
+                            saying so is the whole point of the sidecar. It sits
+                            here rather than only in the size column, because that
+                            column is not shown on a phone and this is the half of
+                            it worth keeping at every width. */}
+                        {!file.hasChecksum && (
+                          <span className="shrink-0 text-label font-semibold text-warning sm:hidden">
+                            incomplete
+                          </span>
+                        )}
+                      </div>
                     </td>
-                    <td className="row-cell w-28 pr-2 text-right text-quiet text-muted">
-                      {/* A dump with no checksum beside it never completed, and
-                          saying "incomplete" is the whole point of the sidecar. */}
+                    <td className="hidden row-cell w-28 pr-2 text-right text-quiet text-muted sm:table-cell">
                       {file.hasChecksum ? (
                         readableSize(file.bytes)
                       ) : (
                         <span className="font-semibold text-warning">incomplete</span>
                       )}
                     </td>
-                    <td className="row-cell w-48 pr-1 text-right text-quiet whitespace-nowrap text-muted">
-                      {new Date(file.writtenAt).toLocaleString()}
+                    <td className="row-cell pr-1 text-right text-quiet whitespace-nowrap text-muted sm:w-48">
+                      {/* The date alone on a phone. The time is worth having and
+                          is not worth 90px of a 326px row — which is what pushed
+                          this table off the screen. */}
+                      <span className="sm:hidden">
+                        {new Date(file.writtenAt).toLocaleDateString()}
+                      </span>
+                      <span className="hidden sm:inline">
+                        {new Date(file.writtenAt).toLocaleString()}
+                      </span>
                     </td>
                   </tr>
                 ))}
@@ -274,7 +292,7 @@ export function SyncSection(): ReactNode {
     <>
       <Card
         title="SimpleFIN"
-        description="Connects your institutions so balances and transactions arrive automatically, hourly."
+        description="Balances and transactions, hourly."
         action={
           summary?.connected ? (
             <div className="flex flex-wrap gap-2">
