@@ -6,6 +6,10 @@ phase (`v0.1.0-phase1`, and so on).
 
 ## [Unreleased]
 
+Nothing yet.
+
+## [0.32.0] — 2026-08-26
+
 ### Added
 
 - **Dark mode**, on Settings → Display beside row height: System, Light or Dark,
