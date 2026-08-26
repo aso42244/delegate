@@ -88,8 +88,8 @@ These are non-negotiable. Violating one is a build failure.
 
 ## Where things stand
 
-**`main` is at `v0.31.0`; the NAS is running `v0.29.2`** and needs the deploy
-below. 187 unit, 514 integration and 162 end-to-end tests. There is no CI: GitHub stores the code and nothing else
+**`main` is at `v0.32.0`; the NAS is running `v0.29.2`** and needs the deploy
+below. 192 unit, 514 integration and 164 end-to-end tests. There is no CI: GitHub stores the code and nothing else
 ([ADR 022](decisions/022-the-checks-run-here-not-on-github.md)), and every gate
 runs locally through `npm run verify`.
 
@@ -600,7 +600,12 @@ does.
 ## Design
 
 `docs/design.md` is the owner's visual specification and is **settled** — read it
-as written. Six conflicts with the build prompt were found and resolved with the
+as written. **`docs/ui-system.md` is the measurements**: the spacing scale, field
+widths, button rules and the text budget every screen uses. Read it before
+touching any interface, and note that `ui-system.test.ts` enforces the mechanical
+half by reading the source — a UI change that ignores the scale fails `verify`
+rather than merging quietly.
+Six conflicts with the build prompt were found and resolved with the
 owner; the reasoning is recorded at the bottom of that file. The ones that shape
 behaviour:
 
