@@ -157,7 +157,7 @@ export function NewTransactionDialog({
           </div>
           <div className="flex-1">
             <TextField
-              width="full"
+              width="sm"
               label="Amount"
               value={amount}
               onChange={(event) => setAmount(event.target.value)}

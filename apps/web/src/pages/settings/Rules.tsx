@@ -269,7 +269,7 @@ function AddRuleDialog({
         <div className="flex gap-2">
           <div className="flex-1">
             <TextField
-              width="full"
+              width="sm"
               label="Smallest amount (optional)"
               value={min}
               onChange={(event) => setMin(event.target.value)}
@@ -279,7 +279,7 @@ function AddRuleDialog({
           </div>
           <div className="flex-1">
             <TextField
-              width="full"
+              width="sm"
               label="Largest amount (optional)"
               value={max}
               onChange={(event) => setMax(event.target.value)}

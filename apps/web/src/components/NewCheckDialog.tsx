@@ -109,7 +109,7 @@ export function NewCheckDialog({
         />
 
         <TextField
-          width="full"
+          width="sm"
           label="Amount"
           value={amount}
           onChange={(event) => setAmount(event.target.value)}

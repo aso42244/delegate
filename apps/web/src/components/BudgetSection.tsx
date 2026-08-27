@@ -333,7 +333,7 @@ export function BudgetSection({
           </td>
         )}
 
-        {rowMenu && <td className="w-10 row-cell pr-3">{rowMenu(row)}</td>}
+        {rowMenu && <td className="hold-to-open-cell row-cell">{rowMenu(row)}</td>}
       </tr>
     );
   }
@@ -374,7 +374,7 @@ export function BudgetSection({
                 </span>
               </td>
             )}
-            {rowMenu && <td className="w-10 pb-1 pr-3" />}
+            {rowMenu && <td className="hold-to-open-cell pb-1" />}
           </tr>
 
           {splitColumns && (
@@ -425,7 +425,7 @@ export function BudgetSection({
             {showToDelegate && (
               <th className="row-cell pr-2 text-right font-normal text-faint">To delegate</th>
             )}
-            {rowMenu && <th className="w-10 row-cell pr-3" />}
+            {rowMenu && <th className="hold-to-open-cell row-cell" />}
           </tr>
         </thead>
 
@@ -510,7 +510,7 @@ export function BudgetSection({
                   </td>
                 )}
 
-                {rowMenu && <td className="w-10 row-cell pr-3" />}
+                {rowMenu && <td className="hold-to-open-cell row-cell" />}
               </tr>
 
               {!grouping.collapsed &&

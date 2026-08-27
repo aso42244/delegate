@@ -114,7 +114,7 @@ function AddAccountDialog({ onDone }: { readonly onDone: () => void }): ReactNod
           </div>
           <div className="flex-1">
             <TextField
-              width="full"
+              width="sm"
               label="Balance"
               value={balance}
               onChange={(event) => setBalance(event.target.value)}
@@ -280,7 +280,7 @@ function AccountRow({ account }: { readonly account: AccountDto }): ReactNode {
               }}
               aria-label={`Balance for ${account.name}`}
               inputMode="decimal"
-              className="money w-full rounded border border-accent bg-canvas px-2 py-0.5"
+              className="money money-input ml-auto block rounded border border-accent bg-canvas px-2 py-0.5"
             />
           ) : (
             <button
@@ -316,7 +316,7 @@ function AccountRow({ account }: { readonly account: AccountDto }): ReactNode {
           />
         </td>
 
-        <td className="w-10 row-cell pr-3">
+        <td className="hold-to-open-cell row-cell">
           <AccountRowMenu row={account} />
         </td>
       </tr>
@@ -356,7 +356,7 @@ function AccountsTable({
           <th className="w-36 row-cell pr-2 text-right font-normal">Balance</th>
           <th className="hidden w-20 row-cell text-left font-normal sm:table-cell">In budget</th>
           <th className="hidden w-28 row-cell text-left font-normal sm:table-cell">In net worth</th>
-          <th className="w-10 row-cell pr-3" />
+          <th className="hold-to-open-cell row-cell" />
         </tr>
       </thead>
       <tbody>

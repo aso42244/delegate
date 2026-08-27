@@ -163,7 +163,7 @@ function TransferDialog({
               onChange={(event) => setAmount(event.target.value)}
               inputMode="decimal"
               placeholder="25.00"
-              className="money w-full rounded-lg border border-line bg-canvas px-3 py-2"
+              className="money money-input rounded-lg border border-line bg-canvas px-3 py-2"
             />
           </label>
 

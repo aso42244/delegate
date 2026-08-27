@@ -185,7 +185,7 @@ export function SplitDialog({
                 aria-label={`Amount for split line ${index + 1}`}
                 inputMode="decimal"
                 placeholder="0.00"
-                className="money w-full rounded-lg border border-line bg-canvas px-2 py-1.5 text-base"
+                className="money money-input rounded-lg border border-line bg-canvas px-2 py-1.5 text-base"
               />
             </div>
 

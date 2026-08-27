@@ -97,7 +97,7 @@ function HoldingRow({
             }}
             inputMode="decimal"
             aria-label={`${holding.name} quantity`}
-            className="money w-full rounded border border-line bg-canvas px-2 py-0.5"
+            className="money money-input ml-auto block rounded border border-line bg-canvas px-2 py-0.5"
           />
         </td>
 

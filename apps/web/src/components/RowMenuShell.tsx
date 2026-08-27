@@ -211,7 +211,7 @@ export function RowMenuShell({
         aria-label={`Options for ${name}`}
         aria-expanded={open}
         aria-haspopup="menu"
-        className="row-menu-trigger rounded px-2 py-0.5 text-muted"
+        className="row-menu-trigger hold-to-open rounded px-2 py-0.5 text-muted"
       >
         ⋯
       </button>

@@ -349,7 +349,7 @@ export function Transactions(): ReactNode {
               <th className="row-cell pr-3 text-left font-normal md:w-36">Account</th>
               <th className="w-32 row-cell pr-3 text-right font-normal">Amount</th>
               <th className="row-cell pr-3 text-left font-normal md:w-64">Delegation</th>
-              <th className="w-10 row-cell pr-3" />
+              <th className="hold-to-open-cell row-cell" />
             </tr>
           </thead>
 
@@ -456,7 +456,7 @@ export function Transactions(): ReactNode {
                   {/* Splitting and matching a check are both uncommon; the
                       frequent act on this page is categorizing, which stays a
                       field in the row. */}
-                  <td className="w-10 row-cell pr-3">
+                  <td className="hold-to-open-cell row-cell">
                     {
                       <TransactionRowMenu
                         transaction={transaction}

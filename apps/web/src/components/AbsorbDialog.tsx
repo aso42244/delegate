@@ -200,7 +200,7 @@ export function AbsorbDialog({
 
         {mode === 'custom' && (
           <TextField
-            width="full"
+            width="sm"
             label={surplus ? 'Amount to move here' : 'Amount to take from this line'}
             value={amount}
             onChange={(event) => setAmount(event.target.value)}
