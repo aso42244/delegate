@@ -285,6 +285,21 @@ body {
  * `(hover: none)` rather than a width: a touchscreen laptop is wide and still
  * cannot hover, and a narrow window on a desktop can.
  */
+/**
+ * A figure sits flush with the end of its row on a touchscreen.
+ *
+ * The 8px inside a money cell is the inset its hover background needs on a
+ * desktop. On a phone there is no hover, and with the `⋯` column collapsed the
+ * money column is the last thing in the row — so that 8px stopped every figure
+ * short of the rule that ends the row, which was the only ragged edge on the
+ * page and read as the table not reaching the screen.
+ */
+@media (hover: none) {
+  .money-edge {
+    padding-right: 0;
+  }
+}
+
 /** The `⋯` column. Its width lives here so the touch rule below can take it. */
 .hold-to-open-cell {
   width: 2.5rem;

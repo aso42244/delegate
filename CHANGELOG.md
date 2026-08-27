@@ -6,6 +6,15 @@ phase (`v0.1.0-phase1`, and so on).
 
 ## [Unreleased]
 
+### Fixed
+
+- **A figure sits flush with the end of its row on a phone.** The 8px inside a
+  money cell is the inset its hover background needs on a desktop; on a phone
+  there is no hover, and with the `⋯` column collapsed the money column is the
+  last thing in the row — so every figure stopped 8px short of the rule that ends
+  it. The only ragged edge on the page, and it read as the table not reaching the
+  screen. Section totals and row amounts now land on the same edge as the rules.
+
 ### Changed
 
 - **On a touchscreen the row menu is a long press, and the `⋯` is gone.**
