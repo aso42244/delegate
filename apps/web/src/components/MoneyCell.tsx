@@ -110,7 +110,7 @@ export function MoneyCell({
         aria-label={label}
         aria-invalid={invalid}
         inputMode="decimal"
-        className={`money w-full rounded border bg-canvas px-2 py-0.5 ${
+        className={`money money-input ml-auto block rounded border bg-canvas px-2 py-0.5 ${
           invalid ? 'border-danger-dot' : 'border-accent'
         }`}
       />

@@ -409,7 +409,7 @@ function UserRow({
           weight, one of them destructive, on every row of a table read far more
           often than it is acted on.
         */}
-        <td className="w-10 row-cell pr-1">
+        <td className="hold-to-open-cell row-cell">
           {mayModify && (
             <RowMenuShell name={user.displayName ?? user.username}>
               {(controls) => (
@@ -564,7 +564,7 @@ export function UsersSection(): ReactNode {
                   <th className="hidden row-cell w-40 text-left font-normal sm:table-cell">
                     Status
                   </th>
-                  <th className="w-10 row-cell pr-1" />
+                  <th className="hold-to-open-cell row-cell" />
                 </tr>
               </thead>
               <tbody>

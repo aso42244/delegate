@@ -52,6 +52,22 @@ container the field happens to sit in — which is how one text input ended up
 Defined in `styles.css` beside the other tokens. Pick by what goes in, not by
 what fits.
 
+### Money fields
+
+A figure is not open-ended content, so a money field is **`sm`** — everywhere,
+including inside a dialog where `full` is otherwise the rule. `full` exists for
+things whose length nobody controls: a name, a description, a pasted token. Eight
+characters of number is not one of those, and a box the width of a sentence to
+hold `$575.00` reads as a mistake.
+
+A bare inline editor over a column of figures uses `.money-input`: `11ch`, which
+is `$999,999.99` with tabular numerals, and `ml-auto` so it opens exactly where
+the figure it replaces was sitting.
+
+**Fixed, never growing with its content.** A box that resizes on every keystroke
+moves the caret and the rows beside it while somebody is typing. That is the
+convention for a column of editable figures and the reason for it.
+
 ## 3. The text budget
 
 The rule the owner asked for, made countable. **Fewer words wherever a word is
@@ -143,6 +159,18 @@ inside it — the button is already in the card header.
 few options: the Insights window, a tile's view. Not a row of Buttons with one
 turned primary, which is what Insights was doing directly above a real segmented
 control doing the same job.
+
+**Row menu** — `RowMenuShell`. It wires a long press on the row itself, so on a
+touchscreen the `⋯` is a second way into a menu already reachable — and it cost a
+40px column on a 390px screen, on every table that has one. The trigger is
+**visually hidden on `(hover: none)` and its cell collapsed**, but it keeps its
+place in the accessibility tree: a long press is not a gesture VoiceOver can
+perform, and `display: none` would strand the menu for anyone using it.
+
+Only the shell's own trigger. Settings → Groupings and Settings → Rules paint the
+same class on an Archive button and a pair of reorder arrows with no long press
+behind them; hiding those would leave them unreachable by any means, which is the
+state that rule was written to fix once already.
 
 **Disclosure** — `Disclosure`. A `ghost` button carrying `aria-expanded`, and the
 content below it. Not `<details>`, which Settings → Tor used and which draws its

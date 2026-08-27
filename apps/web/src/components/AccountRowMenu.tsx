@@ -89,7 +89,7 @@ function SetBalanceDialog({
     >
       <form onSubmit={onSubmit} className="flex flex-col gap-2">
         <TextField
-          width="full"
+          width="sm"
           label="Balance"
           value={amount}
           onChange={(event) => setAmount(event.target.value)}

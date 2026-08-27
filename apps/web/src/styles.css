@@ -220,6 +220,26 @@ body {
  * Every currency figure. Tabular numerals are what let a column of amounts line
  * up optically; without them the decimal points wander.
  */
+/**
+ * A money input is sized by the figure it holds, not by the cell it sits in.
+ *
+ * `w-full` made it as wide as the column, which on a delegation row is most of
+ * the screen — a box the width of a sentence for eight characters of number.
+ *
+ * Fixed rather than growing with the content, which is the convention for a
+ * column of editable figures and the reason is jitter: a box that resizes on
+ * every keystroke moves the caret and the rows beside it while somebody is
+ * typing. `11ch` is `$999,999.99`, and with `tabular-nums` a `ch` is exactly a
+ * digit — so this is the widest ordinary household figure and no wider.
+ *
+ * `margin-left: auto` keeps it against the right edge of the cell, where the
+ * number it replaces was already sitting, so tapping one does not move it.
+ */
+.money-input {
+  width: 11ch;
+  max-width: 100%;
+}
+
 .money {
   font-variant-numeric: tabular-nums;
   text-align: right;
@@ -265,6 +285,47 @@ body {
  * `(hover: none)` rather than a width: a touchscreen laptop is wide and still
  * cannot hover, and a narrow window on a desktop can.
  */
+/** The `⋯` column. Its width lives here so the touch rule below can take it. */
+.hold-to-open-cell {
+  width: 2.5rem;
+  padding-right: 0.75rem;
+}
+
+/**
+ * Touch and hold instead of a `⋯`.
+ *
+ * `RowMenuShell` wires a long press on the row itself, so on a touchscreen the
+ * trigger is a second way into a menu that is already reachable — and it was
+ * costing a 40px column on a 390px screen, on every table that has one.
+ *
+ * **Visually hidden, not `display: none`.** A long press is not something
+ * VoiceOver can perform, so removing the button from the accessibility tree
+ * would strand the menu for anyone using it. It keeps its place in the tree and
+ * loses only its pixels; the cell around it collapses separately.
+ *
+ * Only the shell's own trigger. Settings → Groupings and Settings → Rules paint
+ * the same class on an Archive button and a pair of reorder arrows that have no
+ * long press behind them, and hiding those would leave them unreachable by any
+ * means at all — which is the state this whole rule was written to fix once
+ * before.
+ */
+@media (hover: none) {
+  .hold-to-open {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  .hold-to-open-cell {
+    width: 0;
+    max-width: 0;
+    padding: 0;
+  }
+}
+
 @media (hover: none) {
   .row-menu-trigger {
     opacity: 1;

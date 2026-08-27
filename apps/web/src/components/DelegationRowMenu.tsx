@@ -213,7 +213,7 @@ function AdjustDialog({
         </p>
 
         <TextField
-          width="full"
+          width="sm"
           label="Add or remove"
           value={amount}
           onChange={(event) => setAmount(event.target.value)}

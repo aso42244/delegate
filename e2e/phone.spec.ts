@@ -177,6 +177,52 @@ test.describe('at 390px, on every screen', () => {
     await makePendingSpend(card, water, -9800n, 'CITY OF SIOUX FALLS UTILITIES');
   }
 
+  /**
+   * The `⋯` is replaced by touch-and-hold, not removed.
+   *
+   * Two halves, and the second is the one that matters: a long press is not a
+   * gesture VoiceOver can perform, so the trigger keeps its place in the
+   * accessibility tree and loses only its pixels. `display: none` would have
+   * taken 40px back and stranded every row menu for anyone using a screen
+   * reader.
+   */
+  test('the row menu is a long press, and its trigger is still there to be found', async ({
+    signedIn: page,
+    api,
+  }) => {
+    await makeDelegation(api, 'Groceries', '80000');
+    await page.goto('/');
+
+    const trigger = page.getByRole('button', { name: 'Options for Groceries' });
+
+    // Not painted, and taking no room.
+    await expect(trigger).not.toBeVisible();
+    const width = await page
+      .locator('td.hold-to-open-cell')
+      .first()
+      .evaluate((cell) => cell.getBoundingClientRect().width);
+    expect(width).toBe(0);
+
+    // Still in the tree, so a screen reader can reach what a long press cannot.
+    await expect(trigger).toBeAttached();
+
+    // And the gesture that replaced it works. Real touch events rather than a
+    // synthesised pointer sequence: `useLongPress` listens for the former, and
+    // a test that fakes the wrong one proves the trigger is hidden and nothing
+    // about whether anything replaced it.
+    await page.evaluate(() => {
+      const row = Array.from(document.querySelectorAll('tr')).find((tr) =>
+        (tr.textContent || '').includes('Groceries'),
+      );
+      if (!row) throw new Error('no Groceries row');
+      const touch = new Touch({ identifier: 1, target: row, clientX: 120, clientY: 200 });
+      row.dispatchEvent(new TouchEvent('touchstart', { touches: [touch], bubbles: true }));
+    });
+    await page.waitForTimeout(700);
+
+    await expect(page.getByRole('menu', { name: 'Options for Groceries' })).toBeVisible();
+  });
+
   test('nothing is clipped by the edge of the screen', async ({ signedIn: page, api }) => {
     await household(api);
 

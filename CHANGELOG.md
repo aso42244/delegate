@@ -6,6 +6,33 @@ phase (`v0.1.0-phase1`, and so on).
 
 ## [Unreleased]
 
+### Changed
+
+- **On a touchscreen the row menu is a long press, and the `⋯` is gone.**
+  `RowMenuShell` already wired a long press on the row itself, so the trigger was
+  a second way into a menu that was already reachable — while costing a **40px
+  column** on a 390px screen, on every table that has one.
+
+  **Visually hidden, not removed.** A long press is not a gesture VoiceOver can
+  perform, so the button keeps its place in the accessibility tree and loses only
+  its pixels. `display: none` would have taken the same 40px back and stranded
+  every row menu for anyone using a screen reader.
+
+  Only the shell's own trigger. Settings → Groupings and Settings → Rules paint
+  the same class on an Archive button and a pair of reorder arrows that have no
+  long press behind them; hiding those would leave them unreachable by any means,
+  which is the state that rule was written to fix once already.
+
+- **A money box is the size of the money.** `w-full` made an inline editor as wide
+  as its column — on a delegation row, most of the screen for eight characters of
+  number. Inline editors are now `11ch`, which is `$999,999.99` with tabular
+  numerals, and sit against the right edge where the figure they replace already
+  was. Money fields in dialogs dropped from `full` to `sm` for the same reason: a
+  figure is not open-ended content the way a name or a pasted token is.
+
+  **Fixed, not growing with the content.** A box that resizes on every keystroke
+  moves the caret and the rows beside it while somebody is typing.
+
 ### Fixed
 
 - **Nothing runs off the side of a phone any more.** Measured across all sixteen
