@@ -146,7 +146,7 @@ function createTasks(
     cron.schedule(
       config.BITCOIN_PRICE_CRON,
       () => {
-        void runScheduledPriceFetch(config, logger);
+        void runScheduledPriceFetch(config, timezone, logger);
       },
       options,
     ),
@@ -203,7 +203,12 @@ async function runScheduledSnapshot(timezone: string, logger: FastifyBaseLogger)
      * always better than the reconstruction that would otherwise be written and
      * then immediately replaced.
      */
-    const filled = await fillGaps(prisma, new Date(snapshotDate.getTime() - DAY_MS), logger);
+    const filled = await fillGaps(
+      prisma,
+      new Date(snapshotDate.getTime() - DAY_MS),
+      timezone,
+      logger,
+    );
 
     const result = await captureSnapshot(prisma, snapshotDate, logger);
     const durationMs = Date.now() - startedAt;
@@ -251,12 +256,19 @@ async function runScheduledSnapshot(timezone: string, logger: FastifyBaseLogger)
  * holding must never read zero or blank — so a quiet log line is the right
  * volume for a feed having a bad hour.
  */
-async function runScheduledPriceFetch(config: AppConfig, logger: FastifyBaseLogger): Promise<void> {
+async function runScheduledPriceFetch(
+  config: AppConfig,
+  timezone: string,
+  logger: FastifyBaseLogger,
+): Promise<void> {
   try {
-    const result = await fetchAndRecordPrice(prisma, [
-      providerByName(config.BITCOIN_PRICE_PRIMARY),
-      providerByName(config.BITCOIN_PRICE_FALLBACK),
-    ]);
+    const result = await fetchAndRecordPrice(
+      prisma,
+      [providerByName(config.BITCOIN_PRICE_PRIMARY), providerByName(config.BITCOIN_PRICE_FALLBACK)],
+      // Which day this reading is the close for. Filed in UTC, the 7pm fetch
+      // would settle tomorrow's close before tomorrow began. See ADR 037.
+      timezone,
+    );
     if (result) {
       logger.info(
         { source: result.source, closesSettled: result.closesSettled },

@@ -9,6 +9,7 @@ import type { FastifyBaseLogger } from 'fastify';
 import type { Db } from '../db/client.js';
 import { accountBalanceDelta } from './accounts.js';
 import { priceOnDate } from './bitcoin.js';
+import { endOfLocalDay, localDayKey } from './calendar.js';
 import { satsOnDate } from './bitcoin-holdings.js';
 import {
   asSnapshotDate,
@@ -47,11 +48,6 @@ const MAX_GAP_DAYS = 370;
 
 function startOfDay(date: Date): Date {
   return asSnapshotDate(date);
-}
-
-/** The instant a date's day ends, exclusive: midnight at the start of the next. */
-function endOfDayExclusive(date: Date): Date {
-  return new Date(startOfDay(date).getTime() + DAY_MS);
 }
 
 // ---------------------------------------------------------------------------
@@ -113,13 +109,22 @@ interface AccountForFill {
  * The balance on a date is the sum of every un-reversed event that had happened
  * by the end of it. Exact regardless of how long the gap was, because the ledger
  * is the truth and it is all still there.
+ *
+ * "The end of it" is the end of the household's day. `occurred_at` is an
+ * instant and `snapshot_date` is a local day, so cutting at midnight UTC would
+ * put an evening's delegating on the wrong side of the boundary — see ADR 037.
  */
-async function delegationBalanceOn(db: Db, delegationId: string, date: Date): Promise<Cents> {
+async function delegationBalanceOn(
+  db: Db,
+  delegationId: string,
+  date: Date,
+  timeZone: string,
+): Promise<Cents> {
   const result = await db.delegationEvent.aggregate({
     where: {
       delegationId,
       reversedAt: null,
-      occurredAt: { lt: endOfDayExclusive(date) },
+      occurredAt: { lt: endOfLocalDay(date, timeZone) },
     },
     _sum: { deltaCents: true },
   });
@@ -147,6 +152,7 @@ async function reconstructFromTransactions(
   db: Db,
   account: AccountForFill,
   date: Date,
+  timeZone: string,
 ): Promise<{ balanceCents: Cents; exact: boolean }> {
   const anchor = await db.accountSnapshot.findFirst({
     where: { accountId: account.id, snapshotDate: { gt: startOfDay(date) } },
@@ -155,9 +161,13 @@ async function reconstructFromTransactions(
   });
 
   const anchorBalance = anchor?.balanceCents ?? account.balanceCents;
-  // A snapshot is the balance at the end of its own day; the live balance is the
-  // balance now. Either way the window ends where the anchor's day ends.
-  const until = anchor ? endOfDayExclusive(anchor.snapshotDate) : null;
+  /*
+   * A snapshot is the balance at the end of its own day; the live balance is the
+   * balance now. Either way the window ends where the anchor's day ends — and
+   * the day ends when it ends *here*. `posted_at` is an instant, so a UTC cut
+   * would roll an evening charge back out of the wrong day. ADR 037.
+   */
+  const until = anchor ? endOfLocalDay(anchor.snapshotDate, timeZone) : null;
 
   const moved = await db.transaction.aggregate({
     where: {
@@ -165,7 +175,7 @@ async function reconstructFromTransactions(
       archivedAt: null,
       pending: false,
       postedAt: {
-        gte: endOfDayExclusive(date),
+        gte: endOfLocalDay(date, timeZone),
         ...(until ? { lt: until } : {}),
       },
     },
@@ -187,7 +197,10 @@ async function reconstructFromTransactions(
     select: { postedAt: true },
   });
   const exact =
-    earliest !== null && startOfDay(earliest.postedAt).getTime() <= startOfDay(date).getTime();
+    earliest !== null &&
+    // Which day the earliest transaction is in — an instant becoming a day, so
+    // it takes the zone rather than being truncated in UTC.
+    localDayKey(earliest.postedAt, timeZone).getTime() <= startOfDay(date).getTime();
 
   return { balanceCents, exact };
 }
@@ -260,11 +273,13 @@ async function fillAccount(
   db: Db,
   account: AccountForFill,
   date: Date,
+  timeZone: string,
   logger?: FastifyBaseLogger,
 ): Promise<AccountSnapshotRow | null> {
   // An account that did not exist yet has no value on that date, and inventing
-  // one would draw a line through a period it was not part of.
-  if (startOfDay(account.createdAt).getTime() > startOfDay(date).getTime()) return null;
+  // one would draw a line through a period it was not part of. `created_at` is
+  // an instant, so which day it falls in is the household's question.
+  if (localDayKey(account.createdAt, timeZone).getTime() > startOfDay(date).getTime()) return null;
 
   if (account.bitcoinSats !== null) return reconstructBitcoin(db, account, date);
 
@@ -280,7 +295,7 @@ async function fillAccount(
   });
 
   if (account.source === 'simplefin') {
-    const { balanceCents, exact } = await reconstructFromTransactions(db, account, date);
+    const { balanceCents, exact } = await reconstructFromTransactions(db, account, date, timeZone);
     if (exact) return row(balanceCents, 'reconstructed');
 
     logger?.warn(
@@ -334,6 +349,7 @@ async function fillAccount(
 export async function rebuildDay(
   db: Db,
   date: Date,
+  timeZone: string,
   logger?: FastifyBaseLogger,
 ): Promise<SnapshotDay> {
   const snapshotDate = startOfDay(date);
@@ -360,16 +376,18 @@ export async function rebuildDay(
 
   const accounts: AccountSnapshotRow[] = [];
   for (const account of accountRows) {
-    const row = await fillAccount(db, account, snapshotDate, logger);
+    const row = await fillAccount(db, account, snapshotDate, timeZone, logger);
     if (row) accounts.push(row);
   }
 
   const delegations: DelegationSnapshotRow[] = [];
   for (const delegation of delegationRows) {
-    if (startOfDay(delegation.createdAt).getTime() > snapshotDate.getTime()) continue;
+    // Same as an account: `created_at` is an instant, and which day it lands in
+    // is the household's day.
+    if (localDayKey(delegation.createdAt, timeZone).getTime() > snapshotDate.getTime()) continue;
     delegations.push({
       delegationId: delegation.id,
-      balanceCents: await delegationBalanceOn(db, delegation.id, snapshotDate),
+      balanceCents: await delegationBalanceOn(db, delegation.id, snapshotDate, timeZone),
       // Exact, from the ledger. Never anything weaker.
       provenance: 'reconstructed',
       groupingId: delegation.groupingId,
@@ -476,6 +494,7 @@ export interface FillResult {
 export async function fillGaps(
   client: PrismaClient,
   through: Date,
+  timeZone: string,
   logger?: FastifyBaseLogger,
 ): Promise<FillResult> {
   const startedAt = Date.now();
@@ -491,7 +510,7 @@ export async function fillGaps(
   for (const date of gap.dates) {
     await client.$transaction(
       async (tx) => {
-        const day = await rebuildDay(tx, date, logger);
+        const day = await rebuildDay(tx, date, timeZone, logger);
         await writeSnapshotDay(tx, day);
       },
       { timeout: 30_000 },

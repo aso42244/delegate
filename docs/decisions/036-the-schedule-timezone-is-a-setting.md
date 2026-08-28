@@ -1,6 +1,7 @@
 # 036 — The schedule timezone is a setting, not only an environment variable
 
-**Status:** accepted
+**Status:** accepted; the "and nothing else" clause below is superseded by
+[ADR 037](037-a-day-is-the-households-day.md)
 **Date:** 2026-08-28
 
 ## Context
@@ -47,6 +48,13 @@ from inside the application, which is its own argument.
   those is a real decision with real migration consequences and belongs on its
   own branch; it is recorded in `docs/open-questions.md` rather than smuggled in
   here.
+
+  **Superseded by [ADR 037](037-a-day-is-the-households-day.md)**, which is that
+  branch. The setting now also decides which day an instant falls in. The feared
+  migration turned out not to exist: `posted_at` already holds a true instant,
+  and the two `@db.Date` columns hold decided days that need no zone. Everything
+  else in this ADR stands.
+
 - **Writes are administrator-only**, like every other settings write.
 - **Saving it rebuilds the schedules.** `node-cron` fixes a task's zone when the
   task is created, so a stored value that only took effect on the next restart

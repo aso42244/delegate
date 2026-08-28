@@ -1,6 +1,7 @@
 import { bitcoinValueCents, sumCents, type Cents } from '@budget/shared';
+import { localYearKey, startOfLocalDay } from './calendar.js';
 import type { Db } from '../db/client.js';
-import { latestPrice } from './bitcoin.js';
+import { newestPrice } from './bitcoin.js';
 
 /**
  * Insights.
@@ -81,6 +82,7 @@ export type WindowStart =
 export async function windowStart(
   db: Db,
   window: SpendingWindow,
+  timeZone: string,
   now: Date = new Date(),
 ): Promise<WindowStart> {
   const back = (days: number): WindowStart => ({
@@ -98,7 +100,9 @@ export async function windowStart(
     case '1yr':
       return back(365);
     case 'ytd':
-      return { kind: 'since', date: new Date(Date.UTC(now.getUTCFullYear(), 0, 1)) };
+      // The household's year. New Year's Eve at ten in the evening is already
+      // next year in UTC, and would fall outside its own year-to-date.
+      return { kind: 'since', date: startOfLocalDay(localYearKey(now, timeZone), timeZone) };
     case 'cycle': {
       const run = await db.delegateRun.findFirst({
         where: { undoneAt: null },
@@ -150,7 +154,7 @@ export async function buildComposition(db: Db): Promise<Composition> {
         mortgageAccountId: true,
       },
     }),
-    latestPrice(db),
+    newestPrice(db),
   ]);
 
   /**
@@ -256,10 +260,14 @@ export interface SpendingEntry {
  */
 export async function buildSpending(
   db: Db,
-  options: { readonly by: 'grouping' | 'delegation'; readonly window: SpendingWindow },
+  options: {
+    readonly by: 'grouping' | 'delegation';
+    readonly window: SpendingWindow;
+    readonly timeZone: string;
+  },
   now: Date = new Date(),
 ): Promise<{ entries: SpendingEntry[]; since: Date | null; cycleMissing: boolean }> {
-  const start = await windowStart(db, options.window, now);
+  const start = await windowStart(db, options.window, options.timeZone, now);
   if (start.kind === 'no_cycle') return { entries: [], since: null, cycleMissing: true };
 
   const since = start.kind === 'since' ? start.date : null;

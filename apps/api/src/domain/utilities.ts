@@ -1,4 +1,5 @@
 import { CYCLES_PER_YEAR, suggestedPerCycleCents, sumCents, type Cents } from '@budget/shared';
+import { addMonthsToKey, localMonthKey, startOfLocalDay } from './calendar.js';
 import type { Db } from '../db/client.js';
 import { getBudgetSettings } from './settings.js';
 
@@ -62,37 +63,48 @@ export interface UtilitiesView {
 
 const MONTHS_SHOWN = 12;
 
-function startOfMonth(date: Date): Date {
-  return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), 1));
-}
-
-function addMonths(date: Date, count: number): Date {
-  return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth() + count, 1));
-}
-
-/** The 12 month buckets ending with the one `now` falls in. */
-function monthWindow(now: Date): Date[] {
-  const current = startOfMonth(now);
+/**
+ * The 12 month buckets ending with the one `now` falls in — **in the household's
+ * zone**.
+ *
+ * This is where the UTC reading was most wrong. A charge at eight in the evening
+ * on the last of the month is already the first of the next in UTC, so it landed
+ * in the following month's average and the suggestion drawn from it was off by
+ * that spend in both directions. See ADR 037.
+ */
+function monthWindow(now: Date, timeZone: string): Date[] {
+  const current = localMonthKey(now, timeZone);
   return Array.from({ length: MONTHS_SHOWN }, (_, index) =>
-    addMonths(current, index - (MONTHS_SHOWN - 1)),
+    addMonthsToKey(current, index - (MONTHS_SHOWN - 1)),
   );
 }
 
-export async function buildUtilities(db: Db, now: Date = new Date()): Promise<UtilitiesView> {
+export async function buildUtilities(
+  db: Db,
+  timeZone: string,
+  now: Date = new Date(),
+): Promise<UtilitiesView> {
   const { payCadence } = await getBudgetSettings(db);
   const cyclesPerYear = CYCLES_PER_YEAR[payCadence];
 
-  return { summaries: await buildUtilitySummaries(db, cyclesPerYear, now), cyclesPerYear };
+  return {
+    summaries: await buildUtilitySummaries(db, cyclesPerYear, timeZone, now),
+    cyclesPerYear,
+  };
 }
 
 export async function buildUtilitySummaries(
   db: Db,
   cyclesPerYear: number,
+  timeZone: string,
   now: Date = new Date(),
 ): Promise<UtilitySummary[]> {
-  const months = monthWindow(now);
-  const windowStart = months[0] ?? startOfMonth(now);
-  const currentMonth = startOfMonth(now);
+  const months = monthWindow(now, timeZone);
+  const currentMonth = localMonthKey(now, timeZone);
+  const firstMonth = months[0] ?? currentMonth;
+  // The window is filtered on a timestamp column, so the boundary has to be the
+  // instant that month begins here — not midnight UTC on the same date.
+  const windowStart = startOfLocalDay(firstMonth, timeZone);
 
   const delegations = await db.delegation.findMany({
     // Archived utilities still appear in historical views — §6.9.
@@ -129,10 +141,18 @@ export async function buildUtilitySummaries(
     const mine = allocations.filter((allocation) => allocation.delegationId === delegation.id);
 
     const monthly = months.map((month): MonthlySpend => {
-      const next = addMonths(month, 1);
+      /*
+       * `postedAt` is an instant and `month` is a date key, so the bounds have
+       * to be the instants the month spans here. Comparing the instant against
+       * the key directly is the same conflation that put an evening spend in the
+       * following month — it just did it at the edge of the month rather than
+       * the edge of the window.
+       */
+      const from = startOfLocalDay(month, timeZone);
+      const to = startOfLocalDay(addMonthsToKey(month, 1), timeZone);
       const inMonth = mine.filter(
         (allocation) =>
-          allocation.transaction.postedAt >= month && allocation.transaction.postedAt < next,
+          allocation.transaction.postedAt >= from && allocation.transaction.postedAt < to,
       );
 
       // Spending is stored negative, so the magnitude is the negation. A refund

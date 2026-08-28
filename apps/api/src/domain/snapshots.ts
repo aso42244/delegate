@@ -8,6 +8,7 @@ import type { PrismaClient } from '@prisma/client';
 import type { FastifyBaseLogger } from 'fastify';
 import type { Db } from '../db/client.js';
 import { priceOnDate } from './bitcoin.js';
+import { asDayKey, localDayKey, previousLocalDayKey } from './calendar.js';
 
 /**
  * The nightly record of the whole financial picture. See ADR 035.
@@ -25,25 +26,6 @@ import { priceOnDate } from './bitcoin.js';
 // Which day a run is for
 // ---------------------------------------------------------------------------
 
-interface LocalDate {
-  readonly year: number;
-  readonly month: number;
-  readonly day: number;
-}
-
-/** The calendar date at an instant, in a given zone. */
-function localDateIn(instant: Date, timeZone: string): LocalDate {
-  const parts = new Intl.DateTimeFormat('en-US', {
-    timeZone,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  }).formatToParts(instant);
-
-  const part = (type: string): number => Number(parts.find((piece) => piece.type === type)?.value);
-  return { year: part('year'), month: part('month'), day: part('day') };
-}
-
 /**
  * The date a run at this instant should be labelled with: **the previous day**,
  * in the household's zone.
@@ -52,24 +34,16 @@ function localDateIn(instant: Date, timeZone: string): LocalDate {
  * the 14th". Deliberate, and not to be changed: a row written at three in the
  * morning describes the day that just finished, not the one three hours old.
  *
- * Calendar arithmetic on the local date, never instant arithmetic. Subtracting
- * 24 hours from a timestamp lands on the wrong day twice a year: on the
- * spring-forward morning the previous local day is 23 hours back, and on the
- * autumn one it is 25. `Date.UTC` normalises day 0 and month -1 itself, so the
- * first of a month and the first of January need no special case.
- *
- * The result is midnight UTC, which is how every other date in this schema is
- * filed — `account_valuations.as_of` and `bitcoin_prices.price_date` both.
+ * The arithmetic lives in `calendar.ts` — this module had its own copy of it
+ * until ADR 037 gave the whole application one answer to "which day is this".
+ * Kept as a name of its own because "the date a snapshot run is for" is a domain
+ * idea, and a reader of the scheduler should not have to know it happens to
+ * coincide with yesterday.
  */
-export function snapshotDateFor(now: Date, timeZone: string): Date {
-  const { year, month, day } = localDateIn(now, timeZone);
-  return new Date(Date.UTC(year, month - 1, day - 1));
-}
+export const snapshotDateFor = previousLocalDayKey;
 
 /** Midnight UTC for a date, so a caller's timestamp files under the right day. */
-export function asSnapshotDate(date: Date): Date {
-  return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
-}
+export const asSnapshotDate = asDayKey;
 
 // ---------------------------------------------------------------------------
 // What a day looks like
@@ -473,7 +447,11 @@ const DAY_MS = 24 * 60 * 60 * 1000;
  * question nobody asked was whether a dump was actually on disk. This is that
  * question for snapshots, and it is why the answer is on a screen.
  */
-export async function snapshotStatus(db: Db, now: Date = new Date()): Promise<SnapshotStatus> {
+export async function snapshotStatus(
+  db: Db,
+  timeZone: string,
+  now: Date = new Date(),
+): Promise<SnapshotStatus> {
   const [latest, days] = await Promise.all([
     db.aggregateSnapshot.findFirst({
       orderBy: { snapshotDate: 'desc' },
@@ -486,7 +464,13 @@ export async function snapshotStatus(db: Db, now: Date = new Date()): Promise<Sn
     return { latestDate: null, latestProvenance: null, days: 0, stale: true };
   }
 
-  const age = asSnapshotDate(now).getTime() - latest.snapshotDate.getTime();
+  /*
+   * Today here, not today in UTC. `now` is an instant; the snapshot date is a
+   * local day. Truncating the instant in UTC would age every snapshot by a day
+   * from seven in the evening, and the staleness banner would come on nightly
+   * and go off each morning — the shape of warning nobody reads. ADR 037.
+   */
+  const age = localDayKey(now, timeZone).getTime() - latest.snapshotDate.getTime();
   return {
     latestDate: latest.snapshotDate,
     latestProvenance: latest.provenance,

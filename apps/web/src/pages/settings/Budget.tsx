@@ -93,6 +93,30 @@ export function BudgetSection(): ReactNode {
       setProblem(error instanceof ApiError ? error.message : 'Could not save that.'),
   });
 
+  /**
+   * The household's zone.
+   *
+   * Saved on change like the cadence, and for the same reason — one choice from
+   * a list, nothing to mistype. It invalidates nearly everything: since ADR 037
+   * the zone decides which day an instant falls in, so which month a spend lands
+   * in and where a chart's window starts both move with it.
+   */
+  const zoneSave = useMutation({
+    mutationFn: (choice: string) =>
+      // The empty option is "follow the environment", which is null, not "".
+      settingsApi.update({ scheduleTimezone: choice === '' ? null : choice }),
+    onSuccess: async () => {
+      setProblem(null);
+      await queryClient.invalidateQueries({ queryKey: ['settings'] });
+      await queryClient.invalidateQueries({ queryKey: ['utilities'] });
+      await queryClient.invalidateQueries({ queryKey: ['insights'] });
+      await queryClient.invalidateQueries({ queryKey: ['snapshots'] });
+      await queryClient.invalidateQueries({ queryKey: ['backups'] });
+    },
+    onError: (error: unknown) =>
+      setProblem(error instanceof ApiError ? error.message : 'Could not save that zone.'),
+  });
+
   function onSubmit(event: FormEvent): void {
     event.preventDefault();
     save.mutate();
@@ -147,6 +171,39 @@ export function BudgetSection(): ReactNode {
             {PAY_CADENCES.map((option) => (
               <option key={option} value={option}>
                 {PAY_CADENCE_LABELS[option]}
+              </option>
+            ))}
+          </SelectField>
+
+          {/*
+            The zone the household keeps.
+
+            The hint names what is actually in force rather than what was
+            chosen, because those differ in the case that matters: nobody has
+            chosen, and the answer is coming from `SCHEDULE_TIMEZONE`. A page
+            that showed only the choice would read blank on precisely the
+            deployment whose zone nobody could otherwise discover.
+          */}
+          <SelectField
+            label="Time zone"
+            width="lg"
+            {...(settings.data
+              ? {
+                  hint:
+                    settings.data.scheduleTimezone === null
+                      ? `Following the server: ${settings.data.effectiveTimezone}.`
+                      : `Days, months and schedules are read in ${settings.data.effectiveTimezone}.`,
+                }
+              : {})}
+            value={settings.data?.scheduleTimezone ?? ''}
+            onChange={(next) => zoneSave.mutate(next)}
+          >
+            <option value="">
+              Follow the server ({settings.data?.environmentTimezone ?? 'UTC'})
+            </option>
+            {(settings.data?.availableTimezones ?? []).map((zone) => (
+              <option key={zone} value={zone}>
+                {zone}
               </option>
             ))}
           </SelectField>

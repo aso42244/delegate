@@ -12,6 +12,7 @@ import {
   isInsightWidget,
   SPENDING_WINDOWS,
 } from '../domain/insights.js';
+import { householdTimezone } from '../domain/settings.js';
 import { buildUtilities } from '../domain/utilities.js';
 import { centsOut, dateOut } from '../http/serialize.js';
 import { AUTHENTICATED } from '../plugins/auth.js';
@@ -117,15 +118,24 @@ export const insightRoutes: FastifyPluginCallback = (fastify, _options, done) =>
   fastify.get('/api/insights', async (request) => {
     const { window } = querySchema.parse(request.query ?? {});
 
+    /*
+     * Resolved once, before anything else, and passed to every builder that
+     * decides which day or month a figure belongs to. Year-to-date, the monthly
+     * utility average and the spending windows all cut on a calendar boundary,
+     * and cutting them in UTC put an evening spend in the wrong month. See ADR
+     * 037.
+     */
+    const timeZone = await householdTimezone(prisma, request.server.config.SCHEDULE_TIMEZONE);
+
     const [composition, byGrouping, byDelegation, negative, backlog, cycles, utilities] =
       await Promise.all([
         buildComposition(prisma),
-        buildSpending(prisma, { by: 'grouping', window }),
-        buildSpending(prisma, { by: 'delegation', window }),
+        buildSpending(prisma, { by: 'grouping', window, timeZone }),
+        buildSpending(prisma, { by: 'delegation', window, timeZone }),
         buildNegativeDelegations(prisma),
         buildBacklog(prisma),
         buildCycles(prisma),
-        buildUtilities(prisma),
+        buildUtilities(prisma, timeZone),
       ]);
 
     const spending = (

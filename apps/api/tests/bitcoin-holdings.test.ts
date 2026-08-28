@@ -24,6 +24,9 @@ import { sessionCookie } from './http.js';
  * because there was nowhere else to read a quantity from.
  */
 
+/** The household's zone: it decides which day a price is filed under. */
+const ZONE = 'America/Chicago';
+
 let app: FastifyInstance;
 let cookie: string;
 
@@ -87,13 +90,14 @@ describe('what was held on a date', () => {
       sats: HALF_BTC,
       heldSince: new Date('2026-08-06T00:00:00Z'),
       inNetWorth: true,
-      createdAt: new Date('2026-08-06T00:00:00Z'),
+      // Midday: an instant, and one that is the 6th in any zone this runs in.
+      createdAt: new Date('2026-08-06T17:00:00Z'),
     });
 
     // One price all week, so the quantity is the only thing that can move the line.
     await recordSpotPrice(
       prisma,
-      { priceCents: 10_000_000n, source: 'test' },
+      { priceCents: 10_000_000n, source: 'test', timeZone: ZONE },
       new Date('2026-08-06T12:00:00Z'),
     );
 
@@ -116,7 +120,7 @@ describe('what was held on a date', () => {
      * same because today's quantity was applied backwards.
      */
     const valueOn = async (date: string): Promise<bigint | undefined> => {
-      const rebuilt = await rebuildDay(prisma, new Date(date));
+      const rebuilt = await rebuildDay(prisma, new Date(date), ZONE);
       return rebuilt.accounts.find((row) => row.accountId === id)?.balanceCents;
     };
 
@@ -128,24 +132,31 @@ describe('what was held on a date', () => {
     const { id } = await makeHolding({
       name: 'Hardware wallet',
       sats: HALF_BTC,
+      // `held_since` is a date key — a day already decided — so midnight is it.
       heldSince: new Date('2026-08-09T00:00:00Z'),
       inNetWorth: true,
-      createdAt: new Date('2026-08-09T00:00:00Z'),
+      /*
+       * `created_at` is an *instant*, and midday rather than midnight on
+       * purpose: midnight UTC on the 9th is seven in the evening on the **8th**
+       * here, so the holding would have existed on the 8th after all and this
+       * test would be asserting the opposite of what it reads as. See ADR 037.
+       */
+      createdAt: new Date('2026-08-09T17:00:00Z'),
     });
     // A price from before the holding existed. Having a price is not the same
     // as having something to value with it.
     await recordSpotPrice(
       prisma,
-      { priceCents: 10_000_000n, source: 'test' },
+      { priceCents: 10_000_000n, source: 'test', timeZone: ZONE },
       new Date('2026-08-06T12:00:00Z'),
     );
 
     // Nothing on the 8th: the account did not exist, and a zero would draw a
     // line through a period it was not part of.
-    const before = await rebuildDay(prisma, new Date('2026-08-08T00:00:00Z'));
+    const before = await rebuildDay(prisma, new Date('2026-08-08T00:00:00Z'), ZONE);
     expect(before.accounts.find((row) => row.accountId === id)).toBeUndefined();
 
-    const after = await rebuildDay(prisma, new Date('2026-08-09T00:00:00Z'));
+    const after = await rebuildDay(prisma, new Date('2026-08-09T00:00:00Z'), ZONE);
     expect(after.accounts.find((row) => row.accountId === id)?.balanceCents).toBe(5_000_000n);
   });
 });
@@ -346,7 +357,11 @@ describe('the API', () => {
     });
     expect(response.statusCode).toBe(201);
 
-    await recordSpotPrice(prisma, { priceCents: 10_000_000n, source: 'test' }, new Date());
+    await recordSpotPrice(
+      prisma,
+      { priceCents: 10_000_000n, source: 'test', timeZone: ZONE },
+      new Date(),
+    );
 
     const history = await app.inject({
       method: 'GET',

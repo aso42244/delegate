@@ -88,15 +88,12 @@ history.
 Not phase-gated: this is current work, and these are the questions it raised
 and deliberately did not answer.
 
-- **Should the domain compute dates in the household's zone rather than UTC?**
-  [ADR 036](decisions/036-the-schedule-timezone-is-a-setting.md) deliberately
-  limited the zone setting to _when jobs fire_. Every date the domain computes is
-  still UTC, which means a charge made at 8pm Central files under the next day.
-  Arguably wrong, and arguably worth fixing — but it moves which day a
-  transaction posted on, which day a valuation is as-of, and which day a Bitcoin
-  close belongs to, all of which are stored. That is a migration through live
-  financial data and belongs on its own branch with its own ADR, not folded into
-  a feature about charts.
+- ~~**Should the domain compute dates in the household's zone rather than UTC?**~~
+  **Answered: yes.** [ADR 037](decisions/037-a-day-is-the-households-day.md).
+  The migration this question feared did not exist — `posted_at` already holds a
+  true instant, and `as_of` and `price_date` hold decided calendar days that need
+  no zone — so what looked like a data migration was an interpretation change at
+  twelve sites.
 - **Is 03:10 the right hour for the snapshot job?** It is offset from the hourly
   sync at :00 for the same reason the price fetch sits at :05 — two cores. It is
   also outside 02:00–02:59, which does not exist on the spring-forward morning.

@@ -8,6 +8,57 @@ phase (`v0.1.0-phase1`, and so on).
 
 ### Added
 
+- **A day is the household's day, not UTC's**
+  ([ADR 037](docs/decisions/037-a-day-is-the-households-day.md)). The zone chosen
+  in Settings now decides which calendar day an instant falls in, everywhere the
+  application turns one into the other.
+
+  UTC runs five or six hours ahead of this household, so anything after about six
+  in the evening was already tomorrow. That was not a rounding difference; it was
+  wrong figures on screen:
+
+  - A charge at 8pm on the 31st was counted in the **next** month's utility
+    average. The month it was made in came out short and the following one long,
+    and the suggested per-paycheck amount drawn from the average was wrong in
+    both directions.
+  - The hourly price fetch filed every evening reading under **tomorrow**,
+    leaving the day it was taken on with no close and settling one for a day that
+    had not happened.
+  - A price fetched minutes ago read **stale** all evening.
+  - A balance typed in the evening recorded its valuation under tomorrow, so the
+    day it was typed on still showed the old figure.
+  - Year-to-date on New Year's Eve left out the evening it was looking at.
+
+  **No migration, and no backfill.** The three columns this was expected to move
+  were checked rather than assumed: `posted_at` already holds a true instant from
+  the feed's own epoch, and `as_of` and `price_date` are `DATE` columns holding
+  calendar days somebody decided — a decided day needs no zone. So nothing stored
+  changes; what changed is the reading of an instant at the twelve places it
+  becomes a day.
+
+  One module, `calendar.ts`, now answers "which day is this" for the whole
+  application, and it keeps the two ideas apart by name: an **instant** needs a
+  zone to place in a day, a **date key** is a day already decided and needs none.
+  Conflating them is the whole bug. Local day bounds are resolved by probing the
+  offset rather than by arithmetic, because two mornings a year are 23 and 25
+  hours long and a 24-hour window would drop an hour of transactions or count it
+  twice — asserted directly, along with tiling a full year with no gap or overlap
+  and round-tripping 365 days in four zones.
+
+  Deliberately **not** given a zone: `revalueBitcoinHoldings`, which values a
+  quantity and does not care whether the price is today's. Threading one through
+  the six layers above it to compute a flag it discards is how a parameter
+  eventually gets passed wrongly, so `latestPrice` (staleness, needs a zone) and
+  `newestPrice` (the figure, does not) are now two functions that say which
+  question they answer. Where a zone **is** needed it is a required argument, so
+  a call site that forgets it fails the build instead of silently reverting to
+  UTC.
+
+  A deployment left on UTC is unaffected: every conversion is the identity there,
+  and the tests assert it in both directions rather than only in the interesting
+  zone. On any other zone, expect a utility average to shift by up to one bill
+  once — that is the correction landing, not a regression.
+
 - **The financial picture is recorded nightly.** Three tables — one row per
   account per day, one per delegation per day, and one for the whole picture —
   each keyed by a date and carrying its own provenance: `observed`,
@@ -209,7 +260,17 @@ phase (`v0.1.0-phase1`, and so on).
   logged an error into a file nobody read while failing every night for weeks.
   It governs when jobs fire and nothing else; every date the domain computes is
   still UTC, and moving that is recorded as an open question rather than smuggled
-  in here.
+  in here. **Superseded within this release by ADR 037, below** — the zone now
+  also decides which day an instant falls in.
+
+- **The zone is pickable on Settings → Budget.** The setting landed with an API
+  and no interface, which left it changeable only by editing `.env` and
+  restarting — the exact thing ADR 036 set out to remove. The picker offers what
+  the server accepts rather than a list of its own, and its hint names the zone
+  actually **in force**, which is the case that matters: nobody has chosen, and
+  the answer is coming from the environment. A page showing only the choice would
+  read blank on precisely the deployment whose zone nobody could otherwise find
+  out.
 
 ### Fixed
 

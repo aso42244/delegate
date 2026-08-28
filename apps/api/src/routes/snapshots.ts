@@ -51,10 +51,12 @@ export const snapshotRoutes: FastifyPluginCallback = (fastify, _options, done) =
    * the absence of an error, so this answers from the rows.
    */
   fastify.get('/api/snapshots/status', async () => {
-    const [status, settings] = await Promise.all([
-      snapshotStatus(prisma),
-      getBudgetSettings(prisma),
-    ]);
+    const settings = await getBudgetSettings(prisma);
+    // The zone decides what "today" is, and therefore how old the newest
+    // snapshot is. Resolved before the status rather than beside it, so the
+    // staleness the page reports is measured against the household's day.
+    const timezone = resolveScheduleTimezone(settings, fastify.config.SCHEDULE_TIMEZONE);
+    const status = await snapshotStatus(prisma, timezone);
 
     return {
       latestDate: dateOut(status.latestDate),
@@ -66,7 +68,7 @@ export const snapshotRoutes: FastifyPluginCallback = (fastify, _options, done) =
       // resolves it. A page that names a schedule from somewhere else is how
       // Settings → Sync claimed "02:30 UTC" for months while the deployment ran
       // on something else entirely.
-      timezone: resolveScheduleTimezone(settings, fastify.config.SCHEDULE_TIMEZONE),
+      timezone,
     };
   });
 

@@ -81,7 +81,7 @@ void (async () => {
   try {
     const timezone = await currentScheduleTimezone();
     const yesterday = snapshotDateFor(new Date(), timezone);
-    const filled = await fillGaps(prisma, yesterday, app.log);
+    const filled = await fillGaps(prisma, yesterday, timezone, app.log);
     if (filled.filled > 0) {
       app.log.info({ days: filled.filled }, 'snapshot days missed during downtime were rebuilt');
     }

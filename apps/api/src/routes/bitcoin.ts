@@ -3,7 +3,13 @@ import type { FastifyPluginCallback } from 'fastify';
 import { z } from 'zod';
 import { prisma } from '../db/client.js';
 import { NODE_MODES, SUGGESTED_NODES, reachOf } from '@budget/shared';
-import { fetchAndRecordPrice, latestPrice, providerByName } from '../domain/bitcoin.js';
+import {
+  fetchAndRecordPrice,
+  latestPrice,
+  newestPrice,
+  providerByName,
+} from '../domain/bitcoin.js';
+import { householdTimezone } from '../domain/settings.js';
 import { checkNode, readNodeSettings, saveNodeSettings } from '../domain/bitcoin-node.js';
 import { addWallet, archiveWallet, listWallets, scanWallet } from '../domain/bitcoin-wallets.js';
 import { createHolding, updateHolding } from '../domain/managed-accounts.js';
@@ -51,7 +57,8 @@ export const bitcoinRoutes: FastifyPluginCallback = (fastify, _options, done) =>
    */
   fastify.get('/api/bitcoin', async () => {
     const [price, accounts, settings] = await Promise.all([
-      latestPrice(prisma),
+      // The household's day decides whether today's price has been fetched yet.
+      latestPrice(prisma, await householdTimezone(prisma, fastify.config.SCHEDULE_TIMEZONE)),
       prisma.account.findMany({
         where: { archivedAt: null, managedAs: 'bitcoin' },
         select: {
@@ -213,7 +220,8 @@ export const bitcoinRoutes: FastifyPluginCallback = (fastify, _options, done) =>
       }),
       costBasis(prisma, { accountId: id }),
       prisma.account.findUnique({ where: { id }, select: { bitcoinSats: true } }),
-      latestPrice(prisma),
+      // Only the figure is wanted here, so no zone is needed to get it.
+      newestPrice(prisma),
     ]);
 
     const heldSats = account?.bitcoinSats ?? 0n;
@@ -413,10 +421,15 @@ export const bitcoinRoutes: FastifyPluginCallback = (fastify, _options, done) =>
 
   /** Fetch now, rather than waiting for the hour. */
   fastify.post('/api/bitcoin/refresh', async (request) => {
-    const result = await fetchAndRecordPrice(prisma, [
-      providerByName(request.server.config.BITCOIN_PRICE_PRIMARY),
-      providerByName(request.server.config.BITCOIN_PRICE_FALLBACK),
-    ]);
+    const result = await fetchAndRecordPrice(
+      prisma,
+      [
+        providerByName(request.server.config.BITCOIN_PRICE_PRIMARY),
+        providerByName(request.server.config.BITCOIN_PRICE_FALLBACK),
+      ],
+      // The day this reading is filed under is the household's, not UTC's.
+      await householdTimezone(prisma, request.server.config.SCHEDULE_TIMEZONE),
+    );
 
     if (!result) return { updated: false };
     return {

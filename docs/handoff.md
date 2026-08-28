@@ -217,9 +217,10 @@ service; ADR 017 carries the amendment.
   request. Found chasing ten charges that stayed pending for days while the
   bridge reported itself healthy; nothing about the pending lifecycle was wrong
   ([ADR 032](decisions/032-a-feed-date-is-kept-apart-from-the-one-we-stamp.md))
-- **Scheduled jobs run in `SCHEDULE_TIMEZONE`**, an IANA name defaulting to UTC.
-  It governs when jobs fire and nothing else — the process clock is untouched,
-  because moving it would move every date the domain computes
+- **Scheduled jobs run in the household's zone**, an IANA name defaulting to
+  UTC. Since [ADR 037](decisions/037-a-day-is-the-households-day.md) it also
+  decides **which day an instant falls in** — the process clock is still
+  untouched; this is a stored setting the domain consults
 - **The two-factor setup key is offered behind "Can't scan this?"**, grouped and
   copyable, for enrolling in a password manager on the machine already showing
   the screen. The Copy button works on a plain-http origin, where
@@ -247,9 +248,21 @@ service; ADR 017 carries the amendment.
 - **`domain/history.ts` is gone** with the reconstruction it held. Its
   ledger-walking survives inside the gap-filler
 - **The schedule time zone is a setting**
-  ([ADR 036](decisions/036-the-schedule-timezone-is-a-setting.md)). Null means
-  follow `SCHEDULE_TIMEZONE`, so an existing deployment fires exactly where it
-  did. Saving rebuilds the cron tasks — node-cron fixes a task's zone at creation
+  ([ADR 036](decisions/036-the-schedule-timezone-is-a-setting.md)), picked on
+  Settings → Budget. Null means follow `SCHEDULE_TIMEZONE`, so an existing
+  deployment fires exactly where it did. Saving rebuilds the cron tasks —
+  node-cron fixes a task's zone at creation
+- **A day is the household's day**
+  ([ADR 037](decisions/037-a-day-is-the-households-day.md)), which narrows
+  ADR 036's "when jobs fire and nothing else". `domain/calendar.ts` is the only
+  place that turns an instant into a day, and it keeps two ideas apart by name:
+  an **instant** (`posted_at`, `occurred_at` on a delegation event, `now`,
+  `created_at`) needs a zone to place in a day; a **date key** (`as_of`,
+  `price_date`, `snapshot_date`) is a day already decided and needs none.
+  Conflating them is how an 8pm charge landed in next month's average. **If you
+  are adding a zone parameter to a function that does not convert an instant,
+  you have the distinction backwards** — see `revalueBitcoinHoldings`, which
+  deliberately has none
 - **A manual balance typed on Settings → Accounts writes a dated valuation.**
   Before this, only properties had a history and cash, River and Strike had none
 

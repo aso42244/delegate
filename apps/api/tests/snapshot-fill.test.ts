@@ -14,7 +14,26 @@ import { makeAccount, makeDelegation, makeHolding, resetDatabase } from './helpe
  * balance the wrong way while leaving the identity looking perfectly healthy.
  */
 
+/**
+ * The household's zone. Snapshot dates are local days, so which instant falls in
+ * which day — and therefore which side of a boundary a transaction lands on —
+ * is decided by this. See ADR 037.
+ */
+const ZONE = 'America/Chicago';
+
+/** A snapshot date — a decided calendar day, filed at midnight UTC. */
 const day = (n: number): Date => new Date(Date.UTC(2026, 7, n));
+
+/**
+ * An *instant* in the middle of that day, here.
+ *
+ * The distinction the fixtures have to keep straight, and the reason two of them
+ * were wrong: `day(21)` is midnight UTC, which is seven in the evening on the
+ * **20th** in Chicago. A ledger event written at `day(21)` therefore happened on
+ * the 20th, and a test that meant "on the 21st" has to say so with an instant
+ * that is unambiguously inside it. See ADR 037.
+ */
+const noon = (n: number): Date => new Date(Date.UTC(2026, 7, n, 17));
 
 beforeEach(async () => {
   await resetDatabase();
@@ -35,7 +54,7 @@ async function makeFedAccount(
       balanceCents,
       inBudget: true,
       inNetWorth: true,
-      createdAt: day(1),
+      createdAt: noon(1),
     },
     select: { id: true },
   });
@@ -69,15 +88,15 @@ describe('finding the gap', () => {
    * snapshot stored there is no gap — only history nobody chose to record.
    */
   it('finds nothing to fill when nothing has ever been recorded', async () => {
-    await makeAccount({ name: 'Checking', type: 'asset', balanceCents: 1n, createdAt: day(1) });
+    await makeAccount({ name: 'Checking', type: 'asset', balanceCents: 1n, createdAt: noon(1) });
 
     expect((await missingDates(prisma, day(27))).dates).toEqual([]);
-    expect((await fillGaps(prisma, day(27))).filled).toBe(0);
+    expect((await fillGaps(prisma, day(27), ZONE)).filled).toBe(0);
     expect(await prisma.aggregateSnapshot.count()).toBe(0);
   });
 
   it('lists the days between the newest snapshot and the date asked for', async () => {
-    await makeAccount({ name: 'Checking', type: 'asset', balanceCents: 1n, createdAt: day(1) });
+    await makeAccount({ name: 'Checking', type: 'asset', balanceCents: 1n, createdAt: noon(1) });
     await captureSnapshot(prisma, day(20));
 
     const gap = await missingDates(prisma, day(24));
@@ -90,7 +109,7 @@ describe('finding the gap', () => {
   });
 
   it('finds nothing when the newest snapshot is already current', async () => {
-    await makeAccount({ name: 'Checking', type: 'asset', balanceCents: 1n, createdAt: day(1) });
+    await makeAccount({ name: 'Checking', type: 'asset', balanceCents: 1n, createdAt: noon(1) });
     await captureSnapshot(prisma, day(24));
     expect((await missingDates(prisma, day(24))).dates).toEqual([]);
   });
@@ -102,24 +121,24 @@ describe('delegations', () => {
    * gap length is irrelevant.
    */
   it('replays the ledger to the end of the missing day', async () => {
-    const grocery = await makeDelegation({ name: 'Grocery', createdAt: day(1) });
-    await makeAccount({ name: 'Checking', type: 'asset', balanceCents: 1n, createdAt: day(1) });
+    const grocery = await makeDelegation({ name: 'Grocery', createdAt: noon(1) });
+    await makeAccount({ name: 'Checking', type: 'asset', balanceCents: 1n, createdAt: noon(1) });
 
     // $100 on the 21st, another $50 on the 23rd.
     await appendEvent(prisma, {
       delegationId: grocery.id,
       deltaCents: 10_000n,
       eventType: 'adjust',
-      occurredAt: day(21),
+      occurredAt: noon(21),
     });
     await appendEvent(prisma, {
       delegationId: grocery.id,
       deltaCents: 5_000n,
       eventType: 'adjust',
-      occurredAt: day(23),
+      occurredAt: noon(23),
     });
 
-    const rebuilt = await rebuildDay(prisma, day(22));
+    const rebuilt = await rebuildDay(prisma, day(22), ZONE);
     const row = rebuilt.delegations.find((entry) => entry.delegationId === grocery.id);
 
     // The 22nd sees the first movement and not the second.
@@ -128,11 +147,40 @@ describe('delegations', () => {
   });
 
   /**
+   * Where the day ends, exactly.
+   *
+   * A snapshot date is a local day and `occurred_at` is an instant, so the cut
+   * has to be local midnight. An event at ten in the evening belongs to the day
+   * it happened on; cut in UTC it would land in the next one, and the chart
+   * would show the money moving a day late.
+   */
+  it('cuts the day at local midnight, not at midnight UTC', async () => {
+    const grocery = await makeDelegation({ name: 'Grocery', createdAt: noon(1) });
+    await makeAccount({ name: 'Checking', type: 'asset', balanceCents: 1n, createdAt: noon(1) });
+
+    await appendEvent(prisma, {
+      delegationId: grocery.id,
+      deltaCents: 10_000n,
+      eventType: 'adjust',
+      // 22:00 on the 22nd, CDT — already the 23rd in UTC.
+      occurredAt: new Date(Date.UTC(2026, 7, 23, 3)),
+    });
+
+    const onTheDay = await rebuildDay(prisma, day(22), ZONE);
+    expect(onTheDay.delegations[0]?.balanceCents).toBe(10_000n);
+
+    // And the day before still has nothing, so the boundary moved rather than
+    // the whole window sliding.
+    const before = await rebuildDay(prisma, day(21), ZONE);
+    expect(before.delegations[0]?.balanceCents).toBe(0n);
+  });
+
+  /**
    * A reconstruction has to agree with the number the application would compute
    * directly, or the chart and the budget tell different stories.
    */
   it('matches the balance computed straight from the events', async () => {
-    const grocery = await makeDelegation({ name: 'Grocery', createdAt: day(1) });
+    const grocery = await makeDelegation({ name: 'Grocery', createdAt: noon(1) });
     for (const [n, amount] of [
       [21, 30_000n],
       [22, -4_500n],
@@ -142,11 +190,11 @@ describe('delegations', () => {
         delegationId: grocery.id,
         deltaCents: amount,
         eventType: 'adjust',
-        occurredAt: day(n),
+        occurredAt: noon(n),
       });
     }
 
-    const rebuilt = await rebuildDay(prisma, day(25));
+    const rebuilt = await rebuildDay(prisma, day(25), ZONE);
     const direct = await prisma.delegation.findUniqueOrThrow({
       where: { id: grocery.id },
       select: { balanceCents: true },
@@ -156,8 +204,8 @@ describe('delegations', () => {
   });
 
   it('leaves out a delegation that did not exist yet', async () => {
-    await prisma.delegation.create({ data: { name: 'New', createdAt: day(25) } });
-    const rebuilt = await rebuildDay(prisma, day(22));
+    await prisma.delegation.create({ data: { name: 'New', createdAt: noon(25) } });
+    const rebuilt = await rebuildDay(prisma, day(22), ZONE);
     expect(rebuilt.delegations).toHaveLength(0);
   });
 });
@@ -172,11 +220,45 @@ describe('a SimpleFIN account', () => {
     await post(checking.id, -25_000n, day(24));
 
     // $5,000 now. The 23rd is before the $250 charge and after the $100 one.
-    const rebuilt = await rebuildDay(prisma, day(23));
+    const rebuilt = await rebuildDay(prisma, day(23), ZONE);
     const row = rebuilt.accounts.find((entry) => entry.accountId === checking.id);
 
     expect(row?.balanceCents).toBe(525_000n);
     expect(row?.provenance).toBe('reconstructed');
+  });
+
+  /**
+   * The same boundary, on the other side of the walk.
+   *
+   * The reconstruction rolls back everything posted *after* the day being
+   * rebuilt. A charge at ten in the evening is inside that day and must not be
+   * rolled back out of it; in UTC it reads as the next day and would be.
+   */
+  it('keeps a late-evening charge inside the day it was made', async () => {
+    const checking = await makeFedAccount('Checking', 'asset', 500_000n);
+    // 22:00 on the 23rd, CDT — the 24th in UTC.
+    await prisma.transaction.create({
+      data: {
+        accountId: checking.id,
+        postedAt: new Date(Date.UTC(2026, 7, 24, 3)),
+        amountCents: -10_000n,
+        descriptionRaw: 'LATE',
+        description: 'Late',
+        source: 'simplefin',
+      },
+    });
+
+    // The 23rd already includes the charge, so its balance is today's.
+    const onTheDay = await rebuildDay(prisma, day(23), ZONE);
+    expect(onTheDay.accounts.find((entry) => entry.accountId === checking.id)?.balanceCents).toBe(
+      500_000n,
+    );
+
+    // The 22nd predates it, so it is rolled back out.
+    const before = await rebuildDay(prisma, day(22), ZONE);
+    expect(before.accounts.find((entry) => entry.accountId === checking.id)?.balanceCents).toBe(
+      510_000n,
+    );
   });
 
   /**
@@ -194,7 +276,7 @@ describe('a SimpleFIN account', () => {
     // took the card from $500 owed to $800 owed.
     await post(card.id, -30_000n, day(24));
 
-    const rebuilt = await rebuildDay(prisma, day(23));
+    const rebuilt = await rebuildDay(prisma, day(23), ZONE);
     const row = rebuilt.accounts.find((entry) => entry.accountId === card.id);
 
     // Before the charge the card owed $500 — less than it owes now, not more.
@@ -208,7 +290,7 @@ describe('a SimpleFIN account', () => {
     // A $400 payment on the 24th reduced what is owed.
     await post(card.id, 40_000n, day(24));
 
-    const rebuilt = await rebuildDay(prisma, day(23));
+    const rebuilt = await rebuildDay(prisma, day(23), ZONE);
     expect(rebuilt.accounts[0]?.balanceCents).toBe(60_000n);
   });
 
@@ -220,7 +302,7 @@ describe('a SimpleFIN account', () => {
     const checking = await makeFedAccount('Checking', 'asset', 500_000n);
     await post(checking.id, -10_000n, day(24), { pending: true });
 
-    const rebuilt = await rebuildDay(prisma, day(23));
+    const rebuilt = await rebuildDay(prisma, day(23), ZONE);
     expect(rebuilt.accounts[0]?.balanceCents).toBe(500_000n);
   });
 
@@ -232,7 +314,7 @@ describe('a SimpleFIN account', () => {
     const checking = await makeFedAccount('Checking', 'asset', 500_000n);
     await post(checking.id, -10_000n, day(24), { archived: true });
 
-    const rebuilt = await rebuildDay(prisma, day(23));
+    const rebuilt = await rebuildDay(prisma, day(23), ZONE);
     expect(rebuilt.accounts[0]?.balanceCents).toBe(500_000n);
   });
 
@@ -259,7 +341,7 @@ describe('a SimpleFIN account', () => {
     // Posted between the missing day and the anchor: this one does count.
     await post(checking.id, -20_000n, day(24));
 
-    const rebuilt = await rebuildDay(prisma, day(23));
+    const rebuilt = await rebuildDay(prisma, day(23), ZONE);
     expect(rebuilt.accounts[0]?.balanceCents).toBe(520_000n);
   });
 
@@ -273,13 +355,13 @@ describe('a SimpleFIN account', () => {
     const checking = await makeFedAccount('Checking', 'asset', 500_000n);
     await post(checking.id, -10_000n, day(24));
 
-    const rebuilt = await rebuildDay(prisma, day(20));
+    const rebuilt = await rebuildDay(prisma, day(20), ZONE);
     expect(rebuilt.accounts[0]?.provenance).toBe('interpolated');
   });
 
   it('marks an account with no transactions at all as an estimate', async () => {
     await makeFedAccount('Checking', 'asset', 500_000n);
-    const rebuilt = await rebuildDay(prisma, day(23));
+    const rebuilt = await rebuildDay(prisma, day(23), ZONE);
     expect(rebuilt.accounts[0]?.provenance).toBe('interpolated');
   });
 });
@@ -294,7 +376,7 @@ describe('a manual account', () => {
       name: 'House',
       type: 'asset',
       balanceCents: 42_000_000n,
-      createdAt: day(1),
+      createdAt: noon(1),
     });
     await prisma.accountValuation.createMany({
       data: [
@@ -303,7 +385,7 @@ describe('a manual account', () => {
       ],
     });
 
-    const rebuilt = await rebuildDay(prisma, day(23));
+    const rebuilt = await rebuildDay(prisma, day(23), ZONE);
     const row = rebuilt.accounts.find((entry) => entry.accountId === house.id);
 
     expect(row?.balanceCents).toBe(40_000_000n);
@@ -315,7 +397,7 @@ describe('a manual account', () => {
       name: 'House',
       type: 'asset',
       balanceCents: 42_000_000n,
-      createdAt: day(1),
+      createdAt: noon(1),
     });
     await prisma.accountValuation.createMany({
       data: [
@@ -326,7 +408,7 @@ describe('a manual account', () => {
 
     // The midpoint would be $410,000. A step function never produces it.
     for (const n of [11, 15, 20, 23]) {
-      const rebuilt = await rebuildDay(prisma, day(n));
+      const rebuilt = await rebuildDay(prisma, day(n), ZONE);
       expect(rebuilt.accounts[0]?.balanceCents).toBe(40_000_000n);
     }
   });
@@ -336,13 +418,13 @@ describe('a manual account', () => {
       name: 'House',
       type: 'asset',
       balanceCents: 42_000_000n,
-      createdAt: day(1),
+      createdAt: noon(1),
     });
     await prisma.accountValuation.create({
       data: { accountId: house.id, valueCents: 41_000_000n, asOf: day(23) },
     });
 
-    const rebuilt = await rebuildDay(prisma, day(23));
+    const rebuilt = await rebuildDay(prisma, day(23), ZONE);
     expect(rebuilt.accounts[0]?.balanceCents).toBe(41_000_000n);
   });
 
@@ -356,10 +438,10 @@ describe('a manual account', () => {
       name: 'Cash',
       type: 'asset',
       balanceCents: 20_000n,
-      createdAt: day(1),
+      createdAt: noon(1),
     });
     const { updateAccount } = await import('../src/domain/accounts.js');
-    await updateAccount(prisma, cash.id, { balanceCents: 35_000n }, day(24));
+    await updateAccount(prisma, cash.id, { balanceCents: 35_000n, timeZone: ZONE }, noon(24));
 
     const valuation = await prisma.accountValuation.findFirst({
       where: { accountId: cash.id },
@@ -380,7 +462,7 @@ describe('a Bitcoin holding', () => {
       name: 'Cold storage',
       sats: 0n,
       heldSince: day(1),
-      createdAt: day(1),
+      createdAt: noon(1),
     });
     await prisma.bitcoinHoldingEvent.create({
       data: {
@@ -406,7 +488,7 @@ describe('a Bitcoin holding', () => {
       data: { priceDate: day(23), priceCents: 10_000_000n, source: 'test', isClose: true },
     });
 
-    const rebuilt = await rebuildDay(prisma, day(23));
+    const rebuilt = await rebuildDay(prisma, day(23), ZONE);
     const row = rebuilt.accounts.find((entry) => entry.accountId === holding.id);
 
     // Half a Bitcoin on the 23rd, not the whole one held now.
@@ -420,13 +502,13 @@ describe('a Bitcoin holding', () => {
       name: 'Cold storage',
       sats: 50_000_000n,
       heldSince: day(1),
-      createdAt: day(1),
+      createdAt: noon(1),
     });
     await prisma.bitcoinPrice.create({
       data: { priceDate: day(10), priceCents: 9_000_000n, source: 'test', isClose: true },
     });
 
-    const rebuilt = await rebuildDay(prisma, day(23));
+    const rebuilt = await rebuildDay(prisma, day(23), ZONE);
     expect(rebuilt.accounts[0]?.provenance).toBe('interpolated');
   });
 });
@@ -444,21 +526,21 @@ describe('interpolation', () => {
       name: 'House',
       type: 'asset',
       balanceCents: 40_000_000n,
-      createdAt: day(1),
+      createdAt: noon(1),
     });
     await prisma.accountValuation.create({
       data: { accountId: house.id, valueCents: 40_000_000n, asOf: day(10) },
     });
 
-    const grocery = await makeDelegation({ name: 'Grocery', createdAt: day(1) });
+    const grocery = await makeDelegation({ name: 'Grocery', createdAt: noon(1) });
     await appendEvent(prisma, {
       delegationId: grocery.id,
       deltaCents: 10_000n,
       eventType: 'adjust',
-      occurredAt: day(20),
+      occurredAt: noon(20),
     });
 
-    const rebuilt = await rebuildDay(prisma, day(23));
+    const rebuilt = await rebuildDay(prisma, day(23), ZONE);
     expect(rebuilt.accounts.map((row) => row.provenance).sort()).toEqual([
       'carried',
       'reconstructed',
@@ -472,7 +554,7 @@ describe('interpolation', () => {
       name: 'Cash',
       type: 'asset',
       balanceCents: 99_999n,
-      createdAt: day(1),
+      createdAt: noon(1),
     });
     for (const [n, value] of [
       [20, 10_000n],
@@ -491,7 +573,7 @@ describe('interpolation', () => {
       });
     }
 
-    const rebuilt = await rebuildDay(prisma, day(23));
+    const rebuilt = await rebuildDay(prisma, day(23), ZONE);
     expect(rebuilt.accounts[0]?.balanceCents).toBe(15_000n);
     expect(rebuilt.accounts[0]?.provenance).toBe('interpolated');
   });
@@ -508,14 +590,14 @@ describe('the rebuilt aggregate', () => {
     // No transactions and no history: an estimate.
     await makeFedAccount('Savings', 'asset', 100_000n);
 
-    const rebuilt = await rebuildDay(prisma, day(23));
+    const rebuilt = await rebuildDay(prisma, day(23), ZONE);
     expect(rebuilt.accounts.some((row) => row.provenance === 'reconstructed')).toBe(true);
     expect(rebuilt.aggregate.provenance).toBe('interpolated');
   });
 
   it('is never observed, because nothing here was seen', async () => {
-    await makeAccount({ name: 'Cash', type: 'asset', balanceCents: 1n, createdAt: day(1) });
-    const rebuilt = await rebuildDay(prisma, day(23));
+    await makeAccount({ name: 'Cash', type: 'asset', balanceCents: 1n, createdAt: noon(1) });
+    const rebuilt = await rebuildDay(prisma, day(23), ZONE);
     expect(rebuilt.aggregate.provenance).not.toBe('observed');
   });
 
@@ -525,7 +607,7 @@ describe('the rebuilt aggregate', () => {
     const card = await makeFedAccount('Card', 'debt', 20_000n);
     await post(card.id, -5_000n, day(20));
 
-    const rebuilt = await rebuildDay(prisma, day(23));
+    const rebuilt = await rebuildDay(prisma, day(23), ZONE);
     expect(rebuilt.aggregate.netWorthAssetsCents).toBe(500_000n);
     expect(rebuilt.aggregate.netWorthDebtsCents).toBe(20_000n);
     expect(rebuilt.aggregate.netWorthCents).toBe(480_000n);
@@ -538,7 +620,7 @@ describe('filling a run of days', () => {
     await post(checking.id, -10_000n, day(20));
     await captureSnapshot(prisma, day(21));
 
-    const result = await fillGaps(prisma, day(25));
+    const result = await fillGaps(prisma, day(25), ZONE);
 
     expect(result.filled).toBe(4);
     const dates = await prisma.aggregateSnapshot.findMany({
@@ -574,7 +656,7 @@ describe('filling a run of days', () => {
       data: { balanceCents: 500_000n },
     });
 
-    await fillGaps(prisma, day(25));
+    await fillGaps(prisma, day(25), ZONE);
 
     const observed = await prisma.accountSnapshot.findFirstOrThrow({
       where: { snapshotDate: day(23) },
@@ -588,10 +670,10 @@ describe('filling a run of days', () => {
     await post(checking.id, -10_000n, day(20));
     await captureSnapshot(prisma, day(21));
 
-    await fillGaps(prisma, day(24));
+    await fillGaps(prisma, day(24), ZONE);
     const before = await prisma.aggregateSnapshot.findMany({ orderBy: { snapshotDate: 'asc' } });
 
-    const second = await fillGaps(prisma, day(24));
+    const second = await fillGaps(prisma, day(24), ZONE);
     expect(second.filled).toBe(0);
 
     const after = await prisma.aggregateSnapshot.findMany({ orderBy: { snapshotDate: 'asc' } });

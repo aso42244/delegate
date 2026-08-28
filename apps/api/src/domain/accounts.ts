@@ -1,5 +1,6 @@
 import { formatCents, type Cents } from '@budget/shared';
 import type { AccountType } from '@prisma/client';
+import { localDayKey } from './calendar.js';
 import type { Db } from '../db/client.js';
 import { ConflictError, NotFoundError, ValidationError } from './errors.js';
 
@@ -117,6 +118,15 @@ export interface UpdateAccountInput {
   readonly actorId?: string | null | undefined;
   /** The mortgage secured against this property, if it is one. */
   readonly mortgageAccountId?: string | null | undefined;
+  /**
+   * The household's zone, for the date a typed balance is filed under.
+   *
+   * Required rather than defaulted to UTC even though only a balance edit reads
+   * it: a default would let a call site that forgot it file an evening's edit
+   * under tomorrow, silently and only in the winter half of the year. A missing
+   * argument should be a build error. See ADR 037.
+   */
+  readonly timeZone: string;
 }
 
 /**
@@ -200,9 +210,15 @@ export async function updateAccount(
    *
    * Upserted on today's date so two edits in one day leave one row saying what
    * it finally settled at, rather than a history of somebody's typing.
+   *
+   * Today *here*: `now` is an instant and `as_of` is a calendar day, so the
+   * conversion takes the household's zone. Truncated in UTC, a balance typed at
+   * eight in the evening landed on tomorrow — which put the valuation a day
+   * ahead of the snapshot meant to carry it, so the day it was typed on read the
+   * old figure.
    */
   if (input.balanceCents !== undefined && account.source === 'manual') {
-    const asOf = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+    const asOf = localDayKey(now, input.timeZone);
     await db.accountValuation.upsert({
       where: { accountId_asOf: { accountId: id, asOf } },
       create: {

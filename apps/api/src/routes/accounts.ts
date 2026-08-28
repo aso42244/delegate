@@ -2,7 +2,8 @@ import { ACCOUNT_TYPES, bitcoinValueCents } from '@budget/shared';
 import type { FastifyPluginCallback } from 'fastify';
 import { z } from 'zod';
 import { prisma } from '../db/client.js';
-import { latestPrice } from '../domain/bitcoin.js';
+import { newestPrice } from '../domain/bitcoin.js';
+import { householdTimezone } from '../domain/settings.js';
 import {
   archiveAccount,
   createManualAccount,
@@ -108,7 +109,7 @@ export const accountRoutes: FastifyPluginCallback = (fastify, _options, done) =>
     // A Bitcoin account carries no dollar balance; its worth is the quantity at
     // today's price. Reporting the raw column showed a real holding as $0.00.
     const price = accounts.some((account) => account.bitcoinSats !== null)
-      ? await latestPrice(prisma)
+      ? await newestPrice(prisma)
       : null;
 
     const worthOf = (account: (typeof accounts)[number]): bigint => {
@@ -171,6 +172,8 @@ export const accountRoutes: FastifyPluginCallback = (fastify, _options, done) =>
     await updateAccount(prisma, id, {
       ...updateSchema.parse(request.body),
       actorId: request.currentUser?.id ?? null,
+      // A typed balance becomes a valuation dated today — the household's today.
+      timeZone: await householdTimezone(prisma, fastify.config.SCHEDULE_TIMEZONE),
     });
     return { ok: true };
   });

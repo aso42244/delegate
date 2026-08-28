@@ -28,6 +28,9 @@ let app: FastifyInstance;
 let cookie: string;
 
 const OWNER = { username: 'owner', password: 'correct-horse-battery' };
+/** The household's zone: it decides what "today" is, and so how stale a run is. */
+const ZONE = 'America/Chicago';
+
 const DAY = new Date(Date.UTC(2026, 7, 27));
 
 beforeAll(async () => {
@@ -454,7 +457,7 @@ describe('provenance of the aggregate', () => {
 
 describe('the status reading', () => {
   it('reports nothing recorded, and calls that stale', async () => {
-    const status = await snapshotStatus(prisma);
+    const status = await snapshotStatus(prisma, ZONE);
     expect(status).toEqual({
       latestDate: null,
       latestProvenance: null,
@@ -472,8 +475,11 @@ describe('the status reading', () => {
     await makeAccount({ name: 'Checking', type: 'asset', balanceCents: 1n });
     await captureSnapshot(prisma, DAY);
 
-    const theNextMorning = new Date(Date.UTC(2026, 7, 28, 3, 10));
-    const status = await snapshotStatus(prisma, theNextMorning);
+    // 03:10 in the household's zone — the hour the job runs — which is 08:10
+    // UTC. Written as 03:10 UTC it would be ten past ten the *previous* evening
+    // here, and the reading would be a day out. See ADR 037.
+    const theNextMorning = new Date(Date.UTC(2026, 7, 28, 8, 10));
+    const status = await snapshotStatus(prisma, ZONE, theNextMorning);
     expect(status.days).toBe(1);
     expect(status.latestProvenance).toBe('observed');
     expect(status.stale).toBe(false);
@@ -483,8 +489,8 @@ describe('the status reading', () => {
     await makeAccount({ name: 'Checking', type: 'asset', balanceCents: 1n });
     await captureSnapshot(prisma, DAY);
 
-    const threeDaysOn = new Date(Date.UTC(2026, 7, 30, 3, 10));
-    expect((await snapshotStatus(prisma, threeDaysOn)).stale).toBe(true);
+    const threeDaysOn = new Date(Date.UTC(2026, 7, 30, 8, 10));
+    expect((await snapshotStatus(prisma, ZONE, threeDaysOn)).stale).toBe(true);
   });
 });
 

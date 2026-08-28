@@ -82,6 +82,26 @@ export function resolveScheduleTimezone(
   return settings.scheduleTimezone ?? fallback;
 }
 
+/**
+ * The household's zone, resolved: the setting when one is chosen, the
+ * environment otherwise.
+ *
+ * The convenience form of `resolveScheduleTimezone` for the many callers that
+ * only want the answer. Note what it governs: since ADR 037 this is not only
+ * *when jobs fire* but *which day an instant belongs to* — which month a spend
+ * lands in, which day a chart point covers.
+ *
+ * The column is still called `schedule_timezone` and the variable still
+ * `SCHEDULE_TIMEZONE`. Both names are narrower than the meaning now is, and both
+ * are deliberately left alone: renaming the environment variable would silently
+ * revert a deployment to UTC the first time it booted without the new name, and
+ * that class of quiet failure has cost this project more than a slightly narrow
+ * name ever will. ADR 037 records the widened scope.
+ */
+export async function householdTimezone(db: Db, fallback: string): Promise<string> {
+  return resolveScheduleTimezone(await getBudgetSettings(db), fallback);
+}
+
 export interface UpdateBudgetSettingsInput {
   readonly undoWindowHours?: number | undefined;
   readonly identityToleranceCents?: Cents | undefined;

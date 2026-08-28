@@ -36,6 +36,9 @@ let cookie: string;
 const OWNER = { username: 'owner', password: 'correct-horse-battery' };
 const NOW = new Date('2026-08-09T12:00:00Z');
 
+/** The household's zone: it decides where a spending window starts. */
+const ZONE = 'America/Chicago';
+
 beforeAll(async () => {
   app = await buildApp(
     loadConfig({
@@ -116,7 +119,11 @@ describe('spending', () => {
     await spendOn(grocery.id, 30_000n, new Date('2026-08-01T00:00:00Z'));
     await spendOn(fun.id, 10_000n, new Date('2026-08-02T00:00:00Z'));
 
-    const { entries } = await buildSpending(prisma, { by: 'grouping', window: '30d' }, NOW);
+    const { entries } = await buildSpending(
+      prisma,
+      { by: 'grouping', window: '30d', timeZone: ZONE },
+      NOW,
+    );
     expect(entries[0]?.name).toBe('Essentials');
     expect(entries[0]?.spendCents).toBe(30_000n);
     expect(entries[1]?.name).toBe('No grouping');
@@ -131,7 +138,11 @@ describe('spending', () => {
     // A reconciliation-sized correction, far larger than the spending.
     await adjustDelegationByDelta(prisma, { delegationId: grocery.id, deltaCents: -900_000n });
 
-    const { entries } = await buildSpending(prisma, { by: 'delegation', window: '30d' }, NOW);
+    const { entries } = await buildSpending(
+      prisma,
+      { by: 'delegation', window: '30d', timeZone: ZONE },
+      NOW,
+    );
     expect(entries[0]?.spendCents).toBe(5_000n);
   });
 
@@ -151,12 +162,20 @@ describe('spending', () => {
     });
     await categorizeTransaction(prisma, refund.id, grocery.id);
 
-    const { entries } = await buildSpending(prisma, { by: 'delegation', window: '30d' }, NOW);
+    const { entries } = await buildSpending(
+      prisma,
+      { by: 'delegation', window: '30d', timeZone: ZONE },
+      NOW,
+    );
     expect(entries[0]?.spendCents).toBe(8_000n);
   });
 
   it('reports nothing rather than inventing a cycle before the first Delegate', async () => {
-    const result = await buildSpending(prisma, { by: 'grouping', window: 'cycle' }, NOW);
+    const result = await buildSpending(
+      prisma,
+      { by: 'grouping', window: 'cycle', timeZone: ZONE },
+      NOW,
+    );
     expect(result.since).toBeNull();
     expect(result.entries).toEqual([]);
   });
