@@ -233,6 +233,41 @@ service; ADR 017 carries the amendment.
 - **Dark mode**, on Settings → Display beside row height
   ([ADR 034](decisions/034-dark-mode-is-a-second-palette-not-an-inversion.md))
 
+**Insights, and the nightly snapshot**
+
+- **The financial picture is recorded every night** at 03:10 in the household's
+  zone, labelled for the previous day
+  ([ADR 035](decisions/035-the-financial-picture-is-snapshotted-nightly.md)).
+  Three tables, each row carrying its own provenance. **ADR 035 supersedes
+  ADR 013**, which rejected exactly this in August for a reason that expired when
+  the backfill happened
+- **There is no initial backfill, by decision.** History starts at the first run,
+  so Insights resets on deploy and gains a day a night. The gap-filler exists
+  only for outages going forward, and every row it writes is marked derived
+- **`domain/history.ts` is gone** with the reconstruction it held. Its
+  ledger-walking survives inside the gap-filler
+- **The schedule time zone is a setting**
+  ([ADR 036](decisions/036-the-schedule-timezone-is-a-setting.md)). Null means
+  follow `SCHEDULE_TIMEZONE`, so an existing deployment fires exactly where it
+  did. Saving rebuilds the cron tasks — node-cron fixes a task's zone at creation
+- **A manual balance typed on Settings → Accounts writes a dated valuation.**
+  Before this, only properties had a history and cash, River and Strike had none
+
+**How to tell the snapshot job actually ran.** This is the question the nightly
+backup taught us to ask from the other end — not "did the attempt throw", which
+was answered correctly into a log nobody read, but "is the evidence on disk".
+
+`GET /api/snapshots/status` answers it from the rows: `days` is how many are
+stored, `latestDate` the newest, `stale` true when that is over two days old.
+Two days rather than one because a run is always for the _previous_ day, so the
+newest date is a day behind even when everything is working.
+
+- **Ran and wrote rows:** `days` ≥ 1, `latestDate` is yesterday, `stale` false.
+  The log line is `nightly snapshot written` with counts and a duration
+- **Ran and wrote nothing:** `days` stays 0. The job logs
+  `nightly snapshot wrote nothing` at **warn**, never an info line that reads
+  like success
+
 ### Known gaps to fix
 
 None outstanding.

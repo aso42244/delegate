@@ -34,6 +34,13 @@ export const INSIGHT_WIDGETS = [
   'identity_drift',
   'home_equity_over_time',
   'bitcoin_value_over_time',
+
+  // Derived from the same tables rather than plotted straight from them.
+  'net_worth_composition',
+  'change_per_cycle',
+  'thirty_day_momentum',
+  'delegation_movers',
+  'debt_trajectory',
 ] as const;
 
 export type InsightWidget = (typeof INSIGHT_WIDGETS)[number];

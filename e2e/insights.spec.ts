@@ -170,3 +170,45 @@ test('says what it cannot chart rather than drawing an empty box', async ({ sign
     signedIn.getByText('No property with a mortgage linked to it.', { exact: false }),
   ).toBeVisible();
 });
+
+/**
+ * The five derived tiles. All of them say something within weeks, and each has
+ * to be honest about having nothing rather than drawing an empty box.
+ */
+test('the derived tiles are on the page and say what they lack', async ({ signedIn }) => {
+  await makeAccount('Everyday Checking', 'asset', 300000n);
+  await signedIn.goto('/insights');
+
+  for (const title of [
+    'What net worth is made of',
+    'Change per pay cycle',
+    '30-day momentum',
+    'Delegation movers',
+    'Debt trajectory',
+  ]) {
+    await expect(signedIn.getByRole('heading', { name: title })).toBeVisible();
+  }
+
+  // Momentum compares against a month earlier, so it needs a month before it
+  // can say anything at all — and says that rather than drawing a flat line.
+  await expect(signedIn.getByText('Not a month of history yet.')).toBeVisible();
+  await expect(signedIn.getByText('No cycles with history behind them yet.')).toBeVisible();
+});
+
+/**
+ * The payoff projection is withheld until a fit through the trailing days means
+ * something. A date that moves by years every morning reads as a fact.
+ */
+test('the debt payoff projection stays hidden without enough history', async ({
+  signedIn,
+  api,
+}) => {
+  await makeAccount('Card', 'debt', 80000n);
+
+  const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  await api.post('/api/snapshots/run', { data: { date: yesterday } });
+
+  await signedIn.goto('/insights');
+  await expect(signedIn.getByRole('heading', { name: 'Debt trajectory' })).toBeVisible();
+  await expect(signedIn.getByText(/clear around/)).toHaveCount(0);
+});

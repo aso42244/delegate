@@ -9,7 +9,12 @@ import { useState, type DragEvent, type ReactNode } from 'react';
 import { api } from '../api/client.js';
 import { PageHeader, SegmentedControl } from '../components/layout.jsx';
 import { Button } from '../components/ui.jsx';
-import { NotEnoughHistory, SnapshotChart, type ChartSeries } from '../components/SnapshotChart.jsx';
+import {
+  NotEnoughHistory,
+  SnapshotChart,
+  StackedAreaChart,
+  type ChartSeries,
+} from '../components/SnapshotChart.jsx';
 
 /**
  * Insights.
@@ -36,7 +41,12 @@ type WidgetKey =
   | 'delegation_burn_rate'
   | 'identity_drift'
   | 'home_equity_over_time'
-  | 'bitcoin_value_over_time';
+  | 'bitcoin_value_over_time'
+  | 'net_worth_composition'
+  | 'change_per_cycle'
+  | 'thirty_day_momentum'
+  | 'delegation_movers'
+  | 'debt_trajectory';
 
 /** Named for what the reader sees, not for the shape of the code. */
 const DISPLAY_LABELS: Record<string, string> = {
@@ -65,6 +75,11 @@ const WIDGET_TITLES: Record<WidgetKey, string> = {
   identity_drift: 'Identity drift',
   home_equity_over_time: 'Home equity over time',
   bitcoin_value_over_time: 'Bitcoin holdings over time',
+  net_worth_composition: 'What net worth is made of',
+  change_per_cycle: 'Change per pay cycle',
+  thirty_day_momentum: '30-day momentum',
+  delegation_movers: 'Delegation movers',
+  debt_trajectory: 'Debt trajectory',
 };
 
 /** The widgets drawn from the nightly snapshot tables — ADR 035. */
@@ -75,6 +90,10 @@ const SNAPSHOT_WIDGETS: readonly WidgetKey[] = [
   'identity_drift',
   'home_equity_over_time',
   'bitcoin_value_over_time',
+  'net_worth_composition',
+  'change_per_cycle',
+  'thirty_day_momentum',
+  'debt_trajectory',
 ];
 
 /** The two that share the drill-down, and so share a fetch of their own. */
@@ -642,6 +661,152 @@ function BurnRate({
   );
 }
 
+/**
+ * Net worth change per pay cycle, aligned to actual paydays.
+ *
+ * A payday here is a Delegate press, which is the only cycle boundary this
+ * system has. Columns grow from a baseline rather than the floor: a cycle that
+ * gained $500 and one that lost $500 are opposite things, and a chart drawing
+ * them identically would be lying.
+ */
+function CycleChange({
+  cycles,
+  display,
+}: {
+  readonly cycles: readonly {
+    startedAt: string;
+    changeCents: string;
+    provenance: SnapshotProvenance;
+    partial: boolean;
+  }[];
+  readonly display: string;
+}): ReactNode {
+  const recent = cycles.slice(-8);
+  const values = recent.map((cycle) => BigInt(cycle.changeCents));
+  const peak = values.reduce((max, value) => {
+    const magnitude = value < 0n ? -value : value;
+    return magnitude > max ? magnitude : max;
+  }, 1n);
+
+  return (
+    <>
+      {display === 'bars' && (
+        <div aria-hidden className="flex h-24 items-center gap-1">
+          {values.map((value, index) => {
+            const height = Math.max(Number((value < 0n ? -value : value) * 100n) / Number(peak), 2);
+            const negative = value < 0n;
+
+            return (
+              <span key={index} className="flex h-full flex-1 flex-col justify-center">
+                <span className="flex h-1/2 items-end">
+                  {!negative && (
+                    <span
+                      className="w-full rounded-t-[2px] bg-positive"
+                      style={{ height: `${height}%` }}
+                    />
+                  )}
+                </span>
+                <span className="flex h-1/2 items-start">
+                  {negative && (
+                    <span
+                      className="w-full rounded-b-[2px] bg-negative"
+                      style={{ height: `${height}%` }}
+                    />
+                  )}
+                </span>
+              </span>
+            );
+          })}
+        </div>
+      )}
+
+      <ul className="mt-2 flex flex-col gap-1">
+        {recent.map((cycle, index) => (
+          <li key={cycle.startedAt} className="flex items-baseline justify-between gap-2">
+            <span className="text-quiet text-muted">
+              {new Date(cycle.startedAt).toLocaleDateString()}
+              {/* A cycle still running is not comparable with finished ones. */}
+              {cycle.partial && <span className="ml-1">(in progress)</span>}
+            </span>
+            <span
+              className={`money text-quiet ${
+                (values[index] ?? 0n) < 0n ? 'font-semibold text-negative' : 'text-ink'
+              }`}
+            >
+              {formatCents(values[index] ?? 0n, { explicitPlus: true })}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </>
+  );
+}
+
+/**
+ * What grew and what shrank across the range, ranked.
+ *
+ * Bars run from a centre line rather than from the left: the question is which
+ * direction a line moved as much as by how much, and a ranking that drew a
+ * $500 gain and a $500 drain identically would answer only half of it.
+ */
+function Movers({
+  entries,
+  display,
+}: {
+  readonly entries: readonly { key: string; name: string; changeCents: string }[];
+  readonly display: string;
+}): ReactNode {
+  const shown = entries.slice(0, 8);
+  const values = shown.map((entry) => BigInt(entry.changeCents));
+  const peak = values.reduce((max, value) => {
+    const magnitude = value < 0n ? -value : value;
+    return magnitude > max ? magnitude : max;
+  }, 1n);
+
+  return (
+    <ul className="flex flex-col gap-2">
+      {shown.map((entry, index) => {
+        const value = values[index] ?? 0n;
+        const negative = value < 0n;
+        const width = Math.max(Number((negative ? -value : value) * 100n) / Number(peak) / 2, 1);
+
+        return (
+          <li key={entry.key}>
+            <div className="flex items-baseline justify-between gap-2">
+              <span className="min-w-0 truncate text-quiet text-ink">{entry.name}</span>
+              <span
+                className={`money text-quiet ${negative ? 'font-semibold text-negative' : 'text-ink'}`}
+              >
+                {formatCents(value, { explicitPlus: true })}
+              </span>
+            </div>
+            {display === 'bars' && (
+              <div aria-hidden className="mt-1 flex h-1.5">
+                <span className="flex w-1/2 justify-end">
+                  {negative && (
+                    <span
+                      className="h-full rounded-l-sm bg-negative"
+                      style={{ width: `${width}%` }}
+                    />
+                  )}
+                </span>
+                <span className="flex w-1/2">
+                  {!negative && (
+                    <span
+                      className="h-full rounded-r-sm bg-positive"
+                      style={{ width: `${width}%` }}
+                    />
+                  )}
+                </span>
+              </div>
+            )}
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
 export function Insights(): ReactNode {
   const queryClient = useQueryClient();
   const [window, setWindow] = useState<string>('30d');
@@ -1088,6 +1253,84 @@ export function Insights(): ReactNode {
               },
             ]}
           />
+        );
+      }
+
+      case 'net_worth_composition': {
+        const data = snapshots.data?.net_worth_composition;
+        if (!data) return <NotEnoughHistory days={0} />;
+        return (
+          <StackedAreaChart
+            points={data.points.map((point) => ({
+              date: point.date,
+              provenance: point.provenance,
+              bitcoinCents: BigInt(point.bitcoinCents),
+              otherAssetsCents: BigInt(point.otherAssetsCents),
+              debtsCents: BigInt(point.debtsCents),
+            }))}
+            days={data.days}
+            label="What net worth is made of"
+          />
+        );
+      }
+
+      case 'thirty_day_momentum': {
+        const data = snapshots.data?.thirty_day_momentum;
+        if (!data || data.points.length === 0) {
+          // Needs a month before it can compare against a month ago.
+          return <p className="text-quiet text-muted">Not a month of history yet.</p>;
+        }
+        return (
+          <>
+            <SnapshotChart
+              display={display}
+              days={data.points.length}
+              label="30-day momentum"
+              zeroLine
+              series={[toChartSeries('momentum', 'Change', null, data.points, 'changeCents')]}
+            />
+            <p className="mt-1 text-quiet text-muted">
+              Net worth against a month earlier, which smooths the biweekly sawtooth.
+            </p>
+          </>
+        );
+      }
+
+      case 'change_per_cycle': {
+        const cycles = snapshots.data?.change_per_cycle ?? [];
+        if (cycles.length === 0) {
+          return <p className="text-quiet text-muted">No cycles with history behind them yet.</p>;
+        }
+        return <CycleChange cycles={cycles} display={display} />;
+      }
+
+      case 'delegation_movers': {
+        const data = drill.data;
+        if (!data || data.series.length === 0) return <NotEnoughHistory days={data?.days ?? 0} />;
+        return <Movers entries={data.series} display={display} />;
+      }
+
+      case 'debt_trajectory': {
+        const data = snapshots.data?.debt_trajectory;
+        if (!data || data.points.length === 0) return <NotEnoughHistory days={0} />;
+        return (
+          <>
+            <SnapshotChart
+              display={display}
+              days={data.points.length}
+              label="Debt trajectory"
+              series={[toChartSeries('debts', 'Debts', null, data.points, 'debtsCents')]}
+            />
+            {/* Hidden entirely until it means something: a line fitted through a
+                handful of days moves by years every morning, and a number that
+                unstable reads as a fact. */}
+            {data.hasEnoughHistory && data.payoffDate !== null && (
+              <p className="mt-2 text-quiet text-muted">
+                On the last 90 days, clear around {new Date(data.payoffDate).toLocaleDateString()} —
+                an estimate.
+              </p>
+            )}
+          </>
         );
       }
 

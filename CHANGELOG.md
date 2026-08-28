@@ -121,6 +121,22 @@ phase (`v0.1.0-phase1`, and so on).
   looking at. Lines in no grouping are their own level and open like any other:
   a bucket somebody can see and cannot click into is a dead end.
 
+- **The five derived tiles.** What net worth is made of (a stacked area of
+  Bitcoin, other assets and debts, with debts below the baseline rather than
+  stacked on top — stacking a debt on an asset would make the total read as their
+  sum), change per pay cycle aligned to actual Delegate presses, 30-day momentum,
+  delegation movers, and debt trajectory.
+
+  Movers runs its bars from a centre line rather than from the left: the question
+  is which direction a line moved as much as by how much, and a ranking drawing a
+  $500 gain and a $500 drain identically would answer only half of it. Momentum
+  says "Not a month of history yet" rather than flattening, because comparing
+  against a month earlier needs a month.
+
+  There is deliberately no cash-versus-savings split in the composition. The
+  application has no such classification — an account is an asset or a debt — and
+  inventing one from account names would be a guess presented as a category.
+
 - **One range selector for the whole page**: 30 days, 90 days, 6 months, 1 year,
   year to date, this cycle, all. The spending and cycle tiles predate snapshots
   and `This cycle` is the only window that means anything to them, so one control

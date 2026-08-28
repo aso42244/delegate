@@ -356,6 +356,16 @@ export const INSIGHT_DISPLAYS = {
    */
   identity_drift: ['line'],
 
+  // Group B: derived from the snapshot tables rather than plotted straight from
+  // them. All five say something within weeks; none needs a year to be useful.
+  /** One shape: a stacked area is what "what is it made of" looks like. */
+  net_worth_composition: ['area'],
+  change_per_cycle: ['bars', 'list'],
+  /** A rolling window is a line. Columns of a smoothed series say less. */
+  thirty_day_momentum: ['line'],
+  delegation_movers: ['bars', 'list'],
+  debt_trajectory: ['line', 'area'],
+
   // One shape each, deliberately. A donut of a single number says nothing, and
   // a list of two figures per row is already the clearest form it has. An
   // option that made a tile worse would not be a choice worth offering.
