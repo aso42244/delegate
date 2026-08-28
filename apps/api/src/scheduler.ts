@@ -8,6 +8,7 @@ import { fetchAndRecordPrice, providerByName, revalueBitcoinHoldings } from './d
 import { scanAllWallets } from './domain/bitcoin-wallets.js';
 import { getBudgetSettings, resolveScheduleTimezone } from './domain/settings.js';
 import { resolveConnection } from './domain/simplefin-config.js';
+import { captureSnapshot, snapshotDateFor } from './domain/snapshots.js';
 import { runSync } from './domain/sync.js';
 import { HttpSimpleFinClient } from './simplefin/client.js';
 
@@ -153,7 +154,75 @@ function createTasks(
     'Bitcoin price fetch enabled',
   );
 
+  if (!cron.validate(config.SNAPSHOT_CRON)) {
+    throw new Error(`SNAPSHOT_CRON is not a valid cron expression: "${config.SNAPSHOT_CRON}"`);
+  }
+
+  tasks.push(
+    cron.schedule(
+      config.SNAPSHOT_CRON,
+      () => {
+        void runScheduledSnapshot(timezone, logger);
+      },
+      options,
+    ),
+  );
+
+  logger.info(
+    { cron: config.SNAPSHOT_CRON, timezone: options.timezone },
+    'nightly snapshot enabled',
+  );
+
   return tasks;
+}
+
+/**
+ * The nightly record of the financial picture, labelled for the previous day.
+ *
+ * Never throws into the timer, for the same reason as sync and backup: an
+ * unhandled rejection in a cron callback takes the process down, and losing the
+ * budget because a snapshot failed would be far worse than the missing
+ * snapshot — which the gap-filler repairs on the next run anyway.
+ *
+ * The log line names the date, the counts and the duration, and says explicitly
+ * when nothing was written. "Snapshot complete" with no numbers behind it is the
+ * shape of message that let a nightly backup fail for weeks in plain sight.
+ */
+async function runScheduledSnapshot(timezone: string, logger: FastifyBaseLogger): Promise<void> {
+  const startedAt = Date.now();
+
+  try {
+    const snapshotDate = snapshotDateFor(new Date(), timezone);
+    const result = await captureSnapshot(prisma, snapshotDate, logger);
+    const durationMs = Date.now() - startedAt;
+
+    const written = result.accountsWritten + result.delegationsWritten;
+    if (written === 0 && !result.aggregateWritten) {
+      // Not a failure — a re-run over a day already observed does exactly this —
+      // but it must never be indistinguishable from having done the work.
+      logger.warn(
+        { snapshotDate, durationMs, kept: result.accountsKept + result.delegationsKept },
+        'nightly snapshot wrote nothing: every row for this date was already observed',
+      );
+      return;
+    }
+
+    logger.info(
+      {
+        snapshotDate,
+        accounts: result.accountsWritten,
+        delegations: result.delegationsWritten,
+        aggregate: result.aggregateWritten,
+        durationMs,
+        // Only ever present when a row was not a straight observation, so an
+        // ordinary night's line stays short and an unusual one stands out.
+        ...(Object.keys(result.derived).length > 0 ? { derived: result.derived } : {}),
+      },
+      'nightly snapshot written',
+    );
+  } catch (error) {
+    logger.error({ err: error, durationMs: Date.now() - startedAt }, 'nightly snapshot failed');
+  }
 }
 
 /**

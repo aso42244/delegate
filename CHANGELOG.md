@@ -33,7 +33,42 @@ phase (`v0.1.0-phase1`, and so on).
   four-term figure from ADR 020, so it matches the chip on the Budget page rather
   than wandering by whatever is categorized and not yet posted.
 
-  Schema and migration only so far. Nothing writes to these tables yet.
+- **The nightly job that writes them**, at 03:10 in the household's zone,
+  labelling its rows for the **previous** day — a run at 03:10 on the 15th
+  records the 14th, read as "end of day the 14th".
+
+  03:10 for three reasons: off the hour so it does not contend with the hourly
+  sync on two cores, _after_ the price fetch at :05 so yesterday's Bitcoin close
+  is settled by the time a holding is valued against it, and outside 02:00–02:59
+  — an hour that does not exist locally on the spring-forward morning, where a
+  job scheduled inside it is skipped for the night.
+
+  The date is calendar arithmetic on the local date, never 24 hours subtracted
+  from an instant. Two mornings a year are not 24 hours long, and the difference
+  is a row filed under the wrong day.
+
+  **All three tables commit together or none do.** A partial day is worse than a
+  missing day: the gap-filler can see a date with no rows and repair it, and
+  cannot see a date whose accounts were written and whose aggregate was not.
+  **An `observed` row is never overwritten** — not by a reconstruction, and not
+  by a re-run — so pointing the manual trigger at any date repairs what is
+  missing and revises nothing that was seen.
+
+  A Bitcoin holding is valued at that date's close, with the quantity and the
+  price stored beside it so the figure is explainable from the row alone. When
+  the price had to be carried from an earlier day the row is `interpolated`
+  rather than `observed`: the quantity was seen and the price was guessed, and
+  the aggregate then inherits that.
+
+- **`GET /api/snapshots/status`**, and an administrator-only
+  `POST /api/snapshots/run`. The status reading is the answer to "did the job
+  run", taken from the rows rather than from the absence of an error — the
+  lesson the nightly backup taught, which reported every failure correctly into
+  a log nobody read while the question nobody asked was whether a dump was
+  actually on disk. It reports the newest date, how many days are stored, the
+  schedule and the zone it truly runs in, and goes stale after two days rather
+  than one, because a run is for the previous day and a one-day threshold would
+  warn every morning.
 
 - **The schedule time zone is chosen in Settings**, not only in `.env`
   ([ADR 036](docs/decisions/036-the-schedule-timezone-is-a-setting.md)). Null
@@ -52,6 +87,15 @@ phase (`v0.1.0-phase1`, and so on).
   in here.
 
 ### Fixed
+
+- **A racy end-to-end test that failed about three runs in five.** "A pending
+  charge is not offered as money to delegate" hovers the balance reading to check
+  its working, then reloads and asserts no tooltip is open. A hover is physical
+  pointer position rather than page state, so the cursor was still on the chip
+  when the reloaded page painted and re-fired it — the assertion found the
+  tooltip the test itself had left behind. Found while verifying unrelated work,
+  confirmed at the same rate on `main`, and fixed by moving the pointer away
+  before the reload rather than by relaxing the assertion.
 
 - **A figure sits flush with the end of its row on a phone.** The 8px inside a
   money cell is the inset its hover background needs on a desktop; on a phone

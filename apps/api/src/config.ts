@@ -145,6 +145,19 @@ const environmentSchema = z
     // polling sits far inside what either asks for. Offset from the hour so it
     // does not contend with the sync job on a two-core machine.
     BITCOIN_PRICE_CRON: z.string().default('5 * * * *'),
+
+    /**
+     * The nightly snapshot of the whole financial picture (ADR 035).
+     *
+     * 03:10, for three reasons. It is off the hour, so it does not contend with
+     * the hourly sync on a two-core machine — the same reason the price fetch
+     * sits at :05. It is *after* that price fetch, which settles the previous
+     * day's Bitcoin close on its way through, so the snapshot has a real close
+     * to value a holding at rather than a carried one. And it is outside
+     * 02:00–02:59, an hour that does not exist locally on the spring-forward
+     * morning, so the job is never skipped for the night.
+     */
+    SNAPSHOT_CRON: z.string().default('10 3 * * *'),
     BITCOIN_PRICE_PRIMARY: z.enum(['coingecko', 'coinbase']).default('coingecko'),
     BITCOIN_PRICE_FALLBACK: z.enum(['coingecko', 'coinbase']).default('coinbase'),
 

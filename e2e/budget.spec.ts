@@ -102,6 +102,13 @@ test('a pending charge is not offered as money to delegate', async ({ signedIn, 
   await reading.hover();
   await expect(signedIn.getByRole('tooltip')).not.toContainText('Pending');
 
+  // Move the pointer off the reading before reloading. A hover is physical
+  // position, not page state: leaving the cursor on the chip means the reloaded
+  // page re-fires the hover as soon as it paints, and the assertion below that
+  // no tooltip is open finds the one this line left behind. It failed about
+  // three runs in five, on a test that touches none of it.
+  await signedIn.mouse.move(0, 0);
+
   await makePendingSpend(card, grocery, -36_147n);
   await signedIn.reload();
 

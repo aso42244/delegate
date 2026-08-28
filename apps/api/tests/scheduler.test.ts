@@ -157,3 +157,35 @@ describe('the schedule timezone', () => {
     expect(counts).toEqual([jobs, jobs, jobs]);
   });
 });
+
+/**
+ * The snapshot job is one of the schedules, and runs in the same zone as the
+ * rest. Its date labelling depends on that zone, so a job registered without it
+ * would file rows under the wrong day.
+ */
+describe('the nightly snapshot', () => {
+  it('is scheduled, in the zone the others use', async () => {
+    await chooseTimezone('America/Chicago');
+    scheduler = await startScheduler(testConfig('UTC'), recordingLogger(lines));
+
+    const enabled = lines.find((line) => line.message === 'nightly snapshot enabled');
+    expect(enabled).toBeDefined();
+    expect(enabled?.fields['timezone']).toBe('America/Chicago');
+    expect(enabled?.fields['cron']).toBe('10 3 * * *');
+  });
+
+  /**
+   * Off the hour so it does not contend with the hourly sync on two cores, after
+   * the price fetch so yesterday's Bitcoin close is settled by the time it runs,
+   * and outside 02:00-02:59 — an hour that does not exist locally on the
+   * spring-forward morning.
+   */
+  it('runs after the price fetch and clear of the non-existent hour', () => {
+    const config = testConfig('UTC');
+    const [snapshotMinute, snapshotHour] = config.SNAPSHOT_CRON.split(' ');
+    const [priceMinute] = config.BITCOIN_PRICE_CRON.split(' ');
+
+    expect(Number(snapshotHour)).toBe(3);
+    expect(Number(snapshotMinute)).toBeGreaterThan(Number(priceMinute));
+  });
+});
