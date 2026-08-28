@@ -168,7 +168,10 @@ export const accountRoutes: FastifyPluginCallback = (fastify, _options, done) =>
   fastify.patch('/api/accounts/:id', async (request) => {
     const { id } = idParamsSchema.parse(request.params);
     await refuseIfManaged(id);
-    await updateAccount(prisma, id, updateSchema.parse(request.body));
+    await updateAccount(prisma, id, {
+      ...updateSchema.parse(request.body),
+      actorId: request.currentUser?.id ?? null,
+    });
     return { ok: true };
   });
 

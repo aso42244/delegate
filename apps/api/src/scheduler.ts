@@ -8,6 +8,7 @@ import { fetchAndRecordPrice, providerByName, revalueBitcoinHoldings } from './d
 import { scanAllWallets } from './domain/bitcoin-wallets.js';
 import { getBudgetSettings, resolveScheduleTimezone } from './domain/settings.js';
 import { resolveConnection } from './domain/simplefin-config.js';
+import { fillGaps } from './domain/snapshot-fill.js';
 import { captureSnapshot, snapshotDateFor } from './domain/snapshots.js';
 import { runSync } from './domain/sync.js';
 import { HttpSimpleFinClient } from './simplefin/client.js';
@@ -28,6 +29,8 @@ import { HttpSimpleFinClient } from './simplefin/client.js';
  * time — and the snapshot job genuinely depends on it, because it labels its
  * rows for the local day that just ended.
  */
+
+const DAY_MS = 24 * 60 * 60 * 1000;
 
 export interface Scheduler {
   stop(): void;
@@ -193,6 +196,15 @@ async function runScheduledSnapshot(timezone: string, logger: FastifyBaseLogger)
 
   try {
     const snapshotDate = snapshotDateFor(new Date(), timezone);
+
+    /*
+     * Repair anything missed before recording tonight. Up to the day *before*
+     * this one: tonight's date is about to be observed, and an observation is
+     * always better than the reconstruction that would otherwise be written and
+     * then immediately replaced.
+     */
+    const filled = await fillGaps(prisma, new Date(snapshotDate.getTime() - DAY_MS), logger);
+
     const result = await captureSnapshot(prisma, snapshotDate, logger);
     const durationMs = Date.now() - startedAt;
 
@@ -201,7 +213,12 @@ async function runScheduledSnapshot(timezone: string, logger: FastifyBaseLogger)
       // Not a failure — a re-run over a day already observed does exactly this —
       // but it must never be indistinguishable from having done the work.
       logger.warn(
-        { snapshotDate, durationMs, kept: result.accountsKept + result.delegationsKept },
+        {
+          snapshotDate,
+          durationMs,
+          kept: result.accountsKept + result.delegationsKept,
+          ...(filled.filled > 0 ? { gapsFilled: filled.filled } : {}),
+        },
         'nightly snapshot wrote nothing: every row for this date was already observed',
       );
       return;
@@ -214,6 +231,9 @@ async function runScheduledSnapshot(timezone: string, logger: FastifyBaseLogger)
         delegations: result.delegationsWritten,
         aggregate: result.aggregateWritten,
         durationMs,
+        // Days repaired on the way through, when there were any. A run that
+        // quietly rebuilt a fortnight should say so.
+        ...(filled.filled > 0 ? { gapsFilled: filled.filled } : {}),
         // Only ever present when a row was not a straight observation, so an
         // ordinary night's line stays short and an unusual one stands out.
         ...(Object.keys(result.derived).length > 0 ? { derived: result.derived } : {}),

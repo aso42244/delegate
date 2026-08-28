@@ -60,6 +60,39 @@ phase (`v0.1.0-phase1`, and so on).
   rather than `observed`: the quantity was seen and the price was guessed, and
   the aggregate then inherits that.
 
+- **Gap filling, for the days nobody was running for.** The NAS reboots,
+  containers restart, power fails. On startup and again before each nightly run,
+  every date between the newest snapshot and yesterday is rebuilt by the most
+  accurate method available **per row**:
+
+  **Delegations** replay the append-only ledger to the end of the day — exact
+  however long the gap was, because the events are the truth and all of them are
+  still there. **SimpleFIN accounts** take the next balance actually known and
+  roll every posted transaction back out of it, through `accountBalanceDelta` so
+  a debt's opposing sign is applied in the one place that knows about it.
+  **Manual accounts** carry the last value entered on or before the date, because
+  manual values change in steps and not slopes: property worth $400,000 until
+  $420,000 was typed on the 16th was worth $400,000 on the 15th, not $410,000.
+  **Bitcoin** reads the quantity held on that date from its own dated ledger,
+  which is exact rather than carried, and only the price can be missing.
+  **Interpolation** is the last resort, marked as an estimate and logged at
+  warning level with the account and the date.
+
+  **Nothing here is a backfill.** With no snapshot stored there is no gap — only
+  history nobody chose to record — so a fresh deployment stays empty and history
+  starts at the first run, exactly as decided.
+
+  One transaction per day rather than one for the whole run: a fortnight of
+  outage should not be all-or-nothing, and a day that fails should not discard
+  the thirteen that succeeded.
+
+- **A manual balance typed on Settings → Accounts is now a dated valuation.**
+  `balance_as_of` is a single timestamp overwritten on every edit, so it could
+  say when a value was last confirmed and never what the value was in March. Only
+  properties had a history, because only they went through the valuations route —
+  which left cash, River and Strike with no dated history at all, and the
+  gap-filler with nothing to carry forward for them.
+
 - **`GET /api/snapshots/status`**, and an administrator-only
   `POST /api/snapshots/run`. The status reading is the answer to "did the job
   run", taken from the rows rather than from the absence of an error — the

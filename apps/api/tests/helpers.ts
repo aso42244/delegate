@@ -90,6 +90,11 @@ export interface MakeAccountOptions {
   readonly inNetWorth?: boolean;
   readonly stalenessIntervalDays?: number | null;
   readonly balanceAsOf?: Date | null;
+  /**
+   * When the account came into existence. Snapshot rebuilds skip a date before
+   * this, because an account that did not exist has no balance to reconstruct.
+   */
+  readonly createdAt?: Date;
 }
 
 export async function makeAccount(options: MakeAccountOptions): Promise<{ id: string }> {
@@ -103,6 +108,7 @@ export async function makeAccount(options: MakeAccountOptions): Promise<{ id: st
       inNetWorth: options.inNetWorth ?? true,
       stalenessIntervalDays: options.stalenessIntervalDays ?? null,
       balanceAsOf: options.balanceAsOf ?? new Date('2026-08-01T00:00:00Z'),
+      ...(options.createdAt ? { createdAt: options.createdAt } : {}),
     },
     select: { id: true },
   });
@@ -114,6 +120,8 @@ export interface MakeDelegationOptions {
   readonly isUtility?: boolean;
   readonly groupingId?: string | null;
   readonly notes?: string | null;
+  /** As for an account: a rebuild skips a date before the line existed. */
+  readonly createdAt?: Date;
 }
 
 /**
@@ -130,6 +138,7 @@ export async function makeDelegation(options: MakeDelegationOptions): Promise<{ 
       isUtility: options.isUtility ?? false,
       groupingId: options.groupingId ?? null,
       notes: options.notes ?? null,
+      ...(options.createdAt ? { createdAt: options.createdAt } : {}),
     },
     select: { id: true },
   });
@@ -200,6 +209,8 @@ export interface MakeHoldingOptions {
   readonly inNetWorth?: boolean;
   /** What one whole Bitcoin cost, for cost-basis assertions. */
   readonly priceCents?: bigint;
+  /** As for an account: a rebuild skips a date before the holding existed. */
+  readonly createdAt?: Date;
 }
 
 /**
@@ -223,6 +234,7 @@ export async function makeHolding(options: MakeHoldingOptions): Promise<{ id: st
       inBudget: options.inBudget ?? false,
       inNetWorth: options.inNetWorth ?? true,
       balanceAsOf: heldSince,
+      ...(options.createdAt ? { createdAt: options.createdAt } : {}),
     },
     select: { id: true },
   });

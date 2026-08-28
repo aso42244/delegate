@@ -113,6 +113,8 @@ export interface UpdateAccountInput {
   readonly needsReview?: boolean | undefined;
   /** Manual accounts only. Sets the balance outright and stamps it as of now. */
   readonly balanceCents?: Cents | undefined;
+  /** Recorded on the dated valuation a balance edit writes, when there is one. */
+  readonly actorId?: string | null | undefined;
   /** The mortgage secured against this property, if it is one. */
   readonly mortgageAccountId?: string | null | undefined;
 }
@@ -186,6 +188,32 @@ export async function updateAccount(
         : { balanceCents: input.balanceCents, balanceAsOf: now }),
     },
   });
+
+  /*
+   * A balance typed by hand is also a dated valuation.
+   *
+   * `balance_as_of` is one timestamp, overwritten on every edit, so it can say
+   * when a value was last confirmed and never what the value was in March. Only
+   * properties had a history, because only they went through `recordValuation` —
+   * which left cash, River and Strike with no dated history at all, and the
+   * snapshot gap-filler with nothing to carry forward for them.
+   *
+   * Upserted on today's date so two edits in one day leave one row saying what
+   * it finally settled at, rather than a history of somebody's typing.
+   */
+  if (input.balanceCents !== undefined && account.source === 'manual') {
+    const asOf = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+    await db.accountValuation.upsert({
+      where: { accountId_asOf: { accountId: id, asOf } },
+      create: {
+        accountId: id,
+        valueCents: input.balanceCents,
+        asOf,
+        actorId: input.actorId ?? null,
+      },
+      update: { valueCents: input.balanceCents, actorId: input.actorId ?? null },
+    });
+  }
 }
 
 /**
