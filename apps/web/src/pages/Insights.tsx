@@ -1,9 +1,15 @@
-import { formatCents, INSIGHT_DISPLAYS, defaultInsightDisplay } from '@budget/shared';
+import {
+  formatCents,
+  INSIGHT_DISPLAYS,
+  defaultInsightDisplay,
+  type SnapshotProvenance,
+} from '@budget/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState, type DragEvent, type ReactNode } from 'react';
 import { api } from '../api/client.js';
 import { PageHeader, SegmentedControl } from '../components/layout.jsx';
 import { Button } from '../components/ui.jsx';
+import { NotEnoughHistory, SnapshotChart, type ChartSeries } from '../components/SnapshotChart.jsx';
 
 /**
  * Insights.
@@ -24,7 +30,11 @@ type WidgetKey =
   | 'income_vs_spending'
   | 'cycle_surplus'
   | 'net_worth_over_time'
-  | 'credit_card_trend'
+  | 'assets_vs_debts'
+  | 'account_balance_history'
+  | 'delegation_balance_history'
+  | 'delegation_burn_rate'
+  | 'identity_drift'
   | 'home_equity_over_time'
   | 'bitcoin_value_over_time';
 
@@ -48,29 +58,51 @@ const WIDGET_TITLES: Record<WidgetKey, string> = {
   income_vs_spending: 'Income against spending',
   cycle_surplus: 'Cycle surplus and deficit',
   net_worth_over_time: 'Net worth over time',
-  credit_card_trend: 'Credit card balance',
+  assets_vs_debts: 'Assets against debts',
+  account_balance_history: 'Account balance',
+  delegation_balance_history: 'Delegation balances',
+  delegation_burn_rate: 'Burn rate per cycle',
+  identity_drift: 'Identity drift',
   home_equity_over_time: 'Home equity over time',
   bitcoin_value_over_time: 'Bitcoin holdings over time',
 };
 
-/** The four widgets whose data is reconstructed rather than stored — ADR 013. */
-const SERIES_WIDGETS: readonly WidgetKey[] = [
+/** The widgets drawn from the nightly snapshot tables — ADR 035. */
+const SNAPSHOT_WIDGETS: readonly WidgetKey[] = [
   'net_worth_over_time',
-  'credit_card_trend',
+  'assets_vs_debts',
+  'account_balance_history',
+  'identity_drift',
   'home_equity_over_time',
   'bitcoin_value_over_time',
 ];
 
+/** The two that share the drill-down, and so share a fetch of their own. */
+const DRILL_WIDGETS: readonly WidgetKey[] = ['delegation_balance_history', 'delegation_burn_rate'];
+
+/**
+ * One range for the whole page.
+ *
+ * Seven rather than the five the snapshot charts need on their own: the spending
+ * and cycle tiles predate snapshots and `Cycle` is the only window that means
+ * anything to them, so one control drives everything rather than two controls
+ * disagreeing above a grid that mixes both.
+ */
 const WINDOWS = [
   { value: '30d', label: '30 days' },
   { value: '90d', label: '90 days' },
-  { value: '365d', label: '365 days' },
+  { value: '6mo', label: '6 months' },
+  { value: '1yr', label: '1 year' },
   { value: 'ytd', label: 'Year to date' },
   { value: 'cycle', label: 'This cycle' },
+  { value: 'all', label: 'All' },
 ] as const;
 
 interface SpendingDto {
   readonly since: string | null;
+  /** "Everything" and "no cycle yet" both lack a start date and mean opposite
+      things, so the server says which this is rather than leaving it to a null. */
+  readonly cycleMissing: boolean;
   readonly entries: readonly {
     key: string;
     name: string;
@@ -79,18 +111,90 @@ interface SpendingDto {
   }[];
 }
 
-interface SeriesDto {
-  readonly points: readonly { date: string; valueCents: string }[];
-  readonly earliestKnown: string | null;
-  readonly truncated: boolean;
+/** A point as the API shapes it: money as decimal strings, provenance intact. */
+interface PointDto {
+  readonly date: string;
+  readonly provenance: SnapshotProvenance;
+  readonly days: number;
+  readonly [field: string]: string | number;
 }
 
-interface SeriesResponseDto {
+interface SeriesDto {
+  readonly bucket: string;
   readonly days: number;
-  readonly net_worth_over_time: SeriesDto | null;
-  readonly credit_card_trend: (SeriesDto & { name: string }) | null;
-  readonly home_equity_over_time: (SeriesDto & { name: string }) | null;
-  readonly bitcoin_value_over_time: (SeriesDto & { name: string }) | null;
+  readonly earliest: string | null;
+  readonly points: readonly PointDto[];
+  readonly live: Readonly<Record<string, string>> | null;
+}
+
+interface SnapshotsDto {
+  readonly range: string;
+  readonly aggregate: SeriesDto;
+  readonly net_worth_composition: {
+    days: number;
+    points: readonly {
+      date: string;
+      provenance: SnapshotProvenance;
+      bitcoinCents: string;
+      otherAssetsCents: string;
+      debtsCents: string;
+    }[];
+  };
+  readonly home_equity: { name: string | null; days: number; points: readonly PointDto[] };
+  readonly thirty_day_momentum: { points: readonly PointDto[] };
+  readonly change_per_cycle: readonly {
+    startedAt: string;
+    changeCents: string;
+    provenance: SnapshotProvenance;
+    partial: boolean;
+  }[];
+  readonly debt_trajectory: {
+    points: readonly PointDto[];
+    payoffDate: string | null;
+    hasEnoughHistory: boolean;
+  };
+  readonly accounts: readonly { id: string; name: string; type: string }[];
+}
+
+interface DrillDto {
+  readonly level: 'groupings' | 'delegations' | 'delegation';
+  readonly days: number;
+  readonly cyclesPerYear: number;
+  readonly groupingName: string | null;
+  readonly delegationName: string | null;
+  readonly series: readonly {
+    key: string;
+    name: string;
+    color: string | null;
+    burnRateCents: string;
+    changeCents: string;
+    points: readonly PointDto[];
+  }[];
+}
+
+/** Pulls one money field off a shaped point. */
+function field(point: PointDto, name: string): bigint {
+  const value = point[name];
+  return typeof value === 'string' ? BigInt(value) : 0n;
+}
+
+function toChartSeries(
+  key: string,
+  name: string,
+  color: string | null,
+  points: readonly PointDto[],
+  fieldName: string,
+): ChartSeries {
+  return {
+    key,
+    name,
+    color,
+    points: points.map((point) => ({
+      date: point.date,
+      provenance: point.provenance,
+      valueCents: field(point, fieldName),
+    })),
+  };
 }
 
 interface InsightsDto {
@@ -211,68 +315,6 @@ function Card({
  * A line, drawn as an inline SVG. The value is stated as text beside it — a
  * shape is not a number, and the number is what the owner is actually reading.
  */
-function LineChart({
-  series,
-  filled = false,
-}: {
-  readonly series: SeriesDto;
-  /** Fills under the line. The same data, weighted towards the total. */
-  readonly filled?: boolean;
-}): ReactNode {
-  if (series.points.length < 2) {
-    return <p className="text-quiet text-muted">Not enough history to draw a line yet.</p>;
-  }
-
-  const values = series.points.map((point) => BigInt(point.valueCents));
-  const low = values.reduce((min, value) => (value < min ? value : min), values[0] ?? 0n);
-  const high = values.reduce((max, value) => (value > max ? value : max), values[0] ?? 0n);
-  const span = high - low;
-
-  const path = values
-    .map((value, index) => {
-      const x = (index / (values.length - 1)) * 100;
-      // Percentages are layout, never money.
-      const y = span === 0n ? 50 : 100 - Number(((value - low) * 100n) / span);
-      return `${index === 0 ? 'M' : 'L'}${x.toFixed(2)},${y.toFixed(2)}`;
-    })
-    .join(' ');
-
-  const latest = values[values.length - 1] ?? 0n;
-
-  return (
-    <>
-      <p className="money mb-2 text-hero font-bold text-ink">{formatCents(latest)}</p>
-      <svg viewBox="0 0 100 100" preserveAspectRatio="none" className="h-24 w-full" aria-hidden>
-        {filled && (
-          <path d={`${path} L100,100 L0,100 Z`} fill="var(--color-accent-soft)" stroke="none" />
-        )}
-        <path
-          d={path}
-          fill="none"
-          stroke="var(--color-accent)"
-          strokeWidth="1.5"
-          vectorEffect="non-scaling-stroke"
-        />
-      </svg>
-      <p className="mt-2 text-quiet text-muted">
-        {formatCents(low)} to {formatCents(high)}
-        {/* Where the history genuinely begins, said rather than implied by the
-            left edge of a line. */}
-        {series.earliestKnown && `, since ${new Date(series.earliestKnown).toLocaleDateString()}`}
-        {series.truncated && ' — the ledger does not reach further back.'}
-      </p>
-    </>
-  );
-}
-
-/**
- * A donut. Same data as the bars, read as shares of a whole rather than as a
- * ranking — which is the question it answers better.
- *
- * Drawn with one circle and `stroke-dasharray` rather than arc paths: a ring is
- * a stroked circle, and hand-authored arc geometry is a lot of numbers to get
- * subtly wrong.
- */
 function Donut({
   entries,
   emptyNote,
@@ -379,46 +421,6 @@ const FALLBACK_SLICE = [
 ];
 
 /** The same series as columns. Reads change per period rather than a trend. */
-function SeriesBars({ series }: { readonly series: SeriesDto }): ReactNode {
-  if (series.points.length < 2) {
-    return <p className="text-quiet text-muted">Not enough history to draw this yet.</p>;
-  }
-
-  const values = series.points.map((point) => BigInt(point.valueCents));
-  const low = values.reduce((min, value) => (value < min ? value : min), values[0] ?? 0n);
-  const high = values.reduce((max, value) => (value > max ? value : max), values[0] ?? 0n);
-  const span = high - low;
-  const latest = values[values.length - 1] ?? 0n;
-
-  return (
-    <>
-      <p className="money mb-2 text-hero font-bold text-ink">{formatCents(latest)}</p>
-      <div aria-hidden className="flex h-24 items-end gap-px">
-        {values.map((value, index) => (
-          <span
-            key={index}
-            className="flex-1 rounded-t-[1px] bg-accent"
-            style={{
-              height: `${span === 0n ? 50 : Math.max(Number(((value - low) * 100n) / span), 2)}%`,
-            }}
-          />
-        ))}
-      </div>
-      <p className="mt-2 text-quiet text-muted">
-        {formatCents(low)} to {formatCents(high)}
-      </p>
-    </>
-  );
-}
-
-/**
- * One column per cycle. Reads whether the household is trending better or worse,
- * which a list of dates does not show at a glance.
- *
- * Surplus columns grow from a baseline rather than the floor, because a deficit
- * and a surplus of the same size are opposite things and a bar chart that drew
- * them identically would be lying.
- */
 function CycleBars({
   cycles,
   showSurplus,
@@ -496,18 +498,6 @@ function CycleBars({
 }
 
 /** Picks the shape. Every series widget offers the same three. */
-function SeriesChart({
-  series,
-  display,
-}: {
-  readonly series: SeriesDto;
-  readonly display: string;
-}): ReactNode {
-  if (display === 'bars') return <SeriesBars series={series} />;
-  return <LineChart series={series} filled={display === 'area'} />;
-}
-
-/** A ranked list with a proportional bar. Bars are layout; the money is text. */
 function RankedBars({
   entries,
   emptyNote,
@@ -552,6 +542,106 @@ function RankedBars({
   );
 }
 
+/**
+ * The delegation drill-down's breadcrumb.
+ *
+ * Three levels: every grouping, one grouping's delegations, one delegation. The
+ * level survives a change of page range, so widening from 30 days to a year
+ * widens the view you are looking at rather than throwing you back to the top.
+ */
+function Breadcrumb({
+  level,
+  groupingName,
+  delegationName,
+  onUp,
+}: {
+  readonly level: 'groupings' | 'delegations' | 'delegation';
+  readonly groupingName: string | null;
+  readonly delegationName: string | null;
+  readonly onUp: () => void;
+}): ReactNode {
+  if (level === 'groupings') return null;
+
+  return (
+    <p className="mb-2 flex items-center gap-2">
+      <Button onClick={onUp}>Back</Button>
+      <span className="truncate text-quiet text-muted">
+        {level === 'delegation' ? (delegationName ?? '') : (groupingName ?? '')}
+      </span>
+    </p>
+  );
+}
+
+/**
+ * Average spend per pay cycle, ranked.
+ *
+ * The number that reveals whether the amount delegated to a line is actually
+ * right — which is why the cycle count is stated beside it rather than assumed
+ * to be 26.
+ */
+function BurnRate({
+  entries,
+  cyclesPerYear,
+  display,
+  onPick,
+  canDrill,
+}: {
+  readonly entries: readonly {
+    key: string;
+    name: string;
+    color: string | null;
+    burnRateCents: string;
+  }[];
+  readonly cyclesPerYear: number;
+  readonly display: string;
+  readonly onPick: (key: string) => void;
+  readonly canDrill: boolean;
+}): ReactNode {
+  const values = entries.map((entry) => BigInt(entry.burnRateCents));
+  const peak = values.reduce((max, value) => (value > max ? value : max), 0n);
+
+  return (
+    <>
+      <ul className="flex flex-col gap-2">
+        {entries.slice(0, 8).map((entry, index) => {
+          const value = values[index] ?? 0n;
+          const width = peak <= 0n ? 0 : Number((value * 100n) / peak);
+
+          return (
+            <li key={entry.key}>
+              <div className="flex items-baseline justify-between gap-2">
+                {canDrill ? (
+                  <button
+                    type="button"
+                    onClick={() => onPick(entry.key)}
+                    className="min-w-0 truncate text-left text-quiet text-ink underline decoration-line"
+                  >
+                    {entry.name}
+                  </button>
+                ) : (
+                  <span className="min-w-0 truncate text-quiet text-ink">{entry.name}</span>
+                )}
+                <span className="money text-quiet text-ink">{formatCents(value)}</span>
+              </div>
+              {display === 'bars' && (
+                <div
+                  aria-hidden
+                  className="mt-1 h-1.5 rounded-sm"
+                  style={{
+                    width: `${Math.max(width, value > 0n ? 2 : 0)}%`,
+                    background: entry.color ?? 'var(--color-accent)',
+                  }}
+                />
+              )}
+            </li>
+          );
+        })}
+      </ul>
+      <p className="mt-2 text-quiet text-muted">Per cycle, at {cyclesPerYear} a year.</p>
+    </>
+  );
+}
+
 export function Insights(): ReactNode {
   const queryClient = useQueryClient();
   const [window, setWindow] = useState<string>('30d');
@@ -559,6 +649,10 @@ export function Insights(): ReactNode {
   // Which tile is being dragged, and which one the pointer is currently over.
   const [dragging, setDragging] = useState<number | null>(null);
   const [dragTarget, setDragTarget] = useState<number | null>(null);
+  // The delegation drill-down, three levels deep, and the account picker.
+  const [groupingId, setGroupingId] = useState<string | null>(null);
+  const [delegationId, setDelegationId] = useState<string | null>(null);
+  const [accountId, setAccountId] = useState<string | null>(null);
 
   const layout = useQuery({
     queryKey: ['insights', 'layout'],
@@ -622,13 +716,42 @@ export function Insights(): ReactNode {
 
   const insights = data.data;
 
-  // Reconstructing balances walks the ledger per account per day, so it is only
-  // fetched when a chart that needs it is actually on the page.
-  const needsSeries = keys.some((key) => SERIES_WIDGETS.includes(key));
-  const series = useQuery({
-    queryKey: ['insights', 'series'],
-    queryFn: () => api.get<SeriesResponseDto>('/api/insights/series'),
-    enabled: needsSeries,
+  // Only fetched when a chart that needs it is actually on the page. Reading a
+  // year of snapshots is cheap, but it is not free on a two-core NAS.
+  const needsSnapshots = keys.some((key) => SNAPSHOT_WIDGETS.includes(key));
+  const snapshots = useQuery({
+    queryKey: ['insights', 'snapshots', window],
+    queryFn: () => api.get<SnapshotsDto>(`/api/insights/snapshots?range=${window}`),
+    enabled: needsSnapshots,
+  });
+
+  /**
+   * The drill-down level, held here rather than in the stored layout.
+   *
+   * It survives a change of range — which is the point: picking a grouping and
+   * then widening from 30 days to a year should widen *that* view rather than
+   * throwing you back to the top. It is not persisted, because where somebody
+   * had drilled to last week is not a preference.
+   */
+  const needsDrill = keys.some((key) => DRILL_WIDGETS.includes(key));
+  const drill = useQuery({
+    queryKey: ['insights', 'drill', window, groupingId, delegationId],
+    queryFn: () =>
+      api.get<DrillDto>(
+        `/api/insights/snapshots/delegations?range=${window}` +
+          (groupingId ? `&groupingId=${groupingId}` : '') +
+          (delegationId ? `&delegationId=${delegationId}` : ''),
+      ),
+    enabled: needsDrill,
+  });
+
+  const accounts = snapshots.data?.accounts ?? [];
+  const shownAccount = accountId ?? accounts[0]?.id ?? null;
+  const accountHistory = useQuery({
+    queryKey: ['insights', 'account', shownAccount, window],
+    queryFn: () =>
+      api.get<SeriesDto>(`/api/insights/snapshots/account/${shownAccount!}?range=${window}`),
+    enabled: shownAccount !== null && keys.includes('account_balance_history'),
   });
 
   function render(key: WidgetKey, display: string): ReactNode {
@@ -682,10 +805,9 @@ export function Insights(): ReactNode {
       }
 
       case 'spending_by_grouping': {
-        const note =
-          insights.spending_by_grouping.since === null
-            ? 'No Delegate press yet, so there is no cycle to report on.'
-            : 'Nothing categorized in this window.';
+        const note = insights.spending_by_grouping.cycleMissing
+          ? 'No Delegate press yet, so there is no cycle to report on.'
+          : 'Nothing categorized in this window.';
         return display === 'donut' ? (
           <Donut entries={insights.spending_by_grouping.entries} emptyNote={note} />
         ) : (
@@ -694,10 +816,9 @@ export function Insights(): ReactNode {
       }
 
       case 'spending_by_delegation': {
-        const note =
-          insights.spending_by_delegation.since === null
-            ? 'No Delegate press yet, so there is no cycle to report on.'
-            : 'Nothing categorized in this window.';
+        const note = insights.spending_by_delegation.cycleMissing
+          ? 'No Delegate press yet, so there is no cycle to report on.'
+          : 'Nothing categorized in this window.';
         return display === 'donut' ? (
           <Donut entries={insights.spending_by_delegation.entries} emptyNote={note} />
         ) : (
@@ -758,48 +879,217 @@ export function Insights(): ReactNode {
         );
 
       case 'net_worth_over_time':
-        return series.data?.net_worth_over_time ? (
-          <SeriesChart series={series.data.net_worth_over_time} display={display} />
-        ) : (
-          <p className="text-quiet text-muted">No history yet.</p>
-        );
+      case 'assets_vs_debts':
+      case 'identity_drift': {
+        const data = snapshots.data?.aggregate;
+        if (!data) return <NotEnoughHistory days={0} />;
 
-      case 'credit_card_trend':
-        return series.data?.credit_card_trend ? (
-          <>
-            <p className="mb-1 text-quiet text-muted">{series.data.credit_card_trend.name}</p>
-            <SeriesChart series={series.data.credit_card_trend} display={display} />
-          </>
-        ) : (
-          <p className="text-quiet text-muted">No card in the budget to trend.</p>
-        );
+        // Three readings of one stored series. Every field each of them needs is
+        // on every point, so the page fetches it once.
+        if (key === 'assets_vs_debts') {
+          return (
+            <SnapshotChart
+              display={display}
+              days={data.days}
+              label="Assets against debts"
+              series={[
+                toChartSeries('assets', 'Assets', null, data.points, 'netWorthAssetsCents'),
+                toChartSeries('debts', 'Debts', null, data.points, 'netWorthDebtsCents'),
+              ]}
+            />
+          );
+        }
 
-      case 'home_equity_over_time':
-        return series.data?.home_equity_over_time ? (
-          <>
-            <p className="mb-1 text-quiet text-muted">{series.data.home_equity_over_time.name}</p>
-            <SeriesChart series={series.data.home_equity_over_time} display={display} />
-          </>
-        ) : (
-          <p className="text-quiet text-muted">No property with a mortgage linked to it.</p>
-        );
+        if (key === 'identity_drift') {
+          return (
+            <>
+              <SnapshotChart
+                display={display}
+                days={data.days}
+                label="Identity drift"
+                zeroLine
+                series={[toChartSeries('drift', 'Drift', null, data.points, 'identityValueCents')]}
+                liveCents={data.live ? BigInt(data.live['identityValueCents'] ?? '0') : null}
+              />
+              {/* What the line means, once, rather than a legend nobody reads. */}
+              <p className="mt-1 text-quiet text-muted">
+                It should sit near the line. A slow walk away means something is miscategorised.
+              </p>
+            </>
+          );
+        }
 
-      case 'bitcoin_value_over_time':
-        return series.data?.bitcoin_value_over_time ? (
-          <>
-            <p className="mb-1 text-quiet text-muted">{series.data.bitcoin_value_over_time.name}</p>
-            <SeriesChart series={series.data.bitcoin_value_over_time} display={display} />
-            {/* The one thing this chart cannot tell you, said rather than left
-                to be assumed from a line that looks like any other. */}
-            <p className="mt-2 text-quiet text-muted">
-              Quantity history is not recorded, so this is what today&rsquo;s holding would have
-              been worth at each day&rsquo;s price. It moves with the price, not with buying or
-              selling.
-            </p>
-          </>
-        ) : (
-          <p className="text-quiet text-muted">No holding recorded yet.</p>
+        return (
+          <SnapshotChart
+            display={display}
+            days={data.days}
+            label="Net worth over time"
+            series={[toChartSeries('net', 'Net worth', null, data.points, 'netWorthCents')]}
+            liveCents={data.live ? BigInt(data.live['netWorthCents'] ?? '0') : null}
+          />
         );
+      }
+
+      case 'account_balance_history': {
+        if (accounts.length === 0) return <NotEnoughHistory days={0} />;
+
+        return (
+          <>
+            {/* The picker the hardwired credit-card tile never had. */}
+            <label className="mb-2 flex items-center gap-2">
+              <span className="text-quiet text-muted">Account</span>
+              <select
+                className="field-md rounded border border-line bg-canvas px-1 text-quiet text-ink"
+                value={shownAccount ?? ''}
+                onChange={(event) => setAccountId(event.target.value)}
+              >
+                {accounts.map((account) => (
+                  <option key={account.id} value={account.id}>
+                    {account.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            {accountHistory.data ? (
+              <SnapshotChart
+                display={display}
+                days={accountHistory.data.days}
+                label="Account balance"
+                series={[
+                  toChartSeries(
+                    'balance',
+                    'Balance',
+                    null,
+                    accountHistory.data.points,
+                    'balanceCents',
+                  ),
+                ]}
+                liveCents={
+                  accountHistory.data.live
+                    ? BigInt(accountHistory.data.live['balanceCents'] ?? '0')
+                    : null
+                }
+              />
+            ) : (
+              <NotEnoughHistory days={0} />
+            )}
+          </>
+        );
+      }
+
+      case 'delegation_balance_history':
+      case 'delegation_burn_rate': {
+        const data = drill.data;
+        if (!data) return <NotEnoughHistory days={0} />;
+
+        return (
+          <>
+            <Breadcrumb
+              level={data.level}
+              groupingName={data.groupingName}
+              delegationName={data.delegationName}
+              onUp={() => {
+                if (delegationId) setDelegationId(null);
+                else setGroupingId(null);
+              }}
+            />
+
+            {data.series.length === 0 ? (
+              <NotEnoughHistory days={data.days} />
+            ) : key === 'delegation_burn_rate' ? (
+              <BurnRate
+                entries={data.series}
+                cyclesPerYear={data.cyclesPerYear}
+                display={display}
+                onPick={(entryKey) => {
+                  if (data.level === 'groupings') setGroupingId(entryKey);
+                  else if (data.level === 'delegations') setDelegationId(entryKey);
+                }}
+                canDrill={data.level !== 'delegation'}
+              />
+            ) : (
+              <>
+                <SnapshotChart
+                  display={display}
+                  days={data.days}
+                  label="Delegation balances"
+                  series={data.series.map((entry) =>
+                    toChartSeries(entry.key, entry.name, entry.color, entry.points, 'balanceCents'),
+                  )}
+                />
+                {data.level !== 'delegation' && (
+                  <ul className="mt-2 flex flex-wrap gap-2">
+                    {data.series.slice(0, 8).map((entry) => (
+                      <li key={entry.key}>
+                        <Button
+                          onClick={() =>
+                            data.level === 'groupings'
+                              ? setGroupingId(entry.key)
+                              : setDelegationId(entry.key)
+                          }
+                        >
+                          {entry.name}
+                        </Button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </>
+            )}
+          </>
+        );
+      }
+
+      case 'home_equity_over_time': {
+        const equity = snapshots.data?.home_equity;
+        if (!equity || equity.name === null) {
+          return <p className="text-quiet text-muted">No property with a mortgage linked to it.</p>;
+        }
+        return (
+          <>
+            <p className="mb-1 text-quiet text-muted">{equity.name}</p>
+            <SnapshotChart
+              display={display}
+              days={equity.days}
+              label="Home equity over time"
+              series={[toChartSeries('equity', 'Equity', null, equity.points, 'equityCents')]}
+            />
+          </>
+        );
+      }
+
+      case 'bitcoin_value_over_time': {
+        /*
+         * Read from the composition series, which already separates a holding
+         * from every other asset by whether the stored row carried a quantity.
+         * That is the only split derivable from what was recorded.
+         */
+        const data = snapshots.data?.net_worth_composition;
+        if (!data || data.points.length === 0) {
+          return <p className="text-quiet text-muted">No holding recorded yet.</p>;
+        }
+
+        return (
+          <SnapshotChart
+            display={display}
+            days={data.days}
+            label="Bitcoin holdings over time"
+            series={[
+              {
+                key: 'bitcoin',
+                name: 'Bitcoin',
+                color: null,
+                points: data.points.map((point) => ({
+                  date: point.date,
+                  provenance: point.provenance,
+                  valueCents: BigInt(point.bitcoinCents),
+                })),
+              },
+            ]}
+          />
+        );
+      }
 
       case 'income_vs_spending':
       case 'cycle_surplus':

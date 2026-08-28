@@ -12,7 +12,6 @@ import {
   isInsightWidget,
   SPENDING_WINDOWS,
 } from '../domain/insights.js';
-import { equitySeries, netWorthSeries, singleAccountSeries } from '../domain/history.js';
 import { buildUtilities } from '../domain/utilities.js';
 import { centsOut, dateOut } from '../http/serialize.js';
 import { AUTHENTICATED } from '../plugins/auth.js';
@@ -46,10 +45,17 @@ export const insightRoutes: FastifyPluginCallback = (fastify, _options, done) =>
       catalog: INSIGHT_WIDGETS,
       // Objects rather than keys: the order, the choice and the chart are one
       // layout, and splitting them across calls would let them disagree.
-      chosen: chosen.map((row) => ({
-        key: row.widgetKey,
-        display: row.display ?? null,
-      })),
+      //
+      // Filtered against the catalogue, because a stored layout outlives the
+      // widget it names. `credit_card_trend` was retired when the balance-history
+      // tile gained an account picker, and a layout still carrying it would
+      // otherwise hand the page a key it cannot draw.
+      chosen: chosen
+        .filter((row) => isInsightWidget(row.widgetKey))
+        .map((row) => ({
+          key: row.widgetKey,
+          display: row.display ?? null,
+        })),
     };
   });
 
@@ -107,75 +113,6 @@ export const insightRoutes: FastifyPluginCallback = (fastify, _options, done) =>
     return { ok: true };
   });
 
-  /**
-   * The time series, separately from the rest.
-   *
-   * Reconstructing balances walks the ledger per account per sampled day, which
-   * is real work on a two-core NAS — so it is not loaded unless a chart that
-   * needs it is actually on the page.
-   */
-  fastify.get('/api/insights/series', async (request) => {
-    const { days } = z
-      .object({ days: z.coerce.number().int().min(7).max(730).default(180) })
-      .parse(request.query ?? {});
-
-    const [card, property, bitcoin] = await Promise.all([
-      // The card with the most owed is the one worth trending.
-      prisma.account.findFirst({
-        where: { archivedAt: null, type: 'debt', inBudget: true },
-        orderBy: { balanceCents: 'desc' },
-        select: { id: true, name: true },
-      }),
-      prisma.account.findFirst({
-        where: { archivedAt: null, mortgageAccountId: { not: null } },
-        select: { id: true, name: true },
-      }),
-      // The holding, if there is one. Its history is the quantity held on each
-      // day against that day's price — both read from their own ledgers, so a
-      // Bitcoin bought last week no longer appears to have been held all year.
-      prisma.account.findFirst({
-        where: { archivedAt: null, managedAs: 'bitcoin' },
-        select: { id: true, name: true },
-      }),
-    ]);
-
-    const [netWorth, cardTrend, equity, bitcoinValue] = await Promise.all([
-      netWorthSeries(prisma, days),
-      card ? singleAccountSeries(prisma, card.id, days) : null,
-      property ? equitySeries(prisma, property.id, days) : null,
-      bitcoin ? singleAccountSeries(prisma, bitcoin.id, days) : null,
-    ]);
-
-    const present = (
-      series: Awaited<ReturnType<typeof netWorthSeries>> | null,
-    ): {
-      points: { date: string; valueCents: string }[];
-      earliestKnown: string | null;
-      truncated: boolean;
-    } | null =>
-      series === null
-        ? null
-        : {
-            points: series.points.map((point) => ({
-              date: dateOut(point.date),
-              valueCents: centsOut(point.valueCents),
-            })),
-            earliestKnown: dateOut(series.earliestKnown),
-            truncated: series.truncated,
-          };
-
-    return {
-      days,
-      net_worth_over_time: present(netWorth),
-      credit_card_trend:
-        cardTrend === null ? null : { name: card?.name ?? '', ...present(cardTrend)! },
-      home_equity_over_time:
-        equity === null ? null : { name: property?.name ?? '', ...present(equity)! },
-      bitcoin_value_over_time:
-        bitcoinValue === null ? null : { name: bitcoin?.name ?? '', ...present(bitcoinValue)! },
-    };
-  });
-
   /** Every widget's data in one request; the page shows whichever it was told to. */
   fastify.get('/api/insights', async (request) => {
     const { window } = querySchema.parse(request.query ?? {});
@@ -193,8 +130,15 @@ export const insightRoutes: FastifyPluginCallback = (fastify, _options, done) =>
 
     const spending = (
       result: Awaited<ReturnType<typeof buildSpending>>,
-    ): { since: string | null; entries: Record<string, unknown>[] } => ({
+    ): {
+      since: string | null;
+      cycleMissing: boolean;
+      entries: Record<string, unknown>[];
+    } => ({
       since: dateOut(result.since),
+      // "Everything" and "no cycle yet" both have no start date and mean
+      // opposite things, so the flag says which this is.
+      cycleMissing: result.cycleMissing,
       entries: result.entries.map((entry) => ({
         key: entry.key,
         name: entry.name,

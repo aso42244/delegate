@@ -24,9 +24,14 @@ export const INSIGHT_WIDGETS = [
   'utilities_vs_delegated',
   'income_vs_spending',
   'cycle_surplus',
-  // Reconstructed from the ledger rather than stored — ADR 013.
+  // Read from the nightly snapshot tables — ADR 035, which supersedes ADR 013
+  // and the reconstruction these four used to be drawn from.
   'net_worth_over_time',
-  'credit_card_trend',
+  'assets_vs_debts',
+  'account_balance_history',
+  'delegation_balance_history',
+  'delegation_burn_rate',
+  'identity_drift',
   'home_equity_over_time',
   'bitcoin_value_over_time',
 ] as const;
@@ -41,35 +46,64 @@ export function isInsightWidget(value: string): value is InsightWidget {
  * The windows §9.4 asks for. "This cycle" means since the most recent Delegate
  * press, which is the only definition of a cycle this system has.
  */
-export const SPENDING_WINDOWS = ['30d', '90d', '365d', 'ytd', 'cycle'] as const;
+/**
+ * The page-level range, shared with the snapshot series.
+ *
+ * One selector drives every tile, so there is one vocabulary rather than two —
+ * the older spending tiles and the snapshot-backed charts read the same value.
+ * `cycle` is one Delegate press to the next, which is the only cycle boundary
+ * this system recognises.
+ */
+export const SPENDING_WINDOWS = ['30d', '90d', '6mo', '1yr', 'ytd', 'cycle', 'all'] as const;
 export type SpendingWindow = (typeof SPENDING_WINDOWS)[number];
 
 const DAY_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * Where a window begins.
+ *
+ * Three outcomes rather than a nullable date, because "everything" and "there is
+ * no cycle yet" are different answers that a null cannot tell apart — and one of
+ * them should show every transaction while the other should show none.
+ */
+export type WindowStart =
+  | { readonly kind: 'since'; readonly date: Date }
+  | { readonly kind: 'all' }
+  | { readonly kind: 'no_cycle' };
 
 export async function windowStart(
   db: Db,
   window: SpendingWindow,
   now: Date = new Date(),
-): Promise<Date | null> {
+): Promise<WindowStart> {
+  const back = (days: number): WindowStart => ({
+    kind: 'since',
+    date: new Date(now.getTime() - days * DAY_MS),
+  });
+
   switch (window) {
     case '30d':
-      return new Date(now.getTime() - 30 * DAY_MS);
+      return back(30);
     case '90d':
-      return new Date(now.getTime() - 90 * DAY_MS);
-    case '365d':
-      return new Date(now.getTime() - 365 * DAY_MS);
+      return back(90);
+    case '6mo':
+      return back(182);
+    case '1yr':
+      return back(365);
     case 'ytd':
-      return new Date(Date.UTC(now.getUTCFullYear(), 0, 1));
+      return { kind: 'since', date: new Date(Date.UTC(now.getUTCFullYear(), 0, 1)) };
     case 'cycle': {
       const run = await db.delegateRun.findFirst({
         where: { undoneAt: null },
         orderBy: { createdAt: 'desc' },
         select: { createdAt: true },
       });
-      // Null before the first Delegate press: there is no cycle yet, and
-      // inventing one would put a number on screen that means nothing.
-      return run?.createdAt ?? null;
+      // Before the first Delegate press there is no cycle, and inventing one
+      // would put a number on screen that means nothing.
+      return run ? { kind: 'since', date: run.createdAt } : { kind: 'no_cycle' };
     }
+    case 'all':
+      return { kind: 'all' };
   }
 }
 
@@ -217,13 +251,19 @@ export async function buildSpending(
   db: Db,
   options: { readonly by: 'grouping' | 'delegation'; readonly window: SpendingWindow },
   now: Date = new Date(),
-): Promise<{ entries: SpendingEntry[]; since: Date | null }> {
-  const since = await windowStart(db, options.window, now);
-  if (since === null) return { entries: [], since: null };
+): Promise<{ entries: SpendingEntry[]; since: Date | null; cycleMissing: boolean }> {
+  const start = await windowStart(db, options.window, now);
+  if (start.kind === 'no_cycle') return { entries: [], since: null, cycleMissing: true };
+
+  const since = start.kind === 'since' ? start.date : null;
 
   const allocations = await db.transactionAllocation.findMany({
     where: {
-      transaction: { archivedAt: null, kind: 'normal', postedAt: { gte: since } },
+      transaction: {
+        archivedAt: null,
+        kind: 'normal',
+        ...(since ? { postedAt: { gte: since } } : {}),
+      },
     },
     select: {
       amountCents: true,
@@ -262,7 +302,7 @@ export async function buildSpending(
     // the top.
     .sort((a, b) => (b.spendCents > a.spendCents ? 1 : b.spendCents < a.spendCents ? -1 : 0));
 
-  return { entries, since };
+  return { entries, since, cycleMissing: false };
 }
 
 export interface NegativeDelegation {

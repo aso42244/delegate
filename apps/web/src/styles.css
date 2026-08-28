@@ -60,6 +60,19 @@
   --color-group-purple: #8b63b8;
   --color-group-grey: #7d7a75;
 
+  /* The ordered multi-series chart palette from design.md. Used only where a
+     chart genuinely has several series and none of them carries a grouping
+     colour of its own — a single series is the accent, and §11's "must not be
+     in your face" holds by there being one line on most tiles. */
+  --color-series-1: #5e9fe8;
+  --color-series-2: #eac26b;
+  --color-series-3: #72bc8f;
+  --color-series-4: #bf8eda;
+  --color-series-5: #de9255;
+  --color-series-6: #df84a8;
+  --color-series-7: #4fb9c9;
+  --color-series-8: #e97366;
+
   --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
 
   --text-label: 0.6875rem; /* 11px column headers */
@@ -160,6 +173,17 @@
   --color-group-orange: #e0954f;
   --color-group-purple: #a87fd4;
   --color-group-grey: #a29e97;
+
+  /* Lifted for the same reason the grouping colours are: the light values are
+     chosen against white and several of them disappear on this canvas. */
+  --color-series-1: #7fb4ee;
+  --color-series-2: #efd08b;
+  --color-series-3: #8fcba6;
+  --color-series-4: #cfa5e4;
+  --color-series-5: #e7a874;
+  --color-series-6: #e79bba;
+  --color-series-7: #6fc9d6;
+  --color-series-8: #ef8f84;
 }
 
 /**

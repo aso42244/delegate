@@ -334,10 +334,27 @@ export const INSIGHT_DISPLAYS = {
   spending_by_delegation: ['bars', 'donut'],
   income_vs_spending: ['list', 'bars'],
   cycle_surplus: ['list', 'bars'],
+
+  // Drawn from the snapshot tables — ADR 035.
   net_worth_over_time: ['line', 'area', 'bars'],
-  credit_card_trend: ['line', 'area', 'bars'],
   home_equity_over_time: ['line', 'area', 'bars'],
   bitcoin_value_over_time: ['line', 'area', 'bars'],
+  /**
+   * Replaced `credit_card_trend`, which was hardwired to whichever card owed
+   * the most. Any account with stored history can be picked now, which is what
+   * the tile was always reaching for.
+   */
+  account_balance_history: ['line', 'area', 'bars'],
+  // Two series, so bars would stack or overlap and say less than the lines do.
+  assets_vs_debts: ['line', 'area'],
+  delegation_balance_history: ['line', 'area'],
+  delegation_burn_rate: ['bars', 'list'],
+  /**
+   * One shape. This is a line that should sit on zero, and an area filled down
+   * from a value that hovers either side of it draws attention to the wrong
+   * thing entirely.
+   */
+  identity_drift: ['line'],
 
   // One shape each, deliberately. A donut of a single number says nothing, and
   // a list of two figures per row is already the clearest form it has. An

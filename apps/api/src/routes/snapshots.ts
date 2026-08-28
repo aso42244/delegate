@@ -11,6 +11,7 @@ import {
   dailyAggregateRows,
   debtTrajectory,
   delegationDrillDown,
+  UNGROUPED,
   downsample,
   equitySeries,
   momentum,
@@ -226,7 +227,8 @@ export const snapshotRoutes: FastifyPluginCallback = (fastify, _options, done) =
     const { range, groupingId, delegationId } = z
       .object({
         range: z.enum(SNAPSHOT_RANGES).default('90d'),
-        groupingId: z.string().uuid().optional(),
+        // A grouping's id, or the literal standing for the lines in none.
+        groupingId: z.union([z.string().uuid(), z.literal(UNGROUPED)]).optional(),
         delegationId: z.string().uuid().optional(),
       })
       .parse(request.query ?? {});

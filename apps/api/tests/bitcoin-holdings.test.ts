@@ -11,7 +11,7 @@ import {
   reverseHoldingEvent,
   satsOnDate,
 } from '../src/domain/bitcoin-holdings.js';
-import { netWorthSeries } from '../src/domain/history.js';
+import { rebuildDay } from '../src/domain/snapshot-fill.js';
 import { makeHolding, markTwoFactorEnrolled, resetDatabase } from './helpers.js';
 import { sessionCookie } from './http.js';
 
@@ -82,12 +82,12 @@ describe('what was held on a date', () => {
   });
 
   it('is what the net worth chart values, rather than today s quantity', async () => {
-    const now = new Date('2026-08-10T12:00:00Z');
     const { id } = await makeHolding({
       name: 'Hardware wallet',
       sats: HALF_BTC,
       heldSince: new Date('2026-08-06T00:00:00Z'),
       inNetWorth: true,
+      createdAt: new Date('2026-08-06T00:00:00Z'),
     });
 
     // One price all week, so the quantity is the only thing that can move the line.
@@ -108,23 +108,29 @@ describe('what was held on a date', () => {
       }),
     );
 
-    const series = await netWorthSeries(prisma, 5, now);
-    const at = (day: string): bigint | undefined =>
-      series.points.find((point) => point.date.toISOString().startsWith(day))?.valueCents;
+    /*
+     * Asserted through the snapshot rebuild, which is what values a past date
+     * now that ADR 035 has replaced the ledger-walking chart. The property is
+     * unchanged and is the whole reason the holdings ledger exists: half a
+     * Bitcoin on the 8th, a whole one on the 9th. Before it, both days read the
+     * same because today's quantity was applied backwards.
+     */
+    const valueOn = async (date: string): Promise<bigint | undefined> => {
+      const rebuilt = await rebuildDay(prisma, new Date(date));
+      return rebuilt.accounts.find((row) => row.accountId === id)?.balanceCents;
+    };
 
-    // Half a Bitcoin on the 8th, a whole one on the 9th. Before this, both days
-    // read the same because today's quantity was applied backwards.
-    expect(at('2026-08-08')).toBe(5_000_000n);
-    expect(at('2026-08-09')).toBe(10_000_000n);
+    expect(await valueOn('2026-08-08T00:00:00Z')).toBe(5_000_000n);
+    expect(await valueOn('2026-08-09T00:00:00Z')).toBe(10_000_000n);
   });
 
-  it('starts the chart where the Bitcoin starts, not at zero before it', async () => {
-    const now = new Date('2026-08-10T12:00:00Z');
-    await makeHolding({
+  it('is not valued at all on a date before it was held', async () => {
+    const { id } = await makeHolding({
       name: 'Hardware wallet',
       sats: HALF_BTC,
       heldSince: new Date('2026-08-09T00:00:00Z'),
       inNetWorth: true,
+      createdAt: new Date('2026-08-09T00:00:00Z'),
     });
     // A price from before the holding existed. Having a price is not the same
     // as having something to value with it.
@@ -134,16 +140,13 @@ describe('what was held on a date', () => {
       new Date('2026-08-06T12:00:00Z'),
     );
 
-    const series = await netWorthSeries(prisma, 5, now);
+    // Nothing on the 8th: the account did not exist, and a zero would draw a
+    // line through a period it was not part of.
+    const before = await rebuildDay(prisma, new Date('2026-08-08T00:00:00Z'));
+    expect(before.accounts.find((row) => row.accountId === id)).toBeUndefined();
 
-    // History starts at the later of the two things it needs — a quantity and a
-    // price — so the chart says "known from the 9th" rather than drawing a flat
-    // line through days it cannot speak for.
-    expect(series.earliestKnown?.toISOString()).toBe('2026-08-09T00:00:00.000Z');
-    expect(series.points.every((point) => point.date >= new Date('2026-08-09T00:00:00Z'))).toBe(
-      true,
-    );
-    expect(series.points[series.points.length - 1]?.valueCents).toBe(5_000_000n);
+    const after = await rebuildDay(prisma, new Date('2026-08-09T00:00:00Z'));
+    expect(after.accounts.find((row) => row.accountId === id)?.balanceCents).toBe(5_000_000n);
   });
 });
 

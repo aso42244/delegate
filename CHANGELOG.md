@@ -93,6 +93,46 @@ phase (`v0.1.0-phase1`, and so on).
   which left cash, River and Strike with no dated history at all, and the
   gap-filler with nothing to carry forward for them.
 
+- **The eight core Insights tiles, drawn from the snapshots.** Net worth over
+  time, assets against debts, account balance history, delegation balances,
+  burn rate per cycle, identity drift, home equity and Bitcoin.
+
+  **Every chart says where its figures came from.** A stretch built from
+  estimated days is dashed and muted with the reason on hover; observed,
+  reconstructed and carried days are all exact and draw normally. **And every
+  chart ends on now** — a hollow marker past the stored history, because
+  snapshots are labelled for the previous day and a line stopping there reads as
+  stale rather than current.
+
+  **The empty state is the state these ship in.** History starts at the first
+  night, so a tile with nothing says "No history yet — the first night records
+  one" and one with a single day says so too, rather than drawing an axis
+  through a dot.
+
+  `credit_card_trend` is retired. It was hardwired to whichever card owed the
+  most; **account balance history** replaces it with a picker over every account
+  that has stored history, which is what the tile was always reaching for. A
+  layout still naming the old key is filtered against the catalogue rather than
+  handing the page a widget it cannot draw.
+
+  The delegation drill-down is three levels — every grouping, one grouping's
+  delegations, one delegation — with a breadcrumb back up. The level survives a
+  change of range, so widening from 30 days to a year widens the view you are
+  looking at. Lines in no grouping are their own level and open like any other:
+  a bucket somebody can see and cannot click into is a dead end.
+
+- **One range selector for the whole page**: 30 days, 90 days, 6 months, 1 year,
+  year to date, this cycle, all. The spending and cycle tiles predate snapshots
+  and `This cycle` is the only window that means anything to them, so one control
+  drives everything rather than two disagreeing above a grid that mixes both.
+
+- **`domain/history.ts` is gone**, as ADR 035 said it would be. The four tiles it
+  fed are not — they are rebuilt on stored rows. Its ledger-walking survives only
+  inside the gap-filler, where every row it writes is marked as derived. The
+  properties its tests protected moved with it: a holding valued at each day's
+  own quantity is asserted against the stored quantity and price now, rather than
+  against a chart.
+
 - **Read endpoints, returning series already shaped for a chart.** The browser is
   handed points it can draw rather than a year of rows to reduce on a phone.
 

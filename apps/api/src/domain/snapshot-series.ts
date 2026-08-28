@@ -292,6 +292,16 @@ export async function accountSeries(
 
 export type DrillLevel = 'groupings' | 'delegations' | 'delegation';
 
+/**
+ * The key standing for "in no grouping at all".
+ *
+ * Not a uuid, deliberately: there is no row it could name. It travels in the
+ * same parameter as a real grouping id so the drill-down has one shape rather
+ * than a special case at every level.
+ */
+export const UNGROUPED = 'ungrouped';
+const UNGROUPED_NAME = 'No grouping';
+
 export interface NamedSeries {
   readonly key: string;
   readonly name: string;
@@ -325,6 +335,7 @@ export async function delegationDrillDown(
   db: Db,
   options: {
     readonly range: SnapshotRange;
+    /** A grouping's id, or `UNGROUPED` for the lines that are in none. */
     readonly groupingId?: string | undefined;
     readonly delegationId?: string | undefined;
   },
@@ -344,7 +355,14 @@ export async function delegationDrillDown(
     where: {
       ...(start ? { snapshotDate: { gte: start } } : {}),
       ...(options.delegationId ? { delegationId: options.delegationId } : {}),
-      ...(options.groupingId && !options.delegationId ? { groupingId: options.groupingId } : {}),
+      /*
+       * `ungrouped` is a real level, not a placeholder. It appears as its own
+       * series at the top and has to open like any other — a bucket somebody can
+       * see and cannot click into is a dead end.
+       */
+      ...(options.groupingId && !options.delegationId
+        ? { groupingId: options.groupingId === UNGROUPED ? null : options.groupingId }
+        : {}),
     },
     orderBy: { snapshotDate: 'asc' },
     select: {
@@ -424,7 +442,7 @@ export async function delegationDrillDown(
   });
 
   const [grouping, delegation] = await Promise.all([
-    options.groupingId
+    options.groupingId && options.groupingId !== UNGROUPED
       ? db.grouping.findUnique({ where: { id: options.groupingId }, select: { name: true } })
       : null,
     options.delegationId
@@ -438,7 +456,7 @@ export async function delegationDrillDown(
     days: dayCount,
     series,
     cyclesPerYear,
-    groupingName: grouping?.name ?? null,
+    groupingName: grouping?.name ?? (options.groupingId === UNGROUPED ? UNGROUPED_NAME : null),
     delegationName: delegation?.name ?? null,
   };
 }
