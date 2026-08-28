@@ -1,3 +1,4 @@
+import { isKnownTimeZone } from '@budget/shared';
 import { config as loadDotenv } from 'dotenv';
 import { z } from 'zod';
 
@@ -17,30 +18,13 @@ const booleanFromString = z
   .describe('"true" or "false"');
 
 /**
- * The IANA zones this runtime knows, plus UTC.
+ * Zone validation lives in `@budget/shared` now.
  *
- * `Intl.supportedValuesOf` lists the canonical region zones and deliberately
- * omits `UTC`, so it is added back — it is the default here and has to be
- * spellable.
+ * It moved there when the zone became a setting (ADR 036): the Settings picker
+ * has to offer exactly the list the server will validate against, and two lists
+ * that could disagree is how a dropdown ends up offering a value the server
+ * refuses.
  */
-const KNOWN_TIME_ZONES = new Set(['UTC', ...Intl.supportedValuesOf('timeZone')]);
-
-/**
- * Whether a string names a real IANA zone.
- *
- * Stricter than `new Intl.DateTimeFormat({ timeZone })`, which also accepts
- * abbreviations like `CST` and fixed offsets like `-05:00`. Both are refused
- * here, because neither carries daylight saving rules: a job set for half past
- * two in the morning against an offset runs at half past one for half the year,
- * and `CST` names two different zones on two different continents.
- *
- * A typo would otherwise be silent in the worst way available — an unknown zone
- * falls back to the process default, so the job still runs, just never at the
- * hour the operator set.
- */
-function isKnownTimeZone(zone: string): boolean {
-  return KNOWN_TIME_ZONES.has(zone);
-}
 
 const environmentSchema = z
   .object({

@@ -64,6 +64,9 @@ export async function resetDatabase(): Promise<void> {
       payCadence: 'biweekly',
       remoteOverTorEnabled: false,
       remoteOverTorEnabledAt: null,
+      // Null is the product default: follow SCHEDULE_TIMEZONE. A zone left here
+      // from a previous file would move every schedule in the next one.
+      scheduleTimezone: null,
       bitcoinInBudgetAckAt: null,
       simplefinAccessUrlEncrypted: null,
       simplefinConnectedAt: null,

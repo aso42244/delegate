@@ -6,6 +6,51 @@ phase (`v0.1.0-phase1`, and so on).
 
 ## [Unreleased]
 
+### Added
+
+- **The financial picture is recorded nightly.** Three tables — one row per
+  account per day, one per delegation per day, and one for the whole picture —
+  each keyed by a date and carrying its own provenance: `observed`,
+  `reconstructed`, `carried` or `interpolated`. An aggregate takes the weakest
+  provenance among its inputs, so one estimated account makes the day's total an
+  estimate rather than hiding inside forty exact ones.
+
+  [ADR 035](docs/decisions/035-the-financial-picture-is-snapshotted-nightly.md)
+  **supersedes ADR 013**, which rejected exactly this in August. Its reason has
+  expired — it was that snapshots would miss the twelve months of history about
+  to be imported, and that import happened months ago — while the price it
+  recorded and accepted has not: a reconstructed balance is a confident line
+  drawn through transactions that can be quietly incomplete, and nothing about it
+  says so.
+
+  Two shape decisions are load-bearing. **The aggregates are stored rather than
+  derived**, so archiving an account or changing an in-budget flag cannot rewrite
+  a chart somebody has already read; each account row carries its own type and
+  budget flags, and each delegation row its grouping, as they stood that night.
+  And there are **two scopes**, because net worth includes the house and the
+  mortgage while the identity is precisely the reading that excludes them —
+  three totals could not have served both. `identity_value_cents` is the
+  four-term figure from ADR 020, so it matches the chip on the Budget page rather
+  than wandering by whatever is categorized and not yet posted.
+
+  Schema and migration only so far. Nothing writes to these tables yet.
+
+- **The schedule time zone is chosen in Settings**, not only in `.env`
+  ([ADR 036](docs/decisions/036-the-schedule-timezone-is-a-setting.md)). Null
+  means "follow `SCHEDULE_TIMEZONE`", which is what every existing deployment
+  does and keeps doing until somebody picks a zone — so this changes when nothing
+  fires. The environment variable stays as the floor, because the container has
+  it before it can reach the database.
+
+  **Saving rebuilds the schedules.** `node-cron` fixes a task's zone when the
+  task is created, so a stored zone that only took effect on the next restart
+  would be a setting that reports itself working and is not — which is the shape
+  of failure this project has already paid for once, with a nightly backup that
+  logged an error into a file nobody read while failing every night for weeks.
+  It governs when jobs fire and nothing else; every date the domain computes is
+  still UTC, and moving that is recorded as an open question rather than smuggled
+  in here.
+
 ### Fixed
 
 - **A figure sits flush with the end of its row on a phone.** The 8px inside a

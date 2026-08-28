@@ -19,8 +19,9 @@ institution's settled balance and will not include it for another day or three.
 Without it the first three terms are out of step by the amount of the charge. See
 ADR 020.
 
-That difference is displayed at the bottom of the Budget page. It is not
-enforced by double-entry bookkeeping and it is not always zero. It is a reading.
+That difference is displayed as a chip beside the Budget page title — `Balanced`,
+`To delegate $1,000.00`, `Over delegated $212.00`. It is not enforced by
+double-entry bookkeeping and it is not always zero. It is a reading.
 
 ## Reading the bottom row
 
@@ -345,6 +346,35 @@ For a Bitcoin holding the quantity is the fact and the value is derived. The one
 exception is a holding marked in-budget: the identity sums `balance_cents`
 directly, so that column is written for those, once a day. See ADR 021 for why
 daily rather than hourly, and for the bug the whole arrangement closes.
+
+## The financial picture is snapshotted nightly
+
+Delegations have a full history because their balances are a ledger. Account
+balances and net worth never did — only current state exists — so Insights could
+show today and never a trend, and every day nothing captured state was a day of
+history lost.
+
+Three tables fix that, written by a nightly job for the **previous** day:
+`account_snapshots`, `delegation_snapshots`, `aggregate_snapshots`. Each row is
+keyed by a **date** rather than a timestamp and carries its own provenance:
+`observed`, `reconstructed`, `carried` or `interpolated`. An aggregate takes the
+**weakest** provenance among its inputs.
+
+[ADR 035](decisions/035-the-financial-picture-is-snapshotted-nightly.md)
+supersedes ADR 013, which decided the opposite in August. Two things about the
+shape are worth stating here because they are easy to undo by accident:
+
+- **Aggregates are stored, not derived.** Recomputing them from the detail tables
+  would mean archiving an account or changing an in-budget flag rewrote history
+  that had already been looked at. The same reason each account snapshot carries
+  its own `type`, `in_budget` and `in_net_worth`, and each delegation snapshot
+  its `grouping_id`, as they stood that night.
+- **Two scopes, because the app has two.** Net worth includes the house and the
+  mortgage; the identity is precisely the reading that excludes them. Both pairs
+  of totals are stored, and `identity_value_cents` is the **four-term** figure —
+  the pending term included, so it matches the chip on the Budget page.
+
+History starts at the first run after deploy. There is deliberately no backfill.
 
 ## Bitcoin quantities are a ledger, like delegation balances
 

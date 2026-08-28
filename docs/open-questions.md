@@ -82,3 +82,28 @@ history.
   suite is written against a human reading the diff. Nobody would be.
 - **What happens to a request that fails?** Silence, a comment back in Notion, or
   a human in the loop — and whether a failed attempt can be retried indefinitely.
+
+## Insights and snapshots
+
+Not phase-gated: this is current work, and these are the questions it raised
+and deliberately did not answer.
+
+- **Should the domain compute dates in the household's zone rather than UTC?**
+  [ADR 036](decisions/036-the-schedule-timezone-is-a-setting.md) deliberately
+  limited the zone setting to _when jobs fire_. Every date the domain computes is
+  still UTC, which means a charge made at 8pm Central files under the next day.
+  Arguably wrong, and arguably worth fixing — but it moves which day a
+  transaction posted on, which day a valuation is as-of, and which day a Bitcoin
+  close belongs to, all of which are stored. That is a migration through live
+  financial data and belongs on its own branch with its own ADR, not folded into
+  a feature about charts.
+- **Is 03:10 the right hour for the snapshot job?** It is offset from the hourly
+  sync at :00 for the same reason the price fetch sits at :05 — two cores. It is
+  also outside 02:00–02:59, which does not exist on the spring-forward morning.
+  Worth knowing: `BACKUP_CRON` defaults to `30 2 * * *`, which **is** inside that
+  hour, so the nightly dump can be skipped one night a year in a DST zone. Not
+  introduced here, and not fixed here.
+- **Should a snapshot be taken before or after the nightly dump?** It currently
+  lands after, so a restore from that night's dump is always missing the most
+  recent day. Harmless — the gap-filler rebuilds it — but it means the dump is
+  never quite a complete picture of what the app had shown.

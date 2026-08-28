@@ -56,7 +56,12 @@ if (config.TLS_CERT_PATH) {
 
 // Started after the listener is up, so a slow first sync cannot delay the app
 // becoming reachable and failing its container health check.
-const scheduler = startScheduler(config, app.log);
+const scheduler = await startScheduler(config, app.log);
+
+// The zone the schedules run in is a setting now, and node-cron fixes a task's
+// zone when the task is created — so a save has to rebuild them. Without this
+// the setting would appear to work and take effect only on the next restart.
+app.schedules.setReloader(() => scheduler.reload());
 
 let shuttingDown = false;
 

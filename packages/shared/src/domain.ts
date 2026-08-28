@@ -39,6 +39,95 @@ export const SYNC_RUN_STATUSES = ['running', 'succeeded', 'failed'] as const;
 export type SyncRunStatus = (typeof SYNC_RUN_STATUSES)[number];
 
 /**
+ * How a snapshot row came to hold the figure it holds. See ADR 035.
+ *
+ * **Ordered strongest first, and the order is load-bearing** —
+ * `weakestProvenance` indexes into this array. Reordering it would silently
+ * change which provenance an aggregate reports.
+ *
+ * Two of these are exact and two are not, which is the distinction that matters
+ * when rendering: `observed` and `reconstructed` are right, `carried` is right
+ * for a value that genuinely moves in steps, and `interpolated` is a guess.
+ */
+export const SNAPSHOT_PROVENANCES = [
+  'observed',
+  'reconstructed',
+  'carried',
+  'interpolated',
+] as const;
+export type SnapshotProvenance = (typeof SNAPSHOT_PROVENANCES)[number];
+
+/**
+ * The weakest of several provenances — what an aggregate takes from its inputs.
+ *
+ * An aggregate built from one interpolated account is an interpolated aggregate,
+ * whatever the other forty rows were. Empty means nothing fed it, and `observed`
+ * is the honest answer for a day with nothing to record rather than a claim that
+ * something was estimated.
+ */
+export function weakestProvenance(provenances: readonly SnapshotProvenance[]): SnapshotProvenance {
+  let weakest = 0;
+  for (const provenance of provenances) {
+    const rank = SNAPSHOT_PROVENANCES.indexOf(provenance);
+    if (rank > weakest) weakest = rank;
+  }
+  return SNAPSHOT_PROVENANCES[weakest] ?? 'observed';
+}
+
+/**
+ * Whether a figure is exact or an estimate.
+ *
+ * `carried` counts as exact: a property worth $400,000 until somebody typed
+ * $420,000 was worth $400,000 the whole time. Only `interpolated` is a guess,
+ * and only it renders as one.
+ */
+export function isEstimated(provenance: SnapshotProvenance): boolean {
+  return provenance === 'interpolated';
+}
+
+/**
+ * The IANA zones this runtime knows, plus UTC.
+ *
+ * `Intl.supportedValuesOf` lists the canonical region zones and deliberately
+ * omits `UTC`, so it is added back — it is the fallback and has to be spellable.
+ *
+ * Here rather than in the API's config because both sides need it now: the
+ * server validates a stored zone, and the Settings picker has to offer the same
+ * list it will be validated against. Two lists that could disagree is how a
+ * dropdown ends up offering a value the server refuses.
+ */
+export function knownTimeZones(): string[] {
+  return ['UTC', ...Intl.supportedValuesOf('timeZone')];
+}
+
+const KNOWN_TIME_ZONES = new Set(knownTimeZones());
+
+/**
+ * Whether a string names a real IANA zone.
+ *
+ * Stricter than `new Intl.DateTimeFormat({ timeZone })`, which also accepts
+ * abbreviations like `CST` and fixed offsets like `-05:00`. Both are refused
+ * here, because neither carries daylight saving rules: a job set for half past
+ * two in the morning against an offset runs at half past one for half the year,
+ * and `CST` names two different zones on two different continents.
+ *
+ * A typo would otherwise be silent in the worst way available — an unknown zone
+ * falls back to the process default, so the job still runs, just never at the
+ * hour it was set for.
+ */
+export function isKnownTimeZone(zone: string): boolean {
+  return KNOWN_TIME_ZONES.has(zone);
+}
+
+/** What each provenance says on hover. One short sentence, per ui-system.md §3. */
+export const PROVENANCE_NOTES: Record<SnapshotProvenance, string> = {
+  observed: 'Recorded on the night of this date.',
+  reconstructed: 'Rebuilt exactly from the ledger after a missed night.',
+  carried: 'Carried from the last value entered on or before this date.',
+  interpolated: 'Estimated — a snapshot was missed and no exact value was available.',
+};
+
+/**
  * The whole permission model: only user management is gated, and the Super
  * Admin cannot be modified by anyone else. There is no permission matrix.
  */

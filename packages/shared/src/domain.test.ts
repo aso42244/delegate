@@ -8,7 +8,14 @@ import {
   canManageUsers,
   canModifyUser,
   isBalanceStale,
+  isEstimated,
   isFeedBalanceStale,
+  isKnownTimeZone,
+  knownTimeZones,
+  PROVENANCE_NOTES,
+  SNAPSHOT_PROVENANCES,
+  weakestProvenance,
+  type SnapshotProvenance,
   suggestedPerCycleCents,
   groupingTint,
   isGroupingColor,
@@ -193,5 +200,91 @@ describe('feed balance staleness', () => {
 
   it('does not call a date in the future stale', () => {
     expect(isFeedBalanceStale(new Date('2026-08-26T12:00:00Z'), now)).toBe(false);
+  });
+});
+
+/**
+ * Provenance, and the rule that an aggregate is only as good as its weakest
+ * input. See ADR 035.
+ */
+describe('snapshot provenance', () => {
+  it('is ordered strongest first, which weakestProvenance depends on', () => {
+    expect(SNAPSHOT_PROVENANCES).toEqual(['observed', 'reconstructed', 'carried', 'interpolated']);
+  });
+
+  it('takes the weakest of several', () => {
+    expect(weakestProvenance(['observed', 'observed'])).toBe('observed');
+    expect(weakestProvenance(['observed', 'reconstructed'])).toBe('reconstructed');
+    expect(weakestProvenance(['observed', 'carried', 'reconstructed'])).toBe('carried');
+    expect(weakestProvenance(['carried', 'interpolated', 'observed'])).toBe('interpolated');
+  });
+
+  /**
+   * One estimated account makes the whole day's aggregate an estimate, however
+   * many exact rows sat beside it. That is the point of the rule.
+   */
+  it('lets a single interpolated row decide a day of forty', () => {
+    const rows: SnapshotProvenance[] = Array.from({ length: 40 }, () => 'observed');
+    rows[17] = 'interpolated';
+    expect(weakestProvenance(rows)).toBe('interpolated');
+  });
+
+  /**
+   * A day with nothing to record is not a day that estimated something. Reading
+   * an empty list as the weakest value would paint an honest blank as a guess.
+   */
+  it('calls an empty day observed rather than estimated', () => {
+    expect(weakestProvenance([])).toBe('observed');
+  });
+
+  /**
+   * `carried` is exact: a property worth $400,000 until somebody typed $420,000
+   * was worth $400,000 the whole time. Only interpolation is a guess, and only
+   * it renders as one.
+   */
+  it('counts only interpolation as an estimate', () => {
+    expect(isEstimated('observed')).toBe(false);
+    expect(isEstimated('reconstructed')).toBe(false);
+    expect(isEstimated('carried')).toBe(false);
+    expect(isEstimated('interpolated')).toBe(true);
+  });
+
+  it('has a note for every provenance, so no row hovers blank', () => {
+    for (const provenance of SNAPSHOT_PROVENANCES) {
+      expect(PROVENANCE_NOTES[provenance].length).toBeGreaterThan(0);
+    }
+  });
+});
+
+/**
+ * Zone validation moved here from the API's config when the zone became a
+ * setting (ADR 036), so the picker offers exactly what the server accepts.
+ */
+describe('time zones', () => {
+  it('accepts IANA names, including UTC which Intl omits', () => {
+    expect(isKnownTimeZone('UTC')).toBe(true);
+    expect(isKnownTimeZone('America/Chicago')).toBe(true);
+    expect(isKnownTimeZone('America/Detroit')).toBe(true);
+    expect(isKnownTimeZone('Europe/London')).toBe(true);
+  });
+
+  /**
+   * Neither carries daylight saving rules, so a job set for half past two in the
+   * morning against an offset runs at half past one for half the year — and
+   * `CST` names two different zones on two different continents.
+   */
+  it('refuses abbreviations and fixed offsets', () => {
+    expect(isKnownTimeZone('CST')).toBe(false);
+    expect(isKnownTimeZone('EST5EDT')).toBe(false);
+    expect(isKnownTimeZone('-05:00')).toBe(false);
+    expect(isKnownTimeZone('')).toBe(false);
+    expect(isKnownTimeZone('Mars/Olympus_Mons')).toBe(false);
+  });
+
+  it('offers a list that validates, so the picker cannot suggest a refusal', () => {
+    const zones = knownTimeZones();
+    expect(zones).toContain('UTC');
+    expect(zones.length).toBeGreaterThan(100);
+    for (const zone of zones) expect(isKnownTimeZone(zone)).toBe(true);
   });
 });

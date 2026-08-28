@@ -6,6 +6,7 @@ import { ConflictError } from './domain/errors.js';
 import { runBackup } from './domain/backup.js';
 import { fetchAndRecordPrice, providerByName, revalueBitcoinHoldings } from './domain/bitcoin.js';
 import { scanAllWallets } from './domain/bitcoin-wallets.js';
+import { getBudgetSettings, resolveScheduleTimezone } from './domain/settings.js';
 import { resolveConnection } from './domain/simplefin-config.js';
 import { runSync } from './domain/sync.js';
 import { HttpSimpleFinClient } from './simplefin/client.js';
@@ -19,19 +20,75 @@ import { HttpSimpleFinClient } from './simplefin/client.js';
  * SimpleFIN publishes no rate limits and no guidance on sync frequency, so the
  * hourly cadence from the specification stands. See ADR 009.
  *
- * Every expression is read in `SCHEDULE_TIMEZONE`, which defaults to UTC. Only
- * the backup cares — the other two run hourly and land at the same instant in
- * any zone — but passing it to one task and not the others would leave a future
- * reader working out which of three schedules meant local time.
+ * Every expression is read in one zone: the one chosen in Settings, or
+ * `SCHEDULE_TIMEZONE` when nobody has chosen (ADR 036). The hourly jobs land at
+ * the same instant in any zone, but passing it to one task and not the others
+ * would leave a future reader working out which of the schedules meant local
+ * time — and the snapshot job genuinely depends on it, because it labels its
+ * rows for the local day that just ended.
  */
 
 export interface Scheduler {
   stop(): void;
+  /**
+   * Rebuilds every task, picking up a time zone changed in Settings.
+   *
+   * Stops the old tasks first. A leaked task would double every job: two syncs
+   * are a `sync_already_running` conflict and harmless, but two backups are two
+   * dumps and two snapshot runs are wasted work on two cores.
+   */
+  reload(): Promise<void>;
 }
 
-export function startScheduler(config: AppConfig, logger: FastifyBaseLogger): Scheduler {
+/**
+ * The zone the schedules should run in right now.
+ *
+ * Falls back to the environment rather than failing: a database that cannot be
+ * read at boot is a reason to run the jobs at the configured hour, not a reason
+ * to stop running them.
+ */
+async function currentTimezone(config: AppConfig, logger: FastifyBaseLogger): Promise<string> {
+  try {
+    const settings = await getBudgetSettings(prisma);
+    return resolveScheduleTimezone(settings, config.SCHEDULE_TIMEZONE);
+  } catch (error) {
+    logger.warn(
+      { err: error, fallback: config.SCHEDULE_TIMEZONE },
+      'could not read the schedule timezone from settings; using the environment',
+    );
+    return config.SCHEDULE_TIMEZONE;
+  }
+}
+
+export async function startScheduler(
+  config: AppConfig,
+  logger: FastifyBaseLogger,
+): Promise<Scheduler> {
+  let tasks: ScheduledTask[] = [];
+
+  const stop = (): void => {
+    for (const task of tasks) void task.stop();
+    tasks = [];
+  };
+
+  const build = async (): Promise<void> => {
+    const timezone = await currentTimezone(config, logger);
+    stop();
+    tasks = createTasks(config, logger, timezone);
+    logger.info({ timezone, jobs: tasks.length }, 'schedules built');
+  };
+
+  await build();
+  return { stop, reload: build };
+}
+
+function createTasks(
+  config: AppConfig,
+  logger: FastifyBaseLogger,
+  timezone: string,
+): ScheduledTask[] {
   const tasks: ScheduledTask[] = [];
-  const options = { timezone: config.SCHEDULE_TIMEZONE };
+  const options = { timezone };
 
   if (!cron.validate(config.SIMPLEFIN_SYNC_CRON)) {
     // Loud rather than silently never running: a mistyped expression that simply
@@ -96,11 +153,7 @@ export function startScheduler(config: AppConfig, logger: FastifyBaseLogger): Sc
     'Bitcoin price fetch enabled',
   );
 
-  return {
-    stop: () => {
-      for (const task of tasks) void task.stop();
-    },
-  };
+  return tasks;
 }
 
 /**

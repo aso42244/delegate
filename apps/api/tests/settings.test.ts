@@ -196,3 +196,129 @@ describe('pay cadence', () => {
     expect(body.payCadence).toBe('weekly');
   });
 });
+
+/**
+ * The schedule time zone, which decides when every job fires — including the
+ * nightly snapshot, whose rows are labelled for the local day that just ended.
+ * See ADR 036.
+ */
+describe('schedule timezone', () => {
+  interface TimezoneBody {
+    scheduleTimezone: string | null;
+    environmentTimezone: string;
+    effectiveTimezone: string;
+    availableTimezones: string[];
+  }
+
+  async function readTimezone(): Promise<TimezoneBody> {
+    const response = await app.inject({ method: 'GET', url: '/api/settings', headers: { cookie } });
+    expect(response.statusCode).toBe(200);
+    return response.json<TimezoneBody>();
+  }
+
+  /**
+   * The state that matters most on upgrade: nobody has chosen, so the schedules
+   * keep running exactly where the environment put them. This migration must
+   * change when nothing fires.
+   */
+  it('follows the environment until somebody chooses', async () => {
+    const body = await readTimezone();
+    expect(body.scheduleTimezone).toBeNull();
+    expect(body.effectiveTimezone).toBe(body.environmentTimezone);
+  });
+
+  it('takes a chosen zone, and reports it as the one in force', async () => {
+    const response = await app.inject({
+      method: 'PATCH',
+      url: '/api/settings',
+      headers: { cookie },
+      payload: { scheduleTimezone: 'America/Chicago' },
+    });
+    expect(response.statusCode).toBe(200);
+
+    const body = await readTimezone();
+    expect(body.scheduleTimezone).toBe('America/Chicago');
+    expect(body.effectiveTimezone).toBe('America/Chicago');
+  });
+
+  /**
+   * Null is a value here, not an absence. Clearing the choice goes back to
+   * following the environment, which is the only way out of a zone somebody set
+   * by mistake without knowing what the environment says.
+   */
+  it('clears back to the environment when set to null', async () => {
+    await app.inject({
+      method: 'PATCH',
+      url: '/api/settings',
+      headers: { cookie },
+      payload: { scheduleTimezone: 'Europe/London' },
+    });
+    expect((await readTimezone()).effectiveTimezone).toBe('Europe/London');
+
+    await app.inject({
+      method: 'PATCH',
+      url: '/api/settings',
+      headers: { cookie },
+      payload: { scheduleTimezone: null },
+    });
+
+    const body = await readTimezone();
+    expect(body.scheduleTimezone).toBeNull();
+    expect(body.effectiveTimezone).toBe(body.environmentTimezone);
+  });
+
+  /**
+   * Refused at save time rather than at the next fire. An unknown zone does not
+   * throw when a task is scheduled with it — it falls back to the process
+   * default — so a typo would leave every schedule running at an hour nobody
+   * chose, with nothing on screen saying so.
+   */
+  it('refuses an abbreviation or a fixed offset, which carry no DST rules', async () => {
+    for (const zone of ['CST', '-05:00', 'Mars/Olympus_Mons']) {
+      const response = await app.inject({
+        method: 'PATCH',
+        url: '/api/settings',
+        headers: { cookie },
+        payload: { scheduleTimezone: zone },
+      });
+      expect(response.statusCode).toBe(400);
+    }
+
+    // And nothing was stored on the way through.
+    expect((await readTimezone()).scheduleTimezone).toBeNull();
+  });
+
+  it('offers a list the server would accept', async () => {
+    const body = await readTimezone();
+    expect(body.availableTimezones).toContain('UTC');
+    expect(body.availableTimezones).toContain('America/Chicago');
+
+    const response = await app.inject({
+      method: 'PATCH',
+      url: '/api/settings',
+      headers: { cookie },
+      payload: { scheduleTimezone: body.availableTimezones[42] },
+    });
+    expect(response.statusCode).toBe(200);
+  });
+
+  it('leaves the other settings alone', async () => {
+    await app.inject({
+      method: 'PATCH',
+      url: '/api/settings',
+      headers: { cookie },
+      payload: { identityToleranceCents: '1000', undoWindowHours: 24 },
+    });
+
+    await app.inject({
+      method: 'PATCH',
+      url: '/api/settings',
+      headers: { cookie },
+      payload: { scheduleTimezone: 'America/Chicago' },
+    });
+
+    const body = await readSettings();
+    expect(body.identityToleranceCents).toBe('1000');
+    expect(body.undoWindowHours).toBe(24);
+  });
+});

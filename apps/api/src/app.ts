@@ -5,6 +5,7 @@ import { getConfig, type AppConfig } from './config.js';
 import { errorHandler } from './http/errors.js';
 import { auth } from './plugins/auth.js';
 import { configPlugin } from './plugins/config.js';
+import { schedulesPlugin } from './plugins/schedules.js';
 import { csrf } from './plugins/csrf.js';
 import { remoteAccess } from './plugins/remote-access.js';
 import { security } from './plugins/security.js';
@@ -128,6 +129,9 @@ export async function buildApp(config: AppConfig = getConfig()): Promise<Fastify
   // between a JSON 404 and the client-side routing fallback.
 
   await app.register(configPlugin, { config });
+  // A seam the process entrypoint fills in, so a settings write can rebuild the
+  // cron tasks rather than waiting for a restart. See ADR 036.
+  await app.register(schedulesPlugin);
   // Before the routes: the rate limiter has to be in place when they register
   // their per-route limits, and the headers apply to every response including
   // the SPA fallback.
