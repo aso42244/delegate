@@ -4,12 +4,27 @@ import { prisma } from '../db/client.js';
 import { ValidationError } from '../domain/errors.js';
 import { getBudgetSettings, resolveScheduleTimezone } from '../domain/settings.js';
 import {
+  accountSeries,
+  aggregateSeries,
+  changePerCycle,
+  compositionSeries,
+  dailyAggregateRows,
+  debtTrajectory,
+  delegationDrillDown,
+  downsample,
+  equitySeries,
+  momentum,
+  SNAPSHOT_RANGES,
+  type Series,
+  type SeriesPoint,
+} from '../domain/snapshot-series.js';
+import {
   captureSnapshot,
   snapshotDateFor,
   snapshotStatus,
   type WriteResult,
 } from '../domain/snapshots.js';
-import { dateOut } from '../http/serialize.js';
+import { centsOut, dateOut } from '../http/serialize.js';
 import { AUTHENTICATED, requireSettingsManagement } from '../plugins/auth.js';
 
 /**
@@ -107,8 +122,170 @@ export const snapshotRoutes: FastifyPluginCallback = (fastify, _options, done) =
     },
   );
 
+  /**
+   * Everything the page draws that does not depend on a picker, in one request.
+   *
+   * Already downsampled and already shaped: the browser is handed points it can
+   * draw rather than a year of rows to reduce. Above roughly 180 stored days a
+   * series buckets to weekly and above 730 to monthly, and a bucket takes the
+   * weakest provenance in it — so a week containing one estimated day renders as
+   * estimated, which is the honest reading of a line drawn through it.
+   */
+  fastify.get('/api/insights/snapshots', async (request) => {
+    const { range } = rangeSchema.parse(request.query ?? {});
+
+    const [aggregate, composition, equity, daily, accounts] = await Promise.all([
+      aggregateSeries(prisma, range),
+      compositionSeries(prisma, range),
+      equitySeries(prisma, range),
+      dailyAggregateRows(prisma, range),
+      // The picker for the balance-history widget. Only accounts that actually
+      // have history, so it never offers one that draws an empty box.
+      prisma.accountSnapshot
+        .groupBy({ by: ['accountId'], _count: { accountId: true } })
+        .then(async (groups) => {
+          const rows = await prisma.account.findMany({
+            where: { id: { in: groups.map((group) => group.accountId) } },
+            select: { id: true, name: true, nickname: true, type: true },
+            orderBy: { name: 'asc' },
+          });
+          return rows;
+        }),
+    ]);
+
+    const cycles = await changePerCycle(prisma, daily);
+    const trajectory = debtTrajectory(daily, aggregate.bucket);
+
+    return {
+      range,
+      /*
+       * One aggregate series, not three.
+       *
+       * Net worth over time, assets against debts, and identity drift are the
+       * same stored rows read differently — every field each of them needs is on
+       * every point. Sending the payload three times under three keys would have
+       * been three copies of a year of history to say the same thing.
+       */
+      aggregate: series(aggregate),
+      net_worth_composition: {
+        bucket: composition.bucket,
+        days: composition.days,
+        points: composition.points.map((entry) => ({
+          date: dateOut(entry.date),
+          provenance: entry.provenance,
+          bitcoinCents: centsOut(entry.bitcoinCents),
+          otherAssetsCents: centsOut(entry.otherAssetsCents),
+          debtsCents: centsOut(entry.debtsCents),
+        })),
+      },
+      home_equity: {
+        name: equity.name,
+        bucket: equity.bucket,
+        days: equity.days,
+        points: equity.points.map(point),
+      },
+      thirty_day_momentum: {
+        bucket: aggregate.bucket,
+        // Computed on the daily rows before bucketing: a rolling window over
+        // weekly averages is a different and much blunter thing.
+        points: downsample(momentum(daily), aggregate.bucket).map(point),
+      },
+      change_per_cycle: cycles.map((cycle) => ({
+        startedAt: dateOut(cycle.startedAt),
+        endedAt: dateOut(cycle.endedAt),
+        changeCents: centsOut(cycle.changeCents),
+        provenance: cycle.provenance,
+        partial: cycle.partial,
+      })),
+      debt_trajectory: {
+        bucket: aggregate.bucket,
+        points: trajectory.points.map(point),
+        payoffDate: dateOut(trajectory.payoffDate),
+        hasEnoughHistory: trajectory.hasEnoughHistory,
+      },
+      accounts: accounts.map((account) => ({
+        id: account.id,
+        name: account.nickname ?? account.name,
+        type: account.type,
+      })),
+    };
+  });
+
+  /** One account's balance history — the widget with a picker. */
+  fastify.get('/api/insights/snapshots/account/:accountId', async (request) => {
+    const { accountId } = z.object({ accountId: z.string().uuid() }).parse(request.params);
+    const { range } = rangeSchema.parse(request.query ?? {});
+    return series(await accountSeries(prisma, accountId, range));
+  });
+
+  /**
+   * The delegation drill-down: all groupings, one grouping's delegations, or one
+   * delegation. Widgets 4, 5 and 12 read the same shape.
+   */
+  fastify.get('/api/insights/snapshots/delegations', async (request) => {
+    const { range, groupingId, delegationId } = z
+      .object({
+        range: z.enum(SNAPSHOT_RANGES).default('90d'),
+        groupingId: z.string().uuid().optional(),
+        delegationId: z.string().uuid().optional(),
+      })
+      .parse(request.query ?? {});
+
+    const drill = await delegationDrillDown(prisma, { range, groupingId, delegationId });
+
+    return {
+      level: drill.level,
+      bucket: drill.bucket,
+      days: drill.days,
+      cyclesPerYear: drill.cyclesPerYear,
+      groupingName: drill.groupingName,
+      delegationName: drill.delegationName,
+      series: drill.series.map((entry) => ({
+        key: entry.key,
+        name: entry.name,
+        color: entry.color,
+        burnRateCents: centsOut(entry.burnRateCents),
+        changeCents: centsOut(entry.changeCents),
+        points: entry.points.map(point),
+      })),
+    };
+  });
+
   done();
 };
+
+const rangeSchema = z.object({ range: z.enum(SNAPSHOT_RANGES).default('90d') });
+
+/** One point, with its money as decimal strings and its provenance intact. */
+function point(entry: SeriesPoint): Record<string, unknown> {
+  return {
+    date: dateOut(entry.date),
+    provenance: entry.provenance,
+    days: entry.days,
+    ...Object.fromEntries(
+      Object.entries(entry.fields).map(([name, value]) => [name, centsOut(value)]),
+    ),
+  };
+}
+
+function series(value: Series): Record<string, unknown> {
+  return {
+    bucket: value.bucket,
+    days: value.days,
+    earliest: dateOut(value.earliest),
+    points: value.points.map(point),
+    // Snapshots are labelled for the previous day, so every chart would
+    // otherwise end a day behind. The client draws this distinctly — a hollow
+    // marker or a dashed final segment — because it is current state rather
+    // than a stored observation.
+    live:
+      value.live === null
+        ? null
+        : Object.fromEntries(
+            Object.entries(value.live).map(([name, amount]) => [name, centsOut(amount)]),
+          ),
+  };
+}
 
 function present(result: WriteResult): Record<string, unknown> {
   return {

@@ -93,6 +93,42 @@ phase (`v0.1.0-phase1`, and so on).
   which left cash, River and Strike with no dated history at all, and the
   gap-filler with nothing to carry forward for them.
 
+- **Read endpoints, returning series already shaped for a chart.** The browser is
+  handed points it can draw rather than a year of rows to reduce on a phone.
+
+  `GET /api/insights/snapshots?range=` serves everything that does not depend on
+  a picker: the aggregate series, net worth composition, home equity, 30-day
+  momentum, change per pay cycle, the debt trajectory, and the account list for
+  the balance-history picker. `…/account/:id` serves one account.
+  `…/delegations` serves the drill-down at whichever of its three levels was
+  asked for — all groupings aggregated, one grouping's delegations, or one
+  delegation.
+
+  **Downsampling follows from the range, and the reader never chooses it.** Above
+  roughly 180 stored days a series buckets to weekly and above 730 to monthly,
+  taking the **average** of each bucket rather than its last day — a weekly point
+  reporting Sunday's balance would swing with whichever day landed at the end,
+  and a net worth line is not a sampling of Sundays. **A bucket takes the weakest
+  provenance in it**, so a week containing one estimated day renders as
+  estimated: a line drawn through a bucket is no better than its worst point.
+
+  Every series carries a **live point** computed from current state and kept
+  apart from the stored history. Snapshots are labelled for the previous day, so
+  without it every chart would end a day behind and read as stale rather than
+  current.
+
+  Two things are deliberately withheld rather than guessed. **The payoff
+  projection stays hidden until there are 60 days of history** — a line fitted
+  through nine days would move by years every morning, and a number that unstable
+  reads as a fact to whoever sees it. And **the composition split has no cash
+  versus savings**: the application has no such classification, and inventing one
+  from account names would be a guess presented as a category.
+
+  Burn rate divides by the **configured pay cadence**, never a hardcoded 26. The
+  Utilities page already divides by the same figure, and two screens of one
+  household disagreeing about how often it is paid would be worse than either
+  answer.
+
 - **`GET /api/snapshots/status`**, and an administrator-only
   `POST /api/snapshots/run`. The status reading is the answer to "did the job
   run", taken from the rows rather than from the absence of an error — the
