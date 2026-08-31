@@ -82,3 +82,25 @@ history.
   suite is written against a human reading the diff. Nobody would be.
 - **What happens to a request that fails?** Silence, a comment back in Notion, or
   a human in the loop — and whether a failed attempt can be retried indefinitely.
+
+## Insights and snapshots
+
+Not phase-gated: this is current work, and these are the questions it raised
+and deliberately did not answer.
+
+- ~~**Should the domain compute dates in the household's zone rather than UTC?**~~
+  **Answered: yes.** [ADR 037](decisions/037-a-day-is-the-households-day.md).
+  The migration this question feared did not exist — `posted_at` already holds a
+  true instant, and `as_of` and `price_date` hold decided calendar days that need
+  no zone — so what looked like a data migration was an interpretation change at
+  twelve sites.
+- **Is 03:10 the right hour for the snapshot job?** It is offset from the hourly
+  sync at :00 for the same reason the price fetch sits at :05 — two cores. It is
+  also outside 02:00–02:59, which does not exist on the spring-forward morning.
+  Worth knowing: `BACKUP_CRON` defaults to `30 2 * * *`, which **is** inside that
+  hour, so the nightly dump can be skipped one night a year in a DST zone. Not
+  introduced here, and not fixed here.
+- **Should a snapshot be taken before or after the nightly dump?** It currently
+  lands after, so a restore from that night's dump is always missing the most
+  recent day. Harmless — the gap-filler rebuilds it — but it means the dump is
+  never quite a complete picture of what the app had shown.

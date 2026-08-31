@@ -23,6 +23,10 @@ let cookie: string;
 const OWNER = { username: 'owner', password: 'correct-horse-battery' };
 
 // $100,000.00 a Bitcoin. Round, so the arithmetic below can be read.
+
+/** The household's zone: it decides which day a price is filed under. */
+const ZONE = 'America/Chicago';
+
 const PRICE_CENTS = 10_000_000n;
 
 beforeAll(async () => {
@@ -87,7 +91,11 @@ describe('a Bitcoin holding', () => {
   });
 
   it('contributes its real worth to the identity when it is in the budget', async () => {
-    await recordSpotPrice(prisma, { priceCents: PRICE_CENTS, source: 'coingecko' }, new Date());
+    await recordSpotPrice(
+      prisma,
+      { priceCents: PRICE_CENTS, source: 'coingecko', timeZone: ZONE },
+      new Date(),
+    );
     // 0.5 BTC at $100,000.00 is $50,000.00.
     await addHolding({ name: 'Hardware wallet', sats: '50000000', inBudget: true });
 
@@ -97,7 +105,11 @@ describe('a Bitcoin holding', () => {
   });
 
   it('contributes nothing to the identity when it is net worth only', async () => {
-    await recordSpotPrice(prisma, { priceCents: PRICE_CENTS, source: 'coingecko' }, new Date());
+    await recordSpotPrice(
+      prisma,
+      { priceCents: PRICE_CENTS, source: 'coingecko', timeZone: ZONE },
+      new Date(),
+    );
     await addHolding({ name: 'Hardware wallet', sats: '50000000' });
 
     // Not a rounding question — the account is not part of the budget at all.
@@ -105,7 +117,11 @@ describe('a Bitcoin holding', () => {
   });
 
   it('is revalued the moment its quantity changes, not at the next daily pass', async () => {
-    await recordSpotPrice(prisma, { priceCents: PRICE_CENTS, source: 'coingecko' }, new Date());
+    await recordSpotPrice(
+      prisma,
+      { priceCents: PRICE_CENTS, source: 'coingecko', timeZone: ZONE },
+      new Date(),
+    );
     const id = await addHolding({ name: 'Hardware wallet', sats: '50000000', inBudget: true });
 
     const response = await app.inject({
@@ -121,7 +137,11 @@ describe('a Bitcoin holding', () => {
   });
 
   it('gives up its budget figure when it leaves the budget', async () => {
-    await recordSpotPrice(prisma, { priceCents: PRICE_CENTS, source: 'coingecko' }, new Date());
+    await recordSpotPrice(
+      prisma,
+      { priceCents: PRICE_CENTS, source: 'coingecko', timeZone: ZONE },
+      new Date(),
+    );
     const id = await addHolding({ name: 'Hardware wallet', sats: '50000000', inBudget: true });
 
     await app.inject({
@@ -144,14 +164,22 @@ describe('revaluation', () => {
     // Anchored to real time, because creating the holding stamps it with the
     // wall clock and the route has no seam for one.
     const base = new Date();
-    await recordSpotPrice(prisma, { priceCents: PRICE_CENTS, source: 'coingecko' }, base);
+    await recordSpotPrice(
+      prisma,
+      { priceCents: PRICE_CENTS, source: 'coingecko', timeZone: ZONE },
+      base,
+    );
     const id = await addHolding({ name: 'Hardware wallet', sats: '50000000', inBudget: true });
     expect((await prisma.account.findUniqueOrThrow({ where: { id } })).balanceCents).toBe(
       5_000_000n,
     );
 
     // The market doubles. The banner is a reading of spending, so it does not.
-    await recordSpotPrice(prisma, { priceCents: 20_000_000n, source: 'coingecko' }, base);
+    await recordSpotPrice(
+      prisma,
+      { priceCents: 20_000_000n, source: 'coingecko', timeZone: ZONE },
+      base,
+    );
     const anHourLater = new Date(base.getTime() + 60 * 60 * 1000);
     expect((await revalueBitcoinHoldings(prisma, {}, anHourLater)).revalued).toBe(0);
     expect((await prisma.account.findUniqueOrThrow({ where: { id } })).balanceCents).toBe(
@@ -167,7 +195,11 @@ describe('revaluation', () => {
   });
 
   it('leaves a net-worth-only holding alone', async () => {
-    await recordSpotPrice(prisma, { priceCents: PRICE_CENTS, source: 'coingecko' }, new Date());
+    await recordSpotPrice(
+      prisma,
+      { priceCents: PRICE_CENTS, source: 'coingecko', timeZone: ZONE },
+      new Date(),
+    );
     const id = await addHolding({ name: 'Hardware wallet', sats: '50000000' });
 
     // Nothing sums `balance_cents` for these — the chart and the composition

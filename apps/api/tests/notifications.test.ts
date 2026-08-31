@@ -33,6 +33,9 @@ let cookie: string;
 const OWNER = { username: 'owner', password: 'correct-horse-battery' };
 const NOW = new Date('2026-08-09T12:00:00Z');
 
+/** The household's zone: it decides whether the Bitcoin price is today's. */
+const ZONE = 'America/Chicago';
+
 beforeAll(async () => {
   app = await buildApp(
     loadConfig({
@@ -61,7 +64,7 @@ beforeEach(async () => {
 });
 
 const kinds = async (now = NOW): Promise<string[]> =>
-  (await buildNotifications(prisma, now)).map((notification) => notification.kind);
+  (await buildNotifications(prisma, ZONE, now)).map((notification) => notification.kind);
 
 describe('a quiet system', () => {
   it('raises nothing at all', async () => {
@@ -82,7 +85,7 @@ describe('a failing sync', () => {
       },
     });
 
-    const notifications = await buildNotifications(prisma, NOW);
+    const notifications = await buildNotifications(prisma, ZONE, NOW);
     expect(notifications[0]?.kind).toBe('sync_failing');
     expect(notifications[0]?.severity).toBe('danger');
     // How long it has been broken is the part that decides whether to act.
@@ -125,7 +128,7 @@ describe('a sync that succeeded but complained', () => {
       },
     });
 
-    const notifications = await buildNotifications(prisma, NOW);
+    const notifications = await buildNotifications(prisma, ZONE, NOW);
     expect(notifications[0]?.kind).toBe('sync_warning');
     expect(notifications[0]?.severity).toBe('warning');
     // The feed's own words: it names the bank, and paraphrasing would lose that.
@@ -144,7 +147,7 @@ describe('a sync that succeeded but complained', () => {
       },
     });
 
-    expect((await buildNotifications(prisma, NOW))[0]?.message).toBe(
+    expect((await buildNotifications(prisma, ZONE, NOW))[0]?.message).toBe(
       'Frontier Bank: auth required · Plains Commerce: temporarily unavailable',
     );
   });
@@ -196,7 +199,7 @@ describe('stale balances', () => {
       balanceAsOf: new Date('2026-06-01T00:00:00Z'),
     });
 
-    const notifications = await buildNotifications(prisma, NOW);
+    const notifications = await buildNotifications(prisma, ZONE, NOW);
     expect(notifications[0]?.kind).toBe('stale_balances');
     expect(notifications[0]?.message).toContain('Physical Cash');
   });
@@ -225,7 +228,7 @@ describe('stale balances', () => {
       });
     }
 
-    const notifications = await buildNotifications(prisma, NOW);
+    const notifications = await buildNotifications(prisma, ZONE, NOW);
     expect(notifications[0]?.message).toContain('2 more');
   });
 });
@@ -239,7 +242,7 @@ describe('the uncategorized backlog', () => {
       postedAt: new Date('2026-07-30T00:00:00Z'),
     });
 
-    const notifications = await buildNotifications(prisma, NOW);
+    const notifications = await buildNotifications(prisma, ZONE, NOW);
     const backlog = notifications.find((n) => n.kind === 'uncategorized_backlog');
     expect(backlog?.severity).toBe('info');
     expect(backlog?.message).toContain('10 days ago');
@@ -267,18 +270,22 @@ describe('a stale Bitcoin price', () => {
   it('is flagged, since holdings are still valued at it', async () => {
     await recordSpotPrice(
       prisma,
-      { priceCents: 10_000_000n, source: 'coingecko' },
+      { priceCents: 10_000_000n, source: 'coingecko', timeZone: ZONE },
       new Date('2026-08-07T12:00:00Z'),
     );
 
-    const notifications = await buildNotifications(prisma, NOW);
+    const notifications = await buildNotifications(prisma, ZONE, NOW);
     const stale = notifications.find((n) => n.kind === 'bitcoin_price_stale');
     expect(stale?.severity).toBe('warning');
     expect(stale?.message).toContain('2 days ago');
   });
 
   it('says nothing when the price is today', async () => {
-    await recordSpotPrice(prisma, { priceCents: 10_000_000n, source: 'coingecko' }, NOW);
+    await recordSpotPrice(
+      prisma,
+      { priceCents: 10_000_000n, source: 'coingecko', timeZone: ZONE },
+      NOW,
+    );
     expect(await kinds()).not.toContain('bitcoin_price_stale');
   });
 });
@@ -331,7 +338,9 @@ describe('the backup', () => {
   it('says so, in the strongest terms, when none has ever completed', async () => {
     await deploymentIsOldEnough();
     const directory = await backupDir();
-    const notifications = await buildNotifications(prisma, new Date(), { backupDir: directory });
+    const notifications = await buildNotifications(prisma, ZONE, new Date(), {
+      backupDir: directory,
+    });
 
     const backup = notifications.find((one) => one.kind === 'backup_failing');
     expect(backup?.severity).toBe('danger');
@@ -342,7 +351,9 @@ describe('the backup', () => {
     const directory = await backupDir();
     await writeDump(directory, 3);
 
-    const notifications = await buildNotifications(prisma, new Date(), { backupDir: directory });
+    const notifications = await buildNotifications(prisma, ZONE, new Date(), {
+      backupDir: directory,
+    });
     expect(notifications.find((one) => one.kind === 'backup_failing')).toBeUndefined();
   });
 
@@ -351,7 +362,9 @@ describe('the backup', () => {
     const directory = await backupDir();
     await writeDump(directory, 60);
 
-    const notifications = await buildNotifications(prisma, new Date(), { backupDir: directory });
+    const notifications = await buildNotifications(prisma, ZONE, new Date(), {
+      backupDir: directory,
+    });
     expect(notifications.find((one) => one.kind === 'backup_failing')?.message).toContain(
       '2 days old',
     );
@@ -370,7 +383,9 @@ describe('the backup', () => {
     const directory = await backupDir();
     await writeFile(join(directory, 'delegate-20260824-000000.dump'), 'x'.repeat(2048));
 
-    const notifications = await buildNotifications(prisma, new Date(), { backupDir: directory });
+    const notifications = await buildNotifications(prisma, ZONE, new Date(), {
+      backupDir: directory,
+    });
     expect(notifications.find((one) => one.kind === 'backup_failing')).toBeDefined();
   });
 
@@ -380,12 +395,14 @@ describe('the backup', () => {
    */
   it('stays quiet on an install too young for a dump to have been due', async () => {
     const directory = await backupDir();
-    const notifications = await buildNotifications(prisma, new Date(), { backupDir: directory });
+    const notifications = await buildNotifications(prisma, ZONE, new Date(), {
+      backupDir: directory,
+    });
     expect(notifications.find((one) => one.kind === 'backup_failing')).toBeUndefined();
   });
 
   it('does not run at all when no directory is configured', async () => {
-    const notifications = await buildNotifications(prisma, new Date());
+    const notifications = await buildNotifications(prisma, ZONE, new Date());
     expect(notifications.find((one) => one.kind === 'backup_failing')).toBeUndefined();
   });
 });

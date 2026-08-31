@@ -1,3 +1,4 @@
+import { isKnownTimeZone } from '@budget/shared';
 import { config as loadDotenv } from 'dotenv';
 import { z } from 'zod';
 
@@ -17,30 +18,13 @@ const booleanFromString = z
   .describe('"true" or "false"');
 
 /**
- * The IANA zones this runtime knows, plus UTC.
+ * Zone validation lives in `@budget/shared` now.
  *
- * `Intl.supportedValuesOf` lists the canonical region zones and deliberately
- * omits `UTC`, so it is added back — it is the default here and has to be
- * spellable.
+ * It moved there when the zone became a setting (ADR 036): the Settings picker
+ * has to offer exactly the list the server will validate against, and two lists
+ * that could disagree is how a dropdown ends up offering a value the server
+ * refuses.
  */
-const KNOWN_TIME_ZONES = new Set(['UTC', ...Intl.supportedValuesOf('timeZone')]);
-
-/**
- * Whether a string names a real IANA zone.
- *
- * Stricter than `new Intl.DateTimeFormat({ timeZone })`, which also accepts
- * abbreviations like `CST` and fixed offsets like `-05:00`. Both are refused
- * here, because neither carries daylight saving rules: a job set for half past
- * two in the morning against an offset runs at half past one for half the year,
- * and `CST` names two different zones on two different continents.
- *
- * A typo would otherwise be silent in the worst way available — an unknown zone
- * falls back to the process default, so the job still runs, just never at the
- * hour the operator set.
- */
-function isKnownTimeZone(zone: string): boolean {
-  return KNOWN_TIME_ZONES.has(zone);
-}
 
 const environmentSchema = z
   .object({
@@ -161,6 +145,19 @@ const environmentSchema = z
     // polling sits far inside what either asks for. Offset from the hour so it
     // does not contend with the sync job on a two-core machine.
     BITCOIN_PRICE_CRON: z.string().default('5 * * * *'),
+
+    /**
+     * The nightly snapshot of the whole financial picture (ADR 035).
+     *
+     * 03:10, for three reasons. It is off the hour, so it does not contend with
+     * the hourly sync on a two-core machine — the same reason the price fetch
+     * sits at :05. It is *after* that price fetch, which settles the previous
+     * day's Bitcoin close on its way through, so the snapshot has a real close
+     * to value a holding at rather than a carried one. And it is outside
+     * 02:00–02:59, an hour that does not exist locally on the spring-forward
+     * morning, so the job is never skipped for the night.
+     */
+    SNAPSHOT_CRON: z.string().default('10 3 * * *'),
     BITCOIN_PRICE_PRIMARY: z.enum(['coingecko', 'coinbase']).default('coingecko'),
     BITCOIN_PRICE_FALLBACK: z.enum(['coingecko', 'coinbase']).default('coinbase'),
 

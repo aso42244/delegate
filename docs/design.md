@@ -452,11 +452,45 @@ with nothing to suggest it would, is a surprise rather than a feature.
 
 Each tile also says how it is drawn, where there is a real choice — a ranked
 breakdown reads as bars or as a donut, and a series reads as a line, an area or
-columns. **Bitcoin over time** is one of those series: the holding valued at each
-day's price. Quantity history is not recorded, so the tile says plainly that the
-line moves with the price rather than with buying or selling. Some tiles offer one shape and show no switch at all: a donut of a
-single number says nothing, and an option that made a tile worse would not be a
-choice worth offering.
+columns. Some tiles offer one shape and show no switch at all: a donut of a
+single number says nothing, a stacked area is what "what is it made of" looks
+like, and an option that made a tile worse would not be a choice worth offering.
+
+**Bitcoin over time** used to carry a note saying quantity history was not
+recorded and the line moved with the price rather than with buying or selling.
+That stopped being true at [ADR 023](decisions/023-bitcoin-holdings-are-a-dated-ledger.md),
+which made holdings a dated ledger, and the note is gone. The line now moves
+with both.
+
+## Insights, drawn from snapshots
+
+Since [ADR 035](decisions/035-the-financial-picture-is-snapshotted-nightly.md)
+the time-series tiles read a nightly record rather than a reconstruction, which
+gives them three things to say that the older ones could not.
+
+**Where a figure came from.** A stretch drawn from estimated days is dashed and
+muted with the reason on hover; observed, reconstructed and carried days are all
+exact and draw normally. A bucket takes the weakest provenance in it, because a
+line through a week is no better than its worst day.
+
+**That it ends on now.** Snapshots are labelled for the previous day, so every
+chart appends a hollow marker for current state on a dashed final segment. It is
+kept visually apart from the stored points because it is not one.
+
+**That it has nothing yet.** History starts at the first night. Every tile has a
+one-sentence empty state — `No history yet — the first night records one.` — and
+a one-day tile says that instead of drawing an axis through a dot.
+
+The multi-series palette above is used only where a chart genuinely has several
+series and none carries a grouping colour of its own. One line is the accent,
+which is most tiles most of the time, and is how §11's "must not be in your
+face" holds without an allow-list.
+
+**Delegations drill down three levels** — every grouping, one grouping's
+delegations, one delegation — with a breadcrumb back up. The level survives a
+change of the page range, so widening from 30 days to a year widens the view you
+are looking at rather than returning you to the top. Lines in no grouping are a
+level like any other and open the same way.
 
 ## Grouping colour
 

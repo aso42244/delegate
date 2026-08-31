@@ -1,6 +1,9 @@
 import { buildApp } from './app.js';
 import { getConfig } from './config.js';
 import { prisma } from './db/client.js';
+import { getBudgetSettings, resolveScheduleTimezone } from './domain/settings.js';
+import { fillGaps } from './domain/snapshot-fill.js';
+import { snapshotDateFor } from './domain/snapshots.js';
 import { startScheduler } from './scheduler.js';
 
 /**
@@ -56,7 +59,43 @@ if (config.TLS_CERT_PATH) {
 
 // Started after the listener is up, so a slow first sync cannot delay the app
 // becoming reachable and failing its container health check.
-const scheduler = startScheduler(config, app.log);
+const scheduler = await startScheduler(config, app.log);
+
+// The zone the schedules run in is a setting now, and node-cron fixes a task's
+// zone when the task is created — so a save has to rebuild them. Without this
+// the setting would appear to work and take effect only on the next restart.
+app.schedules.setReloader(() => scheduler.reload());
+
+/**
+ * Repair any snapshot days missed while this was not running.
+ *
+ * A restart is the commonest reason for a gap — the NAS reboots, a deploy
+ * replaces the container, the power goes — and waiting until 03:10 to notice
+ * would leave the charts holed for most of a day.
+ *
+ * Deliberately not awaited. The listener is already up and this can take a
+ * moment over a long outage; blocking boot on it would risk the container's own
+ * health check, and the nightly run repairs the same gap anyway if this fails.
+ */
+void (async () => {
+  try {
+    const timezone = await currentScheduleTimezone();
+    const yesterday = snapshotDateFor(new Date(), timezone);
+    const filled = await fillGaps(prisma, yesterday, timezone, app.log);
+    if (filled.filled > 0) {
+      app.log.info({ days: filled.filled }, 'snapshot days missed during downtime were rebuilt');
+    }
+  } catch (error) {
+    // Never fatal: a budget that will not start because a chart has a hole in it
+    // is a far worse outcome than the hole.
+    app.log.error({ err: error }, 'could not rebuild missed snapshot days at startup');
+  }
+})();
+
+async function currentScheduleTimezone(): Promise<string> {
+  const settings = await getBudgetSettings(prisma);
+  return resolveScheduleTimezone(settings, config.SCHEDULE_TIMEZONE);
+}
 
 let shuttingDown = false;
 

@@ -26,6 +26,16 @@ import { makeAccount, makeDelegation, makeTransaction, resetDatabase } from './h
 
 const NOW = new Date('2026-08-09T12:00:00Z');
 
+/**
+ * The household's zone, in every test rather than only the ones about zones.
+ *
+ * A real deployment is never in UTC, so exercising the UTC path everywhere would
+ * be testing a configuration nobody runs. The figures below are unchanged by it:
+ * they were written mid-month and mid-day, which is the same month either way.
+ * The tests that turn on the boundary say so.
+ */
+const ZONE = 'America/Chicago';
+
 beforeEach(async () => {
   await resetDatabase();
 });
@@ -52,7 +62,7 @@ describe('the monthly window', () => {
   it('is twelve buckets ending with the month we are in', async () => {
     await utilityWithSpend([]);
 
-    const [water] = await buildUtilitySummaries(prisma, BIWEEKLY, NOW);
+    const [water] = await buildUtilitySummaries(prisma, BIWEEKLY, ZONE, NOW);
     expect(water?.months).toHaveLength(12);
     expect(water?.months[11]?.month.toISOString()).toBe('2026-08-01T00:00:00.000Z');
     expect(water?.months[0]?.month.toISOString()).toBe('2025-09-01T00:00:00.000Z');
@@ -61,7 +71,7 @@ describe('the monthly window', () => {
   it('marks the month in progress as incomplete', async () => {
     await utilityWithSpend([]);
 
-    const [water] = await buildUtilitySummaries(prisma, BIWEEKLY, NOW);
+    const [water] = await buildUtilitySummaries(prisma, BIWEEKLY, ZONE, NOW);
     expect(water?.months[11]?.complete).toBe(false);
     expect(water?.months[10]?.complete).toBe(true);
   });
@@ -81,7 +91,7 @@ describe('the average', () => {
       { month: '2026-08-02T00:00:00Z', cents: 1_000n },
     ]);
 
-    const [water] = await buildUtilitySummaries(prisma, BIWEEKLY, NOW);
+    const [water] = await buildUtilitySummaries(prisma, BIWEEKLY, ZONE, NOW);
     // $240 across the eleven complete months, not $250 across twelve.
     expect(water?.averageCents).toBe(24_000n / 11n);
   });
@@ -91,7 +101,7 @@ describe('the average', () => {
     const waterId = await utilityWithSpend([{ month: '2026-07-15T00:00:00Z', cents: 11_000n }]);
     await adjustDelegationByDelta(prisma, { delegationId: waterId, deltaCents: -500_000n });
 
-    const [water] = await buildUtilitySummaries(prisma, BIWEEKLY, NOW);
+    const [water] = await buildUtilitySummaries(prisma, BIWEEKLY, ZONE, NOW);
     // The adjustment is enormous; the average is unmoved by it.
     expect(water?.averageCents).toBe(11_000n / 11n);
   });
@@ -114,7 +124,7 @@ describe('the average', () => {
     });
     await categorizeTransaction(prisma, refund.id, water.id);
 
-    const [summary] = await buildUtilitySummaries(prisma, BIWEEKLY, NOW);
+    const [summary] = await buildUtilitySummaries(prisma, BIWEEKLY, ZONE, NOW);
     const july = summary?.months.find(
       (month) => month.month.toISOString() === '2026-07-01T00:00:00.000Z',
     );
@@ -124,9 +134,81 @@ describe('the average', () => {
   it('is zero, not an error, with no history at all', async () => {
     await utilityWithSpend([]);
 
-    const [water] = await buildUtilitySummaries(prisma, BIWEEKLY, NOW);
+    const [water] = await buildUtilitySummaries(prisma, BIWEEKLY, ZONE, NOW);
     expect(water?.averageCents).toBe(0n);
     expect(water?.suggestedPerCycleCents).toBe(0n);
+  });
+});
+
+/**
+ * Which month a bill landed in — the bug ADR 037 fixes.
+ *
+ * A payment made in the evening on the last of the month is already the first of
+ * the next in UTC. Bucketed that way it left the month it was paid in short and
+ * the following month long, and the suggestion drawn from the average was wrong
+ * in both directions. Every assertion here fails against the UTC reading.
+ */
+describe('the month a spend belongs to', () => {
+  /** 20:00 on the 31st of July, CDT. The 1st of August in UTC. */
+  const LATE_ON_THE_LAST = '2026-08-01T01:00:00Z';
+
+  it('counts a late-evening bill in the month it was paid', async () => {
+    await utilityWithSpend([{ month: LATE_ON_THE_LAST, cents: 12_000n }]);
+
+    const [water] = await buildUtilitySummaries(prisma, BIWEEKLY, ZONE, NOW);
+    const monthOf = (iso: string): bigint | undefined =>
+      water?.months.find((month) => month.month.toISOString() === iso)?.spendCents;
+
+    expect(monthOf('2026-07-01T00:00:00.000Z')).toBe(12_000n);
+    expect(monthOf('2026-08-01T00:00:00.000Z')).toBe(0n);
+  });
+
+  it('is the other way round when the household really is in UTC', async () => {
+    await utilityWithSpend([{ month: LATE_ON_THE_LAST, cents: 12_000n }]);
+
+    const [water] = await buildUtilitySummaries(prisma, BIWEEKLY, 'UTC', NOW);
+    const monthOf = (iso: string): bigint | undefined =>
+      water?.months.find((month) => month.month.toISOString() === iso)?.spendCents;
+
+    expect(monthOf('2026-07-01T00:00:00.000Z')).toBe(0n);
+    expect(monthOf('2026-08-01T00:00:00.000Z')).toBe(12_000n);
+  });
+
+  /**
+   * The same boundary at the far edge of the window. A spend just before the
+   * twelve months begin must stay outside it, and one just after must be
+   * counted — the window is filtered on a timestamp, so getting this wrong
+   * drops a bill silently rather than misfiling it.
+   */
+  it('cuts the twelve-month window at local midnight too', async () => {
+    await utilityWithSpend([
+      // 23:00 on the 31st of August 2025, CDT — an hour before the window.
+      { month: '2025-09-01T04:00:00Z', cents: 5_000n },
+      // 00:30 on the 1st of September 2025, CDT — half an hour inside it.
+      { month: '2025-09-01T05:30:00Z', cents: 7_000n },
+    ]);
+
+    const [water] = await buildUtilitySummaries(prisma, BIWEEKLY, ZONE, NOW);
+    const september = water?.months.find(
+      (month) => month.month.toISOString() === '2025-09-01T00:00:00.000Z',
+    );
+    expect(september?.spendCents).toBe(7_000n);
+  });
+
+  /**
+   * The window itself moves with the zone. Evening on the 31st of August is
+   * already September in UTC, so a UTC reading would show a window ending in
+   * September — a month that has not happened yet here.
+   */
+  it('ends with the month the household is actually in', async () => {
+    await utilityWithSpend([]);
+    const evening = new Date('2026-09-01T01:00:00Z');
+
+    const [here] = await buildUtilitySummaries(prisma, BIWEEKLY, ZONE, evening);
+    expect(here?.months[11]?.month.toISOString()).toBe('2026-08-01T00:00:00.000Z');
+
+    const [inUtc] = await buildUtilitySummaries(prisma, BIWEEKLY, 'UTC', evening);
+    expect(inUtc?.months[11]?.month.toISOString()).toBe('2026-09-01T00:00:00.000Z');
   });
 });
 
@@ -140,7 +222,7 @@ describe('the suggestion', () => {
       })),
     );
 
-    const [water] = await buildUtilitySummaries(prisma, BIWEEKLY, NOW);
+    const [water] = await buildUtilitySummaries(prisma, BIWEEKLY, ZONE, NOW);
     expect(water?.averageCents).toBe(13_000n);
     // 13000 × 12 ÷ 26 = 6000.
     expect(water?.suggestedPerCycleCents).toBe(6_000n);
@@ -149,7 +231,7 @@ describe('the suggestion', () => {
   it('never writes the amount to delegate', async () => {
     const waterId = await utilityWithSpend([{ month: '2026-07-15T00:00:00Z', cents: 13_000n }]);
 
-    await buildUtilitySummaries(prisma, BIWEEKLY, NOW);
+    await buildUtilitySummaries(prisma, BIWEEKLY, ZONE, NOW);
 
     const delegation = await prisma.delegation.findUniqueOrThrow({ where: { id: waterId } });
     // Suggest only — §9.3 is explicit.
@@ -162,7 +244,7 @@ describe('which delegations appear', () => {
     await makeDelegation({ name: 'Water', isUtility: true });
     await makeDelegation({ name: 'Grocery', isUtility: false });
 
-    const summaries = await buildUtilitySummaries(prisma, BIWEEKLY, NOW);
+    const summaries = await buildUtilitySummaries(prisma, BIWEEKLY, ZONE, NOW);
     expect(summaries.map((summary) => summary.name)).toEqual(['Water']);
   });
 
@@ -174,7 +256,7 @@ describe('which delegations appear', () => {
       data: { archivedAt: new Date('2026-07-01T00:00:00Z') },
     });
 
-    const summaries = await buildUtilitySummaries(prisma, BIWEEKLY, NOW);
+    const summaries = await buildUtilitySummaries(prisma, BIWEEKLY, ZONE, NOW);
     expect(summaries[0]?.name).toBe('Water (archived)');
   });
 });
@@ -209,7 +291,7 @@ describe('pay cadence', () => {
     const settings = await prisma.budgetSettings.findUniqueOrThrow({ where: { id: 1 } });
     expect(settings.payCadence).toBe('biweekly');
 
-    const view = await buildUtilities(prisma, NOW);
+    const view = await buildUtilities(prisma, ZONE, NOW);
     expect(view.cyclesPerYear).toBe(26);
     // The figure this page has always shown: 13000 × 12 ÷ 26.
     expect(view.summaries[0]?.suggestedPerCycleCents).toBe(6_000n);
@@ -224,7 +306,7 @@ describe('pay cadence', () => {
     await elevenMonthsAt130();
     await setCadence(cadence as PayCadence);
 
-    const view = await buildUtilities(prisma, NOW);
+    const view = await buildUtilities(prisma, ZONE, NOW);
     expect(view.cyclesPerYear).toBe(cyclesPerYear);
     expect(view.summaries[0]?.suggestedPerCycleCents).toBe(expected);
   });
@@ -237,9 +319,9 @@ describe('pay cadence', () => {
   it('changes the suggestion and nothing else', async () => {
     await elevenMonthsAt130();
 
-    const before = await buildUtilities(prisma, NOW);
+    const before = await buildUtilities(prisma, ZONE, NOW);
     await setCadence('monthly');
-    const after = await buildUtilities(prisma, NOW);
+    const after = await buildUtilities(prisma, ZONE, NOW);
 
     expect(after.summaries[0]?.averageCents).toBe(before.summaries[0]?.averageCents);
     expect(after.summaries[0]?.months).toEqual(before.summaries[0]?.months);
@@ -264,7 +346,7 @@ describe('pay cadence', () => {
     });
 
     await setCadence('weekly');
-    await buildUtilities(prisma, NOW);
+    await buildUtilities(prisma, ZONE, NOW);
 
     const after = await prisma.delegation.findMany({
       select: { id: true, amountToDelegateCents: true },

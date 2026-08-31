@@ -1,4 +1,5 @@
 import { bitcoinValueCents, type Cents } from '@budget/shared';
+import { asDayKey, localDayKey } from './calendar.js';
 import type { Db } from '../db/client.js';
 import { ValidationError } from './errors.js';
 
@@ -110,9 +111,15 @@ export function providerByName(name: string): PriceProvider {
   }
 }
 
-/** Midnight UTC for a moment — the date a price is filed under. */
-export function priceDateOf(now: Date): Date {
-  return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+/**
+ * The date a price is filed under: the household's day, not UTC's.
+ *
+ * The fetch runs hourly, so an evening reading is already tomorrow in UTC and
+ * would be filed a day ahead — leaving today without a close and tomorrow with
+ * one recorded before it happened. See ADR 037.
+ */
+export function priceDateOf(now: Date, timeZone: string): Date {
+  return localDayKey(now, timeZone);
 }
 
 export interface RecordPriceResult {
@@ -136,14 +143,14 @@ export interface RecordPriceResult {
  */
 export async function recordSpotPrice(
   db: Db,
-  input: { readonly priceCents: Cents; readonly source: string },
+  input: { readonly priceCents: Cents; readonly source: string; readonly timeZone: string },
   now: Date = new Date(),
 ): Promise<RecordPriceResult> {
   if (input.priceCents <= 0n) {
     throw new ValidationError('bitcoin_price_not_positive', 'A Bitcoin price must be positive.');
   }
 
-  const priceDate = priceDateOf(now);
+  const priceDate = priceDateOf(now, input.timeZone);
 
   await db.bitcoinPrice.upsert({
     where: { priceDate_isClose: { priceDate, isClose: false } },
@@ -189,6 +196,7 @@ export async function recordSpotPrice(
 export async function fetchAndRecordPrice(
   db: Db,
   providers: readonly PriceProvider[],
+  timeZone: string,
   now: Date = new Date(),
 ): Promise<RecordPriceResult | null> {
   const failures: string[] = [];
@@ -196,7 +204,7 @@ export async function fetchAndRecordPrice(
   for (const provider of providers) {
     try {
       const priceCents = await provider.fetchSpotPriceCents();
-      return await recordSpotPrice(db, { priceCents, source: provider.name }, now);
+      return await recordSpotPrice(db, { priceCents, source: provider.name, timeZone }, now);
     } catch (error) {
       failures.push(`${provider.name}: ${error instanceof Error ? error.message : 'failed'}`);
     }
@@ -223,22 +231,41 @@ export interface PriceReading {
   readonly stale: boolean;
 }
 
-/** The most recent price of any kind. Null before the first successful fetch. */
-export async function latestPrice(db: Db, now: Date = new Date()): Promise<PriceReading | null> {
-  const row = await db.bitcoinPrice.findFirst({
+/**
+ * The most recent price of any kind, with no opinion about whether it is
+ * current. Null before the first successful fetch.
+ *
+ * Separate from `latestPrice` because staleness is a question about *today*, and
+ * today needs a zone. A caller that only wants to value a quantity — a
+ * revaluation, the composition tile, the account list — would otherwise have to
+ * carry a zone down through several layers to compute a flag it throws away, and
+ * a parameter threaded for nothing is a parameter that eventually gets threaded
+ * wrongly.
+ */
+export async function newestPrice(db: Db): Promise<Omit<PriceReading, 'stale'> | null> {
+  return db.bitcoinPrice.findFirst({
     orderBy: [{ priceDate: 'desc' }, { isClose: 'asc' }],
     select: { priceCents: true, priceDate: true, source: true, fetchedAt: true },
   });
+}
+
+/**
+ * The most recent price, and whether anybody has refreshed it today.
+ *
+ * "Today" is the household's day, not UTC's: an evening reading is already
+ * tomorrow in UTC, and comparing against that would flag a price fetched
+ * minutes ago as a day old. See ADR 037.
+ */
+export async function latestPrice(
+  db: Db,
+  timeZone: string,
+  now: Date = new Date(),
+): Promise<PriceReading | null> {
+  const row = await newestPrice(db);
   if (!row) return null;
 
-  return {
-    priceCents: row.priceCents,
-    priceDate: row.priceDate,
-    source: row.source,
-    fetchedAt: row.fetchedAt,
-    // A price from an earlier day is a price nobody has refreshed today.
-    stale: row.priceDate.getTime() < priceDateOf(now).getTime(),
-  };
+  // A price from an earlier day is a price nobody has refreshed today.
+  return { ...row, stale: row.priceDate.getTime() < priceDateOf(now, timeZone).getTime() };
 }
 
 /**
@@ -249,7 +276,9 @@ export async function latestPrice(db: Db, now: Date = new Date()): Promise<Price
  * whole table exists to prevent.
  */
 export async function priceOnDate(db: Db, date: Date): Promise<PriceReading | null> {
-  const priceDate = priceDateOf(date);
+  // A date key, not an instant: the caller has already decided which day this
+  // is, so normalising it needs no zone. See the note at the top of calendar.ts.
+  const priceDate = asDayKey(date);
 
   const exact = await db.bitcoinPrice.findFirst({
     where: { priceDate },
@@ -308,7 +337,10 @@ export async function revalueBitcoinHoldings(
   options: { readonly force?: boolean; readonly accountId?: string } = {},
   now: Date = new Date(),
 ): Promise<RevalueResult> {
-  const price = await latestPrice(db, now);
+  // `newestPrice`, not `latestPrice`: what a quantity is worth does not depend
+  // on whether the price is today's, and asking would drag a time zone through
+  // every caller that moves a holding.
+  const price = await newestPrice(db);
   // No price has ever been fetched. Leaving the previous figure in place is the
   // same rule the rest of this file follows: never a zero, never a blank.
   if (!price) return { revalued: 0 };

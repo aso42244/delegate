@@ -31,6 +31,13 @@ let cookie: string;
 
 const OWNER = { username: 'owner', password: 'correct-horse-battery' };
 
+/**
+ * The household's zone. Midday everywhere below, so the price date is the same
+ * calendar day here as it is in UTC — the zone-sensitive cases have their own
+ * tests rather than being smuggled into these.
+ */
+const ZONE = 'America/Chicago';
+
 const DAY_ONE = new Date('2026-08-01T12:00:00Z');
 const DAY_TWO = new Date('2026-08-02T12:00:00Z');
 const DAY_THREE = new Date('2026-08-03T12:00:00Z');
@@ -73,10 +80,14 @@ beforeEach(async () => {
 
 describe('recording a price', () => {
   it('keeps one intraday row per day, updated in place', async () => {
-    await recordSpotPrice(prisma, { priceCents: 10_000_000n, source: 'coingecko' }, DAY_ONE);
     await recordSpotPrice(
       prisma,
-      { priceCents: 10_500_000n, source: 'coingecko' },
+      { priceCents: 10_000_000n, source: 'coingecko', timeZone: ZONE },
+      DAY_ONE,
+    );
+    await recordSpotPrice(
+      prisma,
+      { priceCents: 10_500_000n, source: 'coingecko', timeZone: ZONE },
       new Date('2026-08-01T18:00:00Z'),
     );
 
@@ -87,8 +98,48 @@ describe('recording a price', () => {
 
   it('refuses a price that is not positive', async () => {
     await expect(
-      recordSpotPrice(prisma, { priceCents: 0n, source: 'coingecko' }, DAY_ONE),
+      recordSpotPrice(prisma, { priceCents: 0n, source: 'coingecko', timeZone: ZONE }, DAY_ONE),
     ).rejects.toThrow(/positive/);
+  });
+
+  /**
+   * The fetch runs hourly, so it runs in the evening too. Filed in UTC, the
+   * eight-o'clock reading is tomorrow's row — which leaves today without a
+   * close and settles tomorrow's before tomorrow has happened. See ADR 037.
+   */
+  it('files an evening fetch under the day it is here', async () => {
+    const evening = new Date('2026-08-02T01:00:00Z'); // 20:00 on the 1st, CDT
+
+    const here = await recordSpotPrice(
+      prisma,
+      { priceCents: 10_000_000n, source: 'coingecko', timeZone: ZONE },
+      evening,
+    );
+    expect(here.priceDate.toISOString()).toBe('2026-08-01T00:00:00.000Z');
+
+    await resetDatabase();
+    const inUtc = await recordSpotPrice(
+      prisma,
+      { priceCents: 10_000_000n, source: 'coingecko', timeZone: 'UTC' },
+      evening,
+    );
+    expect(inUtc.priceDate.toISOString()).toBe('2026-08-02T00:00:00.000Z');
+  });
+
+  /**
+   * The flip side: a price fetched this evening is not stale. Compared against
+   * the UTC day it would already be "from yesterday", and the holdings page
+   * would carry a staleness warning every night from eight o'clock.
+   */
+  it('does not call an evening price stale', async () => {
+    const evening = new Date('2026-08-02T01:00:00Z');
+    await recordSpotPrice(
+      prisma,
+      { priceCents: 10_000_000n, source: 'coingecko', timeZone: ZONE },
+      evening,
+    );
+
+    expect((await latestPrice(prisma, ZONE, evening))?.stale).toBe(false);
   });
 
   /**
@@ -97,10 +148,14 @@ describe('recording a price', () => {
    * permanent hole in the chart.
    */
   it('settles the previous day close on the next day fetch', async () => {
-    await recordSpotPrice(prisma, { priceCents: 10_000_000n, source: 'coingecko' }, DAY_ONE);
+    await recordSpotPrice(
+      prisma,
+      { priceCents: 10_000_000n, source: 'coingecko', timeZone: ZONE },
+      DAY_ONE,
+    );
     const result = await recordSpotPrice(
       prisma,
-      { priceCents: 11_000_000n, source: 'coingecko' },
+      { priceCents: 11_000_000n, source: 'coingecko', timeZone: ZONE },
       DAY_TWO,
     );
 
@@ -111,11 +166,19 @@ describe('recording a price', () => {
   });
 
   it('does not re-settle a close it already wrote', async () => {
-    await recordSpotPrice(prisma, { priceCents: 10_000_000n, source: 'coingecko' }, DAY_ONE);
-    await recordSpotPrice(prisma, { priceCents: 11_000_000n, source: 'coingecko' }, DAY_TWO);
+    await recordSpotPrice(
+      prisma,
+      { priceCents: 10_000_000n, source: 'coingecko', timeZone: ZONE },
+      DAY_ONE,
+    );
+    await recordSpotPrice(
+      prisma,
+      { priceCents: 11_000_000n, source: 'coingecko', timeZone: ZONE },
+      DAY_TWO,
+    );
     const third = await recordSpotPrice(
       prisma,
-      { priceCents: 12_000_000n, source: 'coingecko' },
+      { priceCents: 12_000_000n, source: 'coingecko', timeZone: ZONE },
       DAY_THREE,
     );
 
@@ -133,6 +196,7 @@ describe('falling back between providers', () => {
         stubProvider('coingecko', new Error('502 from the primary')),
         stubProvider('coinbase', 10_250_000n),
       ],
+      ZONE,
       DAY_ONE,
     );
 
@@ -148,6 +212,7 @@ describe('falling back between providers', () => {
           stubProvider('coingecko', new Error('primary down')),
           stubProvider('coinbase', new Error('fallback down')),
         ],
+        ZONE,
         DAY_ONE,
       ),
     ).rejects.toThrow(/No Bitcoin price source answered/);
@@ -159,8 +224,16 @@ describe('falling back between providers', () => {
 describe('reading a price for a date', () => {
   /** The whole reason the close cache exists. */
   it('uses the price that applied on that date, not the newest one', async () => {
-    await recordSpotPrice(prisma, { priceCents: 10_000_000n, source: 'coingecko' }, DAY_ONE);
-    await recordSpotPrice(prisma, { priceCents: 20_000_000n, source: 'coingecko' }, DAY_TWO);
+    await recordSpotPrice(
+      prisma,
+      { priceCents: 10_000_000n, source: 'coingecko', timeZone: ZONE },
+      DAY_ONE,
+    );
+    await recordSpotPrice(
+      prisma,
+      { priceCents: 20_000_000n, source: 'coingecko', timeZone: ZONE },
+      DAY_TWO,
+    );
 
     const reading = await priceOnDate(prisma, DAY_ONE);
     expect(reading?.priceCents).toBe(10_000_000n);
@@ -168,8 +241,16 @@ describe('reading a price for a date', () => {
   });
 
   it('carries the previous close forward for a day with no price, and says so', async () => {
-    await recordSpotPrice(prisma, { priceCents: 10_000_000n, source: 'coingecko' }, DAY_ONE);
-    await recordSpotPrice(prisma, { priceCents: 20_000_000n, source: 'coingecko' }, DAY_THREE);
+    await recordSpotPrice(
+      prisma,
+      { priceCents: 10_000_000n, source: 'coingecko', timeZone: ZONE },
+      DAY_ONE,
+    );
+    await recordSpotPrice(
+      prisma,
+      { priceCents: 20_000_000n, source: 'coingecko', timeZone: ZONE },
+      DAY_THREE,
+    );
 
     // Nothing was recorded on day two — the application was not running.
     const reading = await priceOnDate(prisma, DAY_TWO);
@@ -179,14 +260,18 @@ describe('reading a price for a date', () => {
 
   it('is null before any price has ever been fetched', async () => {
     expect(await priceOnDate(prisma, DAY_ONE)).toBeNull();
-    expect(await latestPrice(prisma)).toBeNull();
+    expect(await latestPrice(prisma, ZONE)).toBeNull();
   });
 
   it('marks the latest price stale once the day has moved on', async () => {
-    await recordSpotPrice(prisma, { priceCents: 10_000_000n, source: 'coingecko' }, DAY_ONE);
+    await recordSpotPrice(
+      prisma,
+      { priceCents: 10_000_000n, source: 'coingecko', timeZone: ZONE },
+      DAY_ONE,
+    );
 
-    expect((await latestPrice(prisma, DAY_ONE))?.stale).toBe(false);
-    expect((await latestPrice(prisma, DAY_THREE))?.stale).toBe(true);
+    expect((await latestPrice(prisma, ZONE, DAY_ONE))?.stale).toBe(false);
+    expect((await latestPrice(prisma, ZONE, DAY_THREE))?.stale).toBe(true);
   });
 });
 
@@ -214,7 +299,11 @@ describe('GET /api/bitcoin', () => {
   });
 
   it('values the holding at the current price', async () => {
-    await recordSpotPrice(prisma, { priceCents: 10_000_000n, source: 'coingecko' }, new Date());
+    await recordSpotPrice(
+      prisma,
+      { priceCents: 10_000_000n, source: 'coingecko', timeZone: ZONE },
+      new Date(),
+    );
     // Created where it is managed, which is the only way a holding exists now.
     // 0.5 BTC.
     await addHolding({ name: 'Hardware wallet', sats: '50000000' });

@@ -1,5 +1,6 @@
 import type { FastifyPluginCallback } from 'fastify';
 import { prisma } from '../db/client.js';
+import { householdTimezone } from '../domain/settings.js';
 import { buildUtilities } from '../domain/utilities.js';
 import { centsOut, dateOut } from '../http/serialize.js';
 import { AUTHENTICATED } from '../plugins/auth.js';
@@ -14,7 +15,11 @@ export const utilityRoutes: FastifyPluginCallback = (fastify, _options, done) =>
   }
 
   fastify.get('/api/utilities', async () => {
-    const { summaries, cyclesPerYear } = await buildUtilities(prisma);
+    // Which month a bill landed in is the household's question, not UTC's: a
+    // payment at eight in the evening on the 31st belongs to the month it was
+    // made in. See ADR 037.
+    const timeZone = await householdTimezone(prisma, fastify.config.SCHEDULE_TIMEZONE);
+    const { summaries, cyclesPerYear } = await buildUtilities(prisma, timeZone);
 
     return {
       // Sent alongside the figures so the sentence explaining them cannot

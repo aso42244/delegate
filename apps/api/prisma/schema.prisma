@@ -142,6 +142,40 @@ enum SyncRunStatus {
   @@map("sync_run_status")
 }
 
+/// How a snapshot row came to hold the figure it holds.
+///
+/// Per row, never per day. A single date can legitimately mix `reconstructed`
+/// delegations with `interpolated` accounts, and collapsing that to one flag per
+/// day would report the whole picture as an estimate because one account was.
+///
+/// The order below is the order of trust, strongest first. `weakestProvenance`
+/// in the domain depends on it: an aggregate is only as good as the weakest row
+/// that went into it.
+enum SnapshotProvenance {
+  /// Captured live by the nightly job. The figure the application was actually
+  /// showing at the time.
+  observed
+
+  /// Derived exactly, from the delegation ledger, the Bitcoin holdings ledger or
+  /// the posted transactions of an account. Not observed, but not an estimate —
+  /// there is a right answer and this is it.
+  reconstructed
+
+  /// A manual value carried forward from the last figure a human entered on or
+  /// before this date. Manual values change in steps, not slopes: a property
+  /// worth $400,000 until somebody typed $420,000 was worth $400,000 the whole
+  /// time, not something in between.
+  carried
+
+  /// A last-resort estimate. No exact derivation was possible — a gap that
+  /// predates an account's transaction history, or a Bitcoin price that had to
+  /// be carried because no close was ever recorded for that date. Rendered
+  /// visibly as an estimate, and logged at warning level when written.
+  interpolated
+
+  @@map("snapshot_provenance")
+}
+
 // ---------------------------------------------------------------------------
 // Users and sessions
 // ---------------------------------------------------------------------------
@@ -249,6 +283,7 @@ model Grouping {
 
   accounts    Account[]
   delegations Delegation[]
+  snapshots   DelegationSnapshot[]
 
   // Name uniqueness is enforced per section, case-insensitively, among live rows
   // only — via a partial unique index in the migration. Archiving a grouping
@@ -347,6 +382,7 @@ model Account {
   valuations        AccountValuation[]
   bitcoinEvents     BitcoinHoldingEvent[]
   bitcoinWallets    BitcoinWallet[]
+  snapshots         AccountSnapshot[]
 
   @@unique([source, externalId], name: "account_source_external_id")
   @@index([archivedAt])
@@ -440,6 +476,7 @@ model Delegation {
   rules        CategorizationRule[]
   transfersOut DelegationTransfer[]    @relation("TransferSource")
   transfersIn  DelegationTransfer[]    @relation("TransferDestination")
+  snapshots    DelegationSnapshot[]
 
   @@index([archivedAt])
   @@index([groupingId])
@@ -967,7 +1004,161 @@ model BudgetSettings {
   /// one nobody reads. Household-wide, because the consequence is.
   bitcoinInBudgetAckAt DateTime? @map("bitcoin_in_budget_ack_at")
 
+  /// The IANA zone the scheduled jobs are read in, chosen in Settings.
+  ///
+  /// Null means "whatever `SCHEDULE_TIMEZONE` says", which is how every existing
+  /// deployment behaves and keeps behaving until somebody picks a zone here. The
+  /// environment variable stays the floor rather than being migrated away: it is
+  /// what the container has before it can reach the database, and a first boot
+  /// against an empty schema still has to know when to run.
+  ///
+  /// It governs **when jobs fire and nothing else**. The process clock is
+  /// untouched, because moving it would move every date the domain computes.
+  scheduleTimezone String? @map("schedule_timezone")
+
   updatedAt DateTime @updatedAt @map("updated_at")
 
   @@map("budget_settings")
+}
+
+// ---------------------------------------------------------------------------
+// Snapshots — the daily record of the financial picture
+// ---------------------------------------------------------------------------
+//
+// The delegation ledger gives envelopes a full history. Account balances and net
+// worth never had one: only current state exists, so Insights could show today
+// and never a trend, and every day that passed without capturing state was a day
+// of history permanently lost.
+//
+// [ADR 035](../../../docs/decisions/035-the-financial-picture-is-snapshotted-nightly.md)
+// supersedes ADR 013, which decided the opposite in 2026-08 for a reason that
+// has since expired.
+//
+// Everything here is keyed by a **date**, not a timestamp, and carries its own
+// provenance. Rows are written by the nightly job for the *previous* day.
+
+/// One row per account per day.
+model AccountSnapshot {
+  id           String   @id @default(uuid()) @db.Uuid
+  snapshotDate DateTime @map("snapshot_date") @db.Date
+  accountId    String   @map("account_id") @db.Uuid
+
+  /// Positive magnitude, exactly as `accounts.balance_cents` is — a debt of $500
+  /// is 50000 here too, and the aggregate subtracts it.
+  ///
+  /// For a Bitcoin holding this is the **market value** on that date, quantity
+  /// times price, not the account's `balance_cents` — which is zero unless the
+  /// holding is in-budget and so would report a real holding as worth nothing.
+  balanceCents BigInt @map("balance_cents")
+
+  provenance SnapshotProvenance
+
+  /// The classification as it stood that night, not as it stands now.
+  ///
+  /// Reading these from the account at query time would let re-typing a credit
+  /// card as an asset, or taking the house out of net worth, silently rewrite a
+  /// year of charts. That is the same failure the aggregates below are stored to
+  /// prevent, and it applies just as much per account.
+  accountType AccountType @map("account_type")
+  inBudget    Boolean     @map("in_budget")
+  inNetWorth  Boolean     @map("in_net_worth")
+
+  /// Bitcoin only, and null on every other account. Persisted so the market
+  /// value on that date is explainable from the row itself and never has to be
+  /// re-derived from two ledgers and a price table.
+  quantitySats BigInt? @map("quantity_sats")
+  priceCents   BigInt? @map("price_cents")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  account Account @relation(fields: [accountId], references: [id])
+
+  // Idempotency: the nightly job upserts on this, so a re-run for a date that
+  // already has rows cannot duplicate them. It also serves the range scan —
+  // "every account between two dates" reads it left to right.
+  @@unique([snapshotDate, accountId])
+  // The other direction: one account, scanned across dates. What the account
+  // picker on the balance-history widget actually asks for.
+  @@index([accountId, snapshotDate])
+  @@map("account_snapshots")
+}
+
+/// One row per delegation per day.
+model DelegationSnapshot {
+  id           String   @id @default(uuid()) @db.Uuid
+  snapshotDate DateTime @map("snapshot_date") @db.Date
+  delegationId String   @map("delegation_id") @db.Uuid
+  balanceCents BigInt   @map("balance_cents")
+  provenance   SnapshotProvenance
+
+  /// Which grouping this delegation sat in that night.
+  ///
+  /// Captured rather than joined, for the same reason the account classification
+  /// above is. The drill-down aggregates one series per grouping; reading
+  /// membership live would mean moving Grocery from "3 - Food" to "5 - Home"
+  /// retroactively moved a year of its history with it.
+  groupingId String? @map("grouping_id") @db.Uuid
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  delegation Delegation @relation(fields: [delegationId], references: [id])
+  grouping   Grouping?  @relation(fields: [groupingId], references: [id])
+
+  @@unique([snapshotDate, delegationId])
+  @@index([delegationId, snapshotDate])
+  // The default view of the drill-down: every delegation of one grouping, across
+  // a date range, aggregated.
+  @@index([groupingId, snapshotDate])
+  @@map("delegation_snapshots")
+}
+
+/// One row per day: the whole picture, stored rather than recomputed.
+///
+/// Deliberately not derived from the two tables above at query time. The point is
+/// that the chart reflects what the application actually showed on that date —
+/// after an account is archived, after a holding is retired, after the
+/// in-budget classification changes. A total recomputed from today's
+/// classification is a different number wearing the same date.
+///
+/// Two scopes, because the application has two and they answer different
+/// questions. Three totals could not serve both: net worth includes the house
+/// and the mortgage, and the identity is precisely the reading that excludes
+/// them.
+model AggregateSnapshot {
+  id           String   @id @default(uuid()) @db.Uuid
+  snapshotDate DateTime @unique @map("snapshot_date") @db.Date
+
+  // Net worth scope: every account marked in_net_worth, house and mortgage
+  // included. Debts are positive magnitudes, so net worth is assets − debts.
+  netWorthAssetsCents BigInt @map("net_worth_assets_cents")
+  netWorthDebtsCents  BigInt @map("net_worth_debts_cents")
+  netWorthCents       BigInt @map("net_worth_cents")
+
+  // Budget scope: in_budget only, which is what the identity reads.
+  budgetAssetsCents     BigInt @map("budget_assets_cents")
+  budgetDebtsCents      BigInt @map("budget_debts_cents")
+  totalDelegationsCents BigInt @map("total_delegations_cents")
+
+  /// The fourth term of the identity — categorized pending transactions the
+  /// account balances do not carry yet. Stored in its own column rather than
+  /// folded into the identity alone, so the row explains itself and the amount
+  /// in flight is answerable on its own. See ADR 020.
+  pendingCategorizedCents BigInt @map("pending_categorized_cents")
+
+  /// budgetAssets − budgetDebts − delegations + pendingCategorized.
+  ///
+  /// The same four-term figure as the chip beside the Budget page title. Omitting
+  /// the pending term would make this wander by whatever is categorized and not
+  /// yet posted, and that wander would read as miscategorisation when it is only
+  /// the settlement lag.
+  identityValueCents BigInt @map("identity_value_cents")
+
+  /// The **weakest** provenance among every row that fed this day. An aggregate
+  /// built from one interpolated account is an interpolated aggregate, whatever
+  /// the other forty rows were.
+  provenance SnapshotProvenance
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("aggregate_snapshots")
 }

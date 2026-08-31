@@ -217,9 +217,10 @@ service; ADR 017 carries the amendment.
   request. Found chasing ten charges that stayed pending for days while the
   bridge reported itself healthy; nothing about the pending lifecycle was wrong
   ([ADR 032](decisions/032-a-feed-date-is-kept-apart-from-the-one-we-stamp.md))
-- **Scheduled jobs run in `SCHEDULE_TIMEZONE`**, an IANA name defaulting to UTC.
-  It governs when jobs fire and nothing else — the process clock is untouched,
-  because moving it would move every date the domain computes
+- **Scheduled jobs run in the household's zone**, an IANA name defaulting to
+  UTC. Since [ADR 037](decisions/037-a-day-is-the-households-day.md) it also
+  decides **which day an instant falls in** — the process clock is still
+  untouched; this is a stored setting the domain consults
 - **The two-factor setup key is offered behind "Can't scan this?"**, grouped and
   copyable, for enrolling in a password manager on the machine already showing
   the screen. The Copy button works on a plain-http origin, where
@@ -232,6 +233,53 @@ service; ADR 017 carries the amendment.
   interface change
 - **Dark mode**, on Settings → Display beside row height
   ([ADR 034](decisions/034-dark-mode-is-a-second-palette-not-an-inversion.md))
+
+**Insights, and the nightly snapshot**
+
+- **The financial picture is recorded every night** at 03:10 in the household's
+  zone, labelled for the previous day
+  ([ADR 035](decisions/035-the-financial-picture-is-snapshotted-nightly.md)).
+  Three tables, each row carrying its own provenance. **ADR 035 supersedes
+  ADR 013**, which rejected exactly this in August for a reason that expired when
+  the backfill happened
+- **There is no initial backfill, by decision.** History starts at the first run,
+  so Insights resets on deploy and gains a day a night. The gap-filler exists
+  only for outages going forward, and every row it writes is marked derived
+- **`domain/history.ts` is gone** with the reconstruction it held. Its
+  ledger-walking survives inside the gap-filler
+- **The schedule time zone is a setting**
+  ([ADR 036](decisions/036-the-schedule-timezone-is-a-setting.md)), picked on
+  Settings → Budget. Null means follow `SCHEDULE_TIMEZONE`, so an existing
+  deployment fires exactly where it did. Saving rebuilds the cron tasks —
+  node-cron fixes a task's zone at creation
+- **A day is the household's day**
+  ([ADR 037](decisions/037-a-day-is-the-households-day.md)), which narrows
+  ADR 036's "when jobs fire and nothing else". `domain/calendar.ts` is the only
+  place that turns an instant into a day, and it keeps two ideas apart by name:
+  an **instant** (`posted_at`, `occurred_at` on a delegation event, `now`,
+  `created_at`) needs a zone to place in a day; a **date key** (`as_of`,
+  `price_date`, `snapshot_date`) is a day already decided and needs none.
+  Conflating them is how an 8pm charge landed in next month's average. **If you
+  are adding a zone parameter to a function that does not convert an instant,
+  you have the distinction backwards** — see `revalueBitcoinHoldings`, which
+  deliberately has none
+- **A manual balance typed on Settings → Accounts writes a dated valuation.**
+  Before this, only properties had a history and cash, River and Strike had none
+
+**How to tell the snapshot job actually ran.** This is the question the nightly
+backup taught us to ask from the other end — not "did the attempt throw", which
+was answered correctly into a log nobody read, but "is the evidence on disk".
+
+`GET /api/snapshots/status` answers it from the rows: `days` is how many are
+stored, `latestDate` the newest, `stale` true when that is over two days old.
+Two days rather than one because a run is always for the _previous_ day, so the
+newest date is a day behind even when everything is working.
+
+- **Ran and wrote rows:** `days` ≥ 1, `latestDate` is yesterday, `stale` false.
+  The log line is `nightly snapshot written` with counts and a duration
+- **Ran and wrote nothing:** `days` stays 0. The job logs
+  `nightly snapshot wrote nothing` at **warn**, never an info line that reads
+  like success
 
 ### Known gaps to fix
 

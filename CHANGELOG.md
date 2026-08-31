@@ -6,7 +6,282 @@ phase (`v0.1.0-phase1`, and so on).
 
 ## [Unreleased]
 
+### Added
+
+- **A day is the household's day, not UTC's**
+  ([ADR 037](docs/decisions/037-a-day-is-the-households-day.md)). The zone chosen
+  in Settings now decides which calendar day an instant falls in, everywhere the
+  application turns one into the other.
+
+  UTC runs five or six hours ahead of this household, so anything after about six
+  in the evening was already tomorrow. That was not a rounding difference; it was
+  wrong figures on screen:
+
+  - A charge at 8pm on the 31st was counted in the **next** month's utility
+    average. The month it was made in came out short and the following one long,
+    and the suggested per-paycheck amount drawn from the average was wrong in
+    both directions.
+  - The hourly price fetch filed every evening reading under **tomorrow**,
+    leaving the day it was taken on with no close and settling one for a day that
+    had not happened.
+  - A price fetched minutes ago read **stale** all evening.
+  - A balance typed in the evening recorded its valuation under tomorrow, so the
+    day it was typed on still showed the old figure.
+  - Year-to-date on New Year's Eve left out the evening it was looking at.
+
+  **No migration, and no backfill.** The three columns this was expected to move
+  were checked rather than assumed: `posted_at` already holds a true instant from
+  the feed's own epoch, and `as_of` and `price_date` are `DATE` columns holding
+  calendar days somebody decided — a decided day needs no zone. So nothing stored
+  changes; what changed is the reading of an instant at the twelve places it
+  becomes a day.
+
+  One module, `calendar.ts`, now answers "which day is this" for the whole
+  application, and it keeps the two ideas apart by name: an **instant** needs a
+  zone to place in a day, a **date key** is a day already decided and needs none.
+  Conflating them is the whole bug. Local day bounds are resolved by probing the
+  offset rather than by arithmetic, because two mornings a year are 23 and 25
+  hours long and a 24-hour window would drop an hour of transactions or count it
+  twice — asserted directly, along with tiling a full year with no gap or overlap
+  and round-tripping 365 days in four zones.
+
+  Deliberately **not** given a zone: `revalueBitcoinHoldings`, which values a
+  quantity and does not care whether the price is today's. Threading one through
+  the six layers above it to compute a flag it discards is how a parameter
+  eventually gets passed wrongly, so `latestPrice` (staleness, needs a zone) and
+  `newestPrice` (the figure, does not) are now two functions that say which
+  question they answer. Where a zone **is** needed it is a required argument, so
+  a call site that forgets it fails the build instead of silently reverting to
+  UTC.
+
+  A deployment left on UTC is unaffected: every conversion is the identity there,
+  and the tests assert it in both directions rather than only in the interesting
+  zone. On any other zone, expect a utility average to shift by up to one bill
+  once — that is the correction landing, not a regression.
+
+- **The financial picture is recorded nightly.** Three tables — one row per
+  account per day, one per delegation per day, and one for the whole picture —
+  each keyed by a date and carrying its own provenance: `observed`,
+  `reconstructed`, `carried` or `interpolated`. An aggregate takes the weakest
+  provenance among its inputs, so one estimated account makes the day's total an
+  estimate rather than hiding inside forty exact ones.
+
+  [ADR 035](docs/decisions/035-the-financial-picture-is-snapshotted-nightly.md)
+  **supersedes ADR 013**, which rejected exactly this in August. Its reason has
+  expired — it was that snapshots would miss the twelve months of history about
+  to be imported, and that import happened months ago — while the price it
+  recorded and accepted has not: a reconstructed balance is a confident line
+  drawn through transactions that can be quietly incomplete, and nothing about it
+  says so.
+
+  Two shape decisions are load-bearing. **The aggregates are stored rather than
+  derived**, so archiving an account or changing an in-budget flag cannot rewrite
+  a chart somebody has already read; each account row carries its own type and
+  budget flags, and each delegation row its grouping, as they stood that night.
+  And there are **two scopes**, because net worth includes the house and the
+  mortgage while the identity is precisely the reading that excludes them —
+  three totals could not have served both. `identity_value_cents` is the
+  four-term figure from ADR 020, so it matches the chip on the Budget page rather
+  than wandering by whatever is categorized and not yet posted.
+
+- **The nightly job that writes them**, at 03:10 in the household's zone,
+  labelling its rows for the **previous** day — a run at 03:10 on the 15th
+  records the 14th, read as "end of day the 14th".
+
+  03:10 for three reasons: off the hour so it does not contend with the hourly
+  sync on two cores, _after_ the price fetch at :05 so yesterday's Bitcoin close
+  is settled by the time a holding is valued against it, and outside 02:00–02:59
+  — an hour that does not exist locally on the spring-forward morning, where a
+  job scheduled inside it is skipped for the night.
+
+  The date is calendar arithmetic on the local date, never 24 hours subtracted
+  from an instant. Two mornings a year are not 24 hours long, and the difference
+  is a row filed under the wrong day.
+
+  **All three tables commit together or none do.** A partial day is worse than a
+  missing day: the gap-filler can see a date with no rows and repair it, and
+  cannot see a date whose accounts were written and whose aggregate was not.
+  **An `observed` row is never overwritten** — not by a reconstruction, and not
+  by a re-run — so pointing the manual trigger at any date repairs what is
+  missing and revises nothing that was seen.
+
+  A Bitcoin holding is valued at that date's close, with the quantity and the
+  price stored beside it so the figure is explainable from the row alone. When
+  the price had to be carried from an earlier day the row is `interpolated`
+  rather than `observed`: the quantity was seen and the price was guessed, and
+  the aggregate then inherits that.
+
+- **Gap filling, for the days nobody was running for.** The NAS reboots,
+  containers restart, power fails. On startup and again before each nightly run,
+  every date between the newest snapshot and yesterday is rebuilt by the most
+  accurate method available **per row**:
+
+  **Delegations** replay the append-only ledger to the end of the day — exact
+  however long the gap was, because the events are the truth and all of them are
+  still there. **SimpleFIN accounts** take the next balance actually known and
+  roll every posted transaction back out of it, through `accountBalanceDelta` so
+  a debt's opposing sign is applied in the one place that knows about it.
+  **Manual accounts** carry the last value entered on or before the date, because
+  manual values change in steps and not slopes: property worth $400,000 until
+  $420,000 was typed on the 16th was worth $400,000 on the 15th, not $410,000.
+  **Bitcoin** reads the quantity held on that date from its own dated ledger,
+  which is exact rather than carried, and only the price can be missing.
+  **Interpolation** is the last resort, marked as an estimate and logged at
+  warning level with the account and the date.
+
+  **Nothing here is a backfill.** With no snapshot stored there is no gap — only
+  history nobody chose to record — so a fresh deployment stays empty and history
+  starts at the first run, exactly as decided.
+
+  One transaction per day rather than one for the whole run: a fortnight of
+  outage should not be all-or-nothing, and a day that fails should not discard
+  the thirteen that succeeded.
+
+- **A manual balance typed on Settings → Accounts is now a dated valuation.**
+  `balance_as_of` is a single timestamp overwritten on every edit, so it could
+  say when a value was last confirmed and never what the value was in March. Only
+  properties had a history, because only they went through the valuations route —
+  which left cash, River and Strike with no dated history at all, and the
+  gap-filler with nothing to carry forward for them.
+
+- **The eight core Insights tiles, drawn from the snapshots.** Net worth over
+  time, assets against debts, account balance history, delegation balances,
+  burn rate per cycle, identity drift, home equity and Bitcoin.
+
+  **Every chart says where its figures came from.** A stretch built from
+  estimated days is dashed and muted with the reason on hover; observed,
+  reconstructed and carried days are all exact and draw normally. **And every
+  chart ends on now** — a hollow marker past the stored history, because
+  snapshots are labelled for the previous day and a line stopping there reads as
+  stale rather than current.
+
+  **The empty state is the state these ship in.** History starts at the first
+  night, so a tile with nothing says "No history yet — the first night records
+  one" and one with a single day says so too, rather than drawing an axis
+  through a dot.
+
+  `credit_card_trend` is retired. It was hardwired to whichever card owed the
+  most; **account balance history** replaces it with a picker over every account
+  that has stored history, which is what the tile was always reaching for. A
+  layout still naming the old key is filtered against the catalogue rather than
+  handing the page a widget it cannot draw.
+
+  The delegation drill-down is three levels — every grouping, one grouping's
+  delegations, one delegation — with a breadcrumb back up. The level survives a
+  change of range, so widening from 30 days to a year widens the view you are
+  looking at. Lines in no grouping are their own level and open like any other:
+  a bucket somebody can see and cannot click into is a dead end.
+
+- **The five derived tiles.** What net worth is made of (a stacked area of
+  Bitcoin, other assets and debts, with debts below the baseline rather than
+  stacked on top — stacking a debt on an asset would make the total read as their
+  sum), change per pay cycle aligned to actual Delegate presses, 30-day momentum,
+  delegation movers, and debt trajectory.
+
+  Movers runs its bars from a centre line rather than from the left: the question
+  is which direction a line moved as much as by how much, and a ranking drawing a
+  $500 gain and a $500 drain identically would answer only half of it. Momentum
+  says "Not a month of history yet" rather than flattening, because comparing
+  against a month earlier needs a month.
+
+  There is deliberately no cash-versus-savings split in the composition. The
+  application has no such classification — an account is an asset or a debt — and
+  inventing one from account names would be a guess presented as a category.
+
+- **One range selector for the whole page**: 30 days, 90 days, 6 months, 1 year,
+  year to date, this cycle, all. The spending and cycle tiles predate snapshots
+  and `This cycle` is the only window that means anything to them, so one control
+  drives everything rather than two disagreeing above a grid that mixes both.
+
+- **`domain/history.ts` is gone**, as ADR 035 said it would be. The four tiles it
+  fed are not — they are rebuilt on stored rows. Its ledger-walking survives only
+  inside the gap-filler, where every row it writes is marked as derived. The
+  properties its tests protected moved with it: a holding valued at each day's
+  own quantity is asserted against the stored quantity and price now, rather than
+  against a chart.
+
+- **Read endpoints, returning series already shaped for a chart.** The browser is
+  handed points it can draw rather than a year of rows to reduce on a phone.
+
+  `GET /api/insights/snapshots?range=` serves everything that does not depend on
+  a picker: the aggregate series, net worth composition, home equity, 30-day
+  momentum, change per pay cycle, the debt trajectory, and the account list for
+  the balance-history picker. `…/account/:id` serves one account.
+  `…/delegations` serves the drill-down at whichever of its three levels was
+  asked for — all groupings aggregated, one grouping's delegations, or one
+  delegation.
+
+  **Downsampling follows from the range, and the reader never chooses it.** Above
+  roughly 180 stored days a series buckets to weekly and above 730 to monthly,
+  taking the **average** of each bucket rather than its last day — a weekly point
+  reporting Sunday's balance would swing with whichever day landed at the end,
+  and a net worth line is not a sampling of Sundays. **A bucket takes the weakest
+  provenance in it**, so a week containing one estimated day renders as
+  estimated: a line drawn through a bucket is no better than its worst point.
+
+  Every series carries a **live point** computed from current state and kept
+  apart from the stored history. Snapshots are labelled for the previous day, so
+  without it every chart would end a day behind and read as stale rather than
+  current.
+
+  Two things are deliberately withheld rather than guessed. **The payoff
+  projection stays hidden until there are 60 days of history** — a line fitted
+  through nine days would move by years every morning, and a number that unstable
+  reads as a fact to whoever sees it. And **the composition split has no cash
+  versus savings**: the application has no such classification, and inventing one
+  from account names would be a guess presented as a category.
+
+  Burn rate divides by the **configured pay cadence**, never a hardcoded 26. The
+  Utilities page already divides by the same figure, and two screens of one
+  household disagreeing about how often it is paid would be worse than either
+  answer.
+
+- **`GET /api/snapshots/status`**, and an administrator-only
+  `POST /api/snapshots/run`. The status reading is the answer to "did the job
+  run", taken from the rows rather than from the absence of an error — the
+  lesson the nightly backup taught, which reported every failure correctly into
+  a log nobody read while the question nobody asked was whether a dump was
+  actually on disk. It reports the newest date, how many days are stored, the
+  schedule and the zone it truly runs in, and goes stale after two days rather
+  than one, because a run is for the previous day and a one-day threshold would
+  warn every morning.
+
+- **The schedule time zone is chosen in Settings**, not only in `.env`
+  ([ADR 036](docs/decisions/036-the-schedule-timezone-is-a-setting.md)). Null
+  means "follow `SCHEDULE_TIMEZONE`", which is what every existing deployment
+  does and keeps doing until somebody picks a zone — so this changes when nothing
+  fires. The environment variable stays as the floor, because the container has
+  it before it can reach the database.
+
+  **Saving rebuilds the schedules.** `node-cron` fixes a task's zone when the
+  task is created, so a stored zone that only took effect on the next restart
+  would be a setting that reports itself working and is not — which is the shape
+  of failure this project has already paid for once, with a nightly backup that
+  logged an error into a file nobody read while failing every night for weeks.
+  It governs when jobs fire and nothing else; every date the domain computes is
+  still UTC, and moving that is recorded as an open question rather than smuggled
+  in here. **Superseded within this release by ADR 037, below** — the zone now
+  also decides which day an instant falls in.
+
+- **The zone is pickable on Settings → Budget.** The setting landed with an API
+  and no interface, which left it changeable only by editing `.env` and
+  restarting — the exact thing ADR 036 set out to remove. The picker offers what
+  the server accepts rather than a list of its own, and its hint names the zone
+  actually **in force**, which is the case that matters: nobody has chosen, and
+  the answer is coming from the environment. A page showing only the choice would
+  read blank on precisely the deployment whose zone nobody could otherwise find
+  out.
+
 ### Fixed
+
+- **A racy end-to-end test that failed about three runs in five.** "A pending
+  charge is not offered as money to delegate" hovers the balance reading to check
+  its working, then reloads and asserts no tooltip is open. A hover is physical
+  pointer position rather than page state, so the cursor was still on the chip
+  when the reloaded page painted and re-fired it — the assertion found the
+  tooltip the test itself had left behind. Found while verifying unrelated work,
+  confirmed at the same rate on `main`, and fixed by moving the pointer away
+  before the reload rather than by relaxing the assertion.
 
 - **A figure sits flush with the end of its row on a phone.** The 8px inside a
   money cell is the inset its hover background needs on a desktop; on a phone

@@ -1,4 +1,4 @@
-import { DEFAULT_PAY_CADENCE, type Cents, type PayCadence } from '@budget/shared';
+import { DEFAULT_PAY_CADENCE, isKnownTimeZone, type Cents, type PayCadence } from '@budget/shared';
 import type { Db } from '../db/client.js';
 import { ValidationError } from './errors.js';
 
@@ -27,6 +27,16 @@ export interface BudgetSettings {
   readonly payCadence: PayCadence;
   readonly remoteOverTorEnabled: boolean;
   readonly remoteOverTorEnabledAt: Date | null;
+  /**
+   * The IANA zone the scheduled jobs are read in, or null for "whatever
+   * `SCHEDULE_TIMEZONE` says". See ADR 036.
+   *
+   * Null rather than the environment's value resolved eagerly, because the two
+   * are genuinely different states: "nobody has chosen" and "somebody chose the
+   * same thing the environment says" should not be indistinguishable, and only
+   * the first should follow the environment if it later changes.
+   */
+  readonly scheduleTimezone: string | null;
 }
 
 export async function getBudgetSettings(db: Db): Promise<BudgetSettings> {
@@ -39,6 +49,7 @@ export async function getBudgetSettings(db: Db): Promise<BudgetSettings> {
       payCadence: true,
       remoteOverTorEnabled: true,
       remoteOverTorEnabledAt: true,
+      scheduleTimezone: true,
     },
   });
 
@@ -51,7 +62,44 @@ export async function getBudgetSettings(db: Db): Promise<BudgetSettings> {
     // in from the internet.
     remoteOverTorEnabled: settings?.remoteOverTorEnabled ?? false,
     remoteOverTorEnabledAt: settings?.remoteOverTorEnabledAt ?? null,
+    scheduleTimezone: settings?.scheduleTimezone ?? null,
   };
+}
+
+/**
+ * The zone the schedules actually run in: the setting when one is chosen, the
+ * environment otherwise.
+ *
+ * One function so the scheduler and the page that reports the schedule cannot
+ * answer differently. Settings → Sync claimed "nightly at 02:30 UTC" whatever
+ * the deployment was configured with for months, which is the shape of bug this
+ * exists to prevent a second time.
+ */
+export function resolveScheduleTimezone(
+  settings: Pick<BudgetSettings, 'scheduleTimezone'>,
+  fallback: string,
+): string {
+  return settings.scheduleTimezone ?? fallback;
+}
+
+/**
+ * The household's zone, resolved: the setting when one is chosen, the
+ * environment otherwise.
+ *
+ * The convenience form of `resolveScheduleTimezone` for the many callers that
+ * only want the answer. Note what it governs: since ADR 037 this is not only
+ * *when jobs fire* but *which day an instant belongs to* — which month a spend
+ * lands in, which day a chart point covers.
+ *
+ * The column is still called `schedule_timezone` and the variable still
+ * `SCHEDULE_TIMEZONE`. Both names are narrower than the meaning now is, and both
+ * are deliberately left alone: renaming the environment variable would silently
+ * revert a deployment to UTC the first time it booted without the new name, and
+ * that class of quiet failure has cost this project more than a slightly narrow
+ * name ever will. ADR 037 records the widened scope.
+ */
+export async function householdTimezone(db: Db, fallback: string): Promise<string> {
+  return resolveScheduleTimezone(await getBudgetSettings(db), fallback);
 }
 
 export interface UpdateBudgetSettingsInput {
@@ -59,6 +107,8 @@ export interface UpdateBudgetSettingsInput {
   readonly identityToleranceCents?: Cents | undefined;
   readonly payCadence?: PayCadence | undefined;
   readonly remoteOverTorEnabled?: boolean | undefined;
+  /** Null clears the choice and returns to following `SCHEDULE_TIMEZONE`. */
+  readonly scheduleTimezone?: string | null | undefined;
 }
 
 /**
@@ -92,6 +142,24 @@ export async function updateBudgetSettings(
   }
 
   /**
+   * Refused at save time rather than at the next fire.
+   *
+   * An unknown zone does not throw when a job is scheduled with it — it falls
+   * back to the process default — so a typo here would leave every schedule
+   * running at an hour nobody chose, with nothing on screen saying so.
+   */
+  if (
+    input.scheduleTimezone !== undefined &&
+    input.scheduleTimezone !== null &&
+    !isKnownTimeZone(input.scheduleTimezone)
+  ) {
+    throw new ValidationError(
+      'schedule_timezone_unknown',
+      'That is not an IANA time zone name. Abbreviations ("CST") and fixed offsets ("-05:00") are refused: neither observes daylight saving, so a job set for a civil hour would drift.',
+    );
+  }
+
+  /**
    * Turning the requirement on is refused while any active account would be
    * locked out by it. The alternative is a setting that bricks the other
    * household member's access at the moment it is saved, recoverable only from
@@ -112,6 +180,7 @@ export async function updateBudgetSettings(
       identityToleranceCents: input.identityToleranceCents ?? DEFAULT_IDENTITY_TOLERANCE_CENTS,
       payCadence: input.payCadence ?? DEFAULT_PAY_CADENCE,
       remoteOverTorEnabled: input.remoteOverTorEnabled ?? false,
+      scheduleTimezone: input.scheduleTimezone ?? null,
     },
     update: {
       ...(input.undoWindowHours === undefined ? {} : { undoWindowHours: input.undoWindowHours }),
@@ -119,6 +188,9 @@ export async function updateBudgetSettings(
         ? {}
         : { identityToleranceCents: input.identityToleranceCents }),
       ...(input.payCadence === undefined ? {} : { payCadence: input.payCadence }),
+      // Null is a value here, not an absence: it clears the choice and returns
+      // to following the environment variable.
+      ...(input.scheduleTimezone === undefined ? {} : { scheduleTimezone: input.scheduleTimezone }),
       ...(input.remoteOverTorEnabled === undefined
         ? {}
         : {
@@ -134,6 +206,7 @@ export async function updateBudgetSettings(
       payCadence: true,
       remoteOverTorEnabled: true,
       remoteOverTorEnabledAt: true,
+      scheduleTimezone: true,
     },
   });
 

@@ -71,6 +71,7 @@ export interface NotificationOptions {
 
 export async function buildNotifications(
   db: Db,
+  timeZone: string,
   now: Date = new Date(),
   options: NotificationOptions = {},
 ): Promise<Notification[]> {
@@ -94,7 +95,7 @@ export async function buildNotifications(
         orderBy: { postedAt: 'asc' },
         select: { postedAt: true },
       }),
-      latestPrice(db, now),
+      latestPrice(db, timeZone, now),
       proposeCheckMatches(db),
       // The first account created, as a stand-in for when this deployment began.
       db.user.findFirst({ orderBy: { createdAt: 'asc' }, select: { createdAt: true } }),

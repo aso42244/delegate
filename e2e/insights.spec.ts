@@ -72,23 +72,95 @@ test('says there is no cycle rather than showing an empty one', async ({ signedI
   ).toBeVisible();
 });
 
-test('a rebuilt series says where the history actually begins', async ({ signedIn, api }) => {
-  const accountId = await makeAccount('Everyday Checking', 'asset', 300000n);
-  await api.post('/api/transactions', {
-    data: {
-      accountId,
-      amountCents: '-4210',
-      description: 'Whole Foods Market',
-      postedAt: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString(),
-    },
-  });
-
+/**
+ * Insights ships with no history and gains a day a night, so the empty state is
+ * the state most of these tiles are in on day one. It has to be a sentence
+ * rather than an axis drawn through nothing.
+ */
+test('a chart with no history says so rather than drawing an empty box', async ({ signedIn }) => {
+  await makeAccount('Everyday Checking', 'asset', 300000n);
   await signedIn.goto('/insights');
 
-  // The net worth chart is rebuilt from the ledger, so it begins where the
-  // transactions do — and says so rather than implying it with a line edge.
   await expect(signedIn.getByRole('heading', { name: 'Net worth over time' })).toBeVisible();
-  await expect(signedIn.getByText(/does not reach further back/)).toBeVisible();
+  await expect(
+    signedIn.getByText('No history yet — the first night records one.').first(),
+  ).toBeVisible();
+});
+
+/** One control drives every tile, and it carries the windows the older ones need. */
+test('the range selector offers every window, including cycle and all', async ({ signedIn }) => {
+  await signedIn.goto('/insights');
+
+  for (const label of [
+    '30 days',
+    '90 days',
+    '6 months',
+    '1 year',
+    'Year to date',
+    'This cycle',
+    'All',
+  ]) {
+    await expect(signedIn.getByRole('radio', { name: label })).toBeVisible();
+  }
+});
+
+/**
+ * A recorded night puts a figure on the chart. One point is still not a trend,
+ * and the tile says which of the two it has.
+ */
+test('a recorded snapshot reaches the net worth chart', async ({ signedIn, api }) => {
+  await makeAccount('Everyday Checking', 'asset', 300000n);
+
+  const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  const run = await api.post('/api/snapshots/run', { data: { date: yesterday } });
+  expect(run.ok()).toBe(true);
+
+  await signedIn.goto('/insights');
+  await expect(signedIn.getByRole('heading', { name: 'Net worth over time' })).toBeVisible();
+  await expect(signedIn.getByText('Only one day of history so far.').first()).toBeVisible();
+});
+
+/**
+ * The drill-down defaults to groupings and goes down two levels. The breadcrumb
+ * is the way back up.
+ */
+test('the delegation drill-down goes down and comes back', async ({ signedIn, api }) => {
+  await makeAccount('Everyday Checking', 'asset', 300000n);
+  await makeDelegation(api, 'Grocery');
+
+  const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  await api.post('/api/snapshots/run', { data: { date: yesterday } });
+
+  await signedIn.goto('/insights');
+  const tile = signedIn.getByRole('heading', { name: 'Delegation balances' });
+  await expect(tile).toBeVisible();
+
+  // Ungrouped lines are their own series at the top level, named for what they
+  // are rather than left out.
+  const section = signedIn.locator('section').filter({ has: tile });
+  await section.getByRole('button', { name: 'No grouping' }).click();
+
+  // One level down, the delegation itself, with a way back.
+  await expect(section.getByRole('button', { name: 'Back' })).toBeVisible();
+  await section.getByRole('button', { name: 'Back' }).click();
+  await expect(section.getByRole('button', { name: 'No grouping' })).toBeVisible();
+});
+
+/** The picker the hardwired credit-card tile never had. */
+test('the account balance tile offers a picker', async ({ signedIn, api }) => {
+  await makeAccount('Everyday Checking', 'asset', 300000n);
+  await makeAccount('Savings', 'asset', 900000n);
+
+  const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  await api.post('/api/snapshots/run', { data: { date: yesterday } });
+
+  await signedIn.goto('/insights');
+  const tile = signedIn.getByRole('heading', { name: 'Account balance' });
+  await expect(tile).toBeVisible();
+
+  const section = signedIn.locator('section').filter({ has: tile });
+  await expect(section.getByRole('combobox', { name: 'Account' })).toBeVisible();
+  await section.getByRole('combobox', { name: 'Account' }).selectOption({ label: 'Savings' });
 });
 
 test('says what it cannot chart rather than drawing an empty box', async ({ signedIn }) => {
@@ -97,4 +169,46 @@ test('says what it cannot chart rather than drawing an empty box', async ({ sign
   await expect(
     signedIn.getByText('No property with a mortgage linked to it.', { exact: false }),
   ).toBeVisible();
+});
+
+/**
+ * The five derived tiles. All of them say something within weeks, and each has
+ * to be honest about having nothing rather than drawing an empty box.
+ */
+test('the derived tiles are on the page and say what they lack', async ({ signedIn }) => {
+  await makeAccount('Everyday Checking', 'asset', 300000n);
+  await signedIn.goto('/insights');
+
+  for (const title of [
+    'What net worth is made of',
+    'Change per pay cycle',
+    '30-day momentum',
+    'Delegation movers',
+    'Debt trajectory',
+  ]) {
+    await expect(signedIn.getByRole('heading', { name: title })).toBeVisible();
+  }
+
+  // Momentum compares against a month earlier, so it needs a month before it
+  // can say anything at all — and says that rather than drawing a flat line.
+  await expect(signedIn.getByText('Not a month of history yet.')).toBeVisible();
+  await expect(signedIn.getByText('No cycles with history behind them yet.')).toBeVisible();
+});
+
+/**
+ * The payoff projection is withheld until a fit through the trailing days means
+ * something. A date that moves by years every morning reads as a fact.
+ */
+test('the debt payoff projection stays hidden without enough history', async ({
+  signedIn,
+  api,
+}) => {
+  await makeAccount('Card', 'debt', 80000n);
+
+  const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  await api.post('/api/snapshots/run', { data: { date: yesterday } });
+
+  await signedIn.goto('/insights');
+  await expect(signedIn.getByRole('heading', { name: 'Debt trajectory' })).toBeVisible();
+  await expect(signedIn.getByText(/clear around/)).toHaveCount(0);
 });

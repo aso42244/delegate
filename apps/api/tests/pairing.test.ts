@@ -22,6 +22,9 @@ import {
 
 const NOW = new Date('2026-08-09T12:00:00Z');
 
+/** The household's zone: it decides where a spending window starts. */
+const ZONE = 'America/Chicago';
+
 beforeEach(async () => {
   await resetDatabase();
 });
@@ -214,7 +217,11 @@ describe('confirming a pair', () => {
     });
     await confirmPair(prisma, out.id, back.id);
 
-    const { entries } = await buildSpending(prisma, { by: 'delegation', window: '30d' }, NOW);
+    const { entries } = await buildSpending(
+      prisma,
+      { by: 'delegation', window: '30d', timeZone: ZONE },
+      NOW,
+    );
     // $30 of groceries, not $530.
     expect(entries[0]?.spendCents).toBe(3_000n);
   });

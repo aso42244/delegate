@@ -6,7 +6,10 @@ import { ConflictError } from './domain/errors.js';
 import { runBackup } from './domain/backup.js';
 import { fetchAndRecordPrice, providerByName, revalueBitcoinHoldings } from './domain/bitcoin.js';
 import { scanAllWallets } from './domain/bitcoin-wallets.js';
+import { getBudgetSettings, resolveScheduleTimezone } from './domain/settings.js';
 import { resolveConnection } from './domain/simplefin-config.js';
+import { fillGaps } from './domain/snapshot-fill.js';
+import { captureSnapshot, snapshotDateFor } from './domain/snapshots.js';
 import { runSync } from './domain/sync.js';
 import { HttpSimpleFinClient } from './simplefin/client.js';
 
@@ -19,19 +22,77 @@ import { HttpSimpleFinClient } from './simplefin/client.js';
  * SimpleFIN publishes no rate limits and no guidance on sync frequency, so the
  * hourly cadence from the specification stands. See ADR 009.
  *
- * Every expression is read in `SCHEDULE_TIMEZONE`, which defaults to UTC. Only
- * the backup cares — the other two run hourly and land at the same instant in
- * any zone — but passing it to one task and not the others would leave a future
- * reader working out which of three schedules meant local time.
+ * Every expression is read in one zone: the one chosen in Settings, or
+ * `SCHEDULE_TIMEZONE` when nobody has chosen (ADR 036). The hourly jobs land at
+ * the same instant in any zone, but passing it to one task and not the others
+ * would leave a future reader working out which of the schedules meant local
+ * time — and the snapshot job genuinely depends on it, because it labels its
+ * rows for the local day that just ended.
  */
+
+const DAY_MS = 24 * 60 * 60 * 1000;
 
 export interface Scheduler {
   stop(): void;
+  /**
+   * Rebuilds every task, picking up a time zone changed in Settings.
+   *
+   * Stops the old tasks first. A leaked task would double every job: two syncs
+   * are a `sync_already_running` conflict and harmless, but two backups are two
+   * dumps and two snapshot runs are wasted work on two cores.
+   */
+  reload(): Promise<void>;
 }
 
-export function startScheduler(config: AppConfig, logger: FastifyBaseLogger): Scheduler {
+/**
+ * The zone the schedules should run in right now.
+ *
+ * Falls back to the environment rather than failing: a database that cannot be
+ * read at boot is a reason to run the jobs at the configured hour, not a reason
+ * to stop running them.
+ */
+async function currentTimezone(config: AppConfig, logger: FastifyBaseLogger): Promise<string> {
+  try {
+    const settings = await getBudgetSettings(prisma);
+    return resolveScheduleTimezone(settings, config.SCHEDULE_TIMEZONE);
+  } catch (error) {
+    logger.warn(
+      { err: error, fallback: config.SCHEDULE_TIMEZONE },
+      'could not read the schedule timezone from settings; using the environment',
+    );
+    return config.SCHEDULE_TIMEZONE;
+  }
+}
+
+export async function startScheduler(
+  config: AppConfig,
+  logger: FastifyBaseLogger,
+): Promise<Scheduler> {
+  let tasks: ScheduledTask[] = [];
+
+  const stop = (): void => {
+    for (const task of tasks) void task.stop();
+    tasks = [];
+  };
+
+  const build = async (): Promise<void> => {
+    const timezone = await currentTimezone(config, logger);
+    stop();
+    tasks = createTasks(config, logger, timezone);
+    logger.info({ timezone, jobs: tasks.length }, 'schedules built');
+  };
+
+  await build();
+  return { stop, reload: build };
+}
+
+function createTasks(
+  config: AppConfig,
+  logger: FastifyBaseLogger,
+  timezone: string,
+): ScheduledTask[] {
   const tasks: ScheduledTask[] = [];
-  const options = { timezone: config.SCHEDULE_TIMEZONE };
+  const options = { timezone };
 
   if (!cron.validate(config.SIMPLEFIN_SYNC_CRON)) {
     // Loud rather than silently never running: a mistyped expression that simply
@@ -85,7 +146,7 @@ export function startScheduler(config: AppConfig, logger: FastifyBaseLogger): Sc
     cron.schedule(
       config.BITCOIN_PRICE_CRON,
       () => {
-        void runScheduledPriceFetch(config, logger);
+        void runScheduledPriceFetch(config, timezone, logger);
       },
       options,
     ),
@@ -96,11 +157,97 @@ export function startScheduler(config: AppConfig, logger: FastifyBaseLogger): Sc
     'Bitcoin price fetch enabled',
   );
 
-  return {
-    stop: () => {
-      for (const task of tasks) void task.stop();
-    },
-  };
+  if (!cron.validate(config.SNAPSHOT_CRON)) {
+    throw new Error(`SNAPSHOT_CRON is not a valid cron expression: "${config.SNAPSHOT_CRON}"`);
+  }
+
+  tasks.push(
+    cron.schedule(
+      config.SNAPSHOT_CRON,
+      () => {
+        void runScheduledSnapshot(timezone, logger);
+      },
+      options,
+    ),
+  );
+
+  logger.info(
+    { cron: config.SNAPSHOT_CRON, timezone: options.timezone },
+    'nightly snapshot enabled',
+  );
+
+  return tasks;
+}
+
+/**
+ * The nightly record of the financial picture, labelled for the previous day.
+ *
+ * Never throws into the timer, for the same reason as sync and backup: an
+ * unhandled rejection in a cron callback takes the process down, and losing the
+ * budget because a snapshot failed would be far worse than the missing
+ * snapshot — which the gap-filler repairs on the next run anyway.
+ *
+ * The log line names the date, the counts and the duration, and says explicitly
+ * when nothing was written. "Snapshot complete" with no numbers behind it is the
+ * shape of message that let a nightly backup fail for weeks in plain sight.
+ */
+async function runScheduledSnapshot(timezone: string, logger: FastifyBaseLogger): Promise<void> {
+  const startedAt = Date.now();
+
+  try {
+    const snapshotDate = snapshotDateFor(new Date(), timezone);
+
+    /*
+     * Repair anything missed before recording tonight. Up to the day *before*
+     * this one: tonight's date is about to be observed, and an observation is
+     * always better than the reconstruction that would otherwise be written and
+     * then immediately replaced.
+     */
+    const filled = await fillGaps(
+      prisma,
+      new Date(snapshotDate.getTime() - DAY_MS),
+      timezone,
+      logger,
+    );
+
+    const result = await captureSnapshot(prisma, snapshotDate, logger);
+    const durationMs = Date.now() - startedAt;
+
+    const written = result.accountsWritten + result.delegationsWritten;
+    if (written === 0 && !result.aggregateWritten) {
+      // Not a failure — a re-run over a day already observed does exactly this —
+      // but it must never be indistinguishable from having done the work.
+      logger.warn(
+        {
+          snapshotDate,
+          durationMs,
+          kept: result.accountsKept + result.delegationsKept,
+          ...(filled.filled > 0 ? { gapsFilled: filled.filled } : {}),
+        },
+        'nightly snapshot wrote nothing: every row for this date was already observed',
+      );
+      return;
+    }
+
+    logger.info(
+      {
+        snapshotDate,
+        accounts: result.accountsWritten,
+        delegations: result.delegationsWritten,
+        aggregate: result.aggregateWritten,
+        durationMs,
+        // Days repaired on the way through, when there were any. A run that
+        // quietly rebuilt a fortnight should say so.
+        ...(filled.filled > 0 ? { gapsFilled: filled.filled } : {}),
+        // Only ever present when a row was not a straight observation, so an
+        // ordinary night's line stays short and an unusual one stands out.
+        ...(Object.keys(result.derived).length > 0 ? { derived: result.derived } : {}),
+      },
+      'nightly snapshot written',
+    );
+  } catch (error) {
+    logger.error({ err: error, durationMs: Date.now() - startedAt }, 'nightly snapshot failed');
+  }
 }
 
 /**
@@ -109,12 +256,19 @@ export function startScheduler(config: AppConfig, logger: FastifyBaseLogger): Sc
  * holding must never read zero or blank — so a quiet log line is the right
  * volume for a feed having a bad hour.
  */
-async function runScheduledPriceFetch(config: AppConfig, logger: FastifyBaseLogger): Promise<void> {
+async function runScheduledPriceFetch(
+  config: AppConfig,
+  timezone: string,
+  logger: FastifyBaseLogger,
+): Promise<void> {
   try {
-    const result = await fetchAndRecordPrice(prisma, [
-      providerByName(config.BITCOIN_PRICE_PRIMARY),
-      providerByName(config.BITCOIN_PRICE_FALLBACK),
-    ]);
+    const result = await fetchAndRecordPrice(
+      prisma,
+      [providerByName(config.BITCOIN_PRICE_PRIMARY), providerByName(config.BITCOIN_PRICE_FALLBACK)],
+      // Which day this reading is the close for. Filed in UTC, the 7pm fetch
+      // would settle tomorrow's close before tomorrow began. See ADR 037.
+      timezone,
+    );
     if (result) {
       logger.info(
         { source: result.source, closesSettled: result.closesSettled },

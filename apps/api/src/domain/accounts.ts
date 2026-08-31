@@ -1,5 +1,6 @@
 import { formatCents, type Cents } from '@budget/shared';
 import type { AccountType } from '@prisma/client';
+import { localDayKey } from './calendar.js';
 import type { Db } from '../db/client.js';
 import { ConflictError, NotFoundError, ValidationError } from './errors.js';
 
@@ -113,8 +114,19 @@ export interface UpdateAccountInput {
   readonly needsReview?: boolean | undefined;
   /** Manual accounts only. Sets the balance outright and stamps it as of now. */
   readonly balanceCents?: Cents | undefined;
+  /** Recorded on the dated valuation a balance edit writes, when there is one. */
+  readonly actorId?: string | null | undefined;
   /** The mortgage secured against this property, if it is one. */
   readonly mortgageAccountId?: string | null | undefined;
+  /**
+   * The household's zone, for the date a typed balance is filed under.
+   *
+   * Required rather than defaulted to UTC even though only a balance edit reads
+   * it: a default would let a call site that forgot it file an evening's edit
+   * under tomorrow, silently and only in the winter half of the year. A missing
+   * argument should be a build error. See ADR 037.
+   */
+  readonly timeZone: string;
 }
 
 /**
@@ -186,6 +198,38 @@ export async function updateAccount(
         : { balanceCents: input.balanceCents, balanceAsOf: now }),
     },
   });
+
+  /*
+   * A balance typed by hand is also a dated valuation.
+   *
+   * `balance_as_of` is one timestamp, overwritten on every edit, so it can say
+   * when a value was last confirmed and never what the value was in March. Only
+   * properties had a history, because only they went through `recordValuation` —
+   * which left cash, River and Strike with no dated history at all, and the
+   * snapshot gap-filler with nothing to carry forward for them.
+   *
+   * Upserted on today's date so two edits in one day leave one row saying what
+   * it finally settled at, rather than a history of somebody's typing.
+   *
+   * Today *here*: `now` is an instant and `as_of` is a calendar day, so the
+   * conversion takes the household's zone. Truncated in UTC, a balance typed at
+   * eight in the evening landed on tomorrow — which put the valuation a day
+   * ahead of the snapshot meant to carry it, so the day it was typed on read the
+   * old figure.
+   */
+  if (input.balanceCents !== undefined && account.source === 'manual') {
+    const asOf = localDayKey(now, input.timeZone);
+    await db.accountValuation.upsert({
+      where: { accountId_asOf: { accountId: id, asOf } },
+      create: {
+        accountId: id,
+        valueCents: input.balanceCents,
+        asOf,
+        actorId: input.actorId ?? null,
+      },
+      update: { valueCents: input.balanceCents, actorId: input.actorId ?? null },
+    });
+  }
 }
 
 /**

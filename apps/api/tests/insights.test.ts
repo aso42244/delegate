@@ -15,7 +15,6 @@ import {
 import {
   makeAccount,
   makeDelegation,
-  makeHolding,
   makeTransaction,
   markTwoFactorEnrolled,
   resetDatabase,
@@ -36,6 +35,9 @@ let cookie: string;
 
 const OWNER = { username: 'owner', password: 'correct-horse-battery' };
 const NOW = new Date('2026-08-09T12:00:00Z');
+
+/** The household's zone: it decides where a spending window starts. */
+const ZONE = 'America/Chicago';
 
 beforeAll(async () => {
   app = await buildApp(
@@ -117,7 +119,11 @@ describe('spending', () => {
     await spendOn(grocery.id, 30_000n, new Date('2026-08-01T00:00:00Z'));
     await spendOn(fun.id, 10_000n, new Date('2026-08-02T00:00:00Z'));
 
-    const { entries } = await buildSpending(prisma, { by: 'grouping', window: '30d' }, NOW);
+    const { entries } = await buildSpending(
+      prisma,
+      { by: 'grouping', window: '30d', timeZone: ZONE },
+      NOW,
+    );
     expect(entries[0]?.name).toBe('Essentials');
     expect(entries[0]?.spendCents).toBe(30_000n);
     expect(entries[1]?.name).toBe('No grouping');
@@ -132,7 +138,11 @@ describe('spending', () => {
     // A reconciliation-sized correction, far larger than the spending.
     await adjustDelegationByDelta(prisma, { delegationId: grocery.id, deltaCents: -900_000n });
 
-    const { entries } = await buildSpending(prisma, { by: 'delegation', window: '30d' }, NOW);
+    const { entries } = await buildSpending(
+      prisma,
+      { by: 'delegation', window: '30d', timeZone: ZONE },
+      NOW,
+    );
     expect(entries[0]?.spendCents).toBe(5_000n);
   });
 
@@ -152,12 +162,20 @@ describe('spending', () => {
     });
     await categorizeTransaction(prisma, refund.id, grocery.id);
 
-    const { entries } = await buildSpending(prisma, { by: 'delegation', window: '30d' }, NOW);
+    const { entries } = await buildSpending(
+      prisma,
+      { by: 'delegation', window: '30d', timeZone: ZONE },
+      NOW,
+    );
     expect(entries[0]?.spendCents).toBe(8_000n);
   });
 
   it('reports nothing rather than inventing a cycle before the first Delegate', async () => {
-    const result = await buildSpending(prisma, { by: 'grouping', window: 'cycle' }, NOW);
+    const result = await buildSpending(
+      prisma,
+      { by: 'grouping', window: 'cycle', timeZone: ZONE },
+      NOW,
+    );
     expect(result.since).toBeNull();
     expect(result.entries).toEqual([]);
   });
@@ -312,60 +330,16 @@ describe('the layout', () => {
  * each day's price since Phase 2 — but the route never returned it, so the tile
  * had nothing to draw and showed a paragraph instead.
  */
-describe('the bitcoin series', () => {
-  it('values the holding at each day s price', async () => {
-    // Half a bitcoin, held since long before this window.
-    await makeHolding({ name: 'Hardware wallet', sats: 50_000_000n });
-
-    for (const [daysAgo, dollars] of [
-      [3, 60_000],
-      [2, 65_000],
-      [1, 70_000],
-    ] as const) {
-      const date = new Date(NOW);
-      date.setUTCDate(date.getUTCDate() - daysAgo);
-      await prisma.bitcoinPrice.create({
-        data: {
-          priceDate: new Date(date.toISOString().slice(0, 10)),
-          priceCents: BigInt(dollars) * 100n,
-          source: 'test',
-        },
-      });
-    }
-
-    const response = await app.inject({
-      method: 'GET',
-      url: '/api/insights/series?days=7',
-      headers: { cookie },
-    });
-
-    const body = response.json<{
-      bitcoin_value_over_time: { name: string; points: { valueCents: string }[] } | null;
-    }>();
-
-    expect(body.bitcoin_value_over_time?.name).toBe('Hardware wallet');
-
-    const values = (body.bitcoin_value_over_time?.points ?? []).map((point) =>
-      BigInt(point.valueCents),
-    );
-    // Half a coin at $70,000 is $35,000 — the price moves, the quantity does not.
-    expect(values.some((value) => value === 3_500_000n)).toBe(true);
-  });
-
-  it('returns nothing when no account holds any', async () => {
-    await makeAccount({ name: 'Checking', type: 'asset', balanceCents: 100n });
-
-    const response = await app.inject({
-      method: 'GET',
-      url: '/api/insights/series?days=7',
-      headers: { cookie },
-    });
-
-    expect(
-      response.json<{ bitcoin_value_over_time: unknown }>().bitcoin_value_over_time,
-    ).toBeNull();
-  });
-});
+/*
+ * The `/api/insights/series` block that stood here is gone with the route.
+ *
+ * It exercised the ledger-walking reconstruction that ADR 035 replaced. The
+ * property it protected — a holding valued at each day's own price, with the
+ * quantity read for that day rather than today's applied backwards — did not go
+ * with it: `snapshots.test.ts` asserts it on an observed day, and
+ * `snapshot-fill.test.ts` asserts it on a rebuilt one, both against the stored
+ * quantity and price rather than against a chart.
+ */
 
 /**
  * A Bitcoin holding in net worth.

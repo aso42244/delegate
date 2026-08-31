@@ -1,4 +1,4 @@
-import { CYCLES_PER_YEAR, PAY_CADENCES } from '@budget/shared';
+import { CYCLES_PER_YEAR, isKnownTimeZone, knownTimeZones, PAY_CADENCES } from '@budget/shared';
 import { readFileSync } from 'node:fs';
 import type { FastifyBaseLogger, FastifyPluginCallback } from 'fastify';
 import { z } from 'zod';
@@ -6,6 +6,7 @@ import { prisma } from '../db/client.js';
 import { listArchivedEntities } from '../domain/archive.js';
 import {
   getBudgetSettings,
+  resolveScheduleTimezone,
   updateBudgetSettings,
   type BudgetSettings,
 } from '../domain/settings.js';
@@ -26,6 +27,21 @@ const updateSchema = z
     identityToleranceCents: centsIn.optional(),
     payCadence: z.enum(PAY_CADENCES).optional(),
     remoteOverTorEnabled: z.boolean().optional(),
+    /**
+     * An IANA zone, or null to go back to following `SCHEDULE_TIMEZONE`.
+     *
+     * Checked here as well as in the domain so the refusal is a 400 with a
+     * readable message rather than a zone the picker offered and the server
+     * silently declined.
+     */
+    scheduleTimezone: z
+      .string()
+      .refine(isKnownTimeZone, {
+        message:
+          'Not an IANA time zone name. Abbreviations ("CST") and fixed offsets ("-05:00") are refused: neither observes daylight saving, so a job set for a civil hour would drift.',
+      })
+      .nullable()
+      .optional(),
   })
   /*
    * Unknown fields are refused rather than stripped, which is zod's default.
@@ -37,7 +53,11 @@ const updateSchema = z
    */
   .strict();
 
-function present(settings: BudgetSettings, logger: FastifyBaseLogger): Record<string, unknown> {
+function present(
+  settings: BudgetSettings,
+  logger: FastifyBaseLogger,
+  environmentTimezone: string,
+): Record<string, unknown> {
   return {
     undoWindowHours: settings.undoWindowHours,
     identityToleranceCents: centsOut(settings.identityToleranceCents),
@@ -48,6 +68,23 @@ function present(settings: BudgetSettings, logger: FastifyBaseLogger): Record<st
     cyclesPerYear: CYCLES_PER_YEAR[settings.payCadence],
     remoteOverTorEnabled: settings.remoteOverTorEnabled,
     remoteOverTorEnabledAt: dateOut(settings.remoteOverTorEnabledAt),
+
+    /**
+     * Three fields rather than one, because the interface has three things to
+     * say: what was chosen, what the environment would fall back to, and which
+     * of them is actually in force.
+     *
+     * Resolving on the server so the page and the scheduler cannot disagree.
+     * Settings → Sync asserted "nightly at 02:30 UTC" whatever the deployment
+     * was configured with for months, and nothing checked it.
+     */
+    scheduleTimezone: settings.scheduleTimezone,
+    environmentTimezone,
+    effectiveTimezone: resolveScheduleTimezone(settings, environmentTimezone),
+    // Offered here rather than assembled in the browser, so the picker cannot
+    // offer a zone this server would refuse.
+    availableTimezones: knownTimeZones(),
+
     // The address itself, when the onion service has been started. Read from
     // the file Tor writes; absent means nobody has started it.
     onionAddress: readOnionAddress(logger),
@@ -91,7 +128,7 @@ export const settingsRoutes: FastifyPluginCallback = (fastify, _options, done) =
   }
 
   fastify.get('/api/settings', async (request) =>
-    present(await getBudgetSettings(prisma), request.log),
+    present(await getBudgetSettings(prisma), request.log, fastify.config.SCHEDULE_TIMEZONE),
   );
 
   /**
@@ -107,6 +144,19 @@ export const settingsRoutes: FastifyPluginCallback = (fastify, _options, done) =
     const before = await getBudgetSettings(prisma);
     const settings = await updateBudgetSettings(prisma, body);
 
+    /**
+     * Rebuild the cron tasks when the zone moved.
+     *
+     * `node-cron` fixes a task's zone at creation, so without this the setting
+     * would save, report itself saved, and change nothing until the next
+     * restart. Compared rather than fired on every write: rebuilding the
+     * schedules because somebody changed the undo window is work for nothing.
+     */
+    const timezoneMoved = before.scheduleTimezone !== settings.scheduleTimezone;
+    if (timezoneMoved) {
+      await fastify.schedules.reload();
+    }
+
     // Old and new for the one that decides who gets in. A log line saying only
     // "settings updated" cannot answer the question anybody would ask later.
     request.log.info(
@@ -120,10 +170,21 @@ export const settingsRoutes: FastifyPluginCallback = (fastify, _options, done) =
                 to: settings.remoteOverTorEnabled,
               },
             }),
+        // The zone decides when every job fires, including the one that stamps a
+        // date onto stored history. Worth a line naming both ends.
+        ...(timezoneMoved
+          ? {
+              scheduleTimezone: {
+                from: before.scheduleTimezone,
+                to: settings.scheduleTimezone,
+                effective: resolveScheduleTimezone(settings, fastify.config.SCHEDULE_TIMEZONE),
+              },
+            }
+          : {}),
       },
       'budget settings updated',
     );
-    return present(settings, request.log);
+    return present(settings, request.log, fastify.config.SCHEDULE_TIMEZONE);
   });
 
   /**

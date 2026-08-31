@@ -23,6 +23,20 @@ export interface BudgetSettingsDto {
   readonly remoteOverTorEnabledAt: string | null;
   /** Null until the Tor service has been started and made one. */
   readonly onionAddress: string | null;
+
+  /**
+   * The household's zone — three fields, because there are three things to say.
+   *
+   * `scheduleTimezone` is what somebody chose, or null for "follow the
+   * environment". `environmentTimezone` is what `SCHEDULE_TIMEZONE` says.
+   * `effectiveTimezone` is which of them is actually in force, resolved by the
+   * server so this page and the scheduler cannot disagree.
+   */
+  readonly scheduleTimezone: string | null;
+  readonly environmentTimezone: string;
+  readonly effectiveTimezone: string;
+  /** Offered by the server, so the picker cannot offer a zone it would refuse. */
+  readonly availableTimezones: readonly string[];
 }
 
 export interface ArchivedDto {
@@ -53,5 +67,7 @@ export const settingsApi = {
     identityToleranceCents?: string;
     payCadence?: PayCadence;
     remoteOverTorEnabled?: boolean;
+    /** Null clears the choice and goes back to following `SCHEDULE_TIMEZONE`. */
+    scheduleTimezone?: string | null;
   }) => api.patch<BudgetSettingsDto>('/api/settings', input),
 };
