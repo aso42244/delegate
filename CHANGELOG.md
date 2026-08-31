@@ -6,6 +6,10 @@ phase (`v0.1.0-phase1`, and so on).
 
 ## [Unreleased]
 
+Nothing yet.
+
+## [0.33.0] — 2026-08-28
+
 ### Fixed
 
 - **The end of a local day is resolved against the day it is actually
