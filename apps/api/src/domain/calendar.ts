@@ -143,9 +143,19 @@ export function asDayKey(date: Date): Date {
  * where it lands.
  */
 export function localDayBounds(key: Date, timeZone: string): { start: Date; end: Date } {
-  const midnightUtc = asDayKey(key).getTime();
+  const startKey = asDayKey(key);
+  // Keys are midnight UTC, so a day is exactly `DAY_MS` of key arithmetic.
+  const endKey = new Date(startKey.getTime() + DAY_MS);
 
-  const resolve = (target: number): Date => {
+  /**
+   * `expected` is the day this probe is resolving, and it must be passed rather
+   * than assumed. The end bound resolves the *following* midnight, so a check
+   * written against `key` can never pass for it — the correction would always be
+   * discarded and the uncorrected guess returned. In a zone that shifts at two in
+   * the morning that is the same answer; in one that shifts at midnight it is an
+   * hour out, and a day's window then ends an hour early or late.
+   */
+  const resolve = (target: number, expected: Date): Date => {
     const firstGuess = new Date(target - offsetAt(new Date(target), timeZone));
     const corrected = new Date(target - offsetAt(firstGuess, timeZone));
     /*
@@ -154,12 +164,15 @@ export function localDayBounds(key: Date, timeZone: string): { start: Date; end:
      * The correction then lands before the day begins, and the guess that did
      * not need correcting is the honest one.
      */
-    return localDayKey(corrected, timeZone).getTime() === asDayKey(key).getTime()
+    return localDayKey(corrected, timeZone).getTime() === expected.getTime()
       ? corrected
       : firstGuess;
   };
 
-  return { start: resolve(midnightUtc), end: resolve(midnightUtc + DAY_MS) };
+  return {
+    start: resolve(startKey.getTime(), startKey),
+    end: resolve(endKey.getTime(), endKey),
+  };
 }
 
 /** The instant a local day begins. */

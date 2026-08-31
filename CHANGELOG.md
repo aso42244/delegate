@@ -6,6 +6,22 @@ phase (`v0.1.0-phase1`, and so on).
 
 ## [Unreleased]
 
+### Fixed
+
+- **The end of a local day is resolved against the day it is actually
+  resolving.** `localDayBounds` checked both of its probes against the _start_
+  day's key — a comparison the following midnight can never satisfy — so the end
+  bound always discarded its daylight-saving correction and returned the
+  uncorrected guess.
+
+  Invisible in `America/Chicago`, which shifts at two in the morning, where both
+  answers agree. In a zone that shifts at midnight it is an hour out on
+  transition days, which silently moves an hour of transactions into the
+  neighbouring day. Found reviewing
+  [ADR 037](docs/decisions/037-a-day-is-the-households-day.md); the regression
+  test fails without the fix in `America/Santiago`, `America/Havana`,
+  `Asia/Beirut` and `Australia/Lord_Howe`.
+
 ### Added
 
 - **A day is the household's day, not UTC's**
