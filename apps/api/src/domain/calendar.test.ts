@@ -180,6 +180,39 @@ describe('the instants a local day spans', () => {
     }
   });
 
+  /**
+   * The end bound is resolved against the day it is actually resolving.
+   *
+   * It was checked against the *start* day, which the following midnight can
+   * never equal — so the correction was always discarded and the uncorrected
+   * guess returned. Chicago never noticed, because it shifts at two in the
+   * morning and both answers agree there. A zone that shifts at midnight is an
+   * hour out on transition days, which silently moves an hour of transactions
+   * into the neighbouring day.
+   */
+  it('abuts the next day in a zone whose clocks shift at midnight', () => {
+    for (const zone of ['America/Santiago', 'America/Havana', 'Asia/Beirut']) {
+      for (let index = 0; index < 365; index += 1) {
+        const key = new Date(Date.UTC(2026, 0, 1 + index));
+        const next = new Date(Date.UTC(2026, 0, 2 + index));
+        expect(endOfLocalDay(key, zone).getTime(), `${zone} ${key.toISOString()}`).toBe(
+          startOfLocalDay(next, zone).getTime(),
+        );
+      }
+    }
+  });
+
+  /** Including a zone whose offset is not a whole number of hours. */
+  it('abuts the next day where the shift is half an hour', () => {
+    for (let index = 0; index < 365; index += 1) {
+      const key = new Date(Date.UTC(2026, 0, 1 + index));
+      const next = new Date(Date.UTC(2026, 0, 2 + index));
+      expect(endOfLocalDay(key, 'Australia/Lord_Howe').getTime()).toBe(
+        startOfLocalDay(next, 'Australia/Lord_Howe').getTime(),
+      );
+    }
+  });
+
   it('round-trips in a zone east of UTC too', () => {
     for (const zone of ['Europe/London', 'Australia/Sydney', 'Asia/Kolkata']) {
       for (let index = 0; index < 365; index += 10) {
