@@ -8,6 +8,23 @@ phase (`v0.1.0-phase1`, and so on).
 
 Nothing yet.
 
+## [0.41.1] — 2026-09-01
+
+### Fixed
+
+- **The published image tag did not match the release name.** `v0.41.0` in git,
+  `0.41.0` in the registry — the semver pattern strips the leading `v` — so
+  `deploy.sh --tag v0.41.0`, which is what the documentation said to run because
+  it is what the release is called, pulled a manifest that did not exist. Both
+  forms are published now.
+- **A deploy would not restart a service behind a profile.** Tor moved behind one
+  in `v0.41.0` and `deploy.sh` runs `compose up -d` with no profiles, so a
+  deployment running the onion service would have quietly lost it.
+  `COMPOSE_PROFILES` in `.env` is the mechanism, and `.env.example` says so.
+- **`cosign` was needed again and the README no longer said so.** It was removed
+  along with the dead registry path; that path is live again now the workflow
+  signs what it pushes.
+
 ## [0.41.0] — 2026-09-01
 
 ### Changed
