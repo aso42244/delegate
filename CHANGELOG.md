@@ -8,6 +8,46 @@ phase (`v0.1.0-phase1`, and so on).
 
 Nothing yet.
 
+## [0.41.2] — 2026-09-01
+
+### Fixed
+
+Three defects that reached the NAS in one deploy, and the reason they got there.
+
+- **`deploy.sh` replaced itself mid-run.** It sets its constants at the top,
+  `--unpack` overwrites the script, and execution continues from the old copy —
+  so a release that changes the script does not get to use the change it
+  shipped. `v0.41.0` moved image signing from `ci.yml` to `publish.yml`, and the
+  first deploy of it refused to start: the running script checked a perfectly
+  good signature against the identity of a workflow deleted in August. Unpacking
+  now happens before any argument is read, and re-execs the version it unpacked.
+
+- **A required compose variable is required everywhere.** Interpolation happens
+  before profiles are applied, so `DELEGATE_DOMAIN` marked `:?` inside the
+  bundled Caddy service stopped a deployment that had never heard of Caddy from
+  parsing its compose file at all.
+
+- **`BACKUP_DIR` empty stopped meaning `./backups`** and started meaning a Docker
+  volume, and `deploy.sh` had not caught up: it created and chowned a directory
+  nothing writes to, and said nothing about the dumps having moved somewhere an
+  off-device backup cannot see.
+
+### Added
+
+- **The gate parses the compose file**, with an empty environment and again with
+  every profile enabled.
+
+  This is the actual fix. All three defects above were in `docker-compose.yml` or
+  `deploy.sh` — files this repository had never executed, which the handoff
+  called out honestly every time and which turned out to mean the person
+  deploying was the integration test. The compose plugin had been a dangling
+  symlink to a Docker Desktop that is not installed, so it had silently never
+  worked here.
+
+  Twenty-three seconds to reproduce the failure the owner hit, against nearly
+  four minutes of test suite to be told by him instead. Verified against the real
+  defect: restoring the `:?` makes the gate fail with the message he saw.
+
 ## [0.41.1] — 2026-09-01
 
 ### Fixed

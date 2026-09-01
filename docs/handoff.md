@@ -88,8 +88,8 @@ These are non-negotiable. Violating one is a build failure.
 
 ## Where things stand
 
-**`main` is at `v0.41.0`; the NAS is running `v0.40.0`** and needs the deploy
-below.
+**`main` is at `v0.41.1`, and the NAS is running it** — deployed 2026-09-01,
+the first release pulled as a published image rather than compiled on the NAS.
 
 **Delegate installs anywhere in one line now**
 ([ADR 042](decisions/042-delegate-installs-anywhere-in-one-line.md)):
@@ -583,6 +583,18 @@ are not negotiable by a request, whoever wrote it.
 - **Homebrew PostgreSQL 16.** `household_budget_dev` and `household_budget_test`
   (names predate the rename; harmless).
 - `gh` is installed and authenticated as `aso42244`.
+- **`docker compose` is installed and the gate uses it**, since 2026-09-01
+  (`brew install docker-compose`, registered through `cliPluginsExtraDirs` in
+  `~/.docker/config.json`). The symlink that was there pointed at Docker Desktop,
+  which is not installed, so compose had silently never worked here.
+
+  **That is why `docker-compose.yml` was "reasoned about, not executed" for
+  months, and it stopped being a documented limitation and started being a
+  documented cost** when three defects reached the NAS in one deploy — all three
+  in compose or `deploy.sh`. `npm run verify` now parses the compose file with an
+  empty environment and again with every profile on. Twenty-three seconds to the
+  failure, against nearly four minutes to be told by the person deploying.
+
 - **Docker is installed** — colima, since 2026-08-19. `npm run verify` now
   completes: it builds the image, starts it, and asks it for `/health`.
   `verify:quick` still exists for a fast loop and skips exactly that step. Run
@@ -855,6 +867,24 @@ does.
   a `⋯` column that would not collapse on a phone, suspecting CSS specificity;
   the cause was one unpatched empty `<td className="w-10 ...">` in the same
   column.
+- **A profile does not stop a service, it stops managing it.** Moving `tor`
+  behind a compose profile in `v0.41.0` was expected to stop the container on the
+  next deploy. What happened is the opposite and worse: `compose up -d` left it
+  running and simply stopped tracking it, so it kept working while ageing out of
+  every future release — and would have stayed down silently the first time it
+  stopped, with Settings reporting "no onion address", which is also what it says
+  when nothing is wrong. `COMPOSE_PROFILES` in `.env` is what keeps a profiled
+  service part of a deployment that wants it.
+- **A compose variable marked required (`:?`) is required everywhere**, including
+  inside a service no profile has enabled: interpolation happens before profiles
+  are applied. `DELEGATE_DOMAIN` was `:?` inside the bundled Caddy service, and a
+  NAS that had never heard of Caddy failed halfway through an upgrade.
+- **A deploy script that unpacks a release replaces itself.** `deploy.sh` sets
+  its constants at the top, `--unpack` overwrites the file, and execution
+  continues from the old copy — so a release that changes the script does not get
+  to use the change it shipped. That produced a signature failure against a
+  perfectly good signature, because the running script was checking for a
+  workflow deleted a month earlier. It re-execs after unpacking now.
 - **Routing around the terminology ban produced worse engineering** — a database
   round trip per money transaction, collidable correlation ids, `Math.random()`
   in the auth path. All fixed once the ban was narrowed.
