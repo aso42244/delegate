@@ -529,15 +529,29 @@ sudo -i sh -c 'cd /volume1/docker/delegate && docker compose exec postgres \
     ALTER ROLE delegate_app NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION;"'
 ```
 
-Then change the user in `DATABASE_URL` and restart:
+Then point the application at it. `DATABASE_URL` is built inside
+`docker-compose.yml` and is not read from `.env`, so the way to change it is
+`APP_DATABASE_URL`, which overrides the whole thing:
+
+```sh
+# In .env on the NAS:
+#   APP_DATABASE_URL=postgresql://delegate_app:<password>@postgres:5432/delegate
+sudo -i sh -c 'cd /volume1/docker/delegate && docker compose config' | grep DATABASE_URL
+```
+
+Check that line says `delegate_app` **before** restarting, then:
 
 ```sh
 sudo -i sh -c 'cd /volume1/docker/delegate && docker compose up -d'
 ```
 
-If it fails to start, putting the old `DATABASE_URL` back is the whole rollback —
-the superuser role is untouched. The same `sudo -i sh -c` rule applies here as
-above, and for the same reason.
+If it fails to start, emptying `APP_DATABASE_URL` is the whole rollback — the
+superuser role is untouched. The same `sudo -i sh -c` rule applies here as above,
+and for the same reason.
+
+**On a fresh install this matters too.** The init script creates the role from
+`APP_DB_USER`/`APP_DB_PASSWORD`, but nothing connected as it until
+`APP_DATABASE_URL` existed: the role was created and then ignored. Set all three.
 
 ## The onion address lives in a volume
 

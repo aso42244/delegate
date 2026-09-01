@@ -56,7 +56,21 @@ services:
       NODE_ENV: production
       PORT: 3000
       LOG_LEVEL: ${LOG_LEVEL:-info}
-      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-delegate}
+      # The application's own connection.
+      #
+      # The default is the superuser, which is what every deployment has today.
+      # `APP_DATABASE_URL` overrides it outright, and that is how the app moves
+      # onto the least-privilege role — because until now there was no way to.
+      # The init script creates `delegate_app` on a fresh install and this line
+      # built its URL from POSTGRES_USER regardless, so the role was created and
+      # then never connected as. The feature existed and did nothing.
+      #
+      # One variable holding the whole URL rather than a user and a password
+      # substituted into the default: a nested default inside a nested default
+      # is not something this file can be tested for locally (ADR 019 — compose
+      # here is reasoned about, not executed), and `docker compose config` is one
+      # command that shows what it actually resolved to.
+      DATABASE_URL: ${APP_DATABASE_URL:-postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-delegate}}
       SESSION_SECRET: ${SESSION_SECRET:?SESSION_SECRET is required}
       # The key secrets at rest are encrypted with. Empty means "derive it from
       # SESSION_SECRET", which is what every deployment did before ADR 029.

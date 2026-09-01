@@ -26,6 +26,20 @@ Nothing yet.
   The line is there now, along with `SESSION_ABSOLUTE_TTL_SECONDS`, which was
   missing for the same reason and had been quietly taking its default.
 
+- **The least-privilege database role was created and then never used.**
+  `postgres/init` creates `delegate_app` on a fresh install, and the app's
+  `DATABASE_URL` was built from `POSTGRES_USER` regardless — so the role existed,
+  owned the database, and nothing ever connected as it. The feature did nothing,
+  on new installs as well as old ones.
+
+  `APP_DATABASE_URL` overrides the whole URL, which is now the way an existing
+  deployment moves over _and_ the way a fresh one actually uses the role it was
+  given. Empty means the superuser, exactly as before.
+
+  Compose is reasoned about here rather than executed (ADR 019), so this one
+  carries a check rather than a claim: `docker compose config | grep DATABASE_URL`
+  shows what it resolved to, before anything restarts.
+
 ### Added
 
 - **The application proves at boot that its at-rest key can read what is
