@@ -360,14 +360,14 @@ export function BudgetSection({
             </td>
             {showRemaining && (
               <td className="w-40 pb-1">
-                <span className="money money-edge block px-2 text-section font-bold text-ink">
+                <span className="money block pr-3 pl-2 text-section font-bold text-ink">
                   {formatCents(parseCents(section.totalBalanceCents) ?? 0n)}
                 </span>
               </td>
             )}
             {showToDelegate && (
               <td className="w-36 pb-1">
-                <span className="money money-edge block px-2 text-section font-bold text-faint">
+                <span className="money block pr-3 pl-2 text-section font-bold text-faint">
                   {section.totalAmountToDelegateCents === null
                     ? '—'
                     : formatCents(parseCents(section.totalAmountToDelegateCents) ?? 0n)}

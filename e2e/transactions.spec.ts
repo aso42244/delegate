@@ -46,9 +46,10 @@ test('shows every transaction by default, filtered by nothing', async ({ signedI
   // Both of them: the one waiting and the one already dealt with.
   await expect(signedIn.getByText('Whole Foods Market')).toBeVisible();
   await expect(signedIn.getByText('Corner Shop')).toBeVisible();
-  // Exact: the notification banner carries very similar wording, and a
-  // substring match would resolve to both as soon as its query landed.
-  await expect(signedIn.getByText('2 transactions.')).toBeVisible();
+  // The page no longer counts its own rows — that figure is on Settings → Sync
+  // now, beside the connection that produced it. Both rows being on screen is
+  // the assertion; the count was only ever a proxy for it.
+  await expect(signedIn.getByRole('row')).toHaveCount(3);
 
   expect(waiting).not.toBe(sorted);
 });
@@ -69,7 +70,8 @@ test('the uncategorized queue is one press away', async ({ signedIn, api }) => {
   await signedIn.getByRole('link', { name: 'Transactions' }).click();
   await signedIn.getByRole('button', { name: 'Uncategorized' }).click();
 
-  await expect(signedIn.getByText('1 transaction waiting to be categorized.')).toBeVisible();
+  // One row left in the queue, and it is the one that was never categorized.
+  await expect(signedIn.getByText('Whole Foods Market')).toBeVisible();
   await expect(signedIn.getByText('Corner Shop')).toHaveCount(0);
 });
 

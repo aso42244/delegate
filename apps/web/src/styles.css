@@ -309,42 +309,6 @@ body {
  * `(hover: none)` rather than a width: a touchscreen laptop is wide and still
  * cannot hover, and a narrow window on a desktop can.
  */
-/**
- * A figure sits flush with the end of its row on a touchscreen.
- *
- * The 8px inside a money cell is the inset its hover background needs on a
- * desktop. On a phone there is no hover, and with the `⋯` column collapsed the
- * money column is the last thing in the row — so that 8px stopped every figure
- * short of the rule that ends the row, which was the only ragged edge on the
- * page and read as the table not reaching the screen.
- */
-@media (hover: none) {
-  .money-edge {
-    padding-right: 0;
-  }
-}
-
-/**
- * A text control is exactly as tall as a button.
- *
- * They were 40px against a 36px button and stayed 40 when buttons went to 28, so
- * a search box beside two filter buttons sat a clear 12px taller than both and
- * the row had no baseline. Stated once here rather than as `py-2` at thirty call
- * sites, for the same reason the button height is: two numbers that must agree
- * should not be written down twice.
- *
- * The font stays 16px. Below that, iOS zooms the page when the field takes
- * focus, which is a far worse thing to do to somebody on a phone than four
- * pixels of padding.
- *
- * Not for a `textarea`, which is sized by its rows, nor for the inline editors
- * inside a table row, which are sized by Settings → Display.
- */
-.field {
-  height: 1.75rem;
-  padding-block: 0;
-}
-
 /** The `⋯` column. Its width lives here so the touch rule below can take it. */
 .hold-to-open-cell {
   width: 2.5rem;

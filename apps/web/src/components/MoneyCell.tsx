@@ -96,6 +96,12 @@ export function MoneyCell({
     }
   }
 
+  /*
+   * A figure ends 12px in from the row's right edge, which is where the name
+   * column begins on the left. They were flush against the edge for a release —
+   * that removed a ragged gap between the figure and the rule, and left the row
+   * lopsided instead: a name inset and a number not.
+   */
   if (editing) {
     return (
       <input
@@ -110,7 +116,7 @@ export function MoneyCell({
         aria-label={label}
         aria-invalid={invalid}
         inputMode="decimal"
-        className={`money money-input money-edge ml-auto block rounded border bg-canvas px-2 py-0.5 ${
+        className={`money money-input ml-auto block rounded border bg-canvas py-0.5 pr-3 pl-2 ${
           invalid ? 'border-danger-dot' : 'border-accent'
         }`}
       />
@@ -124,7 +130,7 @@ export function MoneyCell({
       onFocus={editable ? undefined : undefined}
       disabled={!editable}
       aria-label={label}
-      className={`money money-edge w-full rounded px-2 py-0.5 ${weight} ${colour} ${
+      className={`money w-full rounded py-0.5 pr-3 pl-2 ${weight} ${colour} ${
         editable ? 'hover:bg-accent-soft' : 'cursor-default'
       }`}
     >
