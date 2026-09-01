@@ -52,6 +52,19 @@ describe('what may be reached over plaintext', () => {
     }
   });
 
+  /**
+   * Link-local reads as private and is not the same kind of thing: it holds
+   * 169.254.169.254, the instance-metadata address on every major cloud. No
+   * such service exists on the NAS, so this guards where Delegate might run.
+   */
+  it('does not treat link-local as private', () => {
+    expect(nodeUrlProblem('http://169.254.169.254/latest/meta-data/')?.code).toBe(
+      'node_url_insecure',
+    );
+    expect(isPrivateHost('169.254.169.254')).toBe(false);
+    expect(reachOf('https://169.254.169.254/')).toBe('public');
+  });
+
   it('always allows https', () => {
     expect(nodeUrlProblem('https://mempool.space/api')).toBeNull();
   });

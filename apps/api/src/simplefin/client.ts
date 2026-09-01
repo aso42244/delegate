@@ -1,3 +1,4 @@
+import { isLinkLocalHost, isOnionHost, isPrivateHost } from '@budget/shared';
 import { ValidationError } from '../domain/errors.js';
 import { accountSetSchema, normalizeAccountSet, type FeedResult } from './protocol.js';
 
@@ -166,6 +167,38 @@ function toEpochSeconds(date: Date): number {
 }
 
 /**
+ * Checks where a decoded setup token is about to send a POST.
+ *
+ * The token is Base64 chosen by whoever pasted it, so the URL inside it is
+ * attacker-controlled input in every sense that matters — checking only the
+ * scheme made this a request the server would make to any address on the
+ * network on request. A real bridge is public https; both rules below are
+ * therefore free, and both are refused before anything is sent.
+ *
+ * Returns the reason it is unacceptable, or null.
+ */
+function claimUrlProblem(claimUrl: string): string | null {
+  let url: URL;
+  try {
+    url = new URL(claimUrl);
+  } catch {
+    return 'That does not decode to a claim URL. Paste the setup token exactly as SimpleFIN gave it, with no surrounding quotes.';
+  }
+
+  if (url.protocol !== 'https:') {
+    return 'That token decodes to a plain-http claim URL. A SimpleFIN bridge is always https, so this token is not one — the claim is refused rather than sent in the clear.';
+  }
+
+  // Link-local is listed separately because it is not private — it is the
+  // cloud metadata address wearing a LAN-shaped number. See `isLinkLocalHost`.
+  if (isPrivateHost(url.hostname) || isLinkLocalHost(url.hostname) || isOnionHost(url.hostname)) {
+    return 'That token decodes to an address on your own network rather than a SimpleFIN bridge. Claiming it would make this server fetch it on your behalf, so it is refused.';
+  }
+
+  return null;
+}
+
+/**
  * Exchanges a one-time setup token for a long-lived access URL.
  *
  * A token is Base64 of a claim URL and can be claimed exactly once — a second
@@ -178,12 +211,8 @@ export async function claimSetupToken(
 ): Promise<string> {
   const claimUrl = Buffer.from(setupToken.trim(), 'base64').toString('utf8').trim();
 
-  if (!/^https?:\/\//i.test(claimUrl)) {
-    throw new ValidationError(
-      'invalid_setup_token',
-      'That does not decode to a claim URL. Paste the setup token exactly as SimpleFIN gave it, with no surrounding quotes.',
-    );
-  }
+  const problem = claimUrlProblem(claimUrl);
+  if (problem) throw new ValidationError('invalid_setup_token', problem);
 
   const response = await fetchImpl(claimUrl, { method: 'POST' });
 

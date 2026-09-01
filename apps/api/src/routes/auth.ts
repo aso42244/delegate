@@ -21,9 +21,11 @@ import {
   disableTotp,
   totpStatus,
   verifySecondFactor,
+  type SecondFactorResult,
 } from '../domain/totp.js';
 import { requireSession } from '../plugins/auth.js';
 import { authRateLimit } from '../plugins/security.js';
+import { describeAttemptedUsername } from '../domain/auth-subject.js';
 import { pruneExpiredSessions } from '../plugins/session-store.js';
 
 /** Sign-in, sign-out, and first-run setup. */
@@ -84,7 +86,10 @@ async function establishSession(
   // Expired rows are also dropped when a stale cookie is presented, but a
   // session nobody ever comes back to would otherwise sit in the table forever.
   // Signing in is the natural moment to sweep, and the table is tiny.
-  const pruned = await pruneExpiredSessions(prisma);
+  const pruned = await pruneExpiredSessions(
+    prisma,
+    request.server.config.SESSION_ABSOLUTE_TTL_SECONDS,
+  );
   if (pruned > 0) request.log.debug({ pruned }, 'expired sessions removed');
 }
 
@@ -136,12 +141,22 @@ export const authRoutes: FastifyPluginCallback = (fastify, _options, done) => {
    */
   fastify.post('/api/auth/login', { config: { rateLimit } }, async (request, reply) => {
     const { username, password } = credentialsSchema.parse(request.body);
-    const user = await authenticate(prisma, username, password);
+    const { user, usernameKnown } = await authenticate(prisma, username, password);
 
     if (!user) {
       // One message for every failure — unknown user, wrong password, archived
-      // account. Anything more specific enumerates valid usernames.
-      request.log.warn({ username }, 'failed login');
+      // account. Anything more specific enumerates valid usernames, and
+      // `usernameKnown` is used only to decide what is safe to write down.
+      request.log.warn(
+        {
+          subject: describeAttemptedUsername(
+            username,
+            usernameKnown,
+            fastify.config.SESSION_SECRET,
+          ),
+        },
+        'failed login',
+      );
       return reply.code(401).send({
         error: { code: 'invalid_credentials', message: 'Incorrect username or password.' },
       });
@@ -190,16 +205,35 @@ export const authRoutes: FastifyPluginCallback = (fastify, _options, done) => {
       select: { id: true, username: true, role: true, mustChangePassword: true, archivedAt: true },
     });
 
-    const ok =
-      user !== null &&
-      user.archivedAt === null &&
-      (await verifySecondFactor(prisma, userId, code, fastify.config.dataKey));
+    const result: SecondFactorResult =
+      user !== null && user.archivedAt === null
+        ? await verifySecondFactor(prisma, userId, code, fastify.config.dataKey)
+        : 'invalid';
 
-    if (!ok) {
-      request.log.warn({ userId }, 'failed second factor');
-      return reply.code(401).send({
-        error: { code: 'invalid_code', message: 'That code is not correct.' },
-      });
+    if (user === null || result !== 'accepted') {
+      request.log.warn({ userId, result }, 'failed second factor');
+      /*
+       * A code that was correct but already spent is told apart from one that
+       * was wrong, because the two need different words. "Not correct" sends
+       * somebody to check six digits they are reading correctly, and they will
+       * retype them until the period rolls over — which is the confusion the
+       * replay defence was always going to create the first time somebody
+       * enrolled and signed in within the same ninety seconds.
+       *
+       * It leaks nothing. Reaching this line means already holding the password
+       * and a live challenge for this account.
+       */
+      return reply.code(401).send(
+        result === 'spent'
+          ? {
+              error: {
+                code: 'code_already_used',
+                message:
+                  'That code has already been used. Wait for your authenticator to show the next one.',
+              },
+            }
+          : { error: { code: 'invalid_code', message: 'That code is not correct.' } },
+      );
     }
 
     /*

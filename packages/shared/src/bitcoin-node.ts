@@ -29,9 +29,29 @@ export type NodeMode = (typeof NODE_MODES)[number];
  *
  * Everything else must be `https:`, and is refused at configuration time rather
  * than failing later with a request that quietly went out in the clear.
+ *
+ * **Link-local (`169.254.0.0/16`) is deliberately not here.** It reads as
+ * private and is not the same kind of thing: it holds `169.254.169.254`, the
+ * instance-metadata address on every major cloud, and a host that resolves
+ * there can be asked for credentials over plain http by a server that thought
+ * it was talking to a node on the LAN. No metadata service exists on the
+ * DS220+, so this is a guard against where Delegate might run rather than
+ * where it runs — which is the only moment it can be added for free.
  */
 const PRIVATE_HOST =
-  /^(localhost|127\.\d+\.\d+\.\d+|10\.\d+\.\d+\.\d+|192\.168\.\d+\.\d+|172\.(1[6-9]|2\d|3[01])\.\d+\.\d+|169\.254\.\d+\.\d+|\[::1\]|::1|.+\.local|.+\.lan|.+\.internal)$/i;
+  /^(localhost|127\.\d+\.\d+\.\d+|10\.\d+\.\d+\.\d+|192\.168\.\d+\.\d+|172\.(1[6-9]|2\d|3[01])\.\d+\.\d+|\[::1\]|::1|.+\.local|.+\.lan|.+\.internal)$/i;
+
+/**
+ * Link-local, which is deliberately *not* private — see above.
+ *
+ * Named rather than left implicit because it is refused for a different reason
+ * than a public host is: not "this would cross the internet in the clear" but
+ * "this is the cloud metadata service wearing a LAN address". Anything that
+ * makes a request on the household's behalf should refuse it outright.
+ */
+export function isLinkLocalHost(host: string): boolean {
+  return /^169\.254\.\d+\.\d+$/.test(host);
+}
 
 export function isOnionHost(host: string): boolean {
   return /\.onion$/i.test(host);

@@ -114,6 +114,45 @@ describe('claiming a setup token', () => {
     ).rejects.toThrow(/only be claimed once/);
   });
 
+  /**
+   * The token is Base64 chosen by whoever pasted it, so the URL inside it is
+   * where this server is being asked to send a POST. Checking only the scheme
+   * made that any address on the network. A real bridge is public https, so
+   * both refusals below cost nothing.
+   */
+  it('refuses a claim URL pointing at the household network, without sending it', async () => {
+    let called = false;
+    const impl = (() => {
+      called = true;
+      return Promise.resolve(new Response('', { status: 200 }));
+    }) as typeof fetch;
+
+    for (const url of [
+      'https://192.168.1.10/claim',
+      'https://localhost:9000/claim',
+      'https://169.254.169.254/latest/meta-data/',
+      'https://abcdef.onion/claim',
+    ]) {
+      await expect(claimSetupToken(base64(url), impl), url).rejects.toThrow(
+        /own network|not one|claim URL/,
+      );
+    }
+    expect(called).toBe(false);
+  });
+
+  it('refuses a plain-http claim URL, without sending it', async () => {
+    let called = false;
+    const impl = (() => {
+      called = true;
+      return Promise.resolve(new Response('', { status: 200 }));
+    }) as typeof fetch;
+
+    await expect(
+      claimSetupToken(base64('http://bridge.example.test/claim/abc'), impl),
+    ).rejects.toThrow(/https/);
+    expect(called).toBe(false);
+  });
+
   it('rejects something that is not a token before making any request', async () => {
     let called = false;
     const impl = (() => {

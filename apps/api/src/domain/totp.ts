@@ -120,11 +120,23 @@ export async function confirmEnrolment(
     throw new ConflictError('totp_not_started', 'Start setting up two-factor first.');
   }
 
+  const candidate = normalize(code);
   const secret = decryptSecret(user.totpSecretEncrypted, sessionSecret);
-  if (!(await codeMatches(secret, normalize(code)))) {
+  if (!(await codeMatches(secret, candidate))) {
     throw new ValidationError(
       'totp_code_invalid',
       'That code did not match. Check your authenticator and try the current one.',
+    );
+  }
+
+  // Spent here as well as at sign-in. Confirming enrolment proves possession of
+  // the authenticator exactly as signing in does, and a code left unspent stays
+  // valid for the rest of its ninety-second window — against an account that is
+  // enrolled by the time this call returns.
+  if (!(await claimCode(db, userId, candidate, sessionSecret))) {
+    throw new ValidationError(
+      'totp_code_invalid',
+      'That code has already been used. Wait for your authenticator to show the next one.',
     );
   }
 
@@ -145,6 +157,18 @@ export async function confirmEnrolment(
 }
 
 /**
+ * What a second factor turned out to be.
+ *
+ * `spent` is kept apart from `invalid` because they need different words on
+ * screen. A correct code that has already been used tells somebody to wait
+ * thirty seconds; "that code is not correct" tells them to check the code they
+ * are already reading correctly, and they will retype it until the period
+ * rolls over. It reveals nothing: reaching here means already holding the
+ * password and a live challenge for this account.
+ */
+export type SecondFactorResult = 'accepted' | 'invalid' | 'spent';
+
+/**
  * Verifies a code at sign-in. Accepts either an authenticator code or an
  * unused recovery code, and spends the recovery code if that is what it was.
  */
@@ -153,19 +177,19 @@ export async function verifySecondFactor(
   userId: string,
   code: string,
   sessionSecret: string,
-): Promise<boolean> {
+): Promise<SecondFactorResult> {
   const user = await db.user.findUnique({
     where: { id: userId },
     select: { id: true, totpSecretEncrypted: true, totpConfirmedAt: true },
   });
-  if (!user?.totpConfirmedAt || !user.totpSecretEncrypted) return false;
+  if (!user?.totpConfirmedAt || !user.totpSecretEncrypted) return 'invalid';
 
   const candidate = normalize(code);
 
   const secret = decryptSecret(user.totpSecretEncrypted, sessionSecret);
   if (await codeMatches(secret, candidate)) {
     // Correct, but not necessarily unused. See `claimCode`.
-    return claimCode(db, userId, candidate, sessionSecret);
+    return (await claimCode(db, userId, candidate, sessionSecret)) ? 'accepted' : 'spent';
   }
 
   // Not a TOTP code. It may be a recovery code, which is checked against every
@@ -180,11 +204,14 @@ export async function verifySecondFactor(
       // Spent, not deleted: a used code stays visible as used, and cannot be
       // replayed.
       await db.recoveryCode.update({ where: { id: stored.id }, data: { usedAt: new Date() } });
-      return true;
+      return 'accepted';
     }
   }
 
-  return false;
+  // A spent recovery code is not told apart from a wrong one: unlike a TOTP
+  // code, there is no next one coming in thirty seconds, so the advice would be
+  // the same either way.
+  return 'invalid';
 }
 
 /**

@@ -124,7 +124,11 @@ export async function connectWithAccessUrl(
   now: Date = new Date(),
 ): Promise<{ connectedAt: Date }> {
   const trimmed = accessUrl.trim();
-  if (!/^https?:\/\//i.test(trimmed)) {
+  // https, not `https?`. The check and the message used to disagree: plain http
+  // was accepted while the message said it would not be, and an access URL
+  // carries Basic Auth credentials for the household's bank data — over http
+  // that credential crosses the internet in the clear on every hourly sync.
+  if (!/^https:\/\//i.test(trimmed)) {
     throw new ConflictError(
       'invalid_access_url',
       'That does not look like a SimpleFIN access URL. It should start with https:// and contain credentials.',

@@ -45,9 +45,21 @@ const environmentSchema = z
       .min(32, 'SESSION_SECRET must be at least 32 characters. Generate: openssl rand -base64 48'),
     SESSION_TTL_SECONDS: z.coerce.number().int().positive().default(604_800),
 
-    // Must stay false until TLS lands in Phase 3: a Secure cookie is never sent
-    // over plain http, so flipping this early makes login fail silently rather
-    // than loudly.
+    /**
+     * The ceiling a rolling session cannot roll past. Ninety days.
+     *
+     * `SESSION_TTL_SECONDS` is a rolling window and every response pushes it
+     * out, so a session that is simply *used* never expires — and a stolen
+     * cookie that keeps being used is a stolen cookie that keeps working. This
+     * is measured from `sessions.created_at` and is not extended by anything.
+     * Its whole cost is that both accounts sign in again about once a quarter.
+     */
+    SESSION_ABSOLUTE_TTL_SECONDS: z.coerce.number().int().positive().default(7_776_000),
+
+    // Plain http is the origin's permanent default (ADR 017), not a stage on the
+    // way to something else: a Secure cookie is never sent over plain http, so
+    // setting this without real TLS in front makes login fail silently rather
+    // than loudly. `scripts/make-tls-cert.sh` is the other half when you want it.
     SESSION_COOKIE_SECURE: booleanFromString.default(false),
 
     /**

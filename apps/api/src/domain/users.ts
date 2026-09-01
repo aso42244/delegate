@@ -455,9 +455,24 @@ export async function restoreUser(db: Db, actorRole: UserRole, id: string): Prom
 }
 
 /**
+ * What a sign-in attempt was, told only to the server.
+ *
+ * `user` is null for every failure and the route says the same thing about all
+ * of them — unknown user, wrong password, archived account. `usernameKnown`
+ * exists **for the audit record and nothing else**: it decides whether the name
+ * that was typed is safe to store, because a name that matches no account is
+ * quite often a password typed into the wrong field. It must never reach a
+ * response body or a status code, or it enumerates usernames.
+ */
+export interface AuthenticationAttempt {
+  readonly user: PublicUser | null;
+  readonly usernameKnown: boolean;
+}
+
+/**
  * Verifies a username and password.
  *
- * Returns null for every failure — unknown user, wrong password, archived
+ * Fails identically for every reason — unknown user, wrong password, archived
  * account — and says nothing about which. Distinguishing them tells an attacker
  * which usernames are real.
  */
@@ -465,7 +480,7 @@ export async function authenticate(
   db: Db,
   rawUsername: string,
   password: string,
-): Promise<PublicUser | null> {
+): Promise<AuthenticationAttempt> {
   const username = normalizeUsername(rawUsername);
   const user = await db.user.findUnique({
     where: { username },
@@ -475,16 +490,16 @@ export async function authenticate(
   if (!user) {
     // Spend the same time a real verification costs; see verifyAgainstDummyHash.
     await verifyAgainstDummyHash(password);
-    return null;
+    return { user: null, usernameKnown: false };
   }
 
   const correct = await verifyPassword(user.passwordHash, password);
-  if (!correct || user.archivedAt) return null;
+  if (!correct || user.archivedAt) return { user: null, usernameKnown: true };
 
   // Strip the hash by omission, so a future column added to the select cannot
   // leak by default.
   const { passwordHash, ...rest } = user;
-  return present(rest);
+  return { user: present(rest), usernameKnown: true };
 }
 
 export async function recordLogin(db: Db, id: string): Promise<void> {

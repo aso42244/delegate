@@ -44,7 +44,11 @@ const authPlugin: FastifyPluginAsync<{ config: AppConfig }> = async (fastify, op
   await fastify.register(fastifyCookie);
   await fastify.register(fastifySession, {
     secret: config.SESSION_SECRET,
-    store: new PrismaSessionStore(prisma, config.SESSION_TTL_SECONDS),
+    store: new PrismaSessionStore(
+      prisma,
+      config.SESSION_TTL_SECONDS,
+      config.SESSION_ABSOLUTE_TTL_SECONDS,
+    ),
     // Anonymous visitors get no database row. The sessions table requires a
     // user_id, and writing a row per unauthenticated request would be both a
     // constraint violation and a slow denial-of-service target.
@@ -55,8 +59,9 @@ const authPlugin: FastifyPluginAsync<{ config: AppConfig }> = async (fastify, op
     cookieName: 'budget_session',
     cookie: {
       httpOnly: true,
-      // Must stay false until TLS lands in Phase 3: browsers never send a Secure
-      // cookie over plain http, so enabling it early breaks login silently.
+      // Plain http is the origin's permanent default (ADR 017): browsers never
+      // send a Secure cookie over plain http, so enabling this without real TLS
+      // in front breaks login silently.
       secure: config.SESSION_COOKIE_SECURE,
       // 'lax' still sends the cookie on top-level navigation, so a bookmark to
       // the budget works, while cross-site form posts do not carry it.
