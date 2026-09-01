@@ -374,8 +374,8 @@ body {
 /**
  * A comfortable target for a finger.
  *
- * 44px is the figure both platforms publish, and the buttons here are 36px
- * because that is right for a pointer. Applied only where there is no hover, so
+ * 44px is the figure both platforms publish, and the buttons here are 28px
+ * because that is what the owner asked for. Applied only where there is no hover, so
  * the dense tables a mouse works well in are not loosened for everyone.
  *
  * The control keeps its size; the *target* grows around it. A 20px-tall switch

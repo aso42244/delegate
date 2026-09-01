@@ -6,7 +6,52 @@ phase (`v0.1.0-phase1`, and so on).
 
 ## [Unreleased]
 
-Nothing yet.
+### Fixed
+
+- **The uncategorized banner clears the moment the queue does.** It was
+  invalidated at two call sites out of the dozens that can change it, and
+  categorizing was not one of them — so "12 waiting to be categorized" stayed on
+  screen after the last one was filed, and coming back to the Budget page did not
+  help because the answer was already cached. It cleared five minutes later, on
+  the poll.
+
+  Notifications are now recomputed after **any** mutation that succeeds. Done
+  once, centrally, because the list of things that can change a notification is
+  every mutation in the application, and a list like that is one somebody
+  eventually forgets to add to. They are computed on read and never stored
+  (ADR 030), so recomputing one is a cheap query rather than work.
+
+### Changed
+
+- **Insights → New tile is a dialog in the middle of the page, and every option
+  shows the shape it draws.** The picker unrolled a panel _below_ the grid, so on
+  a page with a dozen tiles pressing the button scrolled nothing into view and
+  appeared to do nothing. Each option now carries a small schematic — line, area,
+  bars, donut, list or figure — because a reader after a chart is after a shape
+  first, and choosing between "Net worth over time" and "Assets against debts"
+  from two labels means already knowing what each one draws.
+
+  Schematic rather than real data, deliberately: a live thumbnail per option
+  would mean twenty-one queries to answer a question about form, and a household
+  three days into its snapshots would see twenty-one identical flat lines — every
+  option looking the same at exactly the moment the picker is most used.
+
+- **Buttons are 28px rather than 36px**, at the owner's request — 78% of the
+  height, most visible on a phone where the Budget header carries five of them.
+  Above the 24px floor WCAG 2.5.8 sets, below the 44px both platforms publish as
+  comfortable.
+
+- **"This cycle began …" has left the Budget page.** It sat there permanently and
+  was the one line nobody was going to act on — a date, on the screen for
+  deciding where money goes. It now reads as what it is, a fact about the
+  budget's settings, on Settings → Budget beside the undo window and the pay
+  cadence that govern it. The undo offer stays on the Budget header: it is
+  transient, it is the only sign a Delegate press can still be taken back, and it
+  goes when the window closes.
+
+- **The `s` chip is grey.** Yellow is for something to act on, and how fresh a
+  figure is is not something anybody can act on. `p` (pending) and `r` (needs
+  review) keep it; everything else is the quiet grey.
 
 ## [0.33.0] — 2026-08-28
 

@@ -105,7 +105,7 @@ export function BalanceReading({ view }: { view: BudgetViewDto }): ReactNode {
         role="status"
         tabIndex={0}
         aria-describedby={workingId}
-        className={`inline-flex min-h-[36px] cursor-default items-center rounded-lg border px-3 text-quiet font-semibold ${TONES[tone]}`}
+        className={`inline-flex min-h-[28px] cursor-default items-center rounded-lg border px-3 text-quiet font-semibold ${TONES[tone]}`}
       >
         {message}
       </span>

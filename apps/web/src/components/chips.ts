@@ -41,7 +41,9 @@ export const CHIPS = {
 
   // ── Accounts, on the budget and in Settings ───────────────────────────────
   manual: { mark: 'm', meaning: 'Kept by hand', tone: 'quiet' },
-  stale: { mark: 's', meaning: 'Balance may not be current', tone: 'warning' },
+  /** Quiet, not yellow: this is a fact about how fresh a figure is, not
+      something anybody can act on. Yellow is kept for a thing to do. */
+  stale: { mark: 's', meaning: 'Balance may not be current', tone: 'quiet' },
   review: { mark: 'r', meaning: 'Discovered by a sync — its type is a guess', tone: 'warning' },
   /** The only three-letter mark, because it is already read as a word. The
       figure on these rows is a quantity times a price and moves on its own once

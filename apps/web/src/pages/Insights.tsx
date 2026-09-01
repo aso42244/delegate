@@ -7,8 +7,9 @@ import {
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState, type DragEvent, type ReactNode } from 'react';
 import { api } from '../api/client.js';
-import { PageHeader, SegmentedControl } from '../components/layout.jsx';
-import { Button } from '../components/ui.jsx';
+import { EmptyState, PageHeader, SegmentedControl } from '../components/layout.jsx';
+import { Button, Modal } from '../components/ui.jsx';
+import { TilePreview } from '../components/TilePreview.jsx';
 import {
   NotEnoughHistory,
   SnapshotChart,
@@ -1394,9 +1395,7 @@ export function Insights(): ReactNode {
                 card is an action on the page, and it was sitting wherever the
                 last card happened to leave it — below the fold once enough were
                 on. */}
-            <Button onClick={() => setShowCatalog(!showCatalog)} aria-expanded={showCatalog}>
-              New tile
-            </Button>
+            <Button onClick={() => setShowCatalog(true)}>New tile</Button>
           </>
         }
       />
@@ -1451,21 +1450,48 @@ export function Insights(): ReactNode {
         </div>
       )}
 
+      {/*
+       * A dialog rather than a panel unrolled at the bottom of the page.
+       *
+       * The panel opened below every tile already on the grid — so on a page
+       * with a dozen of them, pressing "New tile" scrolled nothing into view and
+       * appeared to do nothing at all. A choice belongs where the eye is.
+       *
+       * Each option carries the shape it draws. Choosing between "Net worth over
+       * time" and "Assets against debts" from two labels means already knowing
+       * what each one looks like; a reader after a chart is after a shape first.
+       */}
       {showCatalog && (
-        <div className="mt-4 rounded-lg border border-line bg-canvas p-4">
-          <h2 className="mb-2 text-base font-semibold text-ink">Catalog</h2>
+        <Modal
+          label="Add a tile to Insights"
+          title="New tile"
+          description="Pick a shape. It joins the top of the page and can be moved from there."
+          onClose={() => setShowCatalog(false)}
+        >
           {available.length === 0 ? (
-            <p className="text-quiet text-muted">Everything is already on the page.</p>
+            <EmptyState>Every tile is already on the page.</EmptyState>
           ) : (
-            <div className="flex flex-wrap gap-2">
+            <ul className="grid grid-cols-1 gap-2 sm:grid-cols-2">
               {available.map((key) => (
-                <Button key={key} onClick={() => add(key)}>
-                  {WIDGET_TITLES[key]}
-                </Button>
+                <li key={key}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      add(key);
+                      setShowCatalog(false);
+                    }}
+                    className="flex w-full items-center gap-2 rounded-lg border border-line bg-canvas p-2 text-left hover:bg-surface"
+                  >
+                    <TilePreview display={defaultInsightDisplay(key)} />
+                    <span className="min-w-0 text-quiet font-semibold text-ink">
+                      {WIDGET_TITLES[key]}
+                    </span>
+                  </button>
+                </li>
               ))}
-            </div>
+            </ul>
           )}
-        </div>
+        </Modal>
       )}
     </div>
   );

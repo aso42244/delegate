@@ -107,7 +107,7 @@ one line of subtitle
 
 ## 5. Buttons
 
-**One size.** `min-h-[36px]`, `px-3`, `text-quiet font-semibold`, 8px radius.
+**One size.** `min-h-[28px]`, `px-3`, `text-quiet font-semibold`, 8px radius.
 There is no small or large button.
 
 **One primary per screen**, and it is the thing you came to that screen to do —

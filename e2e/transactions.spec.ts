@@ -63,11 +63,51 @@ test('the uncategorized queue is one press away', async ({ signedIn, api }) => {
     data: { delegationId: grocery },
   });
 
-  await signedIn.goto('/transactions');
+  // Navigated through the interface, never `goto`. A full page load remounts the
+  // application and refetches everything, which hides this bug completely — the
+  // owner's route was clicking the sidebar, and that serves the cache.
+  await signedIn.getByRole('link', { name: 'Transactions' }).click();
   await signedIn.getByRole('button', { name: 'Uncategorized' }).click();
 
   await expect(signedIn.getByText('1 transaction waiting to be categorized.')).toBeVisible();
   await expect(signedIn.getByText('Corner Shop')).toHaveCount(0);
+});
+
+/**
+ * The banner is a reading of a fact, and the fact moved.
+ *
+ * It was invalidated at two call sites out of the dozens that can change it, and
+ * categorizing was not one of them — so "1 transaction waiting to be
+ * categorized" stayed on screen after the queue was empty, and going back to the
+ * Budget page did not help because the answer was already cached. It cleared
+ * five minutes later, on the poll, which is not an answer.
+ */
+test('the uncategorized banner clears as soon as the queue does', async ({ signedIn, api }) => {
+  const accountId = await makeAccount('Everyday Checking', 'asset', 500000n);
+  await makeDelegation(api, 'Grocery');
+  await makeTransaction(api, accountId, '-4210', 'Whole Foods Market');
+
+  await signedIn.goto('/');
+  // Scoped to the banner. The Transactions subtitle carries the same words, so
+  // an unscoped match there reads the page's own copy back and proves nothing —
+  // the collision docs/handoff.md records.
+  const banner = signedIn.getByRole('status').filter({ hasText: 'waiting to be categorized' });
+  await expect(banner).toBeVisible();
+
+  await signedIn.goto('/transactions');
+  await signedIn.getByRole('button', { name: 'Uncategorized' }).click();
+
+  const picker = signedIn.getByLabel('Categorize Whole Foods Market');
+  await picker.fill('gro');
+  await picker.press('Enter');
+  // The row leaving the queue is the signal that the write landed.
+  await expect(signedIn.getByText('Whole Foods Market')).toBeHidden();
+
+  // Back to Budget the way a person goes back to it.
+  await signedIn.getByRole('link', { name: 'Budget' }).click();
+  await expect(
+    signedIn.getByRole('status').filter({ hasText: 'waiting to be categorized' }),
+  ).toHaveCount(0);
 });
 
 test('categorizing with the keyboard removes the row from the queue', async ({ signedIn, api }) => {

@@ -496,21 +496,25 @@ export function MainBudget(): ReactNode {
       <PageHeader
         title="Budget"
         beside={<BalanceReading view={view.data} />}
+        /*
+         * Only the undo offer, and only while there is one.
+         *
+         * "This cycle began 21/08/2026" sat here permanently and was the one
+         * line on the page nobody was going to act on — a date, on the screen
+         * that exists for deciding where money goes. It reads as a fact about
+         * the budget's settings, so it now lives with them, on Settings →
+         * Budget beside the undo window and the pay cadence that govern it.
+         *
+         * The offer below is the opposite: transient, the only sign a Delegate
+         * press can still be taken back, and gone the moment the window closes.
+         */
         subtitle={
-          <>
-            {view.data.cycleStartedAt
-              ? `This cycle began ${new Date(view.data.cycleStartedAt).toLocaleDateString()}.`
-              : 'No delegate run yet.'}
-            {/* Beside the cycle date rather than in a bar of its own, and gone
-                the moment the window closes — while the date stays, because
-                the cycle did not end when the chance to undo it did. */}
-            {undoRunId !== null && (
-              <span className="ml-2">
-                Delegated {formatCents(BigInt(undo.data?.totalCents ?? '0'))} across{' '}
-                {undo.data?.lineCount} lines. Undo rolls the cycle back too.
-              </span>
-            )}
-          </>
+          undoRunId === null ? undefined : (
+            <>
+              Delegated {formatCents(BigInt(undo.data?.totalCents ?? '0'))} across{' '}
+              {undo.data?.lineCount} lines. Undo rolls the cycle back too.
+            </>
+          )
         }
         actions={
           <>
