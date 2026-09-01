@@ -130,7 +130,7 @@ export function DelegationPicker({
         autoFocus={autoFocus}
         className={
           asSheet
-            ? 'w-full rounded-lg border border-line bg-canvas px-3 py-2.5 text-base text-ink placeholder:text-faint'
+            ? 'field w-full rounded-lg border border-line bg-canvas px-3 text-base text-ink placeholder:text-faint'
             : `w-full rounded border border-transparent bg-transparent px-2 py-0.5 text-quiet hover:border-line focus:border-accent focus:bg-canvas ${
                 currentName ? 'text-ink' : 'text-faint'
               }`

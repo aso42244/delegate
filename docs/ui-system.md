@@ -108,6 +108,18 @@ one line of subtitle
 ## 5. Buttons
 
 **One size.** `min-h-[28px]`, `px-3`, `text-quiet font-semibold`, 8px radius.
+
+**Everything on a control row is 28px** — a button, a text field, a select, a
+segmented control. They were 36, 40 and 36, so a search box beside two filter
+buttons sat 12px taller than both and the row had no baseline. The height is
+written down twice and only twice: `min-h-[28px]` on the button, and `.field` in
+`styles.css` for anything you type into. A `textarea` is sized by its rows and an
+inline editor inside a table row by Settings → Display; neither is on a control
+row.
+
+A field keeps its **16px font**. Below that, iOS zooms the page when the field
+takes focus, which is a worse thing to do to somebody on a phone than four pixels
+of padding.
 There is no small or large button.
 
 **One primary per screen**, and it is the thing you came to that screen to do —

@@ -343,11 +343,12 @@ container, which is true and useless to somebody standing on the NAS looking for
 the file. Both were assertions nothing checked, which is how this item stayed
 untickable for months in the first place.
 
-What is genuinely outstanding:
-
-1. **Record the onion address** somewhere safe once Tor remote access is turned
-   on. It lives in a Docker volume; lose the volume and the address cannot be
-   recovered, only replaced, and every device that had it stops working.
+**Nothing is outstanding.** The onion address was recorded by the owner on
+2026-08-31, which was the last item — reported rather than inspected, like the
+off-NAS backup above it, because where he keeps it is not this project's
+business. Worth keeping the reason: the address lives in a Docker volume, and
+losing the volume does not lose access, it loses the _name_ — it cannot be
+recovered, only replaced, and every device that had the old one stops working.
 
 Open by decision rather than by omission, each with reasoning in
 [docs/security-review-2026-08.md](security-review-2026-08.md):

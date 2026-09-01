@@ -6,7 +6,42 @@ phase (`v0.1.0-phase1`, and so on).
 
 ## [Unreleased]
 
-Nothing yet.
+### Fixed
+
+- **The Insights order is reachable on a phone.** Reordering was drag-only, and
+  HTML5 drag fires no events under a thumb and is not reachable by keyboard at
+  all — so on a phone the grid's order was simply fixed, while the `⠿` handle was
+  still drawn over it, a grip on nothing.
+
+  Each tile carries **Move earlier / Move later** now, always visible, and the
+  handle is gone. They replace it rather than joining it: revealing them on hover
+  was worse than either, because an `opacity: 0` control still occupies its width
+  and the header then ran 26px past the card with the `×` beyond the edge of the
+  screen. The source had claimed these arrows existed for two releases before
+  they did.
+
+- **A utility's chart starts where its history does.** Months before the first
+  bill were drawn as invisible columns holding open half the chart, so the bars
+  sat squashed against the right of the card with a blank left half — a chart
+  that read as pushed out of position. The current month, which usually has no
+  bill in it yet, did the same at the other end.
+
+  Leading months and an _incomplete_ trailing one are dropped. An empty month
+  **between** two bills stays: that is a fact about the utility, and compressing
+  it out would quietly redraw the history as though the bills were consecutive.
+
+### Changed
+
+- **Everything on a control row is 28px** — a button, a text field, a select, a
+  segmented control. Fields were 40px and the Insights window picker 36px against
+  a 28px button, so a search box beside two filter buttons sat 12px taller than
+  both and the row had no baseline. The height is written down twice and only
+  twice now: on the button, and as `.field` for anything you type into.
+
+  A field keeps its 16px font. Below that, iOS zooms the page when the field takes
+  focus, which is a worse thing to do to somebody on a phone than four pixels of
+  padding. A `textarea` is sized by its rows and an inline editor inside a table
+  row by Settings → Display; neither is on a control row.
 
 ## [0.34.0] — 2026-08-31
 

@@ -1,3 +1,4 @@
+import { visibleMonths } from './utility-months.js';
 import { formatCents } from '@budget/shared';
 import { useQuery } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
@@ -52,17 +53,22 @@ function MiniChart({
   /** The grouping's colour, so the bars and the dot beside the name agree. */
   readonly color: string | null;
 }): ReactNode {
-  const values = months.map((month) => BigInt(month.spendCents));
-  const peak = values.reduce((max, value) => (value > max ? value : max), 0n);
+  const all = months.map((month) => BigInt(month.spendCents));
+  const peak = all.reduce((max, value) => (value > max ? value : max), 0n);
 
   // Nothing spent in the whole window is not a chart of zeroes, it is no chart.
   // Sixty-four pixels of empty box is the largest thing on the card on a phone,
   // and it is the part with nothing in it.
   if (peak <= 0n) return null;
 
+  // Months before the first bill, and the current one if it has no bill yet, are
+  // the absence of history rather than history. See `utility-months.ts`.
+  const shown = visibleMonths(months);
+  const values = shown.map((month) => BigInt(month.spendCents));
+
   return (
     <div className="flex h-16 items-end gap-1">
-      {months.map((month, index) => {
+      {shown.map((month, index) => {
         const value = values[index] ?? 0n;
         // Percentages as numbers only for layout — never for money.
         const height = peak <= 0n ? 0 : Number((value * 100n) / peak);

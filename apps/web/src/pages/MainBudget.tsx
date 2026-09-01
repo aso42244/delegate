@@ -137,7 +137,7 @@ function TransferDialog({
             <select
               value={from}
               onChange={(event) => setFrom(event.target.value)}
-              className="w-full rounded-lg border border-line bg-canvas px-3 py-2"
+              className="field w-full rounded-lg border border-line bg-canvas px-3"
             >
               <option value="">Choose a delegation</option>
               <TransferOptions section={section} exclude={to} />
@@ -149,7 +149,7 @@ function TransferDialog({
             <select
               value={to}
               onChange={(event) => setTo(event.target.value)}
-              className="w-full rounded-lg border border-line bg-canvas px-3 py-2"
+              className="field w-full rounded-lg border border-line bg-canvas px-3"
             >
               <option value="">Choose a delegation</option>
               <TransferOptions section={section} exclude={from} />
@@ -163,7 +163,7 @@ function TransferDialog({
               onChange={(event) => setAmount(event.target.value)}
               inputMode="decimal"
               placeholder="25.00"
-              className="money money-input rounded-lg border border-line bg-canvas px-3 py-2"
+              className="field money money-input rounded-lg border border-line bg-canvas px-3"
             />
           </label>
 

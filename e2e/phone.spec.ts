@@ -223,6 +223,30 @@ test.describe('at 390px, on every screen', () => {
     await expect(page.getByRole('menu', { name: 'Options for Groceries' })).toBeVisible();
   });
 
+  /**
+   * The Insights order is reachable under a thumb.
+   *
+   * HTML5 drag fires no events on a touchscreen, so the grid's only way to
+   * reorder was one that could not be performed there — and the drag handle was
+   * still drawn, a grip on nothing.
+   */
+  test('a tile can be reordered, and the drag handle is not drawn', async ({ signedIn: page }) => {
+    await page.goto('/insights');
+    await expect(page.locator('section h2').nth(1)).toBeVisible();
+
+    const titles = (): Promise<string[]> => page.locator('section h2').allInnerTexts();
+    const second = (await titles())[1]!;
+
+    // The arrows are visible without a hover, because there is none to give.
+    const up = page.getByRole('button', { name: `Move ${second} earlier` });
+    await expect(up).toBeVisible();
+    await up.tap();
+    await expect.poll(async () => (await titles())[0]).toBe(second);
+
+    // And the handle, which only a pointer can use, is not taking up room.
+    await expect(page.locator('.pointer-only').first()).not.toBeVisible();
+  });
+
   test('nothing is clipped by the edge of the screen', async ({ signedIn: page, api }) => {
     await household(api);
 
