@@ -88,9 +88,8 @@ These are non-negotiable. Violating one is a build failure.
 
 ## Where things stand
 
-**The NAS is running `v0.37.0`, deployed 2026-09-01. `main` is ahead of it** with
-the September security review's work, unreleased — cut a version before the next
-deploy. 244 unit, 624 integration and 183 end-to-end tests. There is no CI: GitHub stores the code and nothing else
+**`main` is at `v0.38.0`; the NAS is running `v0.37.0`** and needs the deploy
+below. 244 unit, 624 integration and 183 end-to-end tests. There is no CI: GitHub stores the code and nothing else
 ([ADR 022](decisions/022-the-checks-run-here-not-on-github.md)), and every gate
 runs locally through `npm run verify`.
 

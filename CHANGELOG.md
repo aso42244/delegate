@@ -6,6 +6,10 @@ phase (`v0.1.0-phase1`, and so on).
 
 ## [Unreleased]
 
+Nothing yet.
+
+## [0.38.0] — 2026-09-01
+
 ### Security
 
 An external review of `v0.37.0` found eight low and informational items. Six are
