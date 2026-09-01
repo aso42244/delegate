@@ -205,6 +205,11 @@ A table's own top rule is the separator. It never also gets a margin above it.
 own reading or something the application needs to say, because they sit on one
 row and anything else reads as two kinds of thing pretending to be one.
 
+**Every notification is one of these, at every severity.** There is no bar and
+nothing renders above the page. A pill's tone and its words carry how serious it
+is — the same way every other state in this system carries it — and floor space
+is not asked to say it a third time.
+
 **Two or three words, and a count is the most detail one carries.** `Sync issue`,
 `4 new transactions`, `1 check to confirm`. Which bank, which accounts, how old —
 that is the tooltip, one hover or one focus away, and it is where the whole

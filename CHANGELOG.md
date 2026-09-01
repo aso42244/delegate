@@ -6,7 +6,32 @@ phase (`v0.1.0-phase1`, and so on).
 
 ## [Unreleased]
 
-Nothing yet.
+### Changed
+
+- **Every notification is a pill, red ones included.** v0.36.0 kept the
+  full-width bar for the two `danger` conditions — the backup failing and the
+  sync failing — on the argument that the only copy of the household's data being
+  at risk earns the width. The owner asked for red to be a pill too, and the
+  exception was weaker than it looked: it confused _how serious this is_ with
+  _how much of the page it takes_.
+
+  Severity is already carried twice, in the colour and in the words, which is the
+  rule every other state in this application follows so that a reader who cannot
+  separate the two still gets the answer. The bar was saying it a third time in
+  floor space, on the screen whose whole purpose is the table it pushed down —
+  and a band across the top is the shape people learn to scroll past, which is a
+  poor home for the state you most want re-read.
+
+  Nothing renders above the page now. `NotificationBanners` is gone and the
+  component is `NotificationPills`.
+
+- **Nothing can be snoozed.** The X was a snooze rather than a clear — away for a
+  day, back if the condition still held — because a notification dismissed for
+  something still true is a lie the interface tells on the owner's behalf. It
+  existed because a bar was in the way. Nothing is in the way now, so a red
+  condition can no longer be hidden for a day at all.
+
+  `actionLabel` went with it: it named the bar's link, and a pill _is_ the link.
 
 ## [0.36.0] — 2026-09-01
 

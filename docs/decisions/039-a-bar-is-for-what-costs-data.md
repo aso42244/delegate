@@ -1,6 +1,7 @@
 # 039. A bar is for what costs data; everything else is a pill
 
-**Status:** accepted
+**Status:** accepted; the `danger` exception is superseded by
+[ADR 040](040-every-notification-is-a-pill.md)
 **Date:** 2026-09-01
 
 ## Context
@@ -25,6 +26,11 @@ the household's data is at risk, or the numbers on screen are silently stale.
 Two conditions out of eight. These earn the width, and they keep the snooze — an
 X that puts the bar away for a day and brings it back if the thing is still true.
 
+> **Superseded by [ADR 040](040-every-notification-is-a-pill.md).** The owner
+> read this and said to make red a pill too. The reasoning below for why a
+> `danger` is different survives; the conclusion that the difference has to be
+> paid for in floor space does not.
+
 **Everything else is a pill in the page header**, rendered by `PageHeader` so it
 appears on every screen, sitting immediately right of the budget's own reading.
 `HeaderPill` is now one component shared by both, rather than the reading having
@@ -48,10 +54,10 @@ have not dealt with", and a single default cannot be both.
 
 ## Alternatives
 
-**Everything becomes a pill.** Consistent, and wrong on the one that matters: "no
-database backup has ever completed" reduced to a two-word pill beside a title is
-a condition that can end the budget, drawn at the size of a tidiness reminder.
-The inconsistency here is the message.
+**Everything becomes a pill.** Rejected here on the grounds that "no database
+backup has ever completed" reduced to a two-word pill beside a title is a
+condition that can end the budget drawn at the size of a tidiness reminder.
+**This is what was chosen in the end** — see ADR 040.
 
 **Hide a pill on the page it points at.** Tried, and wrong in the case that
 matters most: the cashed-check proposal points at the Budget page, because the

@@ -1,6 +1,6 @@
 import { useId, useState, type ReactNode } from 'react';
 import { Button } from './ui.jsx';
-import { NotificationPills } from './NotificationBanners.jsx';
+import { NotificationPills } from './NotificationPills.jsx';
 
 /**
  * The pieces every screen repeats.
