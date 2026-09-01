@@ -88,8 +88,8 @@ These are non-negotiable. Violating one is a build failure.
 
 ## Where things stand
 
-**`main` and the NAS are both at `v0.35.0`.** 241 unit, 607 integration and 181
-end-to-end tests. There is no CI: GitHub stores the code and nothing else
+**`main` is at `v0.36.0`; the NAS is running `v0.35.0`** and needs the deploy
+below. 241 unit, 607 integration and 181 end-to-end tests. There is no CI: GitHub stores the code and nothing else
 ([ADR 022](decisions/022-the-checks-run-here-not-on-github.md)), and every gate
 runs locally through `npm run verify`.
 
