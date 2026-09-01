@@ -479,9 +479,22 @@ Nothing from it is outstanding.
 
 ### Deployment
 
-No CI, and no registry. The NAS builds the image from source it is handed
-([ADR 019](decisions/019-the-image-is-built-on-the-machine-that-runs-it.md),
-[ADR 022](decisions/022-the-checks-run-here-not-on-github.md)). Two commands.
+**Since [ADR 042](decisions/042-delegate-installs-anywhere-in-one-line.md) there
+is a published image**, multi-arch and signed, built by a workflow that fires on
+version tags and runs no tests. So the ordinary deploy is now:
+
+```sh
+cd /volume1/docker/delegate && sudo ./scripts/deploy.sh --tag v<version>
+```
+
+which pulls the image, verifies it was built by this repository's workflow, and
+restarts. That is a smaller and more honest loop than the source route below: it
+deploys the artefact `npm run verify` was run against rather than recompiling it
+on a machine that has never run the tests.
+
+**The source route still works** and is what every deploy before `v0.41.0` used.
+Keep it for an unreleased commit, or when the registry is not reachable. Two
+commands.
 
 On the Mac:
 
@@ -512,6 +525,10 @@ A successful deploy now ends with `Backups: the container can write to the backu
 directory.` If it instead prints a warning, the nightly dump will fail silently
 until the chown it names is run — that is the one failure this project cannot
 catch anywhere but on the NAS.
+
+**`npm run verify` is still the only gate** — the publish workflow builds an
+artefact and decides nothing (ADR 022 is amended, not reversed). Nothing on
+GitHub runs a test, and nothing is watching a branch.
 
 `sudo docker …` does not work on DSM: `sudo` resolves the command against
 `secure_path`, which does not include `/usr/local/bin`. Use `sudo -i sh -c '…'`,
