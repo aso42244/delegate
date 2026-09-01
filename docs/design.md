@@ -765,20 +765,43 @@ absorb affordance uses. That button is **always visible**, unlike the absorb one
 — it is a standing state rather than an offer, and a state nobody can see until
 they hover the right row is one the banner would be pointing at in vain.
 
-## Banners can be put away, not cleared
+## A bar is for what costs data; everything else is a pill
 
-A sync that _succeeds_ while the feed complains about one institution now raises
-a banner. SimpleFIN reports an expired bank login per-institution without failing
-the run, because everything else synced fine — so the text was recorded on the
-run from the beginning but legible only on the Settings page. An account could
-quietly stop updating while the whole interface looked healthy. The feed's own
-words are used: it names the bank, and paraphrasing would lose that.
+A sync that _succeeds_ while the feed complains about one institution raises a
+notification. SimpleFIN reports an expired bank login per-institution without
+failing the run, because everything else synced fine — so the text was recorded
+on the run from the beginning but legible only on the Settings page. An account
+could quietly stop updating while the whole interface looked healthy. The feed's
+own words are used: it names the bank, and paraphrasing would lose that.
 
-Every banner now carries an X, and the X is a **snooze rather than a clear**. It
-puts the banner away for a day, keyed on the message so a second bank failing is
-news again, and brings it back afterwards if the condition still holds. A banner
-dismissed for a condition that is still true would be a lie the interface tells
-on the owner's behalf. What makes one go away for good is fixing it.
+These were all full-width bars stacked above the page, and two of them at once —
+a bank wanting a fresh login and a few transactions waiting to be categorized —
+pushed the budget a third of the way down the screen to say six words between
+them. Prominence now tracks what ignoring the thing costs:
+
+- **`danger` is a bar.** The backup has never completed; the sync is failing. In
+  both, either the numbers on screen are quietly wrong or the only copy of them
+  is at risk. Two conditions, and they earn the width.
+- **Everything else is a pill** in the page header, the same object as the
+  budget's own reading and sitting immediately to its right. Two or three words
+  on its face, the whole message on hover or focus, and a press goes to where the
+  condition is dealt with.
+
+A pill is a link, so on a touchscreen the press arrives before any hover could —
+which is the right trade: the page it lands on says in full what the tooltip
+would have.
+
+**The backlog pill opens the queue, not the register.** `?uncategorized=true` is
+on the link rather than in the page's defaults, because the two ways of arriving
+want different things: the sidebar means "the register" and the pill means "the
+ones I have not dealt with". A default cannot be both.
+
+**A bar can be put away, not cleared.** Its X is a **snooze**: away for a day,
+keyed on the message so a second bank failing is news again, back afterwards if
+the condition still holds. A bar dismissed for a condition that is still true
+would be a lie the interface tells on the owner's behalf. What makes one go away
+for good is fixing it. Pills carry no X at all — snoozing exists because a bar is
+in the way, and a pill is not in the way.
 
 ## A display preference does not wait for the network
 

@@ -38,7 +38,17 @@ export interface Notification {
     | 'checks_awaiting_confirmation'
     | 'backup_failing';
   readonly severity: NotificationSeverity;
+  /**
+   * The whole of it, in a sentence. On a `danger` this is the bar's text; on
+   * everything else it is what the pill says when it is hovered or focused.
+   */
   readonly message: string;
+  /**
+   * The pill's face: two or three words that name the condition, never the
+   * detail. It is a control roughly the width of "Balanced", so a count is the
+   * most it can carry — the message says which bank, which accounts, how old.
+   */
+  readonly pill: string;
   /** Where to go to do something about it. */
   readonly actionPath: string;
   readonly actionLabel: string;
@@ -133,6 +143,7 @@ export async function buildNotifications(
       const days = newest === null ? 0 : daysBetween(newest, now);
       notifications.push({
         kind: 'backup_failing',
+        pill: 'Backup failing',
         severity: 'danger',
         message:
           newest === null
@@ -149,6 +160,7 @@ export async function buildNotifications(
     const days = daysBetween(latestRun.startedAt, now);
     notifications.push({
       kind: 'sync_failing',
+      pill: 'Sync failing',
       severity: 'danger',
       message:
         days >= 1
@@ -172,6 +184,9 @@ export async function buildNotifications(
   if (latestRun?.status === 'succeeded' && latestRun.error) {
     notifications.push({
       kind: 'sync_warning',
+      // Not 'Auth issue': the feed reports any per-institution problem this
+      // way, and an expired login is only the commonest of them.
+      pill: 'Sync issue',
       severity: 'warning',
       // Multiple institutions can complain in one run.
       message: latestRun.error.split('\n').filter(Boolean).join(' · '),
@@ -191,6 +206,7 @@ export async function buildNotifications(
       .join(', ');
     notifications.push({
       kind: 'stale_balances',
+      pill: stale.length === 1 ? '1 stale balance' : `${stale.length} stale balances`,
       severity: 'warning',
       message:
         stale.length <= 3
@@ -205,6 +221,7 @@ export async function buildNotifications(
   if (needReview.length > 0) {
     notifications.push({
       kind: 'accounts_need_review',
+      pill: needReview.length === 1 ? '1 new account' : `${needReview.length} new accounts`,
       severity: 'warning',
       message: `${needReview.length} ${needReview.length === 1 ? 'account was' : 'accounts were'} discovered by a sync and ${needReview.length === 1 ? 'its type is' : 'their types are'} a guess.`,
       actionPath: '/settings/accounts',
@@ -227,6 +244,10 @@ export async function buildNotifications(
       .join(', ');
     notifications.push({
       kind: 'checks_awaiting_confirmation',
+      pill:
+        checkMatches.length === 1
+          ? '1 check to confirm'
+          : `${checkMatches.length} checks to confirm`,
       severity: 'confirm',
       message:
         checkMatches.length === 1
@@ -244,12 +265,17 @@ export async function buildNotifications(
     const age = oldestUncategorized ? daysBetween(oldestUncategorized.postedAt, now) : 0;
     notifications.push({
       kind: 'uncategorized_backlog',
+      pill: uncategorized === 1 ? '1 new transaction' : `${uncategorized} new transactions`,
       severity: 'info',
       message:
         age >= 1
           ? `${uncategorized} ${uncategorized === 1 ? 'transaction is' : 'transactions are'} waiting to be categorized, the oldest from ${age} ${age === 1 ? 'day' : 'days'} ago.`
           : `${uncategorized} ${uncategorized === 1 ? 'transaction is' : 'transactions are'} waiting to be categorized.`,
-      actionPath: '/transactions',
+      // The filtered queue, not the whole register: this is a link for somebody
+      // who came to clear a backlog. Reaching Transactions any other way still
+      // opens on everything, which is the right default for looking something
+      // up.
+      actionPath: '/transactions?uncategorized=true',
       actionLabel: 'Categorize',
     });
   }
@@ -260,6 +286,7 @@ export async function buildNotifications(
     const days = daysBetween(price.priceDate, now);
     notifications.push({
       kind: 'bitcoin_price_stale',
+      pill: 'Stale price',
       severity: 'warning',
       message: `The Bitcoin price is from ${days === 1 ? 'yesterday' : `${days} days ago`}. Holdings are valued at that price.`,
       actionPath: '/settings/bitcoin',

@@ -6,7 +6,51 @@ phase (`v0.1.0-phase1`, and so on).
 
 ## [Unreleased]
 
-Nothing yet.
+### Fixed
+
+- **The categorization sheet no longer opens behind the keyboard.** Tapping
+  Categorize on a phone raised the keyboard, and the keyboard covered the sheet:
+  measured at 390×844 with the keys taking the lower 414px, the sheet ran from
+  y=264 to y=844. Its first option was the last thing above the fold and Cancel
+  sat 361px below the edge of a screen that does not scroll to reach it.
+
+  The assumption underneath is wrong on every phone and was shared by all twenty
+  dialogs in the application: `position: fixed` is laid out against the _layout_
+  viewport, which on iOS keeps its full height while the keyboard is composited
+  over the page. A sheet anchored to the bottom of the window is anchored behind
+  the keys. `Modal` reads `window.visualViewport` now — the rectangle actually on
+  screen — and a dialog became a column: header, scrolling body, and a footer
+  that holds whatever must stay reachable from anywhere in it. Split's remainder
+  and its errors moved there too, since a verdict you cannot see from the button
+  it governs is not a verdict.
+
+  Not reproducible in Chromium, which has no software keyboard, so the regression
+  test stubs the visual viewport to the shape iOS gives it. Verified failing
+  before the fix: the sheet's bottom edge was 844 against a visible 430.
+
+### Changed
+
+- **A bar is for what costs data; everything else is a pill.** A bank needing
+  re-authorization and a few transactions waiting to be categorized each raised a
+  full-width bar, so the Budget page opened with two of them stacked above it —
+  two rows of chrome carrying six words, on the screen whose whole purpose is the
+  table they pushed down.
+
+  Prominence tracks what ignoring the thing costs now. `danger` keeps the bar:
+  the backup has never completed, or the sync is failing, and in both the only
+  copy of the data is at risk or the numbers are silently stale. Everything else
+  is a **pill in the page header**, immediately right of the budget's own reading
+  and the same object as it — two or three words on its face, the whole message
+  on hover, and a press that goes where the condition is dealt with.
+
+  The pills carry no dismiss. Snoozing exists because a bar is in the way.
+
+- **"4 new transactions" opens the queue, not the register.** The pill links to
+  `/transactions?uncategorized=true`; the sidebar still opens on everything. The
+  filter moved from component state into the URL to make that possible, which is
+  what lets the two ways of arriving disagree — one means "the register" and the
+  other means "the ones I have not dealt with", and a single default cannot be
+  both.
 
 ## [0.35.0] — 2026-08-31
 

@@ -7,6 +7,8 @@ import {
   type TextareaHTMLAttributes,
 } from 'react';
 
+import { useVisualViewport } from '../useVisualViewport.js';
+
 /**
  * The small shared pieces, built to the tokens in docs/design.md.
  *
@@ -192,6 +194,7 @@ export function Modal({
   description,
   onClose,
   children,
+  footer,
   width = 'md',
 }: {
   label: string;
@@ -199,8 +202,15 @@ export function Modal({
   description?: string;
   onClose: () => void;
   children: ReactNode;
+  /**
+   * The dialog's buttons, kept out of the scrolling body so they stay on screen
+   * however long the body is. Optional: most dialogs are a field or two and
+   * never scroll, and for those the buttons are just more children.
+   */
+  footer?: ReactNode;
   width?: 'md' | 'lg';
 }): ReactNode {
+  const viewport = useVisualViewport();
   useEffect(() => {
     // Escape is bound on the document rather than the card, so it works before
     // anything inside has been focused.
@@ -228,23 +238,44 @@ export function Modal({
       // Above the tab bar, which is `z-20` and fixed to the same edge a sheet
       // rises from. Below it, a sheet's own buttons sit behind navigation.
       className="fixed inset-0 z-30 flex items-end justify-center bg-black/20 sm:items-center sm:p-4"
+      /*
+       * Sized to what is on screen rather than to the window. `inset-0` is the
+       * layout viewport, which on iOS keeps its full height while the keyboard
+       * covers the bottom of it — so a sheet anchored to `bottom: 0` is
+       * anchored underneath the keys. `top` and `height` win over `bottom`
+       * when all three are set, so this narrows the overlay to the visible
+       * rectangle and leaves the class as the fallback.
+       */
+      style={viewport ? { top: viewport.top, height: viewport.height } : undefined}
     >
       <div
         role="dialog"
         aria-modal="true"
         aria-label={label}
-        className={`max-h-[88%] w-full overflow-auto rounded-t-2xl border border-line bg-canvas p-4 pb-[calc(1.5rem+env(safe-area-inset-bottom,0px))] sm:max-h-full sm:rounded-lg sm:pb-4 ${
+        /*
+         * A column, so that a long body scrolls *inside* the card instead of
+         * pushing the buttons past its bottom edge. `min-h-0` on the body is
+         * what lets it shrink below its content: a flex item's minimum size is
+         * its content by default, which would keep the card at full height and
+         * put the overflow back off-screen.
+         */
+        className={`flex max-h-[88%] w-full flex-col overflow-hidden rounded-t-2xl border border-line bg-canvas px-4 pt-4 pb-[calc(1.5rem+env(safe-area-inset-bottom,0px))] sm:max-h-full sm:rounded-lg sm:pb-4 ${
           width === 'lg' ? 'sm:max-w-2xl' : 'sm:max-w-md'
         }`}
       >
         {/* The grabber says "this came from the bottom and goes back there".
             Decorative, so it is hidden from the accessibility tree and gone
             entirely where the dialog is a centred card. */}
-        <div aria-hidden className="mx-auto mb-4 h-1 w-9 rounded-full bg-line sm:hidden" />
+        <div aria-hidden className="mx-auto mb-4 h-1 w-9 shrink-0 rounded-full bg-line sm:hidden" />
 
-        <h2 className="mb-1 text-section font-bold text-ink">{title}</h2>
-        {description ? <p className="mb-4 text-quiet text-muted">{description}</p> : null}
-        {children}
+        <h2 className="mb-1 shrink-0 text-section font-bold text-ink">{title}</h2>
+        {description ? <p className="mb-4 shrink-0 text-quiet text-muted">{description}</p> : null}
+
+        {/* `-mx-4 px-4`: the scroller runs the full width of the card so a
+            focus ring or a popover inside it is not clipped by the padding,
+            while its contents stay inset like everything else. */}
+        <div className="-mx-4 min-h-0 overflow-auto px-4">{children}</div>
+        {footer ? <div className="mt-4 shrink-0">{footer}</div> : null}
       </div>
     </div>
   );

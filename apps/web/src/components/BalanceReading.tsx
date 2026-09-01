@@ -1,6 +1,7 @@
 import { classifyIdentity, formatCents, formatIdentityLabel } from '@budget/shared';
 import { useId, type ReactNode } from 'react';
 import type { BudgetViewDto } from '../api/budget.js';
+import { HeaderPill, type PillTone } from './HeaderPill.jsx';
 
 /**
  * The bottom-line reading, beside the page title.
@@ -21,21 +22,10 @@ import type { BudgetViewDto } from '../api/budget.js';
  * has to be read. Yellow and red are for over-delegation, the direction that is
  * genuinely wrong. See docs/design.md, decision 3.
  *
- * Not a button, because there is nothing to press: it reports, it does not act.
- * It still takes focus, though. The working has to be reachable without a mouse,
- * and `tabIndex` plus `aria-describedby` is what gets it to a keyboard and to a
- * screen reader — a description referenced this way is read even while the
- * element holding it is hidden.
+ * The pill itself is `HeaderPill`, shared with the notifications that sit
+ * beside it. This file decides what the reading says and how alarmed to be; it
+ * does not decide what a pill looks like, because there is now more than one.
  */
-
-type Tone = 'info' | 'positive' | 'warning' | 'danger';
-
-const TONES: Record<Tone, string> = {
-  info: 'border-accent bg-accent-soft text-accent',
-  positive: 'border-positive bg-positive-soft text-positive',
-  warning: 'border-warning-line bg-warning-soft text-warning',
-  danger: 'border-danger-line bg-danger-soft text-danger',
-};
 
 export function BalanceReading({ view }: { view: BudgetViewDto }): ReactNode {
   const workingId = useId();
@@ -65,7 +55,7 @@ export function BalanceReading({ view }: { view: BudgetViewDto }): ReactNode {
     status,
   });
 
-  const tone: Tone =
+  const tone: PillTone =
     status === 'balanced'
       ? 'positive'
       : status === 'to_delegate'
@@ -93,32 +83,5 @@ export function BalanceReading({ view }: { view: BudgetViewDto }): ReactNode {
     </>
   );
 
-  return (
-    <div className="group relative shrink-0">
-      {/*
-        role="status" rather than "alert": a standing reading of the budget, not
-        an interruption, and it changes on every edit. The working sits outside
-        it deliberately — inside, revealing the tooltip would re-announce the
-        whole live region on every hover.
-      */}
-      <span
-        role="status"
-        tabIndex={0}
-        aria-describedby={workingId}
-        className={`inline-flex min-h-[28px] cursor-default items-center rounded-lg border px-3 text-quiet font-semibold ${TONES[tone]}`}
-      >
-        {message}
-      </span>
-
-      <span
-        id={workingId}
-        role="tooltip"
-        // `w-max` keeps the equation on one line wherever there is room for it,
-        // and the cap makes it wrap rather than run off a phone.
-        className="pointer-events-none absolute top-full left-0 z-20 mt-1 hidden w-max max-w-[calc(100vw-3rem)] rounded-lg border border-line bg-canvas px-3 py-2 text-quiet text-ink shadow-lg group-hover:block group-focus-within:block"
-      >
-        {working}
-      </span>
-    </div>
-  );
+  return <HeaderPill tone={tone} label={message} detail={working} detailId={workingId} />;
 }

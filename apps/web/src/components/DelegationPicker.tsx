@@ -142,9 +142,16 @@ export function DelegationPicker({
           id={listboxId}
           role="listbox"
           aria-label="Delegations"
+          /*
+           * In a sheet the list does not scroll itself — the dialog's body
+           * does. `45vh` was a share of the *layout* viewport, which stays 844
+           * tall behind an open keyboard, so it reserved more height than the
+           * screen had and nested a second scroller inside one that was already
+           * scrolling. Two touch scrollers in a stack fight each other.
+           */
           className={
             asSheet
-              ? 'mt-2 max-h-[45vh] overflow-auto'
+              ? 'mt-2'
               : 'absolute z-20 mt-1 max-h-64 w-64 overflow-auto rounded-lg border border-line bg-canvas py-1 shadow-lg'
           }
         >
