@@ -88,8 +88,9 @@ These are non-negotiable. Violating one is a build failure.
 
 ## Where things stand
 
-**`main` is at `v0.37.0`; the NAS is running `v0.36.0`** and needs the deploy
-below. 241 unit, 607 integration and 181 end-to-end tests. There is no CI: GitHub stores the code and nothing else
+**The NAS is running `v0.37.0`, deployed 2026-09-01. `main` is ahead of it** with
+the September security review's work, unreleased — cut a version before the next
+deploy. 244 unit, 624 integration and 183 end-to-end tests. There is no CI: GitHub stores the code and nothing else
 ([ADR 022](decisions/022-the-checks-run-here-not-on-github.md)), and every gate
 runs locally through `npm run verify`.
 
@@ -174,6 +175,21 @@ and, more usefully, what was _not_ and why
   `secrets:rekey` ([ADR 029](decisions/029-the-at-rest-key-is-separable-from-the-session-secret.md))
 - Changing your own password revokes every other session; settings writes are
   administrator-only; regex rules are refused by _timing_ as well as by shape
+- **A rolling session has a ceiling it cannot roll past** — 90 days from
+  `created_at`, never extended. Without it, a session that keeps being used never
+  expires at all, which is precisely the session somebody else might be holding
+- **The routes that decide _where_ this server sends a request** are
+  administrator-only. The line is choosing a destination, not making one: syncing
+  and checking the node use what is already stored and stay open to everybody
+- **A record of what happened to credentials, with the screen that reads it**
+  ([ADR 041](decisions/041-an-audit-log-ships-with-the-screen-that-reads-it.md)).
+  Refused twice before, and built the third time only because the owner asked for
+  the screen with it — a table nobody queries is the dead-backup trap. It is also
+  the one table here that is **pruned**, at 90 days, because it is the only one an
+  unauthenticated stranger can cause writes to
+- **A failed sign-in never writes down what was typed** unless it names a real
+  account. The login form has two fields, and a password in the top one used to
+  reach the logs verbatim
 
 **This is no longer a LAN-only application.** Any claim to the contrary is stale
 and should be deleted on sight. What remains narrowly true is that the origin
@@ -335,7 +351,14 @@ newest date is a day behind even when everything is working.
 
 ### Known gaps to fix
 
-None outstanding.
+None outstanding. The September security review is closed — see
+[docs/security-review-2026-09.md](security-review-2026-09.md) for what was fixed,
+what was accepted, and why.
+
+Four things are **the owner's to run**, and none is a code change: setting
+`DATA_ENCRYPTION_KEY` and running `secrets:rekey`, moving the live database onto
+the `delegate_app` role, confirming the `tor-keys` volume is in the NAS backup,
+and pinning the base-image digests at the next deliberate base bump.
 
 ### Waiting on the owner
 
@@ -402,17 +425,32 @@ losing the volume does not lose access, it loses the _name_ — it cannot be
 recovered, only replaced, and every device that had the old one stops working.
 
 Open by decision rather than by omission, each with reasoning in
-[docs/security-review-2026-08.md](security-review-2026-08.md):
+[docs/security-review-2026-08.md](security-review-2026-08.md) and
+[docs/security-review-2026-09.md](security-review-2026-09.md):
 
 - **TLS at the origin** — declined. Cloudflare and Tor both encrypt from away;
   what remains is the LAN, and a `Secure` cookie would break plain-http access to
   the LAN address.
-- **Encrypted backups** — deferred pending a decision about where the passphrase
-  lives. A passphrase only in `.env` means a lost `.env` is a lost backup.
+- **Encrypted backups** — **decided on 2026-09-01: plaintext, deliberately.** No
+  longer deferred. The question was never whether encryption is better in the
+  abstract but where the passphrase lives, and a passphrase only in `.env` makes
+  a lost `.env` a lost backup — worse in the failure case that actually happens,
+  a dead NAS. `/volume1/backups` is covered by the off-NAS backup. If it is ever
+  reopened, the only version worth building keeps the passphrase where the onion
+  address is kept.
+- **CSP violation reporting** — declined on 2026-09-01. An unauthenticated write
+  path feeding a log line is the dead-backup shape again, and `script-src 'self'`
+  with no inline allowance already means a violation breaks the page visibly.
 - **The least-privilege database role** — new installs get one automatically; an
   existing deployment needs the manual steps in the README.
 - **`secrets:rekey`** — available and rehearsed, not yet run. Until it is, the
   at-rest key is still derived from `SESSION_SECRET`.
+
+**The September review is closed.** All eight of its findings were reproduced;
+six were fixed, two accepted above, and two more of the same kind were found
+while checking it. `auth_events` was built with the screen that reads it
+([ADR 041](decisions/041-an-audit-log-ships-with-the-screen-that-reads-it.md)).
+Nothing from it is outstanding.
 
 ### Deployment
 
@@ -561,9 +599,9 @@ cannot collide.
 npm run verify            # everything, in the order CI used to run it
 npm run verify:quick      # the same, minus the container image build
 
-npm run test              # 173 unit
-npm run test:integration  # 510 integration
-npm run test:e2e          # 181 end-to-end, needs a build first
+npm run test              # 244 unit
+npm run test:integration  # 624 integration
+npm run test:e2e          # 183 end-to-end, needs a build first
 ```
 
 `npm run verify` is the gate. It runs migrations, typecheck, lint, formatting,

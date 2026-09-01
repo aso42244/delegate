@@ -460,18 +460,32 @@ access URL, and every watched wallet's descriptors. By default that key is
 derived from `SESSION_SECRET`, which means rotating the session secret would make
 all of them unreadable at the same moment — see ADR 029.
 
-To separate them, on the machine running Delegate:
+To separate them, on the machine running Delegate. **On Synology DSM, every
+`docker` command has to go through `sudo -i sh -c`** — plain `sudo docker` fails
+with "command not found", because `sudo` resolves the command against
+`secure_path`, which does not include `/usr/local/bin`:
+
+```sh
+# 0. Generate the key, and keep a copy somewhere off the NAS before step 2.
+openssl rand -base64 48
+```
 
 ```sh
 # 1. Prove everything can be read as it stands. Writes nothing.
-sudo docker compose exec app npm run secrets:rekey --workspace @budget/api -- --check
+sudo -i sh -c 'cd /volume1/docker/delegate && docker compose exec app \
+  npm run secrets:rekey --workspace @budget/api -- --check'
+```
 
-# 2. Re-encrypt under a new key, in one transaction.
-sudo docker compose exec -e DATA_ENCRYPTION_KEY_NEW='<a long random string>' \
-  app npm run secrets:rekey --workspace @budget/api
+```sh
+# 2. Re-encrypt under the new key, in one transaction.
+sudo -i sh -c 'cd /volume1/docker/delegate && docker compose exec \
+  -e DATA_ENCRYPTION_KEY_NEW="<the key from step 0>" app \
+  npm run secrets:rekey --workspace @budget/api'
+```
 
+```sh
 # 3. Put that same value in .env as DATA_ENCRYPTION_KEY, then restart.
-sudo docker compose up -d
+sudo -i sh -c 'cd /volume1/docker/delegate && docker compose up -d'
 ```
 
 **The order matters.** Between steps 2 and 3 the application is still reading with
@@ -493,13 +507,41 @@ An **existing** deployment is not touched, because the init script only runs on 
 empty data directory. To move one over, with the application stopped:
 
 ```sh
-sudo docker compose exec postgres psql -U postgres -d delegate -c \
-  "CREATE ROLE delegate_app LOGIN PASSWORD '<a long random string>';
-   ALTER DATABASE delegate OWNER TO delegate_app;
-   ALTER SCHEMA public OWNER TO delegate_app;
-   ALTER ROLE delegate_app NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION;"
+sudo -i sh -c 'cd /volume1/docker/delegate && docker compose exec postgres \
+  psql -U postgres -d delegate -c "
+    CREATE ROLE delegate_app LOGIN PASSWORD '"'"'<a long random string>'"'"';
+    ALTER DATABASE delegate OWNER TO delegate_app;
+    ALTER SCHEMA public OWNER TO delegate_app;
+    ALTER ROLE delegate_app NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION;"'
 ```
 
-Then change the user in `DATABASE_URL` and `sudo docker compose up -d`. If it
-fails to start, putting the old `DATABASE_URL` back is the whole rollback — the
-superuser role is untouched.
+Then change the user in `DATABASE_URL` and restart:
+
+```sh
+sudo -i sh -c 'cd /volume1/docker/delegate && docker compose up -d'
+```
+
+If it fails to start, putting the old `DATABASE_URL` back is the whole rollback —
+the superuser role is untouched. The same `sudo -i sh -c` rule applies here as
+above, and for the same reason.
+
+## The onion address lives in a volume
+
+The `tor-keys` volume holds the hidden service's private key, and that key **is**
+the onion address. Losing the volume does not lose access — the service comes
+back — it loses the _name_, permanently. It cannot be recovered, only replaced,
+and every device that had the old address stops working.
+
+So it belongs in whatever backs up **off** the NAS. In DSM: Hyper Backup → the
+task → Backup Source, and whether the share holding Docker's volumes is ticked
+with a destination that is not on `/volume1`.
+
+To see where it actually is:
+
+```sh
+sudo -i sh -c 'docker volume inspect delegate_tor-keys --format "{{.Mountpoint}}"'
+```
+
+There is no way to check this from the application, which is why it is written
+down here rather than surfaced on a screen: it is DSM configuration, invisible to
+anything running inside the container.
