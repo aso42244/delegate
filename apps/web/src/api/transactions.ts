@@ -85,6 +85,20 @@ export interface PairSideDto {
   readonly description: string;
 }
 
+/**
+ * Where this merchant went the last few times.
+ *
+ * Advice only: the counts travel with it so the row can show `14 of 15` rather
+ * than assert a delegation with nothing behind it.
+ */
+export interface SuggestionDto {
+  readonly transactionId: string;
+  readonly delegationId: string;
+  readonly delegationName: string;
+  readonly matchCount: number;
+  readonly totalCount: number;
+}
+
 export interface PairCandidateDto {
   readonly outflow: PairSideDto;
   readonly inflow: PairSideDto;
@@ -142,6 +156,13 @@ export const transactionsApi = {
 
   uncategorize: (transactionId: string) =>
     api.post<{ reversedEventCount: number }>(`/api/transactions/${transactionId}/uncategorize`),
+
+  /**
+   * A suggested delegation for every uncategorized row with enough history
+   * behind it, in one call rather than one per row.
+   */
+  suggestions: () =>
+    api.get<{ suggestions: readonly SuggestionDto[] }>('/api/transactions/suggestions'),
 
   /** Suggestions only — §7: wrong automatic pairing is worse than no pairing. */
   pairCandidates: () =>

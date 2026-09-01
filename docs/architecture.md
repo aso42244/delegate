@@ -247,6 +247,14 @@ no combining. The owner has to be able to look at a wrongly categorized
 transaction and know exactly which rule did it, which any "best match" scheme
 makes impossible.
 
+**A rule carries an action rather than a destination.** It either assigns a
+delegation or it labels — says the transaction is income, or a transfer between
+owned accounts, both of which allocate to nothing by definition. Exactly one of
+the two, held by a check constraint on `categorization_rules` rather than by
+convention: both would categorize a row the domain forbids allocations on, and
+neither would match and then change nothing.
+[ADR 043](decisions/043-a-rule-does-one-of-two-things.md).
+
 Rules match on the cleaned description _and_ the raw feed text, because feeds
 reword a description between the pending and posted versions of the same
 purchase, and a rule written against one form would otherwise stop firing.
@@ -262,12 +270,36 @@ Two guarantees are worth stating outright:
 - **A sync only applies rules to what that sync imported.** A rule written today
   does not silently recategorize months of history the next time the hourly job
   runs. That is what the explicit apply-to-existing action is for.
+- **A labelling rule never touches a categorized row**, even under
+  `includeCategorized`. Re-labelling one would mean destroying the allocations
+  underneath it, which `updateTransaction` refuses for a single row — and a bulk
+  action must not do what the same action refuses one at a time.
 
 Regular expressions come from the UI and run against the whole backlog, so a
 pattern like `(a+)+$` would backtrack forever and take the single-process server
 with it. Patterns are length-bounded, rejected at save time if they nest
 unbounded quantifiers or fail to compile, and matched against a truncated
 description.
+
+### Where the rules come from
+
+Rules are written by hand, so a merchant only stops arriving in the queue once
+somebody sits down and writes one — and the categorizations repeated most often
+were exactly the ones nobody stopped mid-queue to automate. Two things close that
+loop, and both read the same normalization in `@budget/shared`
+([ADR 044](decisions/044-the-queue-teaches-the-rules.md)):
+
+- **A suggestion** on an uncategorized row, drawn from where that merchant went
+  before, with the count behind it. It writes nothing, needs two prior decisions
+  and a majority of them, and ignores splits and archived delegations.
+- **"Always categorize like this"** on a row already filed, which builds a rule
+  from the merchant part of the raw description — offered in a field the reader
+  can edit, because the guess at where a merchant's name ends is a guess.
+
+`merchantKey` groups history; `suggestedMatchValue` fills the field. They are
+shared rather than duplicated because a drift between them would mean a rule
+created from a suggestion no longer matched the transactions that produced it,
+and nothing would say so.
 
 ## Authentication
 

@@ -6,6 +6,7 @@ import { budgetApi } from '../api/budget.js';
 import { ApiError } from '../api/client.js';
 import {
   transactionsApi,
+  type SuggestionDto,
   type TransactionDto,
   type TransactionFilters,
 } from '../api/transactions.js';
@@ -14,6 +15,7 @@ import type { ChipKind } from '../components/chips.js';
 import { DelegationPicker } from '../components/DelegationPicker.jsx';
 import { NewTransactionDialog } from '../components/NewTransactionDialog.jsx';
 import { PairSuggestions } from '../components/PairSuggestions.jsx';
+import { RuleFromTransactionDialog } from '../components/RuleFromTransactionDialog.jsx';
 import { MatchCheckDialog } from '../components/MatchCheckDialog.jsx';
 import { TransactionRowMenu } from '../components/TransactionRowMenu.jsx';
 import { SplitDialog } from '../components/SplitDialog.jsx';
@@ -52,6 +54,39 @@ function AllocationSummary({ transaction }: { transaction: TransactionDto }): Re
     <span className="text-quiet text-muted">
       {transaction.allocations.map((allocation) => allocation.delegation.name).join(', ')}
     </span>
+  );
+}
+
+/**
+ * Accepting the suggestion, in one press.
+ *
+ * The picker carries the same suggestion as its first entry, which is the
+ * keyboard path; this is the one for an eye running down the queue, so that
+ * "these nine are routine" is visible without focusing nine rows in turn.
+ *
+ * Two or three words on the face and the whole sentence on hover or focus —
+ * the same division a header pill makes, for the same reason: the column is
+ * 256px wide and the count is what a reader wants only once they doubt it.
+ */
+function SuggestionButton({
+  suggestion,
+  onAccept,
+}: {
+  readonly suggestion: SuggestionDto;
+  readonly onAccept: () => void;
+}): ReactNode {
+  const evidence = `${suggestion.matchCount} of ${suggestion.totalCount} before went to ${suggestion.delegationName}`;
+
+  return (
+    <button
+      type="button"
+      onClick={onAccept}
+      title={evidence}
+      aria-label={`Categorize as ${suggestion.delegationName} — ${evidence}`}
+      className="max-w-[50%] shrink-0 truncate rounded border border-accent bg-accent-soft px-2 py-0.5 text-quiet font-semibold text-accent"
+    >
+      {suggestion.delegationName}
+    </button>
   );
 }
 
@@ -129,6 +164,8 @@ export function Transactions(): ReactNode {
   const [matching, setMatching] = useState<TransactionDto | null>(null);
   /** The row whose picker is open in a sheet. Phone only. */
   const [picking, setPicking] = useState<TransactionDto | null>(null);
+  /** The row a rule is being built from, if any. */
+  const [ruling, setRuling] = useState<TransactionDto | null>(null);
 
   const query = {
     ...filters,
@@ -141,6 +178,22 @@ export function Transactions(): ReactNode {
     queryKey: ['transactions', query],
     queryFn: () => transactionsApi.list(query),
   });
+
+  /*
+   * Advice, fetched apart from the register it annotates.
+   *
+   * Its own query rather than a field on the list, so a slow tally cannot hold
+   * up the rows themselves and a failure to answer leaves a page that works
+   * with nothing suggested on it. That is the right failure for a suggestion:
+   * absent, never wrong.
+   */
+  const suggestions = useQuery({
+    queryKey: ['transaction-suggestions'],
+    queryFn: transactionsApi.suggestions,
+  });
+  const suggestionFor = new Map(
+    (suggestions.data?.suggestions ?? []).map((entry) => [entry.transactionId, entry]),
+  );
 
   /*
    * Which layout, rather than both with one hidden.
@@ -188,6 +241,9 @@ export function Transactions(): ReactNode {
     await queryClient.invalidateQueries({ queryKey: ['transactions'] });
     // Balances moved too, so the Budget page cache is no longer trustworthy.
     await queryClient.invalidateQueries({ queryKey: ['budget'] });
+    // And the row just categorized is now evidence rather than a question, so
+    // the next merchant like it has one more decision behind it.
+    await queryClient.invalidateQueries({ queryKey: ['transaction-suggestions'] });
   };
 
   const onError = (error: unknown): void =>
@@ -344,6 +400,9 @@ export function Transactions(): ReactNode {
                   transaction={transaction}
                   onSplit={() => setSplitting(transaction)}
                   onMatchCheck={() => setMatching(transaction)}
+                  onCreateRule={
+                    transaction.allocations.length === 1 ? () => setRuling(transaction) : null
+                  }
                   onProblem={setProblem}
                 />
               }
@@ -392,6 +451,7 @@ export function Transactions(): ReactNode {
             {list.data?.transactions.map((transaction, index) => {
               const amount = BigInt(transaction.amountCents);
               const current = transaction.allocations[0]?.delegation.name;
+              const suggestion = suggestionFor.get(transaction.id);
 
               return (
                 <tr
@@ -475,14 +535,45 @@ export function Transactions(): ReactNode {
 
                   <td className="row-cell pr-3">
                     {transaction.kind === 'normal' ? (
-                      <DelegationPicker
-                        options={delegations}
-                        {...(current ? { currentName: current } : {})}
-                        label={`Categorize ${transaction.description}`}
-                        onChoose={(delegationId) =>
-                          categorize.mutate({ id: transaction.id, delegationId })
-                        }
-                      />
+                      <div className="flex items-center gap-2">
+                        {/* Only while the row is still a question. A row already
+                            filed has an answer, and offering a second one beside
+                            it would read as a disagreement. */}
+                        {suggestion && transaction.allocations.length === 0 && (
+                          <SuggestionButton
+                            suggestion={suggestion}
+                            onAccept={() =>
+                              categorize.mutate({
+                                id: transaction.id,
+                                delegationId: suggestion.delegationId,
+                              })
+                            }
+                          />
+                        )}
+                        {/* `min-w-0`: a flex item defaults to its content width,
+                            so without it the field would size the column rather
+                            than the column sizing the field. */}
+                        <div className="min-w-0 flex-1">
+                          <DelegationPicker
+                            options={delegations}
+                            {...(current ? { currentName: current } : {})}
+                            {...(suggestion
+                              ? {
+                                  suggestion: {
+                                    delegationId: suggestion.delegationId,
+                                    name: suggestion.delegationName,
+                                    matchCount: suggestion.matchCount,
+                                    totalCount: suggestion.totalCount,
+                                  },
+                                }
+                              : {})}
+                            label={`Categorize ${transaction.description}`}
+                            onChoose={(delegationId) =>
+                              categorize.mutate({ id: transaction.id, delegationId })
+                            }
+                          />
+                        </div>
+                      </div>
                     ) : (
                       <AllocationSummary transaction={transaction} />
                     )}
@@ -497,6 +588,9 @@ export function Transactions(): ReactNode {
                         transaction={transaction}
                         onSplit={() => setSplitting(transaction)}
                         onMatchCheck={() => setMatching(transaction)}
+                        onCreateRule={
+                          transaction.allocations.length === 1 ? () => setRuling(transaction) : null
+                        }
                         onProblem={setProblem}
                       />
                     }
@@ -575,6 +669,21 @@ export function Transactions(): ReactNode {
             {...(picking.allocations[0]?.delegation.name
               ? { currentName: picking.allocations[0].delegation.name }
               : {})}
+            {...(() => {
+              // The same advice the table row shows, in the frame a thumb uses:
+              // first in the list, at the size everything else in the sheet is.
+              const suggestion = suggestionFor.get(picking.id);
+              return suggestion && picking.allocations.length === 0
+                ? {
+                    suggestion: {
+                      delegationId: suggestion.delegationId,
+                      name: suggestion.delegationName,
+                      matchCount: suggestion.matchCount,
+                      totalCount: suggestion.totalCount,
+                    },
+                  }
+                : {};
+            })()}
             label={`Categorize ${picking.description}`}
             onChoose={(delegationId) => {
               categorize.mutate({ id: picking.id, delegationId });
@@ -592,6 +701,20 @@ export function Transactions(): ReactNode {
         />
       )}
       {matching && <MatchCheckDialog transaction={matching} onClose={() => setMatching(null)} />}
+
+      {/* The delegation comes from the row itself: the rule files future
+          matches where this one was filed, which is the whole of what
+          "always categorize like this" means. */}
+      {ruling?.allocations[0] && (
+        <RuleFromTransactionDialog
+          transaction={ruling}
+          delegation={{
+            id: ruling.allocations[0].delegationId,
+            name: ruling.allocations[0].delegation.name,
+          }}
+          onClose={() => setRuling(null)}
+        />
+      )}
     </div>
   );
 }

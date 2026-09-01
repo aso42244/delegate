@@ -424,7 +424,7 @@ describe('previewing', () => {
 
     const preview = await previewRules(prisma);
 
-    expect(preview).toEqual({ examined: 2, categorized: 1 });
+    expect(preview).toEqual({ examined: 2, categorized: 1, labelled: 0 });
     // "1 of 423" is a very different decision from "397 of 423", so nothing may
     // move until the owner has seen the number.
     expect(await delegationBalance(groceryId)).toBe(0n);
@@ -432,9 +432,8 @@ describe('previewing', () => {
 });
 
 describe('building a rule from a transaction', () => {
-  it('matches on the raw feed text', async () => {
-    const { accountId, groceryId } = await fixtures();
-    const transaction = await prisma.transaction.create({
+  async function wholeFoods(accountId: string): Promise<{ id: string }> {
+    return prisma.transaction.create({
       data: {
         accountId,
         amountCents: -4210n,
@@ -445,13 +444,254 @@ describe('building a rule from a transaction', () => {
       },
       select: { id: true },
     });
+  }
+
+  it('matches the merchant in the raw feed text, not the store number with it', async () => {
+    const { accountId, groceryId } = await fixtures();
+    const transaction = await wholeFoods(accountId);
 
     const rule = await createRuleFromTransaction(prisma, transaction.id, groceryId);
 
-    // The raw text survives a feed's own rewording; the cleaned description does not.
+    /*
+     * The raw text survives a feed's own rewording; the cleaned description does
+     * not. But the *whole* raw text carries `#10234`, which is this shop and
+     * this shop only — a rule matching all of it would match the one transaction
+     * it was built from and nothing else, for ever, without ever saying so.
+     */
     const row = await prisma.categorizationRule.findUniqueOrThrow({ where: { id: rule.id } });
-    expect(row.matchValue).toBe('WHOLEFDS MKT #10234');
+    expect(row.matchValue).toBe('WHOLEFDS MKT');
     expect(row.matchMode).toBe('contains');
+  });
+
+  it('fires on the next charge from the same merchant', async () => {
+    const { accountId, groceryId } = await fixtures();
+    const transaction = await wholeFoods(accountId);
+    await createRuleFromTransaction(prisma, transaction.id, groceryId);
+
+    // A different store, so a different number: the case the whole-text version
+    // silently failed at.
+    const next = await prisma.transaction.create({
+      data: {
+        accountId,
+        amountCents: -2200n,
+        description: 'Whole Foods Market',
+        descriptionRaw: 'WHOLEFDS MKT #88112',
+        postedAt: new Date('2026-08-19T00:00:00Z'),
+        source: 'manual',
+      },
+      select: { id: true },
+    });
+
+    await applyRules(prisma, { transactionIds: [next.id] });
+
+    const allocations = await prisma.transactionAllocation.findMany({
+      where: { transactionId: next.id },
+    });
+    expect(allocations).toHaveLength(1);
+    expect(allocations[0]?.delegationId).toBe(groceryId);
+  });
+
+  it('takes what the reader typed over its own guess', async () => {
+    const { accountId, groceryId } = await fixtures();
+    const transaction = await wholeFoods(accountId);
+
+    const rule = await createRuleFromTransaction(prisma, transaction.id, groceryId, {
+      matchValue: 'wholefds',
+    });
+
+    const row = await prisma.categorizationRule.findUniqueOrThrow({ where: { id: rule.id } });
+    expect(row.matchValue).toBe('wholefds');
+  });
+});
+
+describe('a rule that labels rather than categorizes', () => {
+  it('marks a matching row as income and allocates nothing', async () => {
+    const { accountId } = await fixtures();
+    const paycheck = await makeTransaction({
+      accountId,
+      amountCents: 320000n,
+      description: 'ACME PAYROLL DIRECT DEP',
+    });
+    await createRule(prisma, {
+      matchMode: 'contains',
+      matchValue: 'acme payroll',
+      setKind: 'income',
+    });
+
+    const result = await applyRules(prisma);
+
+    expect(result).toEqual({ examined: 1, categorized: 0, labelled: 1 });
+    const row = await prisma.transaction.findUniqueOrThrow({ where: { id: paycheck.id } });
+    expect(row.kind).toBe('income');
+    // Income arrives and is distributed by Delegate; it belongs to no envelope
+    // on its own, so a labelling rule must move nothing.
+    expect(await prisma.transactionAllocation.count()).toBe(0);
+  });
+
+  it('takes the paycheck out of the uncategorized queue for good', async () => {
+    const { accountId } = await fixtures();
+    await createRule(prisma, {
+      matchMode: 'contains',
+      matchValue: 'acme payroll',
+      setKind: 'income',
+    });
+
+    // The shape a sync produces: rows land, then the rules run over exactly
+    // those ids.
+    const imported = await makeTransaction({
+      accountId,
+      amountCents: 320000n,
+      description: 'ACME PAYROLL DIRECT DEP',
+    });
+    await applyRules(prisma, { transactionIds: [imported.id] });
+
+    const waiting = await prisma.transaction.count({
+      where: { archivedAt: null, kind: 'normal', allocations: { none: {} } },
+    });
+    expect(waiting).toBe(0);
+  });
+
+  it('never re-labels a row somebody categorized, even when told to overwrite', async () => {
+    const { accountId, groceryId } = await fixtures();
+    const transaction = await makeTransaction({
+      accountId,
+      amountCents: -4210n,
+      description: 'ACME PAYROLL REFUND',
+    });
+    await categorizeTransaction(prisma, transaction.id, groceryId);
+    await createRule(prisma, {
+      matchMode: 'contains',
+      matchValue: 'acme payroll',
+      setKind: 'income',
+    });
+
+    const result = await applyRules(prisma, { includeCategorized: true });
+
+    /*
+     * Re-labelling would mean destroying the allocations underneath it, which
+     * `updateTransaction` refuses one row at a time — and a bulk action must not
+     * do what the same action refuses when it is asked for directly.
+     */
+    expect(result.labelled).toBe(0);
+    const row = await prisma.transaction.findUniqueOrThrow({ where: { id: transaction.id } });
+    expect(row.kind).toBe('normal');
+    expect(await delegationBalance(groceryId)).toBe(-4210n);
+  });
+
+  it('is counted apart from categorization in a preview', async () => {
+    const { accountId, groceryId } = await fixtures();
+    await makeTransaction({ accountId, amountCents: -4210n, description: 'Whole Foods Market' });
+    await makeTransaction({ accountId, amountCents: 320000n, description: 'ACME PAYROLL' });
+    await createRule(prisma, {
+      matchMode: 'contains',
+      matchValue: 'whole',
+      delegationId: groceryId,
+    });
+    await createRule(prisma, {
+      matchMode: 'contains',
+      matchValue: 'acme payroll',
+      setKind: 'income',
+    });
+
+    expect(await previewRules(prisma)).toEqual({ examined: 2, categorized: 1, labelled: 1 });
+    // A preview moves nothing, whichever of the two a rule would have done.
+    expect(await delegationBalance(groceryId)).toBe(0n);
+    expect(await prisma.transaction.count({ where: { kind: 'income' } })).toBe(0);
+  });
+
+  it('still stops at the first match, whichever kind of rule that is', async () => {
+    const { accountId, groceryId } = await fixtures();
+    const transaction = await makeTransaction({
+      accountId,
+      amountCents: 320000n,
+      description: 'ACME PAYROLL DIRECT DEP',
+    });
+    await createRule(prisma, {
+      matchMode: 'contains',
+      matchValue: 'acme',
+      setKind: 'income',
+      priority: 10,
+    });
+    await createRule(prisma, {
+      matchMode: 'contains',
+      matchValue: 'payroll',
+      delegationId: groceryId,
+      priority: 20,
+    });
+
+    await applyRules(prisma);
+
+    const row = await prisma.transaction.findUniqueOrThrow({ where: { id: transaction.id } });
+    expect(row.kind).toBe('income');
+    expect(await delegationBalance(groceryId)).toBe(0n);
+  });
+});
+
+describe('a rule does exactly one thing', () => {
+  it('refuses one that both categorizes and labels', async () => {
+    const { groceryId } = await fixtures();
+
+    await expect(
+      createRule(prisma, {
+        matchMode: 'contains',
+        matchValue: 'acme',
+        delegationId: groceryId,
+        setKind: 'income',
+      }),
+    ).rejects.toThrow(/not both/i);
+  });
+
+  it('refuses one that does neither', async () => {
+    await fixtures();
+
+    // The worst of the three shapes: it matches, and then changes nothing, which
+    // looks exactly like a rule that works.
+    await expect(createRule(prisma, { matchMode: 'contains', matchValue: 'acme' })).rejects.toThrow(
+      /needs a delegation/i,
+    );
+  });
+
+  it('refuses a label of "ordinary spending", which could never do anything', async () => {
+    await fixtures();
+
+    await expect(
+      createRule(prisma, { matchMode: 'contains', matchValue: 'acme', setKind: 'normal' }),
+    ).rejects.toThrow(/would do nothing/i);
+  });
+
+  it('swaps one action for the other in a single update', async () => {
+    const { groceryId } = await fixtures();
+    const rule = await createRule(prisma, {
+      matchMode: 'contains',
+      matchValue: 'acme payroll',
+      delegationId: groceryId,
+    });
+
+    // Both keys, because the action is a pair: sending one alone would leave a
+    // rule that does two things, or none.
+    await updateRule(prisma, rule.id, { delegationId: null, setKind: 'income' });
+
+    const row = await prisma.categorizationRule.findUniqueOrThrow({ where: { id: rule.id } });
+    expect(row.delegationId).toBeNull();
+    expect(row.setKind).toBe('income');
+  });
+
+  it('is held by the database, not only by the domain', async () => {
+    const { groceryId } = await fixtures();
+    const rule = await createRule(prisma, {
+      matchMode: 'contains',
+      matchValue: 'acme payroll',
+      delegationId: groceryId,
+    });
+
+    // Straight past the domain, the way a future caller or a hand-written
+    // statement would go.
+    await expect(
+      prisma.categorizationRule.update({
+        where: { id: rule.id },
+        data: { setKind: 'income' },
+      }),
+    ).rejects.toThrow();
   });
 });
 

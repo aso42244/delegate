@@ -88,8 +88,15 @@ These are non-negotiable. Violating one is a build failure.
 
 ## Where things stand
 
-**`main` is at `v0.41.1`, and the NAS is running it** — deployed 2026-09-01,
+**`main` is at `v0.41.2`; the NAS is running `v0.41.1`**, deployed 2026-09-01 —
 the first release pulled as a published image rather than compiled on the NAS.
+
+`v0.41.2` is `deploy.sh`, `verify.sh` and documentation only, with **no
+application code**, so there is nothing in it the household would see. It will
+ride along with whatever ships next. One thing to know when it does: the
+`deploy.sh` fix in it ships _inside the file being replaced_, so the next
+`--unpack` deploy still runs `v0.41.1`'s copy and the one after that gets the
+fix. Nothing breaks; the sequence resolves itself a release later.
 
 **Delegate installs anywhere in one line now**
 ([ADR 042](decisions/042-delegate-installs-anywhere-in-one-line.md)):
@@ -99,13 +106,7 @@ and the image is published multi-arch on version tags. The NAS is one deployment
 of many rather than the deployment, and it keeps working — it adopts the secrets
 already in its `.env`.
 
-**Deploy `v0.40.0` before running `secrets:rekey`.** Until it lands,
-`DATA_ENCRYPTION_KEY` does not reach the container at all — compose reads `.env`
-to substitute into the compose file and does not hand it to the app — so the
-documented re-key would move every secret onto a key the application is not
-using and lock every account out of sign-in, recovery codes included.
-
-244 unit, 630 integration and 188 end-to-end tests. There is no CI: GitHub stores the code and nothing else
+267 unit, 668 integration and 191 end-to-end tests. There is no CI: GitHub stores the code and nothing else
 ([ADR 022](decisions/022-the-checks-run-here-not-on-github.md)), and every gate
 runs locally through `npm run verify`.
 
@@ -364,6 +365,45 @@ newest date is a day behind even when everything is working.
   `nightly snapshot wrote nothing` at **warn**, never an info line that reads
   like success
 
+**Since v0.41.2 — the queue teaches the rules**
+
+Two halves of one idea, and the reason they shipped together is that they share a
+normalization neither can drift from.
+
+- **An uncategorized row says where that merchant went before**, with the count
+  behind it — `2 of 2 before went to Grocery` — and one press files it
+  ([ADR 044](decisions/044-the-queue-teaches-the-rules.md)). It writes nothing
+  until pressed, needs two prior decisions and a **majority** of them, and
+  ignores splits and archived delegations. A merchant is recognised through the
+  store number that changes on every visit, which is the whole trick: grouping on
+  the description itself finds no history at all.
+
+- **"Always categorize like this"** on the row menu turns that decision into a
+  rule. `POST /api/rules/from-transaction` had existed for months and was **called
+  by nothing** — no interface, no test — and reading it explained why nobody
+  missed it: it built the rule from the _whole_ raw description, so a rule from
+  `AMAZON MKTPL*RT4G93` would have matched exactly the transaction it was built
+  from and nothing else, for ever, silently. The needle is the merchant part now,
+  and it is offered **in a field the reader can edit** because where a merchant's
+  name ends is a guess
+
+- **A rule can say what a transaction _is_**, not only which envelope it belongs
+  in ([ADR 043](decisions/043-a-rule-does-one-of-two-things.md)). The paycheck
+  arrives from the same payer on the same fortnight and was the one thing no rule
+  could ever touch: it lands as ordinary spending and somebody marked it income
+  by hand, every fortnight, for ever. A rule carries an **action** rather than a
+  destination — a delegation, or a label — and exactly one of the two, held by a
+  check constraint rather than by convention. A labelling rule never touches a
+  categorized row even under `includeCategorized`, because `updateTransaction`
+  refuses that for one row and a bulk action must not do what the single action
+  refuses
+
+- Two things deliberately **not** built, both recorded in ADR 044: a bulk "accept
+  every suggestion", and a preview of what a new rule would match. The second is
+  the one worth revisiting — Settings → Rules previews the bulk apply and this
+  dialog previews nothing, so a needle that is too broad shows up only after the
+  next sync
+
 ### Known gaps to fix
 
 None outstanding. The September security review is closed — see
@@ -384,6 +424,43 @@ None outstanding. The September security review is closed — see
   027 carries the amendment; this is a decision, not a gap.
 - **Pinning base-image digests** — deferred to the next deliberate base bump, as
   before.
+
+**Nothing is waiting on the owner.** The NAS is deployed and healthy, the
+published package is public, and every operational item is closed or decided.
+
+### Where a new session should probably look first
+
+Not a backlog — there is none. These are the things most likely to be worth
+doing next, in the order they would pay off:
+
+- **Three ideas are on the table and the owner will pick one.** He was shown
+  five on 2026-09-01, chose the two that shipped as ADRs 043 and 044, and asked
+  to be reminded of the rest once those are deployed. They are, in the order they
+  were argued:
+
+  1. **Structured targets on a delegation** — `"$2,200 by Dec 27"` as fields
+     rather than freeform `notes`. [architecture.md](architecture.md) already
+     anticipates it: the owner does that arithmetic by hand today and the column
+     is freeform precisely so structured targets stay a purely additive
+     migration. Biggest upside of the three; touches the Budget row, so read
+     `ui-system.md` first.
+  2. **Recurring-bill detection** — an expected date and amount per merchant from
+     history alone, and a pill when one is overdue. Catches a failed autopay and
+     a subscription that renewed higher. It proposes, never writes, on the same
+     line ADR 030 drew for a cleared check.
+  3. **Export** — CSV of transactions, the ledger and the snapshot series. There
+     is none anywhere in the tree; the only way data leaves is a `pg_dump` nobody
+     can read. Cheapest of the three, and the one whose value does not depend on
+     a judgement about how the household works.
+
+  Ask him rather than picking. Phases 1–3 and the deploy work are done and the
+  September review is closed, so nothing here is urgent.
+
+- If something does need doing and the end-to-end suite misbehaves, **read
+  "Before believing a suite of failures" below before touching the branch.**
+  Four different specs failed intermittently across one long session on
+  2026-09-01, each passing alone and in clean runs, on a machine at six days
+  uptime and a load average of 3.5 at rest.
 
 ### Waiting on the owner
 
@@ -445,9 +522,15 @@ untickable for months in the first place.
 **Nothing is outstanding.** The onion address was recorded by the owner on
 2026-08-31, which was the last item — reported rather than inspected, like the
 off-NAS backup above it, because where he keeps it is not this project's
-business. Worth keeping the reason: the address lives in a Docker volume, and
-losing the volume does not lose access, it loses the _name_ — it cannot be
-recovered, only replaced, and every device that had the old one stops working.
+business.
+
+**And on 2026-09-01 he decided it does not need preserving at all.** Losing the
+`tor-keys` volume does not lose access, it loses the _name_: it cannot be
+recovered, only replaced, and every device holding the old address stops working.
+He is content to derive a new one when that happens. So this is a decision rather
+than a risk, [ADR 027](decisions/027-remote-access-is-an-onion-service.md)
+carries it, and **no future session should reopen it as a gap** — which is what
+the earlier version of this paragraph invited.
 
 Open by decision rather than by omission, each with reasoning in
 [docs/security-review-2026-08.md](security-review-2026-08.md) and
@@ -466,10 +549,19 @@ Open by decision rather than by omission, each with reasoning in
 - **CSP violation reporting** — declined on 2026-09-01. An unauthenticated write
   path feeding a log line is the dead-backup shape again, and `script-src 'self'`
   with no inline allowance already means a violation breaks the page visibly.
-- **The least-privilege database role** — new installs get one automatically; an
-  existing deployment needs the manual steps in the README.
-- **`secrets:rekey`** — available and rehearsed, not yet run. Until it is, the
-  at-rest key is still derived from `SESSION_SECRET`.
+- **The least-privilege database role** — **opt-in everywhere**, including on a
+  fresh install. The init script creates `delegate_app`, and `APP_DATABASE_URL`
+  is what connects as it; both halves are needed, and for a long time only the
+  first existed, so the role was created and then never used. It is not the
+  default because nothing can tell a fresh install from an upgrade at the moment
+  the connection string is written — the secrets volume is empty on the first
+  boot of both — and pointing an existing deployment at a role its database has
+  never heard of would break it. Two steps in the README.
+- **`secrets:rekey`** — **gone, done by upgrading on 2026-09-01.** The first boot
+  writes the at-rest key into the secrets volume, seeded from `SESSION_SECRET`
+  where one already exists, so the value does not change and nothing is
+  re-encrypted. From then on the two are recorded separately, which is the whole
+  of ADR 029's split. There is no command left to run.
 
 **The September review is closed.** All eight of its findings were reproduced;
 six were fixed, two accepted above, and two more of the same kind were found
@@ -489,14 +581,18 @@ must name `tor`** in `.env` if the onion service is wanted: it moved behind a
 profile in `v0.41.0`, and a deploy that does not name it will not bring it back
 up.
 
-**One thing is still the owner's to do, once.** GitHub publishes a workflow's
-package as **private** by default, whatever the repository's visibility. Until it
-is made public, `docker compose up -d` fails with `unauthorized` for anybody who
-has not run `docker login ghcr.io` — which is the whole one-line install, for
-everybody who is not him. The switch is at
-`github.com/users/aso42244/packages/container/delegate/settings` → Danger Zone →
-Change visibility → Public. **Done on 2026-09-01**, and verified: an anonymous token is now issued and the
-manifest lists `linux/amd64` and `linux/arm64`. So the ordinary deploy is now:
+**The package is public, done on 2026-09-01 and verified** — an anonymous token
+is issued and the manifest lists `linux/amd64` and `linux/arm64`.
+
+Worth keeping the reason it needed doing at all: GitHub publishes a workflow's
+package as **private** by default, whatever the repository's visibility. Until
+that was changed, `docker compose up -d` answered `unauthorized` for everybody
+who had not run `docker login ghcr.io` — which is the entire one-line install,
+for everybody who is not the owner. It is a property of the package rather than
+of each version, so every later push inherits it; only deleting the package or
+renaming the image would reset it.
+
+So the ordinary deploy is now:
 
 ```sh
 cd /volume1/docker/delegate && sudo ./scripts/deploy.sh --tag <version>
@@ -689,15 +785,21 @@ cannot collide.
 npm run verify            # everything, in the order CI used to run it
 npm run verify:quick      # the same, minus the container image build
 
-npm run test              # 244 unit
-npm run test:integration  # 624 integration
-npm run test:e2e          # 183 end-to-end, needs a build first
+npm run test              # 267 unit
+npm run test:integration  # 668 integration
+npm run test:e2e          # 191 end-to-end, needs a build first
 ```
 
 `npm run verify` is the gate. It runs migrations, typecheck, lint, formatting,
-the forbidden-terminology rule, the dependency audit, all three suites, the
-cached-balances-against-ledger check, a real backup-and-restore, and the image
-build. It replaced GitHub Actions and is the _only_ thing standing between a
+**the compose file parsed with an empty environment and again with every profile
+enabled**, the forbidden-terminology rule, the dependency audit, all three
+suites, the cached-balances-against-ledger check, a real backup-and-restore, the
+tor image against its real entrypoint, and the container image build.
+
+The compose step is early and cheap on purpose — two seconds, inside `--quick`.
+It exists because three defects reached the NAS in one deploy and every one was
+in a file this repository had never executed; it reproduces the worst of them in
+twenty-three seconds. It replaced GitHub Actions and is the _only_ thing standing between a
 branch and `main` now — nothing on a server is watching.
 
 Most commands need the environment loaded first:
@@ -717,9 +819,15 @@ hand and apply it with `migrate deploy`.
 
 ## Workflow
 
-- `main` is always deployable. Never commit to it directly. GitHub branch
-  protection is unavailable on a private repo without a paid plan, so this is
-  discipline rather than enforcement.
+- `main` is always deployable. Never commit to it directly.
+
+  This used to be discipline rather than enforcement, because branch protection
+  needed a paid plan on a private repository. **The repository is public now, so
+  a protection rule is available and free** — and worth turning on, because the
+  discipline demonstrably failed on 2026-09-01: a changelog commit went straight
+  to `main`, and a branch was merged on a gate that had not actually passed.
+  Neither was malice or haste; both were a rule with nothing behind it.
+
 - Branch names: `feat/`, `fix/`, `chore/`, `docs/`, `refactor/` + kebab.
 - Conventional Commits. Squash-merge. Delete the branch.
 - **`npm run verify` must actually pass before merging**, and nothing enforces
@@ -901,6 +1009,12 @@ does.
   to use the change it shipped. That produced a signature failure against a
   perfectly good signature, because the running script was checking for a
   workflow deleted a month earlier. It re-execs after unpacking now.
+- **`npm run verify | tail` reports `tail`'s exit code, not the gate's.** A
+  pipeline's status is its last command. That turned a real end-to-end failure
+  into an apparently successful run, and a branch was committed and a pull
+  request opened on a gate that had not passed. Redirect and check instead:
+  `npm run verify > /tmp/v.log 2>&1; echo $?`. The one rule this project has
+  about merging is worth more than the convenience of a pipe.
 - **Routing around the terminology ban produced worse engineering** — a database
   round trip per money transaction, collidable correlation ids, `Math.random()`
   in the auth path. All fixed once the ban was narrowed.

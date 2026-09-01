@@ -4,7 +4,13 @@ import { useState, type FormEvent, type ReactNode } from 'react';
 import { accountsApi } from '../../api/accounts.js';
 import { budgetApi } from '../../api/budget.js';
 import { ApiError } from '../../api/client.js';
-import { rulesApi, type RuleDto, type RuleMatchMode } from '../../api/rules.js';
+import {
+  rulesApi,
+  type RuleDto,
+  type RuleLabel,
+  type RuleMatchMode,
+  type RulePreviewDto,
+} from '../../api/rules.js';
 import { Alert, Button, Modal, SelectField, TextField, Toggle } from '../../components/ui.jsx';
 import { SettingsCard } from './SettingsCard.jsx';
 
@@ -23,6 +29,27 @@ const MATCH_LABELS: Record<RuleMatchMode, string> = {
   starts_with: 'starts with',
   regex: 'matches the pattern',
 };
+
+/**
+ * What a labelling rule does, said the way the row menu says it.
+ *
+ * A rule either files a transaction into an envelope or says what the
+ * transaction *is*. The second exists because the most predictable transaction a
+ * household has — the paycheck, same payer, same fortnight — was the one thing
+ * no rule could touch: it arrived as ordinary spending and somebody marked it
+ * income by hand, every fortnight.
+ */
+const LABEL_ACTIONS: Record<RuleLabel, string> = {
+  income: 'Marks as income',
+  transfer: 'Marks as a transfer',
+};
+
+/** The one sentence a rule's action gets, whichever of the two it is. */
+function describeAction(rule: RuleDto): string {
+  if (rule.setKind) return LABEL_ACTIONS[rule.setKind];
+  if (!rule.delegation) return '—';
+  return rule.delegation.archivedAt ? `${rule.delegation.name} (archived)` : rule.delegation.name;
+}
 
 const DIRECTION_LABELS = {
   any: 'Any direction',
@@ -92,9 +119,8 @@ function RuleRow({
         </td>
 
         <td className="row-cell w-44 overflow-hidden pr-2">
-          <span className="block truncate text-quiet text-muted">
-            {rule.delegation.name}
-            {rule.delegation.archivedAt && ' (archived)'}
+          <span className="block truncate text-quiet text-muted" title={describeAction(rule)}>
+            {describeAction(rule)}
           </span>
         </td>
 
@@ -170,7 +196,15 @@ function AddRuleDialog({
   const queryClient = useQueryClient();
   const [matchMode, setMatchMode] = useState<RuleMatchMode>('contains');
   const [matchValue, setMatchValue] = useState('');
-  const [delegationId, setDelegationId] = useState('');
+  /*
+   * One control for the whole action, encoded rather than two.
+   *
+   * A rule assigns a delegation or applies a label, never both, and a pair of
+   * controls that must not both be set is a pair somebody will set both of. A
+   * select whose value already says which of the two it is cannot express the
+   * invalid state at all.
+   */
+  const [action, setAction] = useState('');
   const [accountId, setAccountId] = useState('');
   const [direction, setDirection] = useState<'any' | 'debit' | 'credit'>('any');
   const [min, setMin] = useState('');
@@ -190,7 +224,9 @@ function AddRuleDialog({
       return rulesApi.create({
         matchMode,
         matchValue: matchValue.trim(),
-        delegationId,
+        ...(action.startsWith('label:')
+          ? { setKind: action.slice('label:'.length) as RuleLabel }
+          : { delegationId: action.slice('delegation:'.length) }),
         direction,
         accountId: accountId === '' ? null : accountId,
         amountMinCents: parseBound(min, 'minimum'),
@@ -252,18 +288,25 @@ function AddRuleDialog({
           </div>
         </div>
 
-        <SelectField
-          width="full"
-          label="Categorize as"
-          value={delegationId}
-          onChange={setDelegationId}
-        >
-          <option value="">Choose a delegation</option>
-          {delegations.map((delegation) => (
-            <option key={delegation.id} value={delegation.id}>
-              {delegation.name}
-            </option>
-          ))}
+        <SelectField width="full" label="Then" value={action} onChange={setAction}>
+          <option value="">Choose what the rule does</option>
+          <optgroup label="Categorize as">
+            {delegations.map((delegation) => (
+              <option key={delegation.id} value={`delegation:${delegation.id}`}>
+                {delegation.name}
+              </option>
+            ))}
+          </optgroup>
+          {/* Neither of these categorizes: income is distributed by Delegate and
+              a transfer between owned accounts is not spending, so both allocate
+              to nothing by definition. */}
+          <optgroup label="Or label it">
+            {Object.entries(LABEL_ACTIONS).map(([value, label]) => (
+              <option key={value} value={`label:${value}`}>
+                {label}
+              </option>
+            ))}
+          </optgroup>
         </SelectField>
 
         <div className="flex gap-2">
@@ -325,7 +368,7 @@ function AddRuleDialog({
           <Button
             type="submit"
             variant="primary"
-            disabled={matchValue.trim() === '' || delegationId === '' || create.isPending}
+            disabled={matchValue.trim() === '' || action === '' || create.isPending}
           >
             {create.isPending ? 'Adding…' : 'Add'}
           </Button>
@@ -349,6 +392,22 @@ function AddRuleDialog({
  * moves until the number has been shown, which is why it is fetched when the
  * dialog opens rather than being something to remember to look at.
  */
+/**
+ * What a run did, or would do.
+ *
+ * The second sentence appears only when there is a labelling rule to report,
+ * because a line that always says "and 0 labelled" is a word every reader pays
+ * for and almost none of them need.
+ */
+function describeRun(result: RulePreviewDto, tense: 'would' | 'did'): string {
+  const categorized =
+    tense === 'would'
+      ? `${result.categorized} of ${result.examined} transactions would be categorized.`
+      : `${result.categorized} of ${result.examined} categorized.`;
+  if (result.labelled === 0) return categorized;
+  return `${categorized} ${result.labelled} ${tense === 'would' ? 'would be labelled' : 'labelled'}.`;
+}
+
 function RunRulesDialog({ onDone }: { readonly onDone: () => void }): ReactNode {
   const queryClient = useQueryClient();
   const [includeCategorized, setIncludeCategorized] = useState(false);
@@ -364,7 +423,7 @@ function RunRulesDialog({ onDone }: { readonly onDone: () => void }): ReactNode 
     mutationFn: () => rulesApi.apply(includeCategorized),
     onSuccess: async (applied) => {
       setProblem(null);
-      setResult(`${applied.categorized} of ${applied.examined} categorized.`);
+      setResult(describeRun(applied, 'did'));
       await queryClient.invalidateQueries({ queryKey: ['transactions'] });
       await queryClient.invalidateQueries({ queryKey: ['budget'] });
       await queryClient.invalidateQueries({ queryKey: ['rules'] });
@@ -403,7 +462,7 @@ function RunRulesDialog({ onDone }: { readonly onDone: () => void }): ReactNode 
           {preview.isLoading
             ? 'Working out what would change…'
             : preview.data
-              ? `${preview.data.categorized} of ${preview.data.examined} transactions would be categorized.`
+              ? describeRun(preview.data, 'would')
               : ''}
         </p>
 
@@ -417,7 +476,9 @@ function RunRulesDialog({ onDone }: { readonly onDone: () => void }): ReactNode 
           <Button
             variant="primary"
             onClick={() => apply.mutate()}
-            disabled={apply.isPending || preview.data?.categorized === 0}
+            disabled={
+              apply.isPending || (preview.data?.categorized === 0 && preview.data.labelled === 0)
+            }
           >
             {apply.isPending ? 'Running…' : 'Run rules'}
           </Button>
@@ -490,7 +551,9 @@ export function RulesSection(): ReactNode {
             <tr className="text-label uppercase tracking-[0.05em] text-muted">
               <th className="row-cell w-10 pl-1 text-left font-normal">#</th>
               <th className="row-cell text-left font-normal">Rule</th>
-              <th className="row-cell w-44 pr-2 text-left font-normal">Categorizes as</th>
+              {/* "Categorizes as" named one of the two things a rule can do.
+                  A rule that labels a paycheck as income categorizes nothing. */}
+              <th className="row-cell w-44 pr-2 text-left font-normal">Then</th>
               <th className="row-cell w-44 pr-2 text-left font-normal text-faint">Only when</th>
               <th className="row-cell w-20 text-left font-normal">On</th>
               <th className="row-cell w-28 pr-1" />

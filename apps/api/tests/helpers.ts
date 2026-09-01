@@ -148,6 +148,8 @@ export interface MakeTransactionOptions {
   readonly accountId: string;
   readonly amountCents: bigint;
   readonly description?: string;
+  /** Defaults to the description. Set it where the two differing is the point. */
+  readonly descriptionRaw?: string;
   readonly postedAt?: Date;
   readonly pending?: boolean;
   readonly kind?: TransactionKind;
@@ -160,7 +162,7 @@ export async function makeTransaction(options: MakeTransactionOptions): Promise<
       accountId: options.accountId,
       amountCents: options.amountCents,
       description,
-      descriptionRaw: description,
+      descriptionRaw: options.descriptionRaw ?? description,
       postedAt: options.postedAt ?? new Date('2026-08-05T00:00:00Z'),
       pending: options.pending ?? false,
       kind: options.kind ?? 'normal',

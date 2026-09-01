@@ -37,11 +37,14 @@ export function TransactionRowMenu({
   transaction,
   onSplit,
   onMatchCheck,
+  onCreateRule,
   onProblem,
 }: {
   readonly transaction: TransactionDto;
   readonly onSplit: () => void;
   readonly onMatchCheck: () => void;
+  /** Offered only on a row already filed under exactly one delegation. */
+  readonly onCreateRule: (() => void) | null;
   /** Surfaced on the page, because the menu closes before the request answers. */
   readonly onProblem: (message: string) => void;
 }): ReactNode {
@@ -104,6 +107,34 @@ export function TransactionRowMenu({
               >
                 Match to an outstanding check
               </button>
+
+              {/*
+                The route from a decision made by hand to one that stops being
+                made. A rule could only be written from Settings, against a
+                merchant name somebody had to remember — so the categorizations
+                repeated most often were the ones nobody stopped to automate.
+
+                Only where the row is filed under exactly one delegation: a
+                split says this charge was two things, which is a fact about the
+                charge rather than about the merchant.
+              */}
+              {onCreateRule && (
+                <button
+                  type="button"
+                  role="menuitem"
+                  className={`${ITEM_CLASS} flex-col items-start gap-0`}
+                  onClick={() => {
+                    onCreateRule();
+                    controls.close();
+                  }}
+                >
+                  <span>Always categorize like this</span>
+                  <span className="text-label text-muted">
+                    Makes a rule, so the next one is filed on import.
+                  </span>
+                </button>
+              )}
+
               <div className="my-1 border-t border-line" />
             </>
           )}
