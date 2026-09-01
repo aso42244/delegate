@@ -146,10 +146,15 @@ export function SegmentedControl<T extends string>({
        * `max-w-full` and a scroll of its own: five time windows do not fit
        * across a phone, and the choice between clipping them and scrolling them
        * is the choice between an option nobody can reach and one they can.
-       * `no-scrollbar` because a visible bar inside a 32px control is louder
-       * than the control.
+       * `no-scrollbar` because a visible bar inside the control is louder than
+       * the control.
+       *
+       * 24px options inside 2px of padding, so the whole thing is 28px and sits
+       * on the same line as the buttons beside it. It was 28 inside 4 — a 36px
+       * control against a 28px "New tile", which read as two rows pretending to
+       * be one.
        */
-      className={`no-scrollbar inline-flex max-w-full items-center overflow-x-auto rounded-md bg-surface-2 ${small ? 'p-0.5' : 'p-1'}`}
+      className={`no-scrollbar inline-flex min-w-0 max-w-full items-center overflow-x-auto rounded-md bg-surface-2 p-0.5`}
     >
       {options.map((option) => {
         const selected = option.value === value;
@@ -162,7 +167,7 @@ export function SegmentedControl<T extends string>({
             {...(describeOption ? { 'aria-label': describeOption(option) } : {})}
             onClick={() => onChange(option.value)}
             className={`shrink-0 rounded font-semibold whitespace-nowrap transition-colors ${
-              small ? 'px-1.5 py-0.5 text-label' : 'min-h-[28px] px-3 text-quiet'
+              small ? 'px-1.5 py-0.5 text-label' : 'min-h-[24px] px-3 text-quiet'
             } ${selected ? 'bg-canvas text-ink shadow-sm' : 'text-muted hover:text-ink'}`}
           >
             {option.label}

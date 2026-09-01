@@ -53,6 +53,47 @@ test('a widget can be added back from the catalog', async ({ signedIn }) => {
  * twenty-one queries to answer a question about form, and on a household three
  * days in they would all be flat lines.
  */
+/**
+ * Reordering without dragging.
+ *
+ * HTML5 drag fires no events under a thumb and is not reachable by keyboard, so
+ * on a phone the order was simply fixed — and the comment in the source claimed
+ * these arrows existed for two releases before they did.
+ */
+test('a tile can be moved without dragging it', async ({ signedIn: page }) => {
+  await page.goto('/insights');
+
+  const titles = (): Promise<string[]> => page.locator('section h2').allInnerTexts();
+  // The grid renders from a query; read it only once there is a grid.
+  await expect(page.locator('section h2').nth(1)).toBeVisible();
+
+  const before = await titles();
+  const second = before[1]!;
+
+  await page.getByRole('button', { name: `Move ${second} earlier` }).click();
+
+  await expect.poll(async () => (await titles())[0]).toBe(second);
+
+  // And it survives a reload, so the order was saved rather than only shuffled
+  // on screen.
+  await page.reload();
+  await expect(page.locator('section h2').first()).toBeVisible();
+  expect((await titles())[0]).toBe(second);
+});
+
+test('the first tile cannot be moved earlier, nor the last one later', async ({
+  signedIn: page,
+}) => {
+  await page.goto('/insights');
+  await expect(page.locator('section h2').nth(1)).toBeVisible();
+  const titles = await page.locator('section h2').allInnerTexts();
+
+  await expect(page.getByRole('button', { name: `Move ${titles[0]!} earlier` })).toBeDisabled();
+  await expect(
+    page.getByRole('button', { name: `Move ${titles[titles.length - 1]!} later` }),
+  ).toBeDisabled();
+});
+
 test('each option in the picker shows the shape it draws', async ({ signedIn }) => {
   await signedIn.goto('/insights');
   // Each removal is a write; assert it landed before making the next one.

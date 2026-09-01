@@ -109,7 +109,7 @@ export function TextField({
       <input
         id={id}
         {...(hint ? { 'aria-describedby': hintId } : {})}
-        className={`w-full rounded-lg border border-line bg-canvas px-3 py-2 text-base text-ink placeholder:text-faint ${className}`}
+        className={`field w-full rounded-lg border border-line bg-canvas px-3 text-base text-ink placeholder:text-faint ${className}`}
         {...props}
       />
       {hint ? (
@@ -283,7 +283,7 @@ export function SelectField({
         value={value}
         onChange={(event) => onChange(event.target.value)}
         {...(hint ? { 'aria-describedby': hintId } : {})}
-        className={`w-full rounded-lg border border-line bg-canvas px-3 py-2 text-base text-ink`}
+        className={`field w-full rounded-lg border border-line bg-canvas px-3 text-base text-ink`}
       >
         {children}
       </select>

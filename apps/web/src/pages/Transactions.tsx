@@ -246,7 +246,7 @@ export function Transactions(): ReactNode {
           }}
           placeholder="Search description, account, delegation or amount"
           aria-label="Search transactions"
-          className="min-w-64 flex-1 rounded-lg border border-line bg-canvas px-3 py-2 text-base"
+          className="field min-w-64 flex-1 rounded-lg border border-line bg-canvas px-3 text-base"
         />
 
         <Button

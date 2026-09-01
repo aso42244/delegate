@@ -260,6 +260,7 @@ function Card({
   display,
   onDisplay,
   drag,
+  move,
 }: {
   readonly title: string;
   readonly onRemove: () => void;
@@ -274,6 +275,11 @@ function Card({
     readonly onDragEnd: () => void;
     readonly isTarget: boolean;
   };
+  /** Moving without dragging. Null at either end of the order. */
+  readonly move: {
+    readonly up: (() => void) | null;
+    readonly down: (() => void) | null;
+  };
 }): ReactNode {
   return (
     <section
@@ -284,22 +290,58 @@ function Card({
       onDragOver={drag.onDragOver}
       onDrop={drag.onDrop}
       onDragEnd={drag.onDragEnd}
-      className={`rounded-lg border bg-canvas p-4 ${
+      /* `min-w-0` so the card can be narrower than its header wants to be. A
+         grid item defaults to `min-width: auto`, which is its content — so the
+         header's controls sized the card rather than the column, and the card
+         grew 26px past the screen with the `×` beyond the edge. */
+      className={`group min-w-0 rounded-lg border bg-canvas p-4 ${
         drag.isTarget ? 'border-accent outline-2 outline-accent' : 'border-line'
       }`}
     >
       <header className="mb-4 flex items-start justify-between gap-2">
-        {/* The handle says the card is draggable. Outside the heading, because
-            it is not part of the tile's name — putting it inside made the
-            accessible name "⠿ Spending by grouping". */}
-        <span aria-hidden className="mt-0.5 cursor-grab text-quiet text-faint">
-          ⠿
-        </span>
+        {/*
+          The route that always works, and now the only one drawn.
+
+          Dragging is an enhancement: HTML5 drag fires no events under a thumb
+          and is not reachable by keyboard at all, so on a phone the order was
+          simply fixed. The comment here claimed these arrows existed for two
+          releases before they did.
+
+          They replace the `⠿` handle rather than joining it. Revealing them on
+          hover was worse than either: an `opacity: 0` control still occupies its
+          width, so a narrow window carried the handle *and* 44px of invisible
+          arrows, and the tile header ran off the side of the screen. One control
+          set, always visible, is narrower than two and works everywhere.
+        */}
+        <div className="mt-0.5 flex shrink-0 items-center gap-0.5">
+          <button
+            type="button"
+            onClick={() => move.up?.()}
+            disabled={move.up === null}
+            aria-label={`Move ${title} earlier`}
+            className="rounded px-1 text-quiet text-muted hover:bg-surface-2 disabled:opacity-30"
+          >
+            ↑
+          </button>
+          <button
+            type="button"
+            onClick={() => move.down?.()}
+            disabled={move.down === null}
+            aria-label={`Move ${title} later`}
+            className="rounded px-1 text-quiet text-muted hover:bg-surface-2 disabled:opacity-30"
+          >
+            ↓
+          </button>
+        </div>
         <h2 className="min-w-0 flex-1 truncate text-base font-semibold text-ink" title={title}>
           {title}
         </h2>
 
-        <div className="flex shrink-0 items-center gap-2">
+        {/* `min-w-0`, not `shrink-0`. The switcher is built to scroll inside
+            itself, and a parent that refuses to shrink never lets it — so the
+            two arrows added on the left pushed the whole header 26px past the
+            card on a 390px screen. */}
+        <div className="flex min-w-0 items-center gap-2">
           {/* Only when there is a choice to make. A single-option switch is a
               control that does nothing. */}
           {displays.length > 1 && (
@@ -1441,6 +1483,10 @@ export function Insights(): ReactNode {
                     setDragging(null);
                     setDragTarget(null);
                   },
+                }}
+                move={{
+                  up: index === 0 ? null : () => moveTo(index, index - 1),
+                  down: index === chosen.length - 1 ? null : () => moveTo(index, index + 1),
                 }}
               >
                 {render(entry.key, display)}
