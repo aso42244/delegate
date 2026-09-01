@@ -10,8 +10,11 @@ import {
   updateBudgetSettings,
   type BudgetSettings,
 } from '../domain/settings.js';
+import { ValidationError } from '../domain/errors.js';
+import { MAX_PASSWORD_LENGTH, verifyPassword } from '../domain/passwords.js';
 import { centsIn, centsOut, dateOut } from '../http/serialize.js';
 import { AUTHENTICATED, requireSettingsManagement } from '../plugins/auth.js';
+import { authRateLimit } from '../plugins/security.js';
 
 /**
  * Settings → Budget.
@@ -139,6 +142,45 @@ export const settingsRoutes: FastifyPluginCallback = (fastify, _options, done) =
    * ordinary account able to switch that on would make every other protection
    * worth what the weakest session is worth.
    */
+  /**
+   * Shows the at-rest encryption key, once the password is given again.
+   *
+   * It is generated on first boot and lives in a volume rather than in the
+   * database, because the thing it protects is exactly what a stolen `pg_dump`
+   * would otherwise hand over in the clear — a key kept beside the ciphertext it
+   * opens protects nothing. The cost of that choice is that **a dump alone is
+   * not a whole restore**, and this route exists so somebody can act on it.
+   *
+   * The password is asked for again, exactly as enrolling or disabling a second
+   * factor asks: a stolen session must not be enough to walk off with the key
+   * that opens every backup. That, and administrator-only, is what makes
+   * returning it at all defensible.
+   */
+  fastify.post(
+    '/api/settings/encryption-key',
+    {
+      preHandler: [requireSettingsManagement],
+      config: { rateLimit: authRateLimit(fastify.config) },
+    },
+    async (request) => {
+      const { currentPassword } = z
+        .object({ currentPassword: z.string().min(1).max(MAX_PASSWORD_LENGTH) })
+        .parse(request.body);
+
+      const actor = request.currentUser!;
+      const row = await prisma.user.findUnique({
+        where: { id: actor.id },
+        select: { passwordHash: true },
+      });
+      if (!row || !(await verifyPassword(row.passwordHash, currentPassword))) {
+        throw new ValidationError('incorrect_password', 'Current password is incorrect.');
+      }
+
+      request.log.warn({ actorId: actor.id }, 'at-rest encryption key revealed');
+      return { key: fastify.config.dataKey };
+    },
+  );
+
   fastify.patch('/api/settings', { preHandler: [requireSettingsManagement] }, async (request) => {
     const body = updateSchema.parse(request.body);
     const before = await getBudgetSettings(prisma);

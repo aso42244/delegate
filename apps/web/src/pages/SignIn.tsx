@@ -23,12 +23,14 @@ export function SignIn({ appName }: { appName: string }): ReactNode {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [confirmation, setConfirmation] = useState('');
+  const [setupToken, setSetupToken] = useState('');
   const [challenge, setChallenge] = useState<string | null>(null);
   const [code, setCode] = useState('');
   const [problem, setProblem] = useState<string | null>(null);
 
   const setupState = useQuery({ queryKey: ['setup-state'], queryFn: authApi.setupState });
   const needsSetup = setupState.data?.needsSetup === true;
+  const needsSetupToken = setupState.data?.needsSetupToken === true;
 
   async function enter(): Promise<void> {
     setProblem(null);
@@ -48,7 +50,7 @@ export function SignIn({ appName }: { appName: string }): ReactNode {
         if (password !== confirmation) {
           throw new ApiError(400, 'password_mismatch', 'The two passwords do not match.');
         }
-        return authApi.setup(username, password);
+        return authApi.setup(username, password, setupToken);
       }
       return authApi.login(username, password);
     },
@@ -140,6 +142,26 @@ export function SignIn({ appName }: { appName: string }): ReactNode {
                   value={confirmation}
                   onChange={(event) => setConfirmation(event.target.value)}
                   autoComplete="new-password"
+                  required
+                />
+              )}
+              {/*
+                The code that proves whoever is claiming this budget can read
+                the machine it runs on. Creating the first account cannot be
+                authenticated — there is nobody to authenticate as — so this is
+                what stands in for it once the address might be a public one.
+
+                The hint names where to find it, because a code somebody cannot
+                locate is a deployment they cannot use.
+              */}
+              {needsSetup && needsSetupToken && (
+                <TextField
+                  width="full"
+                  label="Setup code"
+                  value={setupToken}
+                  onChange={(event) => setSetupToken(event.target.value)}
+                  autoComplete="off"
+                  hint="Printed in the server's logs: docker compose logs app"
                   required
                 />
               )}

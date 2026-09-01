@@ -3,6 +3,8 @@ import { getConfig } from './config.js';
 import { prisma } from './db/client.js';
 import { assertDataKeyReadsStoredSecrets, DataKeyError } from './domain/data-key-check.js';
 import { getBudgetSettings, resolveScheduleTimezone } from './domain/settings.js';
+import { readSetupToken } from './domain/setup-token.js';
+import { needsFirstRunSetup } from './domain/users.js';
 import { fillGaps } from './domain/snapshot-fill.js';
 import { snapshotDateFor } from './domain/snapshots.js';
 import { startScheduler } from './scheduler.js';
@@ -79,6 +81,30 @@ if (config.TLS_CERT_PATH) {
 
 // The warning that stood here — a trusted proxy while two-factor was optional —
 // cannot happen now. A second factor is required of every account, always.
+
+/*
+ * The setup code, printed where the person who deployed this will look.
+ *
+ * Only while the budget has no account, and only when there is a token to print
+ * — a deployment older than the secrets volume has neither, and has already been
+ * set up. Logged at warn so it survives LOG_LEVEL=warn, which is what somebody
+ * quietening a noisy container reaches for first.
+ *
+ * This is the one secret this application deliberately writes to a log. It is
+ * worth exactly one account creation, it is useless the moment that happens, and
+ * a log nobody can read is a budget nobody can claim.
+ */
+if (await needsFirstRunSetup(prisma)) {
+  const token = readSetupToken();
+  if (token) {
+    app.log.warn(
+      `\n\n  Delegate is ready and has no account yet.\n` +
+        `  Open it, and enter this code to claim it:\n\n` +
+        `      ${token}\n\n` +
+        `  Anyone who reaches this address before you do cannot create an account without it.\n`,
+    );
+  }
+}
 
 // Started after the listener is up, so a slow first sync cannot delay the app
 // becoming reachable and failing its container health check.

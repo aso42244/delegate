@@ -233,6 +233,57 @@ describe('routes that choose where this server sends a request', () => {
   });
 });
 
+/**
+ * The at-rest key, shown on request.
+ *
+ * It is returned to a browser, which is a thing worth being careful about: it
+ * opens every second factor and the bank credential inside any backup. Two
+ * guards, and both are asserted here — administrator-only, and the password
+ * again, exactly as enrolling or disabling a second factor asks. A stolen
+ * session must not be enough to walk off with it.
+ */
+describe('the encryption key', () => {
+  it('is shown when the password is given again', async () => {
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/settings/encryption-key',
+      headers: { cookie: owner },
+      payload: { currentPassword: OWNER.password },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json<{ key: string }>().key.length).toBeGreaterThanOrEqual(32);
+  });
+
+  it('is refused on a wrong password, so a stolen session is not enough', async () => {
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/settings/encryption-key',
+      headers: { cookie: owner },
+      payload: { currentPassword: 'not-the-password' },
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect(response.body).not.toContain('test-session-secret');
+  });
+
+  it('is refused outright to an account that cannot manage settings', async () => {
+    const user = await partner();
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/settings/encryption-key',
+      headers: { cookie: user },
+      payload: { currentPassword: 'partner-pass-phrase' },
+    });
+
+    expect(response.statusCode).toBe(403);
+    expect(response.json<{ error: { code: string } }>().error.code).toBe(
+      'settings_management_required',
+    );
+  });
+});
+
 describe('response headers', () => {
   it('keep authenticated JSON out of caches', async () => {
     const response = await app.inject({

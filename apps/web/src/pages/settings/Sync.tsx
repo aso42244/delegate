@@ -6,6 +6,7 @@ import { describeBackupSchedule } from './backup-schedule.js';
 import { ApiError, syncApi, type SyncStatus } from '../../api/client.js';
 import { transactionsApi } from '../../api/transactions.js';
 import { Alert, Button, Modal, TextField } from '../../components/ui.jsx';
+import { EncryptionKey } from './EncryptionKey.jsx';
 import { SettingsCard as Card } from './SettingsCard.jsx';
 
 /** Settings → Sync: the SimpleFIN connection, its history, and a manual run. */
@@ -408,6 +409,10 @@ export function SyncSection(): ReactNode {
       </Card>
 
       <Backups />
+
+      {/* Beside the backups, because that is where its consequence lands: a dump
+          without this key restores every transaction and no credential. */}
+      <EncryptionKey />
     </>
   );
 }

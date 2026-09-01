@@ -83,6 +83,13 @@ export interface SessionUser {
 
 export interface SetupState {
   readonly needsSetup: boolean;
+  /**
+   * Whether claiming the first account needs the code from the server's logs.
+   *
+   * False on a deployment that predates the secrets volume, which has already
+   * been set up and has no token to check against.
+   */
+  readonly needsSetupToken: boolean;
 }
 
 export interface SyncStatus {
@@ -130,8 +137,8 @@ export interface TotpEnrolmentDto {
 
 export const authApi = {
   setupState: () => api.get<SetupState>('/api/auth/setup-state'),
-  setup: (username: string, password: string) =>
-    api.post<{ user: SessionUser }>('/api/auth/setup', { username, password }),
+  setup: (username: string, password: string, setupToken: string) =>
+    api.post<{ user: SessionUser }>('/api/auth/setup', { username, password, setupToken }),
   login: (username: string, password: string) =>
     api.post<LoginResult>('/api/auth/login', { username, password }),
   secondFactor: (challenge: string, code: string) =>

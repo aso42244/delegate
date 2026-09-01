@@ -27,6 +27,7 @@ import { requireSession } from '../plugins/auth.js';
 import { authRateLimit } from '../plugins/security.js';
 import { pruneAuthEvents, recordAuthEvent } from '../domain/auth-events.js';
 import { describeAttemptedUsername } from '../domain/auth-subject.js';
+import { readSetupToken, setupTokenAccepted } from '../domain/setup-token.js';
 import { pruneExpiredSessions } from '../plugins/session-store.js';
 
 /** Sign-in, sign-out, and first-run setup. */
@@ -132,15 +133,42 @@ export const authRoutes: FastifyPluginCallback = (fastify, _options, done) => {
    * by necessity — it is what an unauthenticated browser asks first — and it
    * reveals only whether any account exists.
    */
-  fastify.get('/api/auth/setup-state', async () => ({
-    needsSetup: await needsFirstRunSetup(prisma),
-  }));
+  fastify.get('/api/auth/setup-state', async () => {
+    const needsSetup = await needsFirstRunSetup(prisma);
+    return {
+      needsSetup,
+      // Whether the screen should ask for the code at all. Says nothing about
+      // what the code is, and nothing that is not already obvious from the
+      // deployment refusing setup without one.
+      needsSetupToken: needsSetup && readSetupToken() !== null,
+    };
+  });
 
-  /** Creates the first account, which becomes Super Admin, and signs it in. */
-  // Throttled: this is the route that mints the Super Admin, and before the
-  // first account exists it is unauthenticated by necessity.
+  /**
+   * Creates the first account, which becomes Super Admin, and signs it in.
+   *
+   * Throttled, because before the first account exists this is unauthenticated
+   * by necessity — and gated on a token that can only be read from the machine
+   * running Delegate, because "unauthenticated" used to be safe only on the
+   * assumption that reaching the address meant being in the house. A deploy that
+   * can land on any address gives that assumption up.
+   */
   fastify.post('/api/auth/setup', { config: { rateLimit } }, async (request, reply) => {
-    const { username, password } = credentialsSchema.parse(request.body);
+    const { username, password, setupToken } = credentialsSchema
+      .extend({ setupToken: z.string().max(200).optional() })
+      .parse(request.body);
+
+    if (!setupTokenAccepted((setupToken ?? '').trim().toUpperCase(), readSetupToken())) {
+      request.log.warn({ ip: request.ip }, 'first-run setup refused: wrong token');
+      return reply.code(403).send({
+        error: {
+          code: 'setup_token_invalid',
+          message:
+            "That setup code is not right. It is printed in this server's logs — run `docker compose logs app` on the machine running Delegate.",
+        },
+      });
+    }
+
     const user = await createFirstUser(prisma, { username, password });
 
     await request.session.regenerate();
