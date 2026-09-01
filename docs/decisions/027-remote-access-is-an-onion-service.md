@@ -133,3 +133,23 @@ changing a password, which revokes every other session outright.
 The refusal is still logged at `warn` on the server, where the household can read
 it and nobody else can. What they lose is a hint they can get from the LAN in one
 tap, on the page that holds the switch.
+
+---
+
+**Amended by [ADR 042](042-delegate-installs-anywhere-in-one-line.md), 2026-09-01.**
+
+Two changes, both narrowing.
+
+**It is behind a compose profile now** (`--profile tor`). It ran by default while
+every deployment was one household's NAS, where an idle daemon costs nothing and
+having it ready meant pasting an onion address just worked. For an image that can
+land anywhere, most deployments will never reach an onion address and the minimum
+stack should be the minimum.
+
+**The onion key is disposable, by the owner's decision.** This ADR treated losing
+the `tor-keys` volume as a recovery problem — the address cannot be recovered,
+only replaced, and every device holding the old one stops working. The owner has
+decided he does not care: a new address is cheap and he will derive one as
+needed. So it is not something the backup has to cover, and the earlier
+recommendation to include that volume is withdrawn rather than left standing as
+an unmet obligation.

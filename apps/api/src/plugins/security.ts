@@ -114,6 +114,35 @@ const securityPlugin: FastifyPluginAsync<{ config: AppConfig }> = async (fastify
     done();
   });
 
+  /**
+   * Says so, once, when something in front is forwarding and nothing trusts it.
+   *
+   * `TRUST_PROXY` empty means every request is attributed to the connecting
+   * socket — which, behind a reverse proxy, is the proxy. The sign-in rate limit
+   * then buckets the entire internet together, so ten guesses per five minutes
+   * becomes ten guesses per five minutes *for everyone at once*: still bounded,
+   * and no longer per-attacker.
+   *
+   * A boot-time check could not find this; nothing is forwarding until a request
+   * arrives. So it is asked of the first request that carries the header, and
+   * then never again — a line per request would be a log nobody reads, which is
+   * this project's oldest lesson.
+   *
+   * Deliberately not automatic. Trusting a forwarded address while the port is
+   * also reachable directly is worse than not trusting one at all: anybody can
+   * then forge a fresh rate-limit bucket per request (ADR 018).
+   */
+  let warnedAboutProxy = false;
+  fastify.addHook('onRequest', (request, _reply, done) => {
+    if (!warnedAboutProxy && !config.TRUST_PROXY && request.headers['x-forwarded-for']) {
+      warnedAboutProxy = true;
+      request.log.warn(
+        'A request arrived with X-Forwarded-For and TRUST_PROXY is not set, so every request looks like it came from the same address and the sign-in rate limit is one shared bucket. Set TRUST_PROXY to the proxy — 172.16.0.0/12 for the bundled Caddy — but only if this port is not also reachable directly. See ADR 018.',
+      );
+    }
+    done();
+  });
+
   await fastify.register(fastifyHelmet, {
     // The application serves its own bundle from its own origin and loads
     // nothing else. Stating that explicitly means an injected script tag has

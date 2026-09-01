@@ -164,145 +164,149 @@ It prints every balance it had to change and exits non-zero if there were any �
 disagreement is a defect worth investigating, not routine maintenance. Add
 `-- --check` to report without writing, which is what CI does.
 
-## Deployment on a Synology NAS
+## Deploying it
 
 > Written so that someone who is not the owner could follow it.
 
-Images are built by CI on x86_64 runners rather than locally, because a Mac would
-produce an arm64 image the NAS cannot run
-([ADR 005](docs/decisions/005-container-images-built-on-x86-64-ci.md)). They are
-published from `main` and version tags only — never from a pull request — and are
-deployed **by digest with verified provenance**
-([ADR 012](docs/decisions/012-images-are-deployed-by-digest-with-verified-provenance.md)).
+**One line, on anything that runs Docker.**
 
-The target is a DS220+ (Intel Celeron J4025, 2 cores, 6 GB) running DSM 7.3.2,
-sharing that hardware with DSM itself and the existing Sure container. Postgres
-memory settings are pinned explicitly in the Compose file rather than left at
-defaults, which assume a much larger machine.
+```bash
+curl -fsSL https://raw.githubusercontent.com/aso42244/delegate/main/docker-compose.yml -o docker-compose.yml \
+  && docker compose up -d
+```
 
-**How this is reached from outside the house is the operator's decision**, and
-never a port forward, a DSM reverse proxy or QuickConnect. A Cloudflare Tunnel
-and a Tor onion service are both supported and both encrypt everything that
-crosses the internet — see
-[ADR 017](docs/decisions/017-plain-http-is-the-default-and-tls-is-optional.md),
-[ADR 027](docs/decisions/027-remote-access-is-an-onion-service.md) and
-[docs/remote-access.md](docs/remote-access.md).
+That is the whole install. Nothing to configure: the first start generates the
+session secret, the encryption key and the database password into a volume of
+their own, runs the migrations and serves on port 8088.
 
-The origin itself speaks plain http by default, which is correct behind either
-of those and is a decision rather than an omission; TLS at the origin is
-available and was declined. Rate limiting, two-factor authentication and CSRF
-protection are all in place, and a second factor is required of every account.
-Passkeys have been dropped
-([ADR 016](docs/decisions/016-passkeys-are-out-of-scope.md)). See
-[ADR 007](docs/decisions/007-argon2id-parameters-and-password-policy.md).
+Then read the setup code out of the logs and open the app:
 
-### First deploy
+```bash
+docker compose logs app | grep -A2 'no account yet'
+```
 
-1. **Install Container Manager** from Package Center if it is not present.
-2. **Create two folders** — for example `/volume1/docker/delegate` for the
-   project and `/volume1/backups/delegate` for database dumps.
-3. **Copy `docker-compose.yml`, the `scripts/` directory and a `.env`** into the
-   project folder. Set in `.env`:
-   - `POSTGRES_PASSWORD` — a long random value
-   - `SESSION_SECRET` — `openssl rand -base64 48`. It also encrypts the stored
-     SimpleFIN credential, so changing it later means reconnecting SimpleFIN.
-   - `HOST_PORT` — defaults to `8088`. The container's own port is 3000, private
-     to the compose network, so it cannot collide with another container.
-   - `BACKUP_DIR` — the dump folder from step 2
-   - `APP_NAME` — whatever you want in the sidebar
-4. **Lock that file down.** It holds the database password and the key the
-   SimpleFIN credential is encrypted with:
-   ```bash
-   chmod 600 .env
-   ```
-   `deploy.sh` refuses to run if this is wrong.
-5. **Install `cosign`** — one static binary, used to check that an image was
-   signed by this repository's workflow before it is started:
-   ```bash
-   sudo curl -fsSL -o /usr/local/bin/cosign \
-     https://github.com/sigstore/cosign/releases/latest/download/cosign-linux-amd64
-   sudo chmod +x /usr/local/bin/cosign
-   ```
-6. **Sign in to the registry.** This needs a **classic** personal access token
-   with `read:packages` ticked and nothing else, plus an expiry.
+The code is what claims the first account. Creating it cannot be authenticated —
+there is nobody to authenticate as yet — so this stands in for the assumption
+Delegate used to make, that reaching the address meant being in the house. That
+assumption does not survive an image anybody can run anywhere.
 
-   A fine-grained token does not work here, however much one would prefer it:
-   GitHub's documentation states that Packages
-   [only supports a classic token](https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-container-registry),
-   and `docker login` fails with `denied: denied`. A classic token is
-   account-wide, so keeping it to the single `read:packages` scope is what limits
-   the blast radius.
+### On a public address
 
-   ```bash
-   sudo docker login ghcr.io -u <github-username>
-   ```
+Give it a domain and start with the `https` profile:
 
-   Paste the token at the hidden `Password:` prompt — a token pasted on a visible
-   line stays in the terminal's scrollback afterwards. `docker login` stores it
-   base64-encoded in `~/.docker/config.json`, which is encoding rather than
-   encryption, so run `docker logout ghcr.io` afterwards if you would rather not
-   leave it on the NAS.
+```bash
+DELEGATE_DOMAIN=budget.example.com TRUST_PROXY=172.16.0.0/12 \
+  docker compose --profile https up -d
+```
 
-   Two things that cost time the first time round: copy the token value alone —
-   a label copied with it makes the login fail for no visible reason — and DSM's
-   `scp` may need `-O` to copy files across, because its SSH server does not
-   offer the SFTP subsystem that modern `scp` expects.
+Caddy requests a Let's Encrypt certificate on first start, renews it on its own,
+and redirects http to https. Ports 80 and 443 have to be reachable from the
+internet for the certificate to be issued.
 
-   _Or skip steps 5 and 6 entirely_ by using the tarball route in step 7, which
-   needs no credential on the NAS at all.
+`TRUST_PROXY` is not optional here. Without it every request appears to come from
+the proxy container, and the sign-in rate limit becomes one shared bucket for the
+whole internet rather than one per address. The application warns at boot when a
+forwarded header arrives and nothing is configured to trust it — but set it
+rather than waiting to be told.
 
-7. **Deploy**, over SSH from the project directory. The ordinary route builds the
-   image on the NAS itself — it is x86_64, so the build is native and nothing
-   travels through a registry ([ADR 019](docs/decisions/019-the-image-is-built-on-the-machine-that-runs-it.md)).
+**Do not set `TRUST_PROXY` while the application's own port is also published.**
+Anyone can then forge a header and get a fresh rate-limit bucket per request,
+which is worse than not trusting one at all. See
+[ADR 018](docs/decisions/018-a-proxy-is-trusted-only-when-configured.md).
 
-   From your Mac, send the source for the tag you are deploying:
+### On a LAN, or behind a tunnel
 
-   ```bash
-   git archive --format=tar.gz -o delegate-src.tar.gz v0.3.0-phase3
-   scp -O delegate-src.tar.gz grub@10.0.3.4:/volume1/docker/delegate/
-   ```
+The default. Plain http at the origin is correct behind a Cloudflare Tunnel or
+inside an onion service, both of which encrypt everything that crosses the
+internet, and on a network you trust
+([ADR 017](docs/decisions/017-plain-http-is-the-default-and-tls-is-optional.md),
+[docs/remote-access.md](docs/remote-access.md)). Never a port forward, a DSM
+reverse proxy or QuickConnect.
 
-   Then on the NAS:
+An onion service is available and off until switched on
+([ADR 027](docs/decisions/027-remote-access-is-an-onion-service.md)). It needs
+its own profile, because most deployments will never reach an onion address:
 
-   ```bash
-   tar xzf delegate-src.tar.gz && sudo ./scripts/deploy.sh --build
-   ```
+```bash
+docker compose --profile tor up -d
+```
 
-   Or, if you do have an image in a registry:
+### Worth setting
 
-   ```bash
-   sudo ./scripts/deploy.sh --tag v0.3.0-phase3
-   ```
+Everything below is optional. The application starts without any of it.
 
-   or, from a downloaded CI artifact:
+|                     |                                                                                                                                   |
+| ------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| `APP_NAME`          | What the sidebar says. Keeps a household name out of the repository.                                                              |
+| `HOST_PORT`         | Where it publishes. `8088` by default, because DSM holds 80 and 443.                                                              |
+| `BACKUP_DIR`        | A host path for the nightly dumps. Empty keeps them in a Docker volume — durable, and invisible to whatever backs the machine up. |
+| `SCHEDULE_TIMEZONE` | The household's zone. Defaults to UTC, which puts an 8pm charge in the next day.                                                  |
+| `APP_DATABASE_URL`  | Connects as the least-privilege role rather than the superuser. See below.                                                        |
 
-   ```bash
-   sudo ./scripts/deploy.sh --image-file /volume1/docker/delegate-image.tar.gz
-   ```
+Copy `.env.example` to `.env` if you want any of them, and lock it down —
+`deploy.sh` refuses to run if the permissions are wrong:
 
-8. **Open it** at `http://<nas-address>:8088` and create the first account, which
-   becomes Super Admin.
-9. **Connect SimpleFIN** in Settings → Sync by pasting a setup token.
+```bash
+chmod 600 .env
+```
+
+### On a Synology NAS
+
+The same install, with three things worth knowing.
+
+**`sudo docker` does not work on DSM.** `sudo` resolves the command against
+`secure_path`, which does not include `/usr/local/bin`. Use `sudo -i sh -c '…'`,
+which runs root's login shell and gets a full `PATH`.
+
+**Set `BACKUP_DIR` to a shared folder**, so the dumps land somewhere Hyper Backup
+can pick up. A dump on the same disk as the database is not a backup.
+
+**`scp` to DSM needs `-O`** — its SSH server does not offer the SFTP subsystem
+that modern `scp` expects.
+
+`scripts/deploy.sh` exists for this case and does more than `docker compose up`:
+it creates missing bind-mount sources, which Synology's Docker will not do,
+chowns the backup directory to the uid the container runs as, and **proves the
+container can write there before reporting success**. That check is the one
+failure this project cannot catch anywhere but on the machine — every nightly
+dump failed silently for months because the directory was root's.
+
+### Building it yourself
+
+The image is published for `amd64` and `arm64`, so there is normally nothing to
+build. To build from source anyway — an unreleased commit, or an architecture
+that is not published:
+
+```bash
+git clone https://github.com/aso42244/delegate.git && cd delegate \
+  && docker compose build && docker compose up -d
+```
+
+That needs a build toolchain and roughly 2 GB of memory, and takes minutes rather
+than seconds. It is how the NAS was deployed before there was a published image.
 
 ### What `deploy.sh` does
 
-More than `docker compose up -d`, for three reasons:
+More than `docker compose up -d`, for three reasons — all of them things that
+went wrong once:
 
-- It resolves the tag to a **digest** and runs that, recording it in `.env` as
-  `APP_IMAGE`. A tag is a moving pointer; a digest is the artefact. A later bare
-  `docker compose up -d` then starts the same image rather than drifting.
-- It **verifies the signature** before starting anything, and refuses if it
-  cannot. CI signs each published digest through Sigstore, keyed to the workflow
-  itself rather than to a key anyone holds. This image is handed the database and
-  the bank feed credential, so "did my repository build this?" is worth answering
-  properly.
+- It **creates missing bind-mount sources**, which Synology's Docker will not do,
+  and **chowns the backup directory** to the uid the container runs as.
+- It **proves the container can write to the backup directory** before reporting
+  success. Every nightly dump failed silently for months because that directory
+  was created under `sudo` and owned by root. A bind mount replaces the image's
+  ownership entirely, so anything the Dockerfile does to that path is decoration.
 - It waits for the **health endpoint**. A container that is "up" is not
   necessarily one that is serving: migrations run at start, and a failure there
   leaves a process that exits seconds later.
 
+It also resolves a tag to a **digest** and records it in `.env` as `APP_IMAGE`, so
+a later bare `docker compose up -d` starts the same artefact rather than drifting
+with the tag.
+
 ### Later deploys, and rolling back
 
-The same command pulls the current image, re-verifies it, and restarts:
+The same command pulls the current image and restarts:
 
 ```bash
 cd /volume1/docker/delegate && sudo ./scripts/deploy.sh

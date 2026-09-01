@@ -93,3 +93,17 @@ possible, and for the day GHCR is unreachable.
   boots, migrates and serves on x86_64 Linux against a real PostgreSQL. The first
   real deploy remains the one unknown in Phase 1, and it is deliberately left for
   the owner to run at a keyboard rather than over a remote session.
+
+---
+
+**Amended by [ADR 042](042-delegate-installs-anywhere-in-one-line.md), 2026-09-01.**
+
+This quietly stopped being true in August. ADR 022 deleted the workflow that
+published and signed images, and nothing has pushed to the registry since — so
+`deploy.sh` was verifying signatures nothing was producing, and its documented
+registry path could not have worked.
+
+It is true again. The publish workflow signs each digest through Sigstore, keyed
+to the workflow itself, and `deploy.sh` verifies before starting. Note the split:
+`docker compose up -d`, which is now the ordinary install, does **not** verify.
+`deploy.sh` does.

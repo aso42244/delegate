@@ -62,3 +62,21 @@ and is worth doing before a release rather than on every branch.
 
 Restoring GitHub Actions is a one-file change if the minutes ever come back;
 `verify.sh` is the specification for what that file has to do.
+
+---
+
+**Amended by [ADR 042](042-delegate-installs-anywhere-in-one-line.md), 2026-09-01.**
+
+This decision is intact. `npm run verify` is still the only gate, and the workflow
+that has returned to GitHub **runs no tests** — it builds and signs an image on
+version tags and nothing else.
+
+What has changed is the premise. The minutes ran out because the old workflow ran
+the whole suite — typecheck, lint, 600+ integration tests, ~180 Playwright browser
+tests, a container build — on every push and every pull request. The allowance
+that ran out is the one for _private_ repositories, and this repository is public,
+which does not consume it. The spending limit is set to $0 regardless, which is
+the guardrail that does not depend on anybody's discipline.
+
+Building an artefact is not the same act as deciding whether the code is good.
+This ADR was always about the second.

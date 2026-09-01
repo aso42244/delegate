@@ -8,6 +8,67 @@ phase (`v0.1.0-phase1`, and so on).
 
 Nothing yet.
 
+## [0.41.0] — 2026-09-01
+
+### Changed
+
+- **Delegate installs anywhere, in one line**
+  ([ADR 042](docs/decisions/042-delegate-installs-anywhere-in-one-line.md)).
+  `docker compose up -d`, with nothing configured.
+
+  It was built for one household's NAS and every deployment decision assumed it.
+  Four things it quietly relied on are the same assumption in different clothes,
+  and all four are statements about _where it runs_: two secrets exist before the
+  first start, reaching the address means being in the house, plain http at the
+  origin is fine, and somebody will read the deployment notes. An image anybody
+  can run anywhere invalidates all of them at once.
+
+  - **Secrets are generated on first boot** into a volume of their own, and never
+    overwritten. An environment variable is adopted rather than replaced, so an
+    existing deployment keeps exactly what it has.
+  - **The first account is claimed with a token** printed to the logs. Only where
+    a token exists, so nothing that predates it is locked out.
+  - **HTTPS is one flag** — `DELEGATE_DOMAIN` plus the `https` profile starts
+    Caddy, which gets a real certificate and renews it unattended.
+  - **The image is published multi-arch on version tags**, `amd64` and `arm64`,
+    and signed. A NAS, a cloud VM, a Pi and an Apple Silicon Mac run the same
+    artefact.
+  - **Backups default to a Docker volume**, with `BACKUP_DIR` switching them to a
+    host path — which is what a NAS wants, so an off-device backup can reach
+    them.
+  - **Tor is behind a profile.** Most deployments will never reach an onion
+    address.
+
+  **`secrets:rekey` is no longer something to run.** The at-rest key is seeded
+  from `SESSION_SECRET` where one already exists, so the value does not change,
+  nothing is re-encrypted, and the two are recorded separately from then on —
+  which is the whole of ADR 029's split, performed by upgrading.
+
+- **GitHub builds images again, and still runs no tests**
+  (amends [ADR 022](docs/decisions/022-the-checks-run-here-not-on-github.md)).
+  `npm run verify` remains the only gate. The workflow fires on version tags
+  only, is capped by a timeout, cancels itself when superseded, and the account's
+  spending limit is set to $0. The minutes that ran out in August were the
+  private-repository allowance, consumed by a workflow that ran the whole suite
+  on every push; this repository is public and this workflow builds an artefact.
+
+### Fixed
+
+- **The deployment instructions described a model that had not existed since
+  August.** The README opened with "images are built by CI on x86_64 runners" and
+  "deployed by digest with verified provenance", and told a new deployer to
+  install `cosign` and log in to `ghcr.io` — for a registry with nothing in it and
+  signatures nothing was producing. The working route was buried as one option of
+  three. It is now the only route, and provenance is real again because the
+  publish workflow signs what it pushes.
+
+- **A reverse proxy silently disabled the sign-in rate limit.** `TRUST_PROXY`
+  unset behind one makes every request appear to come from the proxy, so ten
+  guesses per five minutes becomes ten for the whole internet at once. A footnote
+  when nothing shipped a proxy, and a real misconfiguration now that one is
+  bundled — so the application says so, once, when a forwarded header arrives and
+  nothing is configured to trust it.
+
 ## [0.40.0] — 2026-09-01
 
 ### Fixed

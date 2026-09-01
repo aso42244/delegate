@@ -105,3 +105,18 @@ written down anywhere, so it cannot drift from reality. Anything the tarball doe
 not contain is untouched, and it refuses outright if a tarball ever claims
 `.env`, `backups` or `tls` — the three things on that machine that could not be
 recovered.
+
+---
+
+**Superseded for the ordinary case by
+[ADR 042](042-delegate-installs-anywhere-in-one-line.md), 2026-09-01.**
+
+This existed because a Mac produces `arm64` images a DS220+ cannot run, and
+nothing published a multi-arch one. Something does now — `amd64` and `arm64`, on
+version tags — so the NAS can pull the artefact rather than compile it, and the
+divergence this ADR created between the local build context and the deployed one
+goes with it. That divergence was not theoretical: it is how a stale
+`.tsbuildinfo` broke a local build while the NAS was fine.
+
+Building on the target stays supported and documented. It is still the answer for
+an unreleased commit, or an architecture that is not published.

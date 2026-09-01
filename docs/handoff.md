@@ -88,8 +88,16 @@ These are non-negotiable. Violating one is a build failure.
 
 ## Where things stand
 
-**`main` is at `v0.40.0`; the NAS is running `v0.39.0`** and needs the deploy
+**`main` is at `v0.41.0`; the NAS is running `v0.40.0`** and needs the deploy
 below.
+
+**Delegate installs anywhere in one line now**
+([ADR 042](decisions/042-delegate-installs-anywhere-in-one-line.md)):
+`docker compose up -d` with nothing configured. Secrets are generated on first
+boot, the first account is claimed with a token from the logs, HTTPS is one flag,
+and the image is published multi-arch on version tags. The NAS is one deployment
+of many rather than the deployment, and it keeps working — it adopts the secrets
+already in its `.env`.
 
 **Deploy `v0.40.0` before running `secrets:rekey`.** Until it lands,
 `DATA_ENCRYPTION_KEY` does not reach the container at all — compose reads `.env`
@@ -359,13 +367,23 @@ newest date is a day behind even when everything is working.
 ### Known gaps to fix
 
 None outstanding. The September security review is closed — see
-[docs/security-review-2026-09.md](security-review-2026-09.md) for what was fixed,
-what was accepted, and why.
+[docs/security-review-2026-09.md](security-review-2026-09.md).
 
-Four things are **the owner's to run**, and none is a code change: setting
-`DATA_ENCRYPTION_KEY` and running `secrets:rekey`, moving the live database onto
-the `delegate_app` role, confirming the `tor-keys` volume is in the NAS backup,
-and pinning the base-image digests at the next deliberate base bump.
+**The four operational items are down to one, and it is deferred.**
+
+- **`secrets:rekey`** — no longer needed. [ADR 042](decisions/042-delegate-installs-anywhere-in-one-line.md)
+  makes the first boot write the at-rest key into the secrets volume, seeded from
+  `SESSION_SECRET` on a deployment that already had one. The value does not
+  change and nothing is re-encrypted, so the split ADR 029 wanted happens by
+  upgrading.
+- **The `delegate_app` role** — still opt-in, two steps in the README. Nothing
+  can tell a fresh install from an upgrade at the moment the connection string is
+  written, so making it automatic would break existing deployments.
+- **The `tor-keys` volume** — **declined by the owner on 2026-09-01.** He does
+  not want the onion address preserved and will derive a new one as needed. ADR
+  027 carries the amendment; this is a decision, not a gap.
+- **Pinning base-image digests** — deferred to the next deliberate base bump, as
+  before.
 
 ### Waiting on the owner
 
