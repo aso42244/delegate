@@ -64,7 +64,9 @@ async function loginAs(username: string, password: string): Promise<string> {
 describe('first-run setup', () => {
   it('reports that setup is needed on an empty database', async () => {
     const response = await app.inject({ method: 'GET', url: '/api/auth/setup-state' });
-    expect(response.json()).toEqual({ needsSetup: true });
+    // No setup token in a test run, which has no secrets volume — so the screen
+    // is told not to ask for a code it could not check. See setup-token.test.ts.
+    expect(response.json()).toEqual({ needsSetup: true, needsSetupToken: false });
   });
 
   it('makes the first account a Super Admin that need not change its password', async () => {

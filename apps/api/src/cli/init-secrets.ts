@@ -74,6 +74,22 @@ function env(name: string): string {
   return (process.env[name] ?? '').trim();
 }
 
+/**
+ * The setup token's alphabet: no O/0, no I/1/l.
+ *
+ * The same reasoning as the recovery codes. This one is read off a terminal and
+ * typed into a browser by somebody who has just deployed something, and an
+ * ambiguous character there costs a support conversation rather than a retry.
+ */
+const TOKEN_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+
+function setupToken(): string {
+  const bytes = randomBytes(20);
+  const letters = [...bytes].map((byte) => TOKEN_ALPHABET[byte % TOKEN_ALPHABET.length]).join('');
+  // Grouped for reading it back, and the groups are stripped on the way in.
+  return `${letters.slice(0, 5)}-${letters.slice(5, 10)}-${letters.slice(10, 15)}-${letters.slice(15, 20)}`;
+}
+
 function main(): number {
   const dir = process.env['SECRETS_DIR'] ?? DEFAULT_DIR;
   mkdirSync(dir, { recursive: true });
@@ -112,6 +128,17 @@ function main(): number {
 
   const postgres = ensure(dir, 'postgres-password', env('POSTGRES_PASSWORD'));
   if (postgres.created) created.push('the database password');
+
+  /*
+   * The token that claims the first account.
+   *
+   * Shorter than the others and from an unambiguous alphabet, because unlike
+   * them this one gets read off a terminal and typed into a browser. The
+   * security it needs is "not guessable from outside the machine", which 20
+   * characters of this alphabet is by a very wide margin.
+   */
+  const setup = ensure(dir, 'setup-token', env('SETUP_TOKEN') || setupToken());
+  if (setup.created) created.push('the first-run setup token');
 
   /*
    * The connection string, assembled here because only this step knows the
