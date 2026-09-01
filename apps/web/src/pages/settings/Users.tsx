@@ -6,6 +6,7 @@ import { useSession } from '../../auth/SessionProvider.jsx';
 import { DANGER_ITEM_CLASS, ITEM_CLASS, RowMenuShell } from '../../components/RowMenuShell.jsx';
 import { Alert, Button, Modal, SelectField, TextField } from '../../components/ui.jsx';
 import { SettingsCard } from './SettingsCard.jsx';
+import { SignInActivity } from './SignInActivity.jsx';
 import { TwoFactorCard } from './TwoFactor.jsx';
 
 /**
@@ -59,6 +60,20 @@ const usersApi = {
   archive: (id: string) => api.post<{ user: UserDto }>(`/api/users/${id}/archive`),
   restore: (id: string) => api.post<{ user: UserDto }>(`/api/users/${id}/restore`),
 };
+
+/**
+ * Both lists this page shows, refreshed together.
+ *
+ * Every action here is one the activity card below records, so refreshing the
+ * table without it would leave a password reset visible in one half of the
+ * screen and absent from the other.
+ */
+function invalidateHousehold(queryClient: ReturnType<typeof useQueryClient>): Promise<void> {
+  return Promise.all([
+    queryClient.invalidateQueries({ queryKey: ['users'] }),
+    queryClient.invalidateQueries({ queryKey: ['auth-events'] }),
+  ]).then(() => undefined);
+}
 
 function messageOf(error: unknown): string {
   return error instanceof ApiError ? error.message : 'Something went wrong. Please try again.';
@@ -200,7 +215,7 @@ function UserDialog({
       });
     },
     onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ['users'] });
+      await invalidateHousehold(queryClient);
       onClose();
     },
     onError: (error: unknown) => setProblem(messageOf(error)),
@@ -303,7 +318,7 @@ function ResetPasswordDialog({
   const reset = useMutation({
     mutationFn: () => usersApi.resetPassword(user.id, temporaryPassword),
     onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ['users'] });
+      await invalidateHousehold(queryClient);
       onClose();
     },
     onError: (error: unknown) => setProblem(messageOf(error)),
@@ -504,7 +519,7 @@ function runRowAction(
 ): void {
   setProblem(null);
   void run()
-    .then(() => queryClient.invalidateQueries({ queryKey: ['users'] }))
+    .then(() => invalidateHousehold(queryClient))
     .catch((error: unknown) => setProblem(messageOf(error)));
 }
 
@@ -583,6 +598,10 @@ export function UsersSection(): ReactNode {
           )}
         </SettingsCard>
       )}
+
+      {/* Last, and administrator-only like the table above it: it is read about
+          the household rather than about yourself. */}
+      {mayManage && <SignInActivity />}
 
       {creating && (
         <UserDialog

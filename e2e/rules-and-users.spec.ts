@@ -1,5 +1,5 @@
 import { expect, makeAccount, makeDelegation, test } from './fixtures.js';
-import type { APIRequestContext, Page } from '@playwright/test';
+import type { APIRequestContext, Locator, Page } from '@playwright/test';
 
 /**
  * Settings → Rules and Settings → Users.
@@ -136,15 +136,28 @@ async function createAccount(page: Page, username: string): Promise<void> {
   await expect(page.getByRole('dialog')).toHaveCount(0);
 }
 
+/**
+ * The household table, scoped.
+ *
+ * The activity card below it names the same accounts — an event is *about* an
+ * account — so an unscoped `getByText` for a username matches both and resolves
+ * strictly to neither. Two parts of one screen legitimately describing the same
+ * person is the case this scoping exists for.
+ */
+function household(page: Page): Locator {
+  return page.locator('section').filter({ hasText: 'The household' });
+}
+
 test('the first account is Super Admin and can create another', async ({ signedIn }) => {
   await signedIn.goto('/settings/users');
 
-  await expect(signedIn.getByText('e2e-owner@example.test', { exact: true }).first()).toBeVisible();
-  await expect(signedIn.getByText('Super Admin', { exact: true }).first()).toBeVisible();
+  const table = household(signedIn);
+  await expect(table.getByText('e2e-owner@example.test', { exact: true }).first()).toBeVisible();
+  await expect(table.getByText('Super Admin', { exact: true }).first()).toBeVisible();
 
   await createAccount(signedIn, 'second@example.test');
 
-  await expect(signedIn.getByText('second@example.test', { exact: true })).toBeVisible();
+  await expect(table.getByText('second@example.test', { exact: true })).toBeVisible();
   // A temporary password reaches exactly one screen until it is changed.
   await expect(signedIn.getByText('Temporary password', { exact: true })).toBeVisible();
   // And a second factor is required of it before even that.
@@ -171,7 +184,7 @@ test('a display name replaces the username on screen', async ({ signedIn }) => {
 test('an account can be archived and restored, but not your own', async ({ signedIn }) => {
   await signedIn.goto('/settings/users');
   await createAccount(signedIn, 'second@example.test');
-  await expect(signedIn.getByText('second@example.test', { exact: true })).toBeVisible();
+  await expect(household(signedIn).getByText('second@example.test', { exact: true })).toBeVisible();
 
   // Archiving yourself would lock the household out of its own budget, so the
   // item is not in your own menu at all.
@@ -182,7 +195,7 @@ test('an account can be archived and restored, but not your own', async ({ signe
   await signedIn.getByRole('button', { name: 'Options for second@example.test' }).click();
   await signedIn.getByRole('menuitem', { name: 'Archive' }).click();
   await expect(
-    signedIn.locator('tbody tr').filter({ hasText: 'second@example.test' }),
+    household(signedIn).locator('tbody tr').filter({ hasText: 'second@example.test' }),
   ).toContainText('Archived');
 
   await signedIn.getByRole('button', { name: 'Options for second@example.test' }).click();
@@ -190,7 +203,7 @@ test('an account can be archived and restored, but not your own', async ({ signe
   // Back to whatever it was before, which for an account created a moment ago
   // is "Temporary password" rather than "Active".
   await expect(
-    signedIn.locator('tbody tr').filter({ hasText: 'second@example.test' }),
+    household(signedIn).locator('tbody tr').filter({ hasText: 'second@example.test' }),
   ).not.toContainText('Archived');
 });
 
@@ -202,7 +215,9 @@ test('an account can be archived and restored, but not your own', async ({ signe
 test('an administrator can reset somebody else’s second factor', async ({ signedIn }) => {
   await signedIn.goto('/settings/users');
 
-  const owner = signedIn.locator('tbody tr').filter({ hasText: 'e2e-owner@example.test' });
+  const owner = household(signedIn)
+    .locator('tbody tr')
+    .filter({ hasText: 'e2e-owner@example.test' });
   await expect(owner.getByText('On', { exact: true })).toBeVisible();
 
   await signedIn.getByRole('button', { name: 'Options for e2e-owner@example.test' }).click();
@@ -226,4 +241,73 @@ test('an administrator can reset somebody else’s second factor', async ({ sign
       .getByRole('heading', { name: 'Set up two-factor authentication' })
       .or(signedIn.getByLabel('Username')),
   ).toBeVisible();
+});
+
+/**
+ * The record of what happened to credentials.
+ *
+ * The screen is the whole point of this feature. An external review asked for
+ * the table twice and it was declined twice on the grounds that a record nobody
+ * reads is not a control — so what this asserts is that somebody arriving at
+ * Settings → Users can see, without pressing anything, that a credential was
+ * changed and who changed it.
+ */
+test('the activity card shows a credential change and names who made it', async ({ signedIn }) => {
+  await signedIn.goto('/settings/users');
+  await createAccount(signedIn, 'second@example.test');
+
+  await signedIn.getByRole('button', { name: 'Options for second@example.test' }).click();
+  await signedIn.getByRole('menuitem', { name: 'Reset password' }).click();
+
+  const dialog = signedIn.getByRole('dialog', { name: /Reset the password/ });
+  await dialog.getByLabel(/Temporary password for/).fill('another-temporary-phrase');
+  await dialog.getByRole('button', { name: 'Reset password' }).click();
+  await expect(signedIn.getByRole('dialog')).toHaveCount(0);
+
+  // Read straight off the card, unprompted — no filter, no search, no pager.
+  const activity = signedIn
+    .locator('section')
+    .filter({ hasText: 'Sign-in activity' })
+    .locator('tbody tr');
+
+  await expect(activity.first()).toContainText('Password reset');
+  await expect(activity.first()).toContainText('second@example.test');
+  // Who did it, which is the line worth noticing on an administrator action.
+  await expect(activity.first()).toContainText('by e2e-owner@example.test');
+});
+
+/**
+ * The rule the table has to obey, asserted through the interface that shows it.
+ * The login form has two fields, and a password typed into the top one must
+ * never end up on a screen — or in the dump behind it.
+ */
+test('a password typed into the username box never reaches the activity card', async ({
+  signedIn,
+  browser,
+}) => {
+  const typed = 'correct-horse-battery-staple-in-the-wrong-box';
+
+  /*
+   * A context of its own, deliberately.
+   *
+   * `signedIn` *is* the `page` fixture with a session on it — asking that page
+   * for `/login` gets a redirect to the budget, not a form. The failed attempt
+   * has to come from a browser that is signed in as nobody, which is what this
+   * whole test is about.
+   */
+  const stranger = await browser.newContext({ baseURL: signedIn.url() });
+  const strangerPage = await stranger.newPage();
+  await strangerPage.goto('/login');
+  await strangerPage.getByLabel('Username').fill(typed);
+  await strangerPage.getByLabel('Password', { exact: true }).fill('whatever');
+  await strangerPage.getByRole('button', { name: 'Sign in' }).click();
+  await expect(strangerPage.getByText('Incorrect username or password.')).toBeVisible();
+  await stranger.close();
+
+  await signedIn.goto('/settings/users');
+  const activity = signedIn.locator('section').filter({ hasText: 'Sign-in activity' });
+
+  await expect(activity.locator('tbody tr').first()).toContainText('Wrong password');
+  await expect(activity).not.toContainText(typed);
+  await expect(activity.locator('tbody tr').first()).toContainText('unknown:');
 });

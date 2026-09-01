@@ -66,15 +66,18 @@ So: **plaintext dumps, deliberately.** If this is ever reopened, the only versio
 worth building is one whose passphrase is kept where the onion address is kept —
 off the device, and somewhere that will still exist in two years.
 
-## Not built here
+## Built, after two declines
 
-**An `auth_events` table, with a screen that shows it.** Carried open since
-August, and now being built — with the Settings screen, not without it. A table
-nobody queries is the dead-backup trap again; the point is a screen that answers
-"has anything strange happened" unprompted, the way the backup card does.
+**An `auth_events` table, with the screen that shows it.** Carried open since
+August and refused twice, on the grounds that a table nobody queries is the
+dead-backup trap again. The owner asked for it with the screen, which is the
+version worth having — [ADR 041](decisions/041-an-audit-log-ships-with-the-screen-that-reads-it.md)
+records the reasoning, including why this is the one table here that is pruned.
 
-The record of a failed attempt uses `describeAttemptedUsername`, so it inherits
-finding 6's rule: a real name only when it is a real name.
+Settings → Users now carries **Sign-in activity**: the last ninety days, newest
+first, administrator-only, no filter and no pager. The record of a failed attempt
+uses `describeAttemptedUsername`, so it inherits finding 6's rule — a real name
+only when it is a real name.
 
 ## Operational, and still the owner's to run
 

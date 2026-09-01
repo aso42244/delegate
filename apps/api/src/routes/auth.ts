@@ -25,6 +25,7 @@ import {
 } from '../domain/totp.js';
 import { requireSession } from '../plugins/auth.js';
 import { authRateLimit } from '../plugins/security.js';
+import { pruneAuthEvents, recordAuthEvent } from '../domain/auth-events.js';
 import { describeAttemptedUsername } from '../domain/auth-subject.js';
 import { pruneExpiredSessions } from '../plugins/session-store.js';
 
@@ -69,6 +70,18 @@ function presentUser(user: PresentableUser): Record<string, unknown> {
 }
 
 /**
+ * The address to record against an event, as the server resolved it.
+ *
+ * `request.ip` already honours `TRUST_PROXY`, so this is the client behind a
+ * Cloudflare Tunnel when one is configured and the connecting socket otherwise
+ * — which is exactly the value the rate limiter buckets on, and the reason not
+ * to read the header here directly.
+ */
+function addressOf(request: FastifyRequest): string {
+  return request.ip;
+}
+
+/**
  * Everything that turns an accepted credential into a session, in one place so
  * the password path and the second-factor path cannot drift apart.
  */
@@ -91,6 +104,12 @@ async function establishSession(
     request.server.config.SESSION_ABSOLUTE_TTL_SECONDS,
   );
   if (pruned > 0) request.log.debug({ pruned }, 'expired sessions removed');
+
+  // The audit log is swept on the same beat, and for the same reason: this is
+  // the moment there is something worth removing, and it keeps the one table an
+  // unauthenticated stranger can cause writes to from growing without bound.
+  const forgotten = await pruneAuthEvents(prisma);
+  if (forgotten > 0) request.log.debug({ forgotten }, 'expired auth events removed');
 }
 
 export const authRoutes: FastifyPluginCallback = (fastify, _options, done) => {
@@ -129,6 +148,16 @@ export const authRoutes: FastifyPluginCallback = (fastify, _options, done) => {
     await recordLogin(prisma, user.id);
 
     request.log.info({ userId: user.id }, 'first-run super admin created');
+    await recordAuthEvent(
+      prisma,
+      {
+        kind: 'account_created',
+        subject: user.username,
+        userId: user.id,
+        ip: addressOf(request),
+      },
+      request.log,
+    );
     return reply.code(201).send({ user: presentUser(user) });
   });
 
@@ -147,15 +176,16 @@ export const authRoutes: FastifyPluginCallback = (fastify, _options, done) => {
       // One message for every failure — unknown user, wrong password, archived
       // account. Anything more specific enumerates valid usernames, and
       // `usernameKnown` is used only to decide what is safe to write down.
-      request.log.warn(
-        {
-          subject: describeAttemptedUsername(
-            username,
-            usernameKnown,
-            fastify.config.SESSION_SECRET,
-          ),
-        },
-        'failed login',
+      const subject = describeAttemptedUsername(
+        username,
+        usernameKnown,
+        fastify.config.SESSION_SECRET,
+      );
+      request.log.warn({ subject }, 'failed login');
+      await recordAuthEvent(
+        prisma,
+        { kind: 'sign_in_failed', subject, ip: addressOf(request) },
+        request.log,
       );
       return reply.code(401).send({
         error: { code: 'invalid_credentials', message: 'Incorrect username or password.' },
@@ -182,6 +212,11 @@ export const authRoutes: FastifyPluginCallback = (fastify, _options, done) => {
     }
 
     await establishSession(request, reply, user);
+    await recordAuthEvent(
+      prisma,
+      { kind: 'signed_in', subject: user.username, userId: user.id, ip: addressOf(request) },
+      request.log,
+    );
     return reply.send({ user: presentUser(user) });
   });
 
@@ -223,6 +258,18 @@ export const authRoutes: FastifyPluginCallback = (fastify, _options, done) => {
        * It leaks nothing. Reaching this line means already holding the password
        * and a live challenge for this account.
        */
+      await recordAuthEvent(
+        prisma,
+        {
+          kind: 'second_factor_failed',
+          // The account is known here — a challenge only exists because its
+          // password was accepted moments ago — so the name is safe to store.
+          subject: user?.username ?? 'unknown',
+          userId: user?.id ?? null,
+          ip: addressOf(request),
+        },
+        request.log,
+      );
       return reply.code(401).send(
         result === 'spent'
           ? {
@@ -262,6 +309,11 @@ export const authRoutes: FastifyPluginCallback = (fastify, _options, done) => {
 
     await establishSession(request, reply, user);
     request.log.info({ userId }, 'second factor accepted');
+    await recordAuthEvent(
+      prisma,
+      { kind: 'signed_in', subject: user.username, userId: user.id, ip: addressOf(request) },
+      request.log,
+    );
     return reply.send({ user: presentUser(user) });
   });
 
@@ -270,9 +322,30 @@ export const authRoutes: FastifyPluginCallback = (fastify, _options, done) => {
    * cookie, so a copied cookie cannot be replayed. No session is not an error.
    */
   fastify.post('/api/auth/logout', async (request, reply) => {
-    if (request.session.userId) {
-      request.log.info({ userId: request.session.userId }, 'logout');
+    const userId = request.session.userId;
+    if (userId) {
+      request.log.info({ userId }, 'logout');
+      // Read before the session is destroyed, and recorded after — the username
+      // is what the screen shows, and it is gone from the request once the
+      // session is.
+      const who = await prisma.user.findUnique({
+        where: { id: userId },
+        select: { username: true },
+      });
+      await request.session.destroy();
+      await recordAuthEvent(
+        prisma,
+        {
+          kind: 'signed_out',
+          subject: who?.username ?? 'unknown',
+          userId,
+          ip: addressOf(request),
+        },
+        request.log,
+      );
+      return reply.code(204).send();
     }
+
     await request.session.destroy();
     return reply.code(204).send();
   });
@@ -324,6 +397,16 @@ export const authRoutes: FastifyPluginCallback = (fastify, _options, done) => {
       request.session.userId = user.id;
 
       request.log.info({ userId: user.id }, 'password changed');
+      await recordAuthEvent(
+        prisma,
+        {
+          kind: 'password_changed',
+          subject: user.username,
+          userId: user.id,
+          ip: addressOf(request),
+        },
+        request.log,
+      );
       return reply.code(204).send();
     },
   );
@@ -395,6 +478,16 @@ export const authRoutes: FastifyPluginCallback = (fastify, _options, done) => {
       );
 
       request.log.info({ userId: request.currentUser!.id }, 'two-factor enrolled');
+      await recordAuthEvent(
+        prisma,
+        {
+          kind: 'two_factor_enrolled',
+          subject: request.currentUser!.username,
+          userId: request.currentUser!.id,
+          ip: addressOf(request),
+        },
+        request.log,
+      );
       return result;
     },
   );
@@ -409,6 +502,16 @@ export const authRoutes: FastifyPluginCallback = (fastify, _options, done) => {
 
       await disableTotp(prisma, request.currentUser!.id, currentPassword);
       request.log.info({ userId: request.currentUser!.id }, 'two-factor disabled');
+      await recordAuthEvent(
+        prisma,
+        {
+          kind: 'two_factor_disabled',
+          subject: request.currentUser!.username,
+          userId: request.currentUser!.id,
+          ip: addressOf(request),
+        },
+        request.log,
+      );
       return { ok: true };
     },
   );
