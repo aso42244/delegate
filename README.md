@@ -170,6 +170,13 @@ disagreement is a defect worth investigating, not routine maintenance. Add
 
 **One line, on anything that runs Docker.**
 
+> **Maintainer note, once.** GitHub publishes a workflow's package as
+> **private** by default, whatever the repository's visibility — so until the
+> package is made public, the command below fails with `unauthorized` for
+> everybody except an account that has run `docker login ghcr.io`. Change it at
+> `github.com/users/aso42244/packages/container/delegate/settings` → Danger Zone
+> → Change visibility → Public. It is a one-time click; later pushes keep it.
+
 ```bash
 curl -fsSL https://raw.githubusercontent.com/aso42244/delegate/main/docker-compose.yml -o docker-compose.yml \
   && docker compose up -d
