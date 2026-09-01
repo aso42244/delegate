@@ -488,6 +488,20 @@ sudo -i sh -c 'cd /volume1/docker/delegate && docker compose exec \
 sudo -i sh -c 'cd /volume1/docker/delegate && docker compose up -d'
 ```
 
+**Step 3 only works because `docker-compose.yml` names `DATA_ENCRYPTION_KEY` in
+the app's `environment:` block.** Compose reads `.env` to substitute into the
+compose file; it does not hand `.env` to the container. For a while there was no
+such line, which made this procedure a trap: the secrets moved onto the new key,
+the application kept deriving the old one from `SESSION_SECRET`, and nothing
+decrypted. If you are running a compose file older than v0.40.0, add the line
+before you start.
+
+The application now refuses to boot when the key in force cannot read what is
+stored, and says which of the two causes it is. That is deliberately fatal: the
+alternative is a container that answers `/health` while nobody can sign in —
+**the second factor is decrypted before recovery codes are considered, so a wrong
+key locks out every account including the way back in.**
+
 **The order matters.** Between steps 2 and 3 the application is still reading with
 the old key and will fail; setting `DATA_ENCRYPTION_KEY` without running step 2
 makes the stored secrets unreadable. Neither is destructive — the fix in both

@@ -8,6 +8,39 @@ phase (`v0.1.0-phase1`, and so on).
 
 Nothing yet.
 
+## [0.40.0] — 2026-09-01
+
+### Fixed
+
+- **`DATA_ENCRYPTION_KEY` never reached the container, which made the documented
+  re-key procedure a trap.** Compose reads `.env` to substitute into
+  `docker-compose.yml`; it does not hand `.env` to the container. Only variables
+  named in an `environment:` block arrive, and this one was not there.
+
+  Following the README exactly would therefore have moved every stored secret
+  onto a key the application was not using. The symptom is the worst part:
+  `verifySecondFactor` decrypts the TOTP secret **before** it considers recovery
+  codes, so it throws first — every account locked out, recovery codes included,
+  reported as "two-factor stopped working for everyone at once".
+
+  The line is there now, along with `SESSION_ABSOLUTE_TTL_SECONDS`, which was
+  missing for the same reason and had been quietly taking its default.
+
+### Added
+
+- **The application proves at boot that its at-rest key can read what is
+  stored**, and refuses to start when it cannot — naming which of the two causes
+  it is: a wrong `DATA_ENCRYPTION_KEY`, or one that never arrived.
+
+  Fatal on purpose. The alternative is a container that answers `/health`
+  perfectly while nobody can sign in, which is this project's oldest lesson in
+  new clothes. A fresh install has nothing encrypted yet and passes trivially.
+
+  The container smoke test in `verify.sh` now starts against the database the
+  end-to-end run just populated, with the secret those tests wrote with — so it
+  proves the image boots against real data rather than only that it serves
+  `/health`.
+
 ## [0.39.0] — 2026-09-01
 
 ### Added

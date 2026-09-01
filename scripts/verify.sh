@@ -177,11 +177,22 @@ docker rm -f "$CONTAINER" >/dev/null 2>&1 || true
 CONTAINER_DB_URL=$(printf '%s' "$TEST_DATABASE_URL" \
   | sed 's|@localhost|@host.docker.internal|; s|@127\.0\.0\.1|@host.docker.internal|')
 
+# The same SESSION_SECRET the end-to-end run wrote with, and it has to be.
+#
+# This container points at the database those tests just used, which still holds
+# what they stored — TOTP secrets among it — encrypted with the key derived from
+# *their* secret. The application now proves at boot that its key can read what
+# is stored and refuses to start when it cannot, so a mismatched secret here
+# fails this step rather than starting a container nobody could sign in to.
+#
+# That makes this smoke test stronger than it was: it no longer only proves the
+# image serves /health, it proves it boots against a populated database.
+# Keep the value in step with playwright.config.ts.
 docker run -d --name "$CONTAINER" \
   --add-host=host.docker.internal:host-gateway \
   -p 4599:3000 \
   -e DATABASE_URL="$CONTAINER_DB_URL" \
-  -e SESSION_SECRET='verify-only-secret-at-least-32-characters-long' \
+  -e SESSION_SECRET='end-to-end-session-secret-at-least-32-chars' \
   -e LOG_LEVEL=warn \
   delegate:verify >/dev/null || fail 'the image would not start'
 
