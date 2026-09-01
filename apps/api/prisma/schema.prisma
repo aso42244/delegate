@@ -218,6 +218,8 @@ model User {
   accountValuations   AccountValuation[]
   insightLayouts      InsightLayout[]
   recoveryCodes       RecoveryCode[]
+  authEvents          AuthEvent[]           @relation("AuthEventSubject")
+  authEventsPerformed AuthEvent[]           @relation("AuthEventActor")
 
   @@index([archivedAt])
   @@map("users")
@@ -257,6 +259,73 @@ model Session {
   @@index([userId])
   @@index([expiresAt])
   @@map("sessions")
+}
+
+// ---------------------------------------------------------------------------
+// What happened to credentials
+// ---------------------------------------------------------------------------
+//
+// Carried open since the August review and declined twice, on the grounds that a
+// table nobody queries is worse than no table — it looks like a control while
+// nothing reads it. That is the nightly-backup trap, which this project has
+// already paid for once. So it ships **with** the screen that shows it: Settings
+// → Users reports the most recent events without being asked, the way the backup
+// card reports the newest dump.
+//
+// Credentials only. Everyone in this household sees the whole budget by design,
+// so a read is not an event; recording one per page view would bury the dozen
+// lines a year that matter.
+
+/// Recorded at sign-in, sign-out, and every change to a credential.
+enum AuthEventKind {
+  signed_in
+  sign_in_failed
+  second_factor_failed
+  signed_out
+  password_changed
+  password_reset
+  two_factor_enrolled
+  two_factor_disabled
+  two_factor_reset
+  account_created
+  account_archived
+  account_restored
+
+  @@map("auth_event_kind")
+}
+
+model AuthEvent {
+  id         String        @id @default(uuid()) @db.Uuid
+  occurredAt DateTime      @default(now()) @map("occurred_at")
+  kind       AuthEventKind
+
+  /// Who it was about, and what the screen reads.
+  ///
+  /// A username when it names a real account, and a short keyed digest
+  /// (`unknown:xxxxxxxx`) when it does not. The login form has two fields, and a
+  /// password typed into the top one must never be written down — a name that
+  /// matches no account is quite often exactly that. See `describeAttemptedUsername`.
+  subject String
+
+  /// Set when the account is known. `SetNull` rather than cascade: an audit row
+  /// outliving the account it describes is the point of one.
+  userId String? @map("user_id") @db.Uuid
+
+  /// Who did it, when that is somebody else — an administrator resetting a
+  /// password or a second factor. Null when the subject acted on themselves.
+  actorId String? @map("actor_id") @db.Uuid
+
+  /// The address as the server resolved it, so it already honours TRUST_PROXY.
+  /// Text rather than INET: over Tor this is the loopback address of the SOCKS
+  /// hop and means nothing, and an address-typed column invites arithmetic on a
+  /// value that is sometimes a fiction.
+  ip String?
+
+  user  User? @relation("AuthEventSubject", fields: [userId], references: [id], onDelete: SetNull)
+  actor User? @relation("AuthEventActor", fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([occurredAt(sort: Desc)])
+  @@map("auth_events")
 }
 
 // ---------------------------------------------------------------------------
@@ -1085,10 +1154,10 @@ model AccountSnapshot {
 
 /// One row per delegation per day.
 model DelegationSnapshot {
-  id           String   @id @default(uuid()) @db.Uuid
-  snapshotDate DateTime @map("snapshot_date") @db.Date
-  delegationId String   @map("delegation_id") @db.Uuid
-  balanceCents BigInt   @map("balance_cents")
+  id           String             @id @default(uuid()) @db.Uuid
+  snapshotDate DateTime           @map("snapshot_date") @db.Date
+  delegationId String             @map("delegation_id") @db.Uuid
+  balanceCents BigInt             @map("balance_cents")
   provenance   SnapshotProvenance
 
   /// Which grouping this delegation sat in that night.

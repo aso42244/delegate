@@ -1,7 +1,8 @@
 import { USER_ROLES } from '@budget/shared';
-import type { FastifyPluginCallback } from 'fastify';
+import type { FastifyPluginCallback, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { prisma } from '../db/client.js';
+import { listAuthEvents, recordAuthEvent, type AuthEventKind } from '../domain/auth-events.js';
 import { MAX_PASSWORD_LENGTH } from '../domain/passwords.js';
 import {
   archiveUser,
@@ -20,6 +21,27 @@ import { USER_MANAGEMENT } from '../plugins/auth.js';
  * capability; Super Admin immunity is enforced in the domain layer so it cannot
  * be forgotten at a route.
  */
+
+/**
+ * Records an administrator's action against the account it was done to.
+ *
+ * Every route here acts on somebody else's credential, so the actor and the
+ * subject are always different people — which is the whole reason the table
+ * carries both. The subject is a real account by construction: these routes
+ * take an id, not a typed name.
+ */
+async function note(
+  request: FastifyRequest,
+  kind: AuthEventKind,
+  target: { readonly id: string; readonly username: string },
+  actorId: string,
+): Promise<void> {
+  await recordAuthEvent(
+    prisma,
+    { kind, subject: target.username, userId: target.id, actorId, ip: request.ip },
+    request.log,
+  );
+}
 
 const idParamsSchema = z.object({ id: z.string().uuid() });
 
@@ -58,6 +80,17 @@ export const userRoutes: FastifyPluginCallback = (fastify, _options, done) => {
 
   fastify.get('/api/users', async () => ({ users: await listUsers(prisma) }));
 
+  /**
+   * What has happened to credentials, newest first.
+   *
+   * Lives here rather than under `/api/auth` because it is read by an
+   * administrator about the household, not by an account about itself — the
+   * capability this module already requires is exactly the right one. It is also
+   * why there is no per-user view: with two accounts, filtering a list of fifty
+   * lines is a control that costs more than it saves.
+   */
+  fastify.get('/api/auth-events', async () => ({ events: await listAuthEvents(prisma) }));
+
   fastify.post('/api/users', async (request, reply) => {
     const input = createUserSchema.parse(request.body);
     const actor = request.currentUser!;
@@ -67,6 +100,7 @@ export const userRoutes: FastifyPluginCallback = (fastify, _options, done) => {
       { actorId: actor.id, createdUserId: user.id, role: user.role },
       'user created',
     );
+    await note(request, 'account_created', user, actor.id);
     return reply.code(201).send({ user });
   });
 
@@ -95,6 +129,7 @@ export const userRoutes: FastifyPluginCallback = (fastify, _options, done) => {
 
     const user = await resetTwoFactor(prisma, actor.role, id);
     request.log.warn({ actorId: actor.id, targetUserId: id }, 'second factor reset');
+    await note(request, 'two_factor_reset', user, actor.id);
     return { user };
   });
 
@@ -105,6 +140,7 @@ export const userRoutes: FastifyPluginCallback = (fastify, _options, done) => {
 
     const user = await resetPassword(prisma, actor.role, id, temporaryPassword);
     request.log.info({ actorId: actor.id, targetUserId: id }, 'password reset');
+    await note(request, 'password_reset', user, actor.id);
     return { user };
   });
 
@@ -114,6 +150,7 @@ export const userRoutes: FastifyPluginCallback = (fastify, _options, done) => {
 
     const user = await archiveUser(prisma, actor.role, actor.id, id);
     request.log.info({ actorId: actor.id, targetUserId: id }, 'user archived');
+    await note(request, 'account_archived', user, actor.id);
     return { user };
   });
 
@@ -123,6 +160,7 @@ export const userRoutes: FastifyPluginCallback = (fastify, _options, done) => {
 
     const user = await restoreUser(prisma, actor.role, id);
     request.log.info({ actorId: actor.id, targetUserId: id }, 'user restored');
+    await note(request, 'account_restored', user, actor.id);
     return { user };
   });
 

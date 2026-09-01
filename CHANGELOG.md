@@ -83,6 +83,34 @@ they are worth fixing cheaply rather than urgently.
 `docs/security-review-2026-09.md`: CSP violation reporting, and unencrypted
 database dumps.
 
+### Added
+
+- **A record of what happened to credentials, and the screen that reads it**
+  ([ADR 041](docs/decisions/041-an-audit-log-ships-with-the-screen-that-reads-it.md)).
+  Three reviews asked for an `auth_events` table and it was declined twice, for a
+  reason kept rather than quietly reversed: **a table nobody queries is worse
+  than no table**, because it looks like a control while nothing reads it. That
+  is the nightly-backup shape, which this project has already paid for once.
+
+  So the screen is the feature. **Settings → Users carries a third card,
+  Sign-in activity**, showing the most recent events without being asked — the
+  same posture as the backup card, which asks whether a dump is on disk rather
+  than whether the last attempt threw.
+
+  Sign-in, sign-out, a refused password, a refused code, password changed or
+  reset, two-factor enrolled, disabled or reset, and accounts created, archived
+  or restored. **Not reads** — everyone sees the whole budget by design, so
+  opening a page is not an event, and a row per page view would bury the dozen
+  lines a year that matter.
+
+  **Subject and actor are separate**, because every administrator action here is
+  done _to_ somebody and "who reset that password" is the only question worth
+  asking about one. **A name is stored only when it is a name**, on finding 6's
+  rule. And it is **pruned at ninety days**, which is the one place the
+  "nothing is ever hard-deleted" constraint is deliberately bent: that rule is
+  about the household's data, and this is the only table an _unauthenticated_
+  stranger can cause writes to — every refused sign-in is a row.
+
 ## [0.37.0] — 2026-09-01
 
 ### Changed
