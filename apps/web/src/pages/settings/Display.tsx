@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import { useBudgetLayout, type BudgetLayout } from '../../budget-layout.js';
 import { useDensity, type Density } from '../../display.js';
 import { useTheme, type ThemeChoice } from '../../theme.js';
 import { SettingsCard } from './SettingsCard.jsx';
@@ -12,13 +13,20 @@ import { SettingsCard } from './SettingsCard.jsx';
  * other sees on a phone, and one person reading in a dark room should not put
  * the other's phone into dark mode.
  *
- * Both cards say so once, at the bottom, rather than each repeating it.
+ * All three say so once, in the last card, rather than each repeating it — and
+ * inside a card rather than as a paragraph under them, because a trailing
+ * explanation under the content is the thing `ui-system.md` §3 bans.
  */
 
 const DENSITIES: readonly { value: Density; label: string; detail: string }[] = [
   { value: 'comfortable', label: 'Comfortable', detail: '40px rows' },
   { value: 'compact', label: 'Compact', detail: '32px rows' },
   { value: 'dense', label: 'Dense', detail: '28px rows' },
+];
+
+const LAYOUTS: readonly { value: BudgetLayout; label: string; detail: string }[] = [
+  { value: 'stacked', label: 'Stacked', detail: 'Assets, Debts, then Delegations' },
+  { value: 'columns', label: 'Two columns', detail: 'Delegations beside the accounts' },
 ];
 
 const THEMES: readonly { value: ThemeChoice; label: string; detail: string }[] = [
@@ -65,11 +73,35 @@ function Choice<T extends string>({
 export function DisplaySection(): ReactNode {
   const [density, setDensity] = useDensity();
   const [theme, setTheme] = useTheme();
+  const [budgetLayout, setBudgetLayout] = useBudgetLayout();
 
   return (
     <>
       <SettingsCard title="Theme" description="Light, dark, or whatever this device asks for.">
         <Choice name="theme" legend="Theme" value={theme} options={THEMES} onChange={setTheme} />
+      </SettingsCard>
+
+      <SettingsCard
+        title="Budget layout"
+        description="Where the three sections sit on the Budget page."
+      >
+        <Choice
+          name="budgetLayout"
+          legend="Budget layout"
+          value={budgetLayout}
+          options={LAYOUTS}
+          onChange={setBudgetLayout}
+        />
+
+        {/*
+          The one choice here whose effect depends on the screen rather than only
+          on taste, so it is worth a line: below a wide window there is no room
+          for two columns and the page falls back to one — keeping this
+          arrangement's own order, envelopes first.
+        */}
+        <p className="mt-4 text-quiet text-muted">
+          Two columns need a wide window. Narrower than that, both stack.
+        </p>
       </SettingsCard>
 
       <SettingsCard title="Row height" description="Spacing only — the text stays the same size.">
@@ -81,7 +113,9 @@ export function DisplaySection(): ReactNode {
           onChange={setDensity}
         />
 
-        <p className="mt-4 text-quiet text-muted">Both are remembered on this device only.</p>
+        {/* Last card, so it closes the page — rather than a paragraph under the
+            cards, which is the trailing explanation the system bans. */}
+        <p className="mt-4 text-quiet text-muted">All three are remembered on this device only.</p>
       </SettingsCard>
     </>
   );
