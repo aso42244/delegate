@@ -6,12 +6,44 @@
 # with another container using 3000.
 
 services:
+  # Makes the secrets this deployment needs, once, then exits.
+  #
+  # This service is why `docker compose up -d` works with nothing configured.
+  # SESSION_SECRET and POSTGRES_PASSWORD used to be mandatory, so the shortest
+  # install was "invent two secrets, write a file, then start" — which is not a
+  # one-line deploy however short the last line is.
+  #
+  # The same image as the app, with a different command: nothing extra to pull,
+  # and no script to mount from a repository somebody may not have cloned.
+  #
+  # It never overwrites. Where a variable is already set it is written into the
+  # file rather than replaced, so a deployment that has secrets in `.env` today
+  # keeps exactly the ones it has and upgrades without noticing this ran.
+  secrets:
+    image: ${APP_IMAGE:-ghcr.io/aso42244/delegate:latest}
+    command: ['node', 'apps/api/dist/cli/init-secrets.js']
+    environment:
+      # Adopted where set, generated where not. Empty is the ordinary case now.
+      SESSION_SECRET: ${SESSION_SECRET:-}
+      DATA_ENCRYPTION_KEY: ${DATA_ENCRYPTION_KEY:-}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-delegate}
+      APP_DB_USER: ${APP_DB_USER:-}
+    volumes:
+      - delegate-secrets:/secrets
+    # One shot. `unless-stopped` would restart it for ever after it exits 0.
+    restart: 'no'
+
   postgres:
     # Floating, like the app's base image, and the same known gap. Pin at the
     # next deliberate bump:
     #   docker image inspect --format '{{index .RepoDigests 0}}' postgres:16-alpine
     image: postgres:16-alpine
     restart: unless-stopped
+    depends_on:
+      secrets:
+        condition: service_completed_successfully
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
       # Handed to the init script below, which runs only when the data directory
@@ -20,9 +52,14 @@ services:
       # what every existing deployment does.
       APP_DB_USER: ${APP_DB_USER:-delegate_app}
       APP_DB_PASSWORD: ${APP_DB_PASSWORD:-}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      # Read from the file the `secrets` service wrote, which is either the value
+      # from `.env` or one generated on first boot. Not POSTGRES_PASSWORD: the
+      # two cannot both be set, and a file is the only form compose can carry a
+      # value it never sees.
+      POSTGRES_PASSWORD_FILE: /secrets/postgres-password
       POSTGRES_DB: ${POSTGRES_DB:-delegate}
     volumes:
+      - delegate-secrets:/secrets:ro
       - postgres-data:/var/lib/postgresql/data
       # Runs once, on an empty data directory. Existing deployments never see it.
       - ./postgres/init:/docker-entrypoint-initdb.d:ro
@@ -49,6 +86,8 @@ services:
     image: ${APP_IMAGE:-ghcr.io/aso42244/delegate:latest}
     restart: unless-stopped
     depends_on:
+      secrets:
+        condition: service_completed_successfully
       postgres:
         condition: service_healthy
     environment:
@@ -70,17 +109,30 @@ services:
       # is not something this file can be tested for locally (ADR 019 — compose
       # here is reasoned about, not executed), and `docker compose config` is one
       # command that shows what it actually resolved to.
-      DATABASE_URL: ${APP_DATABASE_URL:-postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-delegate}}
-      SESSION_SECRET: ${SESSION_SECRET:?SESSION_SECRET is required}
-      # The key secrets at rest are encrypted with. Empty means "derive it from
-      # SESSION_SECRET", which is what every deployment did before ADR 029.
+      # Empty by default, and filled in by the entrypoint from the file the
+      # `secrets` service wrote. Compose cannot read a file, so a password it
+      # never sees is a password it cannot substitute — which is also why this
+      # is no longer assembled here out of POSTGRES_USER and POSTGRES_PASSWORD.
+      DATABASE_URL: ${DATABASE_URL:-}
+      # Points the application at a different role or an external database, and
+      # overrides everything above. This is how a deployment moves onto the
+      # least-privilege role; see the README.
+      APP_DATABASE_URL: ${APP_DATABASE_URL:-}
+      # No longer required. Empty means "use the generated one", which the
+      # entrypoint loads out of the secrets volume before anything reads it.
+      SESSION_SECRET: ${SESSION_SECRET:-}
+      # The key secrets at rest are encrypted with. Empty means "use the one in
+      # the secrets volume", which the entrypoint loads.
       #
-      # **This line is why `secrets:rekey` works at all.** Compose reads `.env`
-      # to substitute into this file; it does not hand `.env` to the container.
-      # Without a line here, setting DATA_ENCRYPTION_KEY in `.env` changes
-      # nothing the application sees — so a re-key would move every secret onto
-      # a key the app is not using, and every second factor, the SimpleFIN
-      # credential and every wallet descriptor would stop decrypting at once.
+      # On a deployment that predates that volume the file is seeded from
+      # SESSION_SECRET, which is what the key was derived from before — so the
+      # value does not change, nothing needs re-encrypting, and the two are
+      # simply recorded apart from each other from then on. That is the whole of
+      # ADR 029's split, performed by upgrading.
+      #
+      # This line still has to exist. Compose reads `.env` to substitute into
+      # this file and does not hand `.env` to the container, so without a name
+      # here the variable would never arrive.
       DATA_ENCRYPTION_KEY: ${DATA_ENCRYPTION_KEY:-}
       SESSION_TTL_SECONDS: ${SESSION_TTL_SECONDS:-604800}
       # The ceiling a rolling session cannot roll past. 90 days.
@@ -128,6 +180,9 @@ services:
       # DSM so they can be included in whatever off-device backup already exists.
       # A dump on the same disk as the database is not a backup.
       - ${BACKUP_DIR:-./backups}:/backups
+      # Read-only: the application reads these and never writes them. The
+      # `secrets` service is the only thing that does.
+      - delegate-secrets:/secrets:ro
       # Read-only, and only meaningful when TLS_CERT_PATH is set. The directory
       # is harmless when empty.
       - ${TLS_DIR:-./tls}:/tls:ro
@@ -180,6 +235,17 @@ services:
       start_period: 60s
 
 volumes:
+  # The session secret, the at-rest encryption key and the database password.
+  #
+  # Deliberately not in the database. The at-rest key protects exactly what a
+  # stolen `pg_dump` would otherwise hand over in the clear, and a key kept
+  # beside the ciphertext it opens protects nothing.
+  #
+  # The cost is that a dump alone is not a whole restore — you need this too.
+  # Settings shows the key so it can be copied somewhere safe, and this volume
+  # belongs in whatever backs the deployment up.
+  delegate-secrets:
+
   postgres-data:
   # The hidden service's identity. Worth including in whatever backs up the NAS:
   # without it the onion address cannot be recovered, only replaced.

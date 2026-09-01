@@ -60,14 +60,26 @@ COPY --from=build /app/apps/web/dist ./apps/web/dist
 COPY scripts ./scripts
 
 # Runs unprivileged. The node image ships a `node` user for exactly this.
-RUN mkdir -p /backups && chown -R node:node /app /backups
+#
+# /secrets is created here so the volume mounts onto a directory the `node` user
+# owns. A bind mount replaces ownership and this counts for nothing then — but a
+# *named* volume, which is what an install with no configuration gets, inherits
+# the ownership of the path it covers.
+RUN mkdir -p /backups /secrets \
+  && chmod +x /app/scripts/docker-entrypoint.sh \
+  && chown -R node:node /app /backups /secrets
 USER node
 
 EXPOSE 3000
 
 # tini as PID 1 so SIGTERM reaches Node: without an init, a container stop can
 # kill the process mid-write rather than letting it shut down cleanly.
-ENTRYPOINT ["/sbin/tini", "--"]
+#
+# The entrypoint script loads generated secrets out of the mounted volume and
+# into the environment before anything runs, because `prisma migrate deploy`
+# reads DATABASE_URL from the environment like any other program — a file the
+# Node configuration knew how to read would not help it.
+ENTRYPOINT ["/sbin/tini", "--", "/app/scripts/docker-entrypoint.sh"]
 
 # Shell form, so TLS_CERT_PATH is read at run time rather than baked in: the same
 # image serves plain http or https depending only on configuration (ADR 017).
