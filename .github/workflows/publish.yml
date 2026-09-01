@@ -1,0 +1,106 @@
+# Builds and publishes the container image. Nothing else.
+#
+# GitHub Actions was removed in August (ADR 022) because the account's included
+# minutes were gone: the old workflow ran the whole gate — typecheck, lint, 600+
+# integration tests, ~180 Playwright browser tests, a container build — on every
+# push and every pull request. That is the expensive shape, and none of it is
+# here.
+#
+# **This does not gate anything.** `npm run verify` on the machine the code was
+# written on is still the only thing standing between a branch and `main`, which
+# is what ADR 022 actually decided. What changed is where the *image* comes from,
+# because a one-line deploy needs something to deploy.
+#
+# Four guardrails, so this cannot quietly cost money:
+#
+#   1. It runs on version tags only. Not on pushes to main, not on pull
+#      requests. Pushing a tag is a deliberate act that happens once a release.
+#   2. `timeout-minutes` caps a hung build, which would otherwise sit there for
+#      the six-hour default.
+#   3. `concurrency` cancels an in-flight run when a second tag arrives.
+#   4. Layer caching, so a release that changes one file does not rebuild the
+#      world.
+#
+# The account's spending limit is set to $0, which is the guardrail that does not
+# depend on anybody's discipline: Actions refuses to run past the free allowance
+# rather than billing for it. This repository is public, and public repositories
+# get unlimited standard-runner minutes.
+name: Publish the image
+
+on:
+  push:
+    tags: ['v*.*.*']
+  # Manual re-runs, for a tag that was pushed before this workflow existed.
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Version tag to build, for example v0.41.0'
+        required: true
+
+concurrency:
+  group: publish-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      # Pushing to this repository's own package registry, and nothing wider.
+      packages: write
+      # Keyless signing. The certificate is issued to this workflow run and
+      # expires with it, so there is no key for anybody to hold, leak or rotate.
+      id-token: write
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+
+      # amd64 builds natively on the runner; arm64 is emulated. Emulation is the
+      # slow half — argon2 and Prisma both compile — which is what the timeout
+      # above is sized for. Both are needed: a NAS and a cloud VM are x86_64, a
+      # Raspberry Pi and an Apple Silicon Mac are not.
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          # Issued to this workflow run, expires with it, and is not a token
+          # anybody has to create or store.
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository }}
+          # The version, and `latest`. A deployment that names a version gets
+          # exactly it; one that names nothing follows releases.
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=latest
+
+      - id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          # Keyed to the workflow so a release that changes one file reuses
+          # every layer below it.
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # Signed so `deploy.sh` can answer "did my repository build this?" before
+      # starting it. That image is handed the database and the bank feed
+      # credential, which is why the question is worth answering properly
+      # (ADR 012). Keyless: the identity is this workflow, certified through the
+      # Sigstore transparency log, with no key in existence to steal.
+      - uses: sigstore/cosign-installer@v3
+      - run: cosign sign --yes ghcr.io/${{ github.repository }}@${{ steps.build.outputs.digest }}

@@ -84,13 +84,26 @@ only when it is a real name.
 Unchanged from August in substance, and the reason each one is not a code change
 is that each acts on a live database or a live NAS.
 
-1. **Set `DATA_ENCRYPTION_KEY` and run `secrets:rekey`.** The code shipped in
-   `v0.31.0` and is rehearsed. Until it runs, the at-rest key is still derived
-   from `SESSION_SECRET`.
+1. ~~**Set `DATA_ENCRYPTION_KEY` and run `secrets:rekey`.**~~ **Done by
+   upgrading, 2026-09-01.** [ADR 042](decisions/042-delegate-installs-anywhere-in-one-line.md)
+   generates secrets on first boot and writes the at-rest key into a volume,
+   seeded from `SESSION_SECRET` where one already exists. The value is unchanged,
+   so nothing is re-encrypted — and from then on the two are recorded separately,
+   which was the whole of ADR 029's split.
+
+   Worth recording what was found on the way: `DATA_ENCRYPTION_KEY` **never
+   reached the container**. Compose reads `.env` to substitute into the compose
+   file and does not hand it to the app, and no line named that variable. The
+   documented procedure would therefore have moved every secret onto a key the
+   application was not using — locking out every account, recovery codes
+   included, since the second factor is decrypted before recovery codes are
+   considered.
+
 2. **Move the live database onto the `delegate_app` role.** Fresh installs get it
    from the init script; this deployment predates it. README has the steps.
-3. **Confirm the `tor-keys` volume is in the NAS backup.** Losing it does not lose
-   access — it loses the onion _name_, permanently, for every device that has it.
+3. ~~**Confirm the `tor-keys` volume is in the NAS backup.**~~ **Declined by the
+   owner, 2026-09-01.** He does not want the address preserved and will derive a
+   new one as needed. A decision rather than a gap; ADR 027 carries it.
 4. **Pin the base-image digests at the next deliberate base bump.** Not now:
    pinning today means pinning a digest nobody has audited, and adding a manual
    step to every rebuild in between.

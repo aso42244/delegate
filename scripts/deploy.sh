@@ -24,9 +24,9 @@ set -eu
 # Nothing here contains a secret, and nothing here writes one.
 
 REPO_IMAGE='ghcr.io/aso42244/delegate'
-# The certificate identity cosign checks: this repository's CI workflow, on any
+# The certificate identity cosign checks: this repository's publish workflow, on any
 # ref it publishes from. Anchored at both ends so it cannot match a longer name.
-WORKFLOW_IDENTITY='^https://github\.com/aso42244/delegate/\.github/workflows/ci\.yml@refs/.+$'
+WORKFLOW_IDENTITY='^https://github\.com/aso42244/delegate/\.github/workflows/publish\.yml@refs/.+$'
 OIDC_ISSUER='https://token.actions.githubusercontent.com'
 
 usage() {

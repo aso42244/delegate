@@ -50,6 +50,15 @@ services:
       # is empty. Set on a fresh install to get a least-privilege application
       # role; leave empty and the application stays on the superuser, which is
       # what every existing deployment does.
+      # The init script creates this role on an empty data directory. Connecting
+      # as it needs APP_DATABASE_URL as well — both halves, and for a long time
+      # only this one existed, so the role was created and then never used.
+      #
+      # Deliberately still opt-in rather than the default. Nothing here can tell
+      # a fresh install from an upgrade: the secrets volume is empty on the first
+      # boot of both, and pointing an existing deployment at a role its database
+      # has never heard of would break it on upgrade. The README has the two
+      # steps for moving over.
       APP_DB_USER: ${APP_DB_USER:-delegate_app}
       APP_DB_PASSWORD: ${APP_DB_PASSWORD:-}
       # Read from the file the `secrets` service wrote, which is either the value
@@ -170,16 +179,25 @@ services:
       # The same directory as the host names it, so the Backups card can show a
       # path somebody on the NAS can actually use. `/backups` above is true only
       # from inside this container.
-      BACKUP_HOST_DIR: ${BACKUP_DIR:-./backups}
+      # The same directory as the *host* names it, so the Backups card can show a
+      # path somebody on the machine can actually use. Empty when the dumps live
+      # in a named volume, which the card then says instead of inventing a path.
+      BACKUP_HOST_DIR: ${BACKUP_DIR:-}
       BACKUP_CRON: ${BACKUP_CRON:-30 2 * * *}
       BACKUP_RETENTION_DAYS: ${BACKUP_RETENTION_DAYS:-30}
     ports:
       - '${HOST_PORT:-8088}:3000'
     volumes:
-      # A host directory, not a named volume: the dumps have to be reachable from
-      # DSM so they can be included in whatever off-device backup already exists.
-      # A dump on the same disk as the database is not a backup.
-      - ${BACKUP_DIR:-./backups}:/backups
+      # A named volume unless BACKUP_DIR names a host path.
+      #
+      # Compose reads the left-hand side as a volume name when it matches one
+      # declared below and as a host path when it looks like one, so this is both
+      # behaviours in a single line. The default means a deployment that
+      # configures nothing still gets durable backups; setting BACKUP_DIR to a
+      # host directory is what makes them reachable from outside Docker, which is
+      # what a NAS wants so they can be picked up by an off-device backup. A dump
+      # on the same disk as the database is not a backup.
+      - ${BACKUP_DIR:-delegate-backups}:/backups
       # Read-only: the application reads these and never writes them. The
       # `secrets` service is the only thing that does.
       - delegate-secrets:/secrets:ro
@@ -192,16 +210,58 @@ services:
       # at all, and giving it the key would be wrong even if it could.
       - tor-address:/tor:ro
 
-  # A SOCKS proxy, so an onion address can be reached at all.
+  # Automatic HTTPS, for a deployment that has a domain name.
   #
-  # Runs by default. It was behind a profile at first, which meant pasting the
-  # onion address of your own node did nothing until you had also read the
-  # deployment notes and started a second container — friction in exchange for
-  # not running a small idle daemon, which is the wrong way round.
+  # Behind a profile, and off by default, because the default is right for the
+  # two cases Delegate already served: a LAN address, and an origin behind a
+  # tunnel that terminates TLS itself (ADR 017). Turning it on where neither is
+  # true is one line:
   #
-  # Nothing routes through it unless a node is configured to. It publishes no
-  # ports; only the app container reaches it, over the compose network.
+  #   DELEGATE_DOMAIN=budget.example.com docker compose --profile https up -d
+  #
+  # Caddy then requests a Let's Encrypt certificate on first start, renews it on
+  # its own, and redirects http to https. Ports 80 and 443 have to be reachable
+  # from the internet for the certificate to be issued at all.
+  #
+  # **Set TRUST_PROXY when you use this.** Every request then arrives from this
+  # container, and an application that does not know to read X-Forwarded-For
+  # buckets the whole internet into one sign-in rate limit. `172.16.0.0/12`
+  # covers Docker's default networks. The application warns at boot when a
+  # forwarded header turns up and nothing is configured to trust it.
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    profiles: ['https']
+    depends_on:
+      - app
+    environment:
+      DELEGATE_DOMAIN: ${DELEGATE_DOMAIN:?DELEGATE_DOMAIN is required for the https profile}
+    ports:
+      - '${HTTP_PORT:-80}:80'
+      - '${HTTPS_PORT:-443}:443'
+    volumes:
+      - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      # The issued certificate and the account key. Losing this volume means
+      # asking Let's Encrypt for a new certificate, which is fine but rate
+      # limited — keeping it is what makes a restart free.
+      - caddy-data:/data
+      - caddy-config:/config
+
+  # A SOCKS proxy, and the onion service, for the deployments that want them.
+  #
+  # Behind a profile again. It ran by default while every deployment was one
+  # household's NAS, where a small idle daemon costs nothing and having it ready
+  # meant pasting an onion address just worked. A one-line install that lands on
+  # any machine is a different trade: most of them will never reach an onion
+  # address, and the minimum stack should be the minimum.
+  #
+  #   docker compose --profile tor up -d
+  #
+  # Nothing routes through it unless a Bitcoin node is configured to, and it
+  # publishes no ports — only the app container reaches it, over the compose
+  # network.
   tor:
+    profiles: ['tor']
     # Built here rather than pulled: see tor/Dockerfile for why a third-party
     # `latest` tag was the wrong thing to put on this particular traffic.
     build:
@@ -235,6 +295,9 @@ services:
       start_period: 60s
 
 volumes:
+  # Where the nightly dumps land when BACKUP_DIR is not set to a host path.
+  delegate-backups:
+
   # The session secret, the at-rest encryption key and the database password.
   #
   # Deliberately not in the database. The at-rest key protects exactly what a
@@ -245,6 +308,10 @@ volumes:
   # Settings shows the key so it can be copied somewhere safe, and this volume
   # belongs in whatever backs the deployment up.
   delegate-secrets:
+
+  # Caddy's issued certificates and account key. Only used by the https profile.
+  caddy-data:
+  caddy-config:
 
   postgres-data:
   # The hidden service's identity. Worth including in whatever backs up the NAS:

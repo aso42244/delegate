@@ -106,3 +106,18 @@ Delegate speaks plain http by default.** Anyone already inside the house can rea
 a password crossing it. `scripts/make-tls-cert.sh` closes that, at the cost of a
 self-signed certificate on every device. That trade is unchanged; the claim that
 the application "must not leave the LAN" is retired.
+
+---
+
+**Amended by [ADR 042](042-delegate-installs-anywhere-in-one-line.md), 2026-09-01.**
+
+The decision stands; the _argument_ no longer generalises. It was "Cloudflare and
+Tor both encrypt from away; what remains is the LAN" — sound while every
+deployment was one household's NAS, and false the moment the same image can be
+run on a public VPS in one line, where it would serve passwords and two-factor
+codes in clear text to anything on the path.
+
+Plain http remains the default, because it is still right on a LAN and behind a
+tunnel. What changed is that the safe path for a public address is now one line
+rather than a project: `DELEGATE_DOMAIN` plus the `https` profile starts Caddy,
+which gets a real certificate and renews it unattended.
