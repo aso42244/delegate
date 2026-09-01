@@ -583,6 +583,22 @@ are not negotiable by a request, whoever wrote it.
 - **Homebrew PostgreSQL 16.** `household_budget_dev` and `household_budget_test`
   (names predate the rename; harmless).
 - `gh` is installed and authenticated as `aso42244`.
+- **Docker Desktop was uninstalled and left two things pointing at it**, both
+  found on 2026-09-01 and both fixed. They are listed together because they have
+  one cause and the next stale reference will too.
+
+  `~/.docker/cli-plugins/docker-compose` was a dangling symlink into
+  `/Applications/Docker.app`, so `docker compose` had silently never run here.
+  And `credsStore` in `~/.docker/config.json` still named `desktop`, so every
+  `docker pull` of an image not already cached failed with
+  `docker-credential-desktop: executable file not found` — a latent gate failure,
+  invisible only because the base images happened to be cached.
+
+  Fixed with `brew install docker-compose docker-credential-helper`, the plugin
+  directory registered through `cliPluginsExtraDirs`, and `credsStore` set to
+  `osxkeychain` so credentials still go to the keychain rather than into
+  `config.json` in the clear.
+
 - **`docker compose` is installed and the gate uses it**, since 2026-09-01
   (`brew install docker-compose`, registered through `cliPluginsExtraDirs` in
   `~/.docker/config.json`). The symlink that was there pointed at Docker Desktop,
