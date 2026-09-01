@@ -1,5 +1,6 @@
 import { useId, useState, type ReactNode } from 'react';
 import { Button } from './ui.jsx';
+import { NotificationPills } from './NotificationBanners.jsx';
 
 /**
  * The pieces every screen repeats.
@@ -41,6 +42,11 @@ export function PageHeader({
         <div className="flex flex-wrap items-baseline gap-2">
           <h1 className="text-page font-bold text-ink">{title}</h1>
           {beside}
+          {/* After the page's own reading, so on Budget the order is Balanced,
+              then whatever the application needs to say. Here rather than in the
+              shell because that is where they read as one row of the same kind
+              of thing; as bars above the page they were two more rows. */}
+          <NotificationPills />
         </div>
         {subtitle !== undefined && <p className="mt-1 text-quiet text-muted">{subtitle}</p>}
       </div>

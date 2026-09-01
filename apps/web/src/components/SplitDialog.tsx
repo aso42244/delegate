@@ -146,6 +146,64 @@ export function SplitDialog({
       setProblem(error instanceof ApiError ? error.message : 'Could not clear the categorization.'),
   });
 
+  /*
+   * The verdict, the errors and the buttons, kept out of the scrolling body.
+   *
+   * The remainder is the one number that decides whether this can save, and an
+   * error raised by pressing Save has to be visible from where Save was
+   * pressed. On a phone with the keyboard up the body scrolls, so anything left
+   * inside it can be the part that is not on screen.
+   */
+  const footer = (
+    <div className="flex flex-col gap-2">
+      {/* Stated in words as well as colour. */}
+      <p
+        className={`text-quiet ${remainder === 0n ? 'text-positive' : 'text-warning'}`}
+        role="status"
+      >
+        {remainder === 0n
+          ? 'Balanced — the parts add up to the whole.'
+          : remainder > 0n
+            ? `${formatCents(remainder)} left to allocate.`
+            : `${formatCents(-remainder)} over-allocated.`}
+      </p>
+
+      {duplicated && (
+        <Alert>Two lines use the same delegation. Combine them into one amount.</Alert>
+      )}
+      {problem && <Alert>{problem}</Alert>}
+
+      <div className="flex justify-between gap-2">
+        {transaction.allocations.length > 0 ? (
+          <Button
+            type="button"
+            variant="danger"
+            onClick={() => clear.mutate()}
+            disabled={clear.isPending}
+          >
+            {clear.isPending ? 'Clearing…' : 'Clear categorization'}
+          </Button>
+        ) : (
+          <span />
+        )}
+
+        <div className="flex gap-2">
+          <Button type="button" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button
+            type="button"
+            variant="primary"
+            onClick={() => save.mutate()}
+            disabled={!canSave || save.isPending}
+          >
+            {save.isPending ? 'Saving…' : 'Save split'}
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+
   return (
     <Modal
       label={`Split ${transaction.description}`}
@@ -153,6 +211,7 @@ export function SplitDialog({
       description={`${transaction.description} — ${formatCents(total)}. The parts must add up to the whole.`}
       onClose={onClose}
       width="lg"
+      footer={footer}
     >
       <div className="flex flex-col gap-2">
         {rows.map((row, index) => (
@@ -208,53 +267,6 @@ export function SplitDialog({
           <Button type="button" onClick={fillEvenly}>
             Split evenly
           </Button>
-        </div>
-
-        {/* Stated in words as well as colour, and always visible while typing:
-            the remainder is the one number that decides whether this can save. */}
-        <p
-          className={`text-quiet ${remainder === 0n ? 'text-positive' : 'text-warning'}`}
-          role="status"
-        >
-          {remainder === 0n
-            ? 'Balanced — the parts add up to the whole.'
-            : remainder > 0n
-              ? `${formatCents(remainder)} left to allocate.`
-              : `${formatCents(-remainder)} over-allocated.`}
-        </p>
-
-        {duplicated && (
-          <Alert>Two lines use the same delegation. Combine them into one amount.</Alert>
-        )}
-        {problem && <Alert>{problem}</Alert>}
-
-        <div className="flex justify-between gap-2">
-          {transaction.allocations.length > 0 ? (
-            <Button
-              type="button"
-              variant="danger"
-              onClick={() => clear.mutate()}
-              disabled={clear.isPending}
-            >
-              {clear.isPending ? 'Clearing…' : 'Clear categorization'}
-            </Button>
-          ) : (
-            <span />
-          )}
-
-          <div className="flex gap-2">
-            <Button type="button" onClick={onClose}>
-              Cancel
-            </Button>
-            <Button
-              type="button"
-              variant="primary"
-              onClick={() => save.mutate()}
-              disabled={!canSave || save.isPending}
-            >
-              {save.isPending ? 'Saving…' : 'Save split'}
-            </Button>
-          </div>
         </div>
       </div>
     </Modal>

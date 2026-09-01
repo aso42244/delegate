@@ -40,7 +40,9 @@ test('shows every transaction by default, filtered by nothing', async ({ signedI
     data: { delegationId: grocery },
   });
 
-  await signedIn.getByRole('link', { name: 'Transactions' }).click();
+  // `exact`: the backlog pill is a link too, reading "2 new transactions", and an
+  // accessible name is matched as a substring unless it is told not to be.
+  await signedIn.getByRole('link', { name: 'Transactions', exact: true }).click();
 
   await expect(signedIn.getByRole('heading', { name: 'Transactions' })).toBeVisible();
   // Both of them: the one waiting and the one already dealt with.
@@ -67,7 +69,7 @@ test('the uncategorized queue is one press away', async ({ signedIn, api }) => {
   // Navigated through the interface, never `goto`. A full page load remounts the
   // application and refetches everything, which hides this bug completely — the
   // owner's route was clicking the sidebar, and that serves the cache.
-  await signedIn.getByRole('link', { name: 'Transactions' }).click();
+  await signedIn.getByRole('link', { name: 'Transactions', exact: true }).click();
   await signedIn.getByRole('button', { name: 'Uncategorized' }).click();
 
   // One row left in the queue, and it is the one that was never categorized.
@@ -84,20 +86,29 @@ test('the uncategorized queue is one press away', async ({ signedIn, api }) => {
  * Budget page did not help because the answer was already cached. It cleared
  * five minutes later, on the poll, which is not an answer.
  */
-test('the uncategorized banner clears as soon as the queue does', async ({ signedIn, api }) => {
+test('the backlog pill clears as soon as the queue does', async ({ signedIn, api }) => {
   const accountId = await makeAccount('Everyday Checking', 'asset', 500000n);
-  await makeDelegation(api, 'Grocery');
+  const grocery = await makeDelegation(api, 'Grocery');
   await makeTransaction(api, accountId, '-4210', 'Whole Foods Market');
+  const sorted = await makeTransaction(api, accountId, '-1500', 'Corner Shop');
+  await api.post(`/api/transactions/${sorted}/categorize`, { data: { delegationId: grocery } });
 
   await signedIn.goto('/');
-  // Scoped to the banner. The Transactions subtitle carries the same words, so
-  // an unscoped match there reads the page's own copy back and proves nothing —
-  // the collision docs/handoff.md records.
-  const banner = signedIn.getByRole('status').filter({ hasText: 'waiting to be categorized' });
-  await expect(banner).toBeVisible();
+  const pill = signedIn.getByRole('link', { name: '1 new transaction' });
+  await expect(pill).toBeVisible();
 
-  await signedIn.goto('/transactions');
-  await signedIn.getByRole('button', { name: 'Uncategorized' }).click();
+  /*
+   * And it opens the queue rather than the register.
+   *
+   * The two ways of arriving want different things: the sidebar means "the
+   * register" and this pill means "the ones I have not dealt with". The filter
+   * is in the URL, which is what lets one link carry a default the other does
+   * not.
+   */
+  await pill.click();
+  await expect(signedIn).toHaveURL(/\/transactions\?uncategorized=true$/);
+  // The queue, not the register: the categorized row is not on screen.
+  await expect(signedIn.getByText('Corner Shop')).toHaveCount(0);
 
   const picker = signedIn.getByLabel('Categorize Whole Foods Market');
   await picker.fill('gro');
@@ -105,11 +116,10 @@ test('the uncategorized banner clears as soon as the queue does', async ({ signe
   // The row leaving the queue is the signal that the write landed.
   await expect(signedIn.getByText('Whole Foods Market')).toBeHidden();
 
-  // Back to Budget the way a person goes back to it.
+  // Back to Budget the way a person goes back to it. Cached, before the fix in
+  // main.tsx, this still said there was one waiting.
   await signedIn.getByRole('link', { name: 'Budget' }).click();
-  await expect(
-    signedIn.getByRole('status').filter({ hasText: 'waiting to be categorized' }),
-  ).toHaveCount(0);
+  await expect(signedIn.getByRole('link', { name: /new transaction/ })).toHaveCount(0);
 });
 
 test('categorizing with the keyboard removes the row from the queue', async ({ signedIn, api }) => {

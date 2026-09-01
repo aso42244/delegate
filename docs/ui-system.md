@@ -198,7 +198,57 @@ Money right-aligned in `.money`.
 
 A table's own top rule is the separator. It never also gets a margin above it.
 
-## 9. What this does not change
+## 9. Header pills
+
+`HeaderPill`. 28px, `rounded-lg`, a 1px border and a soft fill in its tone,
+`text-quiet font-semibold`, `px-3`. The same object whether it is the budget's
+own reading or something the application needs to say, because they sit on one
+row and anything else reads as two kinds of thing pretending to be one.
+
+**Two or three words, and a count is the most detail one carries.** `Sync issue`,
+`4 new transactions`, `1 check to confirm`. Which bank, which accounts, how old —
+that is the tooltip, one hover or one focus away, and it is where the whole
+sentence goes.
+
+Order: the page's own reading first, then whatever the application is reporting,
+in the severity order the server sends.
+
+A pill that leads somewhere is a `Link` and takes its own defaults with it — the
+backlog opens `/transactions?uncategorized=true`, which is not what the sidebar's
+link does. A pill that only reports takes focus and does not act.
+
+## 10. Dialogs
+
+One component, `Modal`, in two frames: a centred card on a pointer, a sheet
+rising from the bottom edge on a phone. Escape closes it and Cancel closes it;
+the backdrop does not, because these hold typed money.
+
+**A dialog is measured against the visual viewport, never the window.** They are
+not the same thing on a phone: a software keyboard is drawn _over_ the page
+rather than beside it, so the window stays 844px tall while 430px of it is on
+screen. A `fixed` overlay pinned to the window is therefore pinned underneath the
+keys. `Modal` reads `window.visualViewport` and takes its top and height from
+there, so the sheet always ends where the keyboard begins.
+
+**A dialog is a column: header, scrolling body, pinned footer.** The header and
+the footer keep their places and the body takes whatever height is left.
+
+Put in the `footer` anything that has to be reachable from wherever the body has
+been scrolled to:
+
+- the buttons that commit or cancel,
+- the verdict that decides whether it can commit — Split's remainder,
+- the errors raised by pressing the button, since an error you cannot see from
+  where you pressed is not raised at all.
+
+**Nothing inside a dialog scrolls itself.** One scroll container, and it is the
+body. Two nested touch scrollers fight over the same drag, and an inner one sized
+in `vh` is sized against the window the keyboard just made a lie of.
+
+Most dialogs are a field or two, never scroll, and need no footer at all; their
+buttons are simply their last children.
+
+## 11. What this does not change
 
 Colour, the chip vocabulary, row heights, banner tones, the row-menu shell, the
 keyboard map, and every decision recorded in `design.md`. Those were settled and

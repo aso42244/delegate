@@ -135,8 +135,14 @@ test('a check the bank has cashed waits to be confirmed', async ({ signedIn: pag
 
   await page.goto('/');
 
-  // Proposed, and nothing more: the money is still on the check line.
-  await expect(page.getByText('Check 1062 looks like it has been cashed')).toBeVisible();
+  // Proposed, and nothing more: the money is still on the check line. The
+  // proposal is a pill beside the reading; what it says in full is its tooltip.
+  const proposal = page.getByRole('link', { name: '1 check to confirm' });
+  await expect(proposal).toBeVisible();
+  // Which check, on hover. A hidden tooltip is out of the accessibility tree
+  // entirely, so it has to be revealed before it can be asked about by role.
+  await proposal.hover();
+  await expect(page.getByRole('tooltip')).toContainText('Check 1062 looks like it has been cashed');
   await expect(page.getByRole('button', { name: 'Check 1062 balance' })).toContainText('$120.00');
 
   await page.getByRole('button', { name: 'Confirm it cleared' }).click();
@@ -152,7 +158,7 @@ test('a check the bank has cashed waits to be confirmed', async ({ signedIn: pag
   // on a line called "Check 1062", and the banner has nothing left to say.
   await expect(page.getByText('Check 1062')).toBeHidden();
   await expect(page.getByRole('button', { name: 'Piano Lessons balance' })).toContainText('$0.00');
-  await expect(page.getByText('looks like it has been cashed')).toBeHidden();
+  await expect(page.getByRole('link', { name: '1 check to confirm' })).toHaveCount(0);
 
   /*
    * And the payment carries the `c` mark.
@@ -192,7 +198,7 @@ test('categorizing the payment as something else withdraws the proposal', async 
   });
 
   await page.goto('/');
-  await expect(page.getByText('Check 1062 looks like it has been cashed')).toBeVisible();
+  await expect(page.getByRole('link', { name: '1 check to confirm' })).toBeVisible();
 
   await page.goto('/transactions');
   const picker = page.getByLabel('Categorize CHECK 1062');
@@ -206,7 +212,7 @@ test('categorizing the payment as something else withdraws the proposal', async 
   await expect(picker).toHaveAttribute('placeholder', 'Grocery');
 
   await page.goto('/');
-  await expect(page.getByText('looks like it has been cashed')).toBeHidden();
+  await expect(page.getByRole('link', { name: '1 check to confirm' })).toHaveCount(0);
   // And the check is untouched, still holding its money.
   await expect(page.getByRole('button', { name: 'Check 1062 balance' })).toContainText('$120.00');
 });

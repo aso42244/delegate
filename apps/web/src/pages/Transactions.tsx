@@ -1,6 +1,7 @@
 import { formatCents } from '@budget/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState, type ReactNode } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { budgetApi } from '../api/budget.js';
 import { ApiError } from '../api/client.js';
 import {
@@ -91,6 +92,32 @@ export function Transactions(): ReactNode {
    * has to un-configure before they can look anything up.
    */
   const [filters, setFilters] = useState<TransactionFilters>({});
+
+  /*
+   * Except the queue, which lives in the URL.
+   *
+   * Both ways of arriving here are right, and they want different things: the
+   * sidebar means "the register", and the "N new transactions" pill means "the
+   * ones I have not dealt with". A default cannot be both, so the link carries
+   * its own — `?uncategorized=true`.
+   *
+   * The URL rather than initial state, because the two routes are the same
+   * component: navigating from the filtered queue to the plain sidebar link
+   * does not remount, so an initialiser would run once and then never again,
+   * and the filter would stick on a page that never asked for it.
+   */
+  const [searchParams, setSearchParams] = useSearchParams();
+  const uncategorized = searchParams.get('uncategorized') === 'true';
+
+  function toggleUncategorized(): void {
+    setOffset(0);
+    const next = new URLSearchParams(searchParams);
+    if (uncategorized) next.delete('uncategorized');
+    else next.set('uncategorized', 'true');
+    // Replace: Back belongs to wherever he came from, not to the state of a
+    // filter he just pressed.
+    setSearchParams(next, { replace: true });
+  }
   const [search, setSearch] = useState('');
   const [offset, setOffset] = useState(0);
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -103,7 +130,13 @@ export function Transactions(): ReactNode {
   /** The row whose picker is open in a sheet. Phone only. */
   const [picking, setPicking] = useState<TransactionDto | null>(null);
 
-  const query = { ...filters, search, limit: PAGE_SIZE, offset };
+  const query = {
+    ...filters,
+    ...(uncategorized ? { uncategorized: true } : {}),
+    search,
+    limit: PAGE_SIZE,
+    offset,
+  };
   const list = useQuery({
     queryKey: ['transactions', query],
     queryFn: () => transactionsApi.list(query),
@@ -256,12 +289,7 @@ export function Transactions(): ReactNode {
           className="field min-w-64 flex-1 rounded-lg border border-line bg-canvas px-3 text-base"
         />
 
-        <Button
-          variant={filters.uncategorized === true ? 'primary' : 'default'}
-          onClick={() =>
-            setFilter({ uncategorized: filters.uncategorized === true ? undefined : true })
-          }
-        >
+        <Button variant={uncategorized ? 'primary' : 'default'} onClick={toggleUncategorized}>
           Uncategorized
         </Button>
         <Button
@@ -510,6 +538,11 @@ export function Transactions(): ReactNode {
         the field at the top with the keyboard already up, and the matches
         listed beneath it at a size that can be hit. Choosing closes it, because
         on a phone one decision at a time is the whole interaction.
+
+        Cancel and Split are the dialog's footer rather than its last children,
+        so the keyboard cannot push them off the bottom of the sheet — which is
+        exactly what it was doing: with the keys up, both sat 361px below the
+        visible edge of a screen that does not scroll to reach them.
       */}
       {picking && (
         <Modal
@@ -517,6 +550,23 @@ export function Transactions(): ReactNode {
           title="Categorize"
           description={`${picking.description} · ${formatCents(BigInt(picking.amountCents), { explicitPlus: true })}`}
           onClose={() => setPicking(null)}
+          footer={
+            <div className="flex gap-2">
+              <Button className="flex-1" onClick={() => setPicking(null)}>
+                Cancel
+              </Button>
+              <Button
+                className="flex-1"
+                onClick={() => {
+                  const row = picking;
+                  setPicking(null);
+                  setSplitting(row);
+                }}
+              >
+                Split…
+              </Button>
+            </div>
+          }
         >
           <DelegationPicker
             variant="sheet"
@@ -531,22 +581,6 @@ export function Transactions(): ReactNode {
               setPicking(null);
             }}
           />
-
-          <div className="mt-4 flex gap-2">
-            <Button className="flex-1" onClick={() => setPicking(null)}>
-              Cancel
-            </Button>
-            <Button
-              className="flex-1"
-              onClick={() => {
-                const row = picking;
-                setPicking(null);
-                setSplitting(row);
-              }}
-            >
-              Split…
-            </Button>
-          </div>
         </Modal>
       )}
 

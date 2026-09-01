@@ -65,6 +65,72 @@ test.describe('on a phone', () => {
   });
 
   /**
+   * The sheet fits above the software keyboard.
+   *
+   * A phone keyboard does not shrink the window. It is drawn over the page, so
+   * `position: fixed` — which is laid out against the window — keeps anchoring
+   * a sheet to a bottom edge that is now underneath 414px of keys. Measured
+   * before the fix, at 390x844 with the keyboard up, the categorization sheet
+   * ran from y=264 to y=844: its first option was the last thing above the
+   * fold, and Cancel sat 361px below a screen edge that does not scroll.
+   *
+   * Chromium has no software keyboard, so the visual viewport is stubbed to the
+   * shape iOS gives it: a window that is still 844 tall with only 430 of it on
+   * screen. That is the whole of the condition — the layout viewport and the
+   * visual viewport disagreeing — and it is what the fix reads.
+   */
+  test('the categorization sheet fits above the keyboard', async ({ signedIn: page, api }) => {
+    const VISIBLE = 430;
+
+    const accountId = await makeAccount('Everyday Checking', 'asset', 500_000n);
+    for (const name of ['Grocery', 'Gas', 'Dining', 'Home', 'Health', 'Pets', 'Travel', 'Gifts']) {
+      await makeDelegation(api, name);
+    }
+    await api.post('/api/transactions', {
+      data: {
+        accountId,
+        amountCents: '-4210',
+        description: 'WHOLE FOODS MKT',
+        postedAt: '2026-08-23T00:00:00Z',
+      },
+    });
+
+    await page.addInitScript((visible: number) => {
+      // An EventTarget, because the page subscribes to resize and scroll on it.
+      const stub = new EventTarget() as EventTarget & Record<string, number>;
+      Object.assign(stub, { width: 390, height: visible, offsetTop: 0, offsetLeft: 0, scale: 1 });
+      Object.defineProperty(window, 'visualViewport', { value: stub, configurable: true });
+    }, VISIBLE);
+
+    await page.goto('/transactions');
+    await page.getByRole('button', { name: 'Categorize WHOLE FOODS MKT' }).click();
+
+    const sheet = page.getByRole('dialog', { name: 'Categorize WHOLE FOODS MKT' });
+    const box = await sheet.boundingBox();
+    expect(box).not.toBeNull();
+    // The whole sheet is above the keyboard, not merely its top.
+    expect(box!.y + box!.height).toBeLessThanOrEqual(VISIBLE);
+
+    // Cancel is in the footer, so it stays on screen however many options the
+    // list holds — the body scrolls under it rather than pushing it down.
+    const cancel = await sheet.getByRole('button', { name: 'Cancel' }).boundingBox();
+    expect(cancel).not.toBeNull();
+    expect(cancel!.y + cancel!.height).toBeLessThanOrEqual(VISIBLE);
+
+    // And the list is usable: the first match is on screen, and the last is one
+    // scroll away inside the sheet rather than off the end of the screen.
+    const first = await sheet.getByRole('option').first().boundingBox();
+    expect(first!.y + first!.height).toBeLessThanOrEqual(VISIBLE);
+
+    const last = sheet.getByRole('option').last();
+    await last.scrollIntoViewIfNeeded();
+    const scrolled = await last.boundingBox();
+    expect(scrolled!.y + scrolled!.height).toBeLessThanOrEqual(VISIBLE);
+    await last.click();
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+  });
+
+  /**
    * Thirteen tabs do not fit; about four do. The index is the phone's own idiom
    * for this, and the back link has to return to it rather than to a redirect
    * that bounces forward again.

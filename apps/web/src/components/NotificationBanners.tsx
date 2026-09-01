@@ -1,21 +1,32 @@
 import { useQuery } from '@tanstack/react-query';
-import { useState, type ReactNode } from 'react';
+import { useId, useState, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../api/client.js';
+import { HeaderPill } from './HeaderPill.jsx';
 
 /**
- * What the application needs to tell the owner about itself, above whatever page
- * he is on.
+ * What the application needs to tell the owner about itself.
  *
  * Every one of these is a condition he would otherwise only discover by noticing
  * a number was wrong. A sync failing for three days looks exactly like a quiet
  * week; a cash balance nobody has confirmed since March looks exactly like a
  * cash balance.
  *
- * They can be put away, but not cleared. A banner dismissed for a condition that
- * is still true would be a lie the interface tells on the owner's behalf, so the
- * X is a snooze: gone for a day, back afterwards if the thing it is about is
- * still the case. What makes it go away for good is fixing it.
+ * Two shapes, and which one a condition gets is decided by whether ignoring it
+ * costs the household its data or merely its tidiness:
+ *
+ * - **`danger` is a bar**, full width, above the page. The backup has never run;
+ *   the sync is failing. Two conditions, both of which mean the numbers on
+ *   screen are quietly wrong or the only copy of them is at risk. These earn the
+ *   width.
+ * - **Everything else is a pill** in the page header, beside the budget's own
+ *   reading and shaped exactly like it. A bank wanting a fresh login and a
+ *   handful of transactions waiting to be categorized are both real and neither
+ *   is an emergency — as two stacked bars they pushed the budget a third of the
+ *   way down the screen to say six words.
+ *
+ * The pills carry no dismiss. Snoozing exists because a bar is in the way, and a
+ * pill is not in the way; what makes a pill go away is fixing the thing.
  */
 
 type Severity = 'info' | 'confirm' | 'warning' | 'danger';
@@ -24,6 +35,8 @@ interface NotificationDto {
   readonly kind: string;
   readonly severity: Severity;
   readonly message: string;
+  /** Two or three words for the pill's face; `message` is its detail. */
+  readonly pill: string;
   readonly actionPath: string;
   readonly actionLabel: string;
 }
@@ -71,9 +84,7 @@ function readSnoozes(): Snoozes {
   }
 }
 
-export function NotificationBanners(): ReactNode {
-  const [snoozes, setSnoozes] = useState<Snoozes>(readSnoozes);
-
+function useNotifications(): readonly NotificationDto[] {
   const query = useQuery({
     queryKey: ['notifications'],
     queryFn: () => api.get<{ notifications: readonly NotificationDto[] }>('/api/notifications'),
@@ -81,6 +92,63 @@ export function NotificationBanners(): ReactNode {
     // breakfast without the page being reloaded.
     refetchInterval: 5 * 60 * 1000,
   });
+  return query.data?.notifications ?? [];
+}
+
+/** One pill, which needs its own `useId` and so cannot be inlined into a map. */
+function NotificationPill({ notification }: { notification: NotificationDto }): ReactNode {
+  const detailId = useId();
+  return (
+    <HeaderPill
+      tone={notification.severity}
+      label={notification.pill}
+      detail={notification.message}
+      detailId={detailId}
+      to={notification.actionPath}
+    />
+  );
+}
+
+/**
+ * The conditions that are not emergencies, in the page header.
+ *
+ * Rendered by `PageHeader`, so they appear on every screen rather than only on
+ * the one that happens to have a reading of its own — a bank that needs a fresh
+ * login is not a fact about the Budget page, and it was not one when it was a
+ * bar either.
+ *
+ * Including the page a pill points at. Hiding it there was tried and is wrong in
+ * the case that matters most: the cashed-check proposal points at the Budget
+ * page, because the row you confirm is on it, so suppressing it there would show
+ * the pill everywhere except where it can be acted on. Left visible, the count
+ * on it also runs down as the queue is cleared, which is the better feedback.
+ */
+export function NotificationPills(): ReactNode {
+  const notifications = useNotifications();
+
+  const pills = notifications.filter((notification) => notification.severity !== 'danger');
+  if (pills.length === 0) return null;
+
+  return (
+    <>
+      {pills.map((notification) => (
+        <NotificationPill key={notification.kind} notification={notification} />
+      ))}
+    </>
+  );
+}
+
+/**
+ * The two conditions that get a bar, above whatever page he is on.
+ *
+ * They can be put away, but not cleared. A bar dismissed for a condition that is
+ * still true would be a lie the interface tells on the owner's behalf, so the X
+ * is a snooze: gone for a day, back afterwards if the thing it is about is still
+ * the case. What makes it go away for good is fixing it.
+ */
+export function NotificationBanners(): ReactNode {
+  const [snoozes, setSnoozes] = useState<Snoozes>(readSnoozes);
+  const notifications = useNotifications();
 
   function snooze(notification: NotificationDto): void {
     const next = { ...snoozes, [signatureOf(notification)]: Date.now() };
@@ -93,14 +161,15 @@ export function NotificationBanners(): ReactNode {
     }
   }
 
-  const notifications = (query.data?.notifications ?? []).filter(
-    (notification) => snoozes[signatureOf(notification)] === undefined,
+  const bars = notifications.filter(
+    (notification) =>
+      notification.severity === 'danger' && snoozes[signatureOf(notification)] === undefined,
   );
-  if (notifications.length === 0) return null;
+  if (bars.length === 0) return null;
 
   return (
     <div className="mb-4 flex flex-col gap-2">
-      {notifications.map((notification) => (
+      {bars.map((notification) => (
         <div
           key={notification.kind}
           // `status` rather than `alert`: these are standing conditions, and an
