@@ -235,6 +235,57 @@ service; ADR 017 carries the amendment.
 - **Dark mode**, on Settings → Display beside row height
   ([ADR 034](decisions/034-dark-mode-is-a-second-palette-not-an-inversion.md))
 
+**Since v0.34.0 — the phone, and what it found**
+
+Almost all of this came from the owner using Delegate on a phone and sending
+screenshots. Nothing here was visible on a desktop, and none of it was caught by
+a test until it was written to be.
+
+- **A dialog is measured against the visual viewport, never the window**
+  ([ADR 038](decisions/038-a-dialog-is-measured-against-the-visual-viewport.md)).
+  A software keyboard is composited _over_ the page on iOS: the layout viewport
+  keeps its full height while the visible rectangle shrinks, so a sheet anchored
+  to `bottom: 0` is anchored behind the keys. Measured at 390×844 the
+  categorization sheet ran to y=844 with 430 on screen — one option above the
+  fold and Cancel 361px below it. `Modal` reads `window.visualViewport`, and a
+  dialog is now a column: header, scrolling body, and a `footer` for whatever
+  must stay reachable from anywhere in the body. **Nothing inside a dialog
+  scrolls itself**; one scroll container, and an inner cap in `vh` is a cap
+  against the viewport the keyboard just invalidated
+- **Every notification is a pill in the page header**
+  ([ADR 039](decisions/039-a-bar-is-for-what-costs-data.md),
+  [ADR 040](decisions/040-every-notification-is-a-pill.md)). There is no banner
+  and nothing renders above the page — `NotificationPills` is rendered by
+  `PageHeader`, so they reach every screen. Two or three words on the face
+  (`pill` on the DTO), the whole message on hover or focus, and a press goes
+  where the condition is dealt with. **Red is a pill too**: severity is carried
+  by the colour and by the words, the way every other state here carries it, and
+  floor space was saying it a third time. Snoozing went with the bar, so nothing
+  can be hidden for a day any more
+- **The backlog pill opens the queue**, `/transactions?uncategorized=true`. That
+  filter lives in the URL rather than in component state, which is what lets the
+  sidebar mean "the register" and the pill mean "the ones I have not dealt with"
+- **Everything on a control row is 28px** — buttons, `.field` inputs and selects,
+  the segmented control. It is written down in `ui-system.md` and nowhere else
+- **Insights reorders without dragging.** HTML5 drag fires no events under a
+  thumb and is not reachable by keyboard, so the grid's order was fixed on a
+  phone while a `⠿` handle was drawn over it. Move earlier / Move later replace
+  it
+- **A utility's chart starts where its history does.** Leading empty months and
+  an incomplete trailing one are dropped; an empty month _between_ two bills
+  stays, because compressing it out would redraw the history as though the bills
+  were consecutive (`pages/utility-months.ts`)
+- **The row `⋯` is gone on a touchscreen** in favour of a long press, with the
+  trigger kept visually hidden rather than `display: none` — VoiceOver cannot
+  perform a long press, so it still needs something in the accessibility tree
+- **A figure is inset 12px from the right**, mirroring the name column's `pl-3`.
+  This reversed part of v0.34.0 and both were right in turn: the earlier change
+  removed a _ragged_ gap between a figure and the rule, which is what exposed the
+  real asymmetry underneath
+- **The register no longer counts itself.** "494 transactions" is a fact about
+  how long the household has been running, not about the list somebody came to
+  work through; it is on Settings → Sync beside the connection that produced it
+
 **Insights, and the nightly snapshot**
 
 - **The financial picture is recorded every night** at 03:10 in the household's
@@ -512,7 +563,7 @@ npm run verify:quick      # the same, minus the container image build
 
 npm run test              # 173 unit
 npm run test:integration  # 510 integration
-npm run test:e2e          # 160 end-to-end, needs a build first
+npm run test:e2e          # 181 end-to-end, needs a build first
 ```
 
 `npm run verify` is the gate. It runs migrations, typecheck, lint, formatting,
@@ -674,6 +725,36 @@ does.
 - **Playwright found two genuine accessibility defects on first run**: hint text
   inside a `<label>` polluting the accessible name, and a combobox and its
   listbox sharing one `aria-label`.
+- **A phone keyboard does not shrink the window.** Every `100vh`, `45vh`,
+  `inset-0` and `bottom: 0` in this application means the _layout_ viewport,
+  which on iOS keeps its full height while the keyboard is drawn over the page.
+  If a thing is anchored to the bottom of the screen and contains a field, it is
+  anchored behind the keys. `dvh` does not help — it tracks the browser's
+  retracting chrome, not the keyboard — and `interactive-widget=resizes-content`
+  is Chrome-on-Android only. `window.visualViewport` is the answer, and
+  `useVisualViewport` already wraps it.
+- **Chromium has no software keyboard, so the condition cannot be produced —
+  only the shape of it.** The regression test stubs `window.visualViewport` to a
+  window still 844 tall with 430 on screen. The disagreement between the two
+  rectangles _is_ the bug, and that is reproducible exactly. Verify a test like
+  this fails without the fix; this one did, at 844 against 430.
+- **An `opacity: 0` control still occupies its width.** Adding hover-revealed
+  arrows beside the Insights drag handle pushed the card header 26px past its
+  own edge with the `×` off-screen. Two more elements then needed `min-w-0`
+  before it fit: **a flex item and a grid item both default to their content
+  width**, so a header's controls will size the card rather than the column
+  unless told not to.
+- **Playwright matches an accessible name as a substring.** The backlog pill
+  reads "4 new transactions", so `getByRole('link', { name: 'Transactions' })`
+  started matching the sidebar _and_ the pill. Reach for `exact: true` on a
+  navigation locator once anything else on the page can contain the word.
+- **A hidden tooltip is out of the accessibility tree entirely.** `getByRole
+('tooltip')` finds nothing until it is revealed, so a test has to hover first —
+  which is the behaviour worth asserting anyway.
+- **A single fixed width anywhere sets the whole column.** Three rounds went into
+  a `⋯` column that would not collapse on a phone, suspecting CSS specificity;
+  the cause was one unpatched empty `<td className="w-10 ...">` in the same
+  column.
 - **Routing around the terminology ban produced worse engineering** — a database
   round trip per money transaction, collidable correlation ids, `Math.random()`
   in the auth path. All fixed once the ban was narrowed.
