@@ -354,3 +354,71 @@ test('a register row is marked with letters that carry their meaning', async ({
 
   await expect(signedIn.getByTitle('Split across more than one delegation')).toBeVisible();
 });
+
+/**
+ * The queue teaching itself.
+ *
+ * Two charges from one shop have been filed by hand; the third arrives and the
+ * row already knows where it goes. The store number differs on every visit, so
+ * nothing here works unless the merchant is recognised through it.
+ */
+test('a merchant filed twice is suggested on the third', async ({ signedIn, api }) => {
+  const accountId = await makeAccount('Everyday Checking', 'asset', 500000n);
+  const grocery = await makeDelegation(api, 'Grocery');
+
+  for (const store of ['#123', '#4471']) {
+    const filed = await makeTransaction(api, accountId, '-4210', `KROGER ${store} CINCINNATI`);
+    await api.post(`/api/transactions/${filed}/categorize`, { data: { delegationId: grocery } });
+  }
+  await makeTransaction(api, accountId, '-3300', 'KROGER #9982 CINCINNATI');
+
+  await signedIn.getByRole('link', { name: 'Transactions', exact: true }).click();
+
+  // The evidence is in the accessible name, not only in a tooltip: a suggestion
+  // nobody can weigh is an assertion.
+  const suggestion = signedIn.getByRole('button', {
+    name: /Categorize as Grocery — 2 of 2 before/,
+  });
+  await expect(suggestion).toBeVisible();
+
+  await suggestion.click();
+
+  // Assert the write landed before doing anything else: the row leaving the
+  // queue is the signal, and navigating before it does makes this test lie.
+  await expect(signedIn.getByRole('button', { name: /Categorize as Grocery/ })).toHaveCount(0);
+  await signedIn.goto('/');
+  await expect(signedIn.getByRole('button', { name: 'Grocery balance' })).toContainText('-$117.20');
+});
+
+/**
+ * And the way a repeated decision stops being one.
+ *
+ * A rule could only be written from Settings, against a merchant name somebody
+ * had to remember and type — so the categorizations repeated most often were
+ * exactly the ones nobody stopped to automate.
+ */
+test('a rule can be built from a row already filed', async ({ signedIn, api }) => {
+  const accountId = await makeAccount('Everyday Checking', 'asset', 500000n);
+  const grocery = await makeDelegation(api, 'Grocery');
+  const filed = await makeTransaction(api, accountId, '-4210', 'WHOLEFDS MKT #10234');
+  await api.post(`/api/transactions/${filed}/categorize`, { data: { delegationId: grocery } });
+
+  await signedIn.getByRole('link', { name: 'Transactions', exact: true }).click();
+  await signedIn.getByRole('button', { name: 'Options for WHOLEFDS MKT #10234' }).click();
+  await signedIn.getByRole('menuitem', { name: 'Always categorize like this' }).click();
+
+  /*
+   * The match text is offered as the merchant rather than the whole
+   * description. `#10234` is this shop and this shop only: a rule matching all
+   * of it would match the row it was built from and nothing else, for ever,
+   * without ever saying so.
+   */
+  const dialog = signedIn.getByRole('dialog', { name: /Create a rule from/ });
+  await expect(dialog.getByLabel('When the description contains')).toHaveValue('WHOLEFDS MKT');
+  await dialog.getByRole('button', { name: 'Add' }).click();
+
+  await expect(signedIn.getByRole('dialog')).toHaveCount(0);
+
+  await signedIn.goto('/settings/rules');
+  await expect(signedIn.getByText('Description contains “WHOLEFDS MKT”')).toBeVisible();
+});

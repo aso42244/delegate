@@ -5,6 +5,12 @@ import { api } from './client.js';
 export type RuleMatchMode = 'contains' | 'starts_with' | 'regex';
 export type RuleDirection = 'any' | 'debit' | 'credit';
 
+/**
+ * What a rule does when it matches. Exactly one of the two is ever set: a
+ * delegation to categorize into, or a label saying what the transaction is.
+ */
+export type RuleLabel = 'income' | 'transfer';
+
 export interface RuleDto {
   readonly id: string;
   readonly name: string | null;
@@ -20,14 +26,16 @@ export interface RuleDto {
     readonly id: string;
     readonly name: string;
     readonly archivedAt: string | null;
-  };
+  } | null;
+  readonly setKind: RuleLabel | null;
 }
 
 export interface RuleInput {
   readonly name?: string | null;
   readonly matchMode?: RuleMatchMode;
   readonly matchValue?: string;
-  readonly delegationId?: string;
+  readonly delegationId?: string | null;
+  readonly setKind?: RuleLabel | null;
   readonly amountMinCents?: string | null;
   readonly amountMaxCents?: string | null;
   readonly accountId?: string | null;
@@ -38,19 +46,30 @@ export interface RuleInput {
 export interface RulePreviewDto {
   readonly examined: number;
   readonly categorized: number;
+  /** Rows a labelling rule would mark as income or a transfer. */
+  readonly labelled: number;
 }
 
-export interface ApplyRulesDto {
-  readonly examined: number;
-  readonly categorized: number;
-}
+export type ApplyRulesDto = RulePreviewDto;
 
 export const rulesApi = {
   list: () => api.get<{ rules: readonly RuleDto[] }>('/api/rules'),
 
-  create: (
-    input: RuleInput & { matchMode: RuleMatchMode; matchValue: string; delegationId: string },
-  ) => api.post<{ rule: { id: string } }>('/api/rules', input),
+  create: (input: RuleInput & { matchMode: RuleMatchMode; matchValue: string }) =>
+    api.post<{ rule: { id: string } }>('/api/rules', input),
+
+  /**
+   * "Always categorize like this", from a transaction already filed.
+   *
+   * `matchValue` is what the dialog shows and what the reader may edit before
+   * pressing the button, so it is sent rather than left to the server to guess
+   * twice — the guess it made is what filled the field.
+   */
+  createFromTransaction: (input: {
+    transactionId: string;
+    delegationId: string;
+    matchValue: string;
+  }) => api.post<{ rule: { id: string } }>('/api/rules/from-transaction', input),
 
   update: (id: string, input: RuleInput) => api.patch<{ ok: boolean }>(`/api/rules/${id}`, input),
 

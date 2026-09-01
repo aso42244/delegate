@@ -1,4 +1,4 @@
-import { RULE_DIRECTIONS, RULE_MATCH_MODES } from '@budget/shared';
+import { RULE_DIRECTIONS, RULE_MATCH_MODES, TRANSACTION_KINDS } from '@budget/shared';
 import type { FastifyPluginCallback } from 'fastify';
 import { z } from 'zod';
 import { prisma } from '../db/client.js';
@@ -25,11 +25,18 @@ const centsSchema = z
   .regex(/^-?\d+$/, 'Must be an integer number of cents, as a string')
   .transform((value) => BigInt(value));
 
+/*
+ * A rule categorizes or it labels. Both keys are optional here and the domain
+ * refuses anything but exactly one of them — the schema cannot express "exactly
+ * one" across a PATCH, where the pair being validated is half body and half
+ * what is already stored.
+ */
 const ruleBodySchema = z.object({
   name: z.string().max(120).nullish(),
   matchMode: z.enum(RULE_MATCH_MODES),
   matchValue: z.string().min(1).max(MAX_PATTERN_LENGTH),
-  delegationId: z.string().uuid(),
+  delegationId: z.string().uuid().nullish(),
+  setKind: z.enum(TRANSACTION_KINDS).nullish(),
   priority: z.number().int().optional(),
   amountMinCents: centsSchema.nullish(),
   amountMaxCents: centsSchema.nullish(),
@@ -75,7 +82,9 @@ export const ruleRoutes: FastifyPluginCallback = (fastify, _options, done) => {
         accountId: rule.accountId,
         direction: rule.direction,
         enabled: rule.enabled,
+        // Null on a labelling rule, which has no delegation to name.
         delegation: rule.delegation,
+        setKind: rule.setKind,
       })),
     };
   });
@@ -127,11 +136,20 @@ export const ruleRoutes: FastifyPluginCallback = (fastify, _options, done) => {
         transactionId: z.string().uuid(),
         delegationId: z.string().uuid(),
         matchMode: z.enum(RULE_MATCH_MODES).optional(),
+        /*
+         * What to match on, where the reader has edited it.
+         *
+         * The server's own guess at the merchant is only a guess — it cannot
+         * know that `TST*` is a payment processor and not the restaurant — so
+         * the dialog offers it in a field and sends back whatever comes out.
+         */
+        matchValue: z.string().min(1).max(MAX_PATTERN_LENGTH).optional(),
       })
       .parse(request.body);
 
     const rule = await createRuleFromTransaction(prisma, body.transactionId, body.delegationId, {
       ...(body.matchMode ? { matchMode: body.matchMode } : {}),
+      ...(body.matchValue ? { matchValue: body.matchValue } : {}),
     });
 
     return reply.code(201).send({ rule });

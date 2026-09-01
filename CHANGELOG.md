@@ -6,7 +6,47 @@ phase (`v0.1.0-phase1`, and so on).
 
 ## [Unreleased]
 
-Nothing yet.
+### Added
+
+- **The queue answers from its own history.** An uncategorized row shows where
+  that merchant went the last few times — the delegation on the row, and the
+  count behind it (`2 of 2 before went to Grocery`) in the accessible name and on
+  hover. One press files it. It is also the first entry in the picker's list and
+  in the sheet on a phone, so the keyboard path and the thumb path get the same
+  advice as the eye does.
+
+  Deliberately conservative: two prior decisions and a majority of them, never a
+  split, never an archived delegation. A merchant is matched through the store
+  number that changes on every visit, and a suggestion writes nothing until
+  somebody presses it. [ADR 044](docs/decisions/044-the-queue-teaches-the-rules.md).
+
+- **"Always categorize like this"** on the row menu of a transaction already
+  filed, which turns the decision into a rule so the next one is filed on import.
+
+  The match text is a field, not a fact — pre-filled with the merchant and
+  editable before anything is created. `POST /api/rules/from-transaction` existed
+  and was called by nothing, which is just as well: it built the rule from the
+  **whole** raw description, so a rule from `AMAZON MKTPL*RT4G93` would have
+  matched the one transaction it was built from and nothing else, silently, for
+  ever.
+
+- **A rule can say what a transaction _is_**, not only which envelope it belongs
+  in. Income, or a transfer between owned accounts.
+
+  The paycheck arrives from the same payer on the same fortnight and was the one
+  thing no rule could ever handle: it lands as ordinary spending and somebody
+  marked it income by hand, every fortnight, for ever. A rule now carries an
+  action rather than a destination, and exactly one of the two — held by a check
+  constraint, not by convention.
+  [ADR 043](docs/decisions/043-a-rule-does-one-of-two-things.md).
+
+### Changed
+
+- Settings → Rules asks **"Then"** rather than "Categorizes as", in one control
+  that offers the delegations and the two labels. A rule that labels a paycheck
+  as income categorizes nothing.
+- Run rules counts what it labelled apart from what it categorized, and says so
+  only when there is something to say.
 
 ## [0.41.2] — 2026-09-01
 

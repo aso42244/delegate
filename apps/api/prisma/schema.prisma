@@ -739,7 +739,7 @@ model CategorizationRule {
   id   String  @id @default(uuid()) @db.Uuid
   name String?
 
-  // Lower number wins. First match assigns the delegation and stops.
+  // Lower number wins. First match takes its action and stops.
   priority Int
 
   matchMode  RuleMatchMode @map("match_mode")
@@ -750,15 +750,25 @@ model CategorizationRule {
   accountId      String?       @map("account_id") @db.Uuid
   direction      RuleDirection @default(any)
 
-  delegationId String  @map("delegation_id") @db.Uuid
-  enabled      Boolean @default(true)
+  /**
+   * What the rule does, and exactly one of these is set.
+   *
+   * `delegationId` categorizes; `setKind` says what the transaction *is* —
+   * income or a transfer between owned accounts, both of which allocate to
+   * nothing by definition. A database check constraint holds the "exactly one"
+   * rather than leaving it to whoever writes the next caller.
+   */
+  delegationId String?          @map("delegation_id") @db.Uuid
+  setKind      TransactionKind? @map("set_kind")
+
+  enabled Boolean @default(true)
 
   archivedAt DateTime? @map("archived_at")
   createdAt  DateTime  @default(now()) @map("created_at")
   updatedAt  DateTime  @updatedAt @map("updated_at")
 
-  account    Account?   @relation(fields: [accountId], references: [id])
-  delegation Delegation @relation(fields: [delegationId], references: [id])
+  account    Account?    @relation(fields: [accountId], references: [id])
+  delegation Delegation? @relation(fields: [delegationId], references: [id])
 
   @@index([priority])
   @@index([archivedAt])

@@ -117,6 +117,12 @@ written down twice and only twice: `min-h-[28px]` on the button, and `.field` in
 inline editor inside a table row by Settings → Display; neither is on a control
 row.
 
+**A control that sits beside an inline editor takes the editor's metrics, not the
+button's** — `px-2 py-0.5 text-quiet`, the resting state of the field it stands
+next to. The register's suggestion button is the one of these: a 28px button in a
+row whose height is a display preference would set that height itself, and two
+controls in one cell at two heights have no baseline between them.
+
 A field keeps its **16px font**. Below that, iOS zooms the page when the field
 takes focus, which is a worse thing to do to somebody on a phone than four pixels
 of padding.

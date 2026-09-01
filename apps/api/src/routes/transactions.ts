@@ -18,6 +18,7 @@ import {
   DEFAULT_PAGE_SIZE,
 } from '../domain/transactions.js';
 import { confirmPair, findPairCandidates, unpair } from '../domain/pairing.js';
+import { suggestDelegations } from '../domain/suggestions.js';
 import { booleanQuery, centsInLoose, centsOut, dateOut } from '../http/serialize.js';
 import { AUTHENTICATED } from '../plugins/auth.js';
 
@@ -225,6 +226,19 @@ export const transactionRoutes: FastifyPluginCallback = (fastify, _options, done
   // A credit card payment and a mortgage payment each produce two transactions
   // that are not spending. §7: suggested and confirmed, never applied silently —
   // wrong automatic pairing is worse than no pairing.
+
+  /**
+   * Where this merchant went the last few times.
+   *
+   * Advice drawn from the categorizations already made, for the whole
+   * uncategorized queue at once rather than a row at a time — the register is
+   * one table, and a lookup per row would be fifty round trips to fill one
+   * screen. Nothing here writes: the count travels with the answer so the reader
+   * can see how much evidence is behind it.
+   */
+  fastify.get('/api/transactions/suggestions', async () => {
+    return { suggestions: await suggestDelegations(prisma) };
+  });
 
   fastify.get('/api/transactions/pair-candidates', async () => {
     const candidates = await findPairCandidates(prisma);

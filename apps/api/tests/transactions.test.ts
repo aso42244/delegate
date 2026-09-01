@@ -660,3 +660,51 @@ describe('flags in the query string', () => {
     expect(pending.transactions.map((row) => row.description)).toEqual(['Pending charge']);
   });
 });
+
+describe('GET /api/transactions/suggestions', () => {
+  it('requires a session', async () => {
+    const response = await app.inject({ method: 'GET', url: '/api/transactions/suggestions' });
+    expect(response.statusCode).toBe(401);
+  });
+
+  it('answers for the queue with the count behind each answer', async () => {
+    const account = await makeAccount({ name: 'Checking', type: 'asset', balanceCents: 500000n });
+    const grocery = await makeDelegation({ name: 'Grocery' });
+
+    for (const store of ['#123', '#4471']) {
+      const filed = await makeTransaction({
+        accountId: account.id,
+        amountCents: -4210n,
+        description: 'Kroger',
+        descriptionRaw: `KROGER ${store} CINCINNATI`,
+      });
+      await categorizeTransaction(prisma, filed.id, grocery.id);
+    }
+
+    const waiting = await makeTransaction({
+      accountId: account.id,
+      amountCents: -3300n,
+      description: 'Kroger',
+      descriptionRaw: 'KROGER #9982 CINCINNATI',
+    });
+
+    const response = await app.inject({
+      method: 'GET',
+      url: '/api/transactions/suggestions',
+      headers: { cookie },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(
+      response.json<{
+        suggestions: { transactionId: string; delegationName: string; matchCount: number }[];
+      }>().suggestions,
+    ).toEqual([
+      expect.objectContaining({
+        transactionId: waiting.id,
+        delegationName: 'Grocery',
+        matchCount: 2,
+      }),
+    ]);
+  });
+});

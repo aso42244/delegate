@@ -27,7 +27,9 @@ async function makeRule(page: Page, text: string, delegation: string): Promise<v
 
   const dialog = page.getByRole('dialog', { name: 'Create an auto-categorization rule' });
   await dialog.getByLabel('This text').fill(text);
-  await dialog.getByLabel('Categorize as').selectOption({ label: delegation });
+  // "Then", not "Categorize as": a rule either files a transaction into an
+  // envelope or says what the transaction is, and one control offers both.
+  await dialog.getByLabel('Then').selectOption({ label: delegation });
   await dialog.getByRole('button', { name: 'Add' }).click();
 
   await expect(page.getByRole('dialog')).toHaveCount(0);
@@ -44,6 +46,43 @@ test('a rule is created and shown in the order it fires', async ({ signedIn, api
   // The delegation it categorizes as is a column of its own now, so it reads as
   // a name rather than as an arrow glued to the rule's description.
   await expect(signedIn.getByText('Grocery', { exact: true })).toBeVisible();
+});
+
+/**
+ * The paycheck: the most predictable transaction a household has, and until now
+ * the one thing no rule could touch. It arrives from the same payer on the same
+ * fortnight, lands as ordinary spending, and somebody marked it income by hand
+ * every time.
+ */
+test('a rule can label a transaction rather than categorize it', async ({ signedIn, api }) => {
+  const accountId = await makeAccount('Everyday Checking', 'asset', 500000n);
+  await makeDelegation(api, 'Grocery');
+  await makeTransaction(api, accountId, '320000', 'ACME PAYROLL DIRECT DEP');
+
+  await signedIn.goto('/settings/rules');
+  await signedIn.getByRole('button', { name: 'New rule' }).click();
+
+  const dialog = signedIn.getByRole('dialog', { name: 'Create an auto-categorization rule' });
+  await dialog.getByLabel('This text').fill('acme payroll');
+  await dialog.getByLabel('Then').selectOption({ label: 'Marks as income' });
+  await dialog.getByRole('button', { name: 'Add' }).click();
+
+  await expect(signedIn.getByRole('dialog')).toHaveCount(0);
+  await expect(signedIn.getByText('Marks as income')).toBeVisible();
+
+  // Running it labels the deposit, and the count keeps the two apart: nothing
+  // was categorized, because income allocates to nothing by definition.
+  await signedIn.getByRole('button', { name: 'Run rules' }).click();
+  await expect(signedIn.getByText('0 of 1 transactions would be categorized.')).toBeVisible();
+  await expect(signedIn.getByText('1 would be labelled.')).toBeVisible();
+  await signedIn.getByRole('button', { name: 'Run rules' }).last().click();
+  await expect(signedIn.getByText('0 of 1 categorized. 1 labelled.')).toBeVisible();
+  await signedIn.getByRole('button', { name: 'Done' }).click();
+
+  // And the deposit has left the queue for good, which is the point of it.
+  await expect(signedIn.getByRole('dialog')).toHaveCount(0);
+  await signedIn.goto('/transactions?uncategorized=true');
+  await expect(signedIn.getByText('ACME PAYROLL DIRECT DEP')).toHaveCount(0);
 });
 
 test('rules can be reordered, because the first match wins', async ({ signedIn, api }) => {

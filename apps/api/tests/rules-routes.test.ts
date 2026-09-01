@@ -134,6 +134,77 @@ describe('GET /api/rules/preview', () => {
   });
 });
 
+describe('POST /api/rules', () => {
+  it('creates a rule that labels rather than categorizes', async () => {
+    await fixtures();
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/rules',
+      headers: { cookie },
+      payload: { matchMode: 'contains', matchValue: 'acme payroll', setKind: 'income' },
+    });
+
+    expect(response.statusCode).toBe(201);
+
+    const listed = await app.inject({ method: 'GET', url: '/api/rules', headers: { cookie } });
+    const rules = listed.json<{
+      rules: { matchValue: string; setKind: string | null; delegation: unknown }[];
+    }>().rules;
+    const labelling = rules.find((rule) => rule.matchValue === 'acme payroll');
+
+    expect(labelling?.setKind).toBe('income');
+    // No delegation to name, and the interface has to be able to tell that from
+    // a delegation it merely failed to load.
+    expect(labelling?.delegation).toBeNull();
+  });
+
+  it('refuses a rule that would do both, with a reason', async () => {
+    const { groceryId } = await fixtures();
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/rules',
+      headers: { cookie },
+      payload: {
+        matchMode: 'contains',
+        matchValue: 'acme payroll',
+        setKind: 'income',
+        delegationId: groceryId,
+      },
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect(response.json<{ error: { code: string } }>().error.code).toBe('rule_has_two_actions');
+  });
+});
+
+describe('POST /api/rules/from-transaction', () => {
+  it('builds a rule from the merchant, not the whole feed description', async () => {
+    const { groceryId } = await fixtures();
+    const account = await prisma.account.findFirstOrThrow({ select: { id: true } });
+    const transaction = await makeTransaction({
+      accountId: account.id,
+      amountCents: -4210n,
+      description: 'Whole Foods',
+      descriptionRaw: 'WHOLEFDS MKT #10234',
+    });
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/rules/from-transaction',
+      headers: { cookie },
+      payload: { transactionId: transaction.id, delegationId: groceryId },
+    });
+
+    expect(response.statusCode).toBe(201);
+    const created = await prisma.categorizationRule.findFirstOrThrow({
+      where: { delegationId: groceryId, matchValue: { not: 'market' } },
+    });
+    expect(created.matchValue).toBe('WHOLEFDS MKT');
+  });
+});
+
 describe('POST /api/rules/apply', () => {
   it('leaves a hand-made categorization alone by default', async () => {
     const { groceryId, diningId } = await fixtures();

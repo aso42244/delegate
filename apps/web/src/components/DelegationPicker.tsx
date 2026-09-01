@@ -14,6 +14,21 @@ export interface DelegationOption {
   readonly name: string;
 }
 
+/**
+ * Where this merchant went the last few times.
+ *
+ * It leads the list before anything is typed, and it is the entry Enter lands
+ * on — which is a strict improvement on what Enter did before, when the first
+ * of an arbitrary eight was the default. Marked with its own count rather than
+ * silently promoted: a suggestion that does not look like one is an assertion.
+ */
+export interface DelegationSuggestion {
+  readonly delegationId: string;
+  readonly name: string;
+  readonly matchCount: number;
+  readonly totalCount: number;
+}
+
 export interface DelegationPickerProps {
   readonly options: readonly DelegationOption[];
   readonly currentName?: string | undefined;
@@ -32,6 +47,7 @@ export interface DelegationPickerProps {
    * because a popover anchored to a 13px field is a pointer's idea of a menu.
    */
   readonly variant?: 'inline' | 'sheet';
+  readonly suggestion?: DelegationSuggestion | undefined;
 }
 
 export function DelegationPicker({
@@ -42,6 +58,7 @@ export function DelegationPicker({
   label,
   autoFocus = false,
   variant = 'inline',
+  suggestion,
 }: DelegationPickerProps): ReactNode {
   const asSheet = variant === 'sheet';
   const [open, setOpen] = useState(false);
@@ -52,7 +69,16 @@ export function DelegationPicker({
 
   const matches = useMemo(() => {
     const needle = query.trim().toLowerCase();
-    if (needle === '') return options.slice(0, 8);
+    if (needle === '') {
+      // Only while nothing is typed. Once there is a query the list is what was
+      // asked for, in the order it was asked for; a suggestion pinned above a
+      // search result would be answering a question nobody asked twice.
+      const suggested = suggestion
+        ? options.find((option) => option.id === suggestion.delegationId)
+        : undefined;
+      if (!suggested) return options.slice(0, 8);
+      return [suggested, ...options.filter((option) => option.id !== suggested.id).slice(0, 7)];
+    }
 
     // Names that start with what was typed come first: typing "gro" should put
     // Grocery above "Home & Grounds" even though both match.
@@ -64,7 +90,7 @@ export function DelegationPicker({
         return aStarts - bStarts || a.name.localeCompare(b.name);
       })
       .slice(0, 8);
-  }, [options, query]);
+  }, [options, query, suggestion]);
 
   function choose(option: DelegationOption | undefined): void {
     if (!option) return;
@@ -174,6 +200,14 @@ export function DelegationPicker({
                 } ${index === highlighted ? 'bg-accent-soft text-accent' : 'text-ink'}`}
               >
                 {option.name}
+                {/* The evidence, never the claim on its own. `14 of 15` is what
+                    makes a suggestion something a reader can weigh rather than
+                    a second opinion with nothing behind it. */}
+                {suggestion?.delegationId === option.id && query.trim() === '' && (
+                  <span className="ml-2 text-label text-muted">
+                    {suggestion.matchCount} of {suggestion.totalCount} before
+                  </span>
+                )}
               </button>
             </li>
           ))}
