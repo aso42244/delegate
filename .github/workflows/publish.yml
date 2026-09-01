@@ -79,8 +79,14 @@ jobs:
           images: ghcr.io/${{ github.repository }}
           # The version, and `latest`. A deployment that names a version gets
           # exactly it; one that names nothing follows releases.
+          # Both `0.41.0` and `v0.41.0`. The semver pattern strips the leading
+          # `v`, so without the raw tag the git tag and the image tag differ by
+          # one character — which is exactly the sort of thing somebody hits at
+          # the end of a deploy, as a 404, having typed what the release is
+          # actually called.
           tags: |
             type=semver,pattern={{version}}
+            type=semver,pattern=v{{version}}
             type=semver,pattern={{major}}.{{minor}}
             type=raw,value=latest
 

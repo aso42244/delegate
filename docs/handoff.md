@@ -483,18 +483,29 @@ Nothing from it is outstanding.
 is a published image**, multi-arch and signed, built by a workflow that fires on
 version tags and runs no tests.
 
+**Two things about a registry deploy.** It verifies the signature, so `cosign`
+has to be on the NAS — the README has the one command. And **`COMPOSE_PROFILES`
+must name `tor`** in `.env` if the onion service is wanted: it moved behind a
+profile in `v0.41.0`, and a deploy that does not name it will not bring it back
+up.
+
 **One thing is still the owner's to do, once.** GitHub publishes a workflow's
 package as **private** by default, whatever the repository's visibility. Until it
 is made public, `docker compose up -d` fails with `unauthorized` for anybody who
 has not run `docker login ghcr.io` — which is the whole one-line install, for
 everybody who is not him. The switch is at
 `github.com/users/aso42244/packages/container/delegate/settings` → Danger Zone →
-Change visibility → Public. Verified private on 2026-09-01 by an anonymous
-manifest request, which answered 401. So the ordinary deploy is now:
+Change visibility → Public. **Done on 2026-09-01**, and verified: an anonymous token is now issued and the
+manifest lists `linux/amd64` and `linux/arm64`. So the ordinary deploy is now:
 
 ```sh
-cd /volume1/docker/delegate && sudo ./scripts/deploy.sh --tag v<version>
+cd /volume1/docker/delegate && sudo ./scripts/deploy.sh --tag <version>
 ```
+
+Both `0.41.0` and `v0.41.0` are published, so either form works — the semver
+pattern strips the `v` and a raw tag puts it back, because a release the git tag
+calls `v0.41.0` and the registry calls `0.41.0` is a 404 waiting at the end of a
+deploy.
 
 which pulls the image, verifies it was built by this repository's workflow, and
 restarts. That is a smaller and more honest loop than the source route below: it

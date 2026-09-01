@@ -311,6 +311,20 @@ It also resolves a tag to a **digest** and records it in `.env` as `APP_IMAGE`, 
 a later bare `docker compose up -d` starts the same artefact rather than drifting
 with the tag.
 
+**Deploying from the registry verifies the signature**, so it needs `cosign` —
+one static binary, and the reason the publish workflow signs at all. The image is
+handed the database and the bank feed credential, so "did my repository build
+this?" is worth answering before starting it:
+
+```bash
+sudo curl -fsSL -o /usr/local/bin/cosign \
+  https://github.com/sigstore/cosign/releases/latest/download/cosign-linux-amd64
+sudo chmod +x /usr/local/bin/cosign
+```
+
+`--build` skips verification, because a locally built image has no registry
+signature to check. So does `--skip-verify`, which asks you to have a reason.
+
 ### Later deploys, and rolling back
 
 The same command pulls the current image and restarts:
