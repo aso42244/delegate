@@ -6,6 +6,10 @@ phase (`v0.1.0-phase1`, and so on).
 
 ## [Unreleased]
 
+Nothing yet.
+
+## [0.36.0] — 2026-09-01
+
 ### Fixed
 
 - **The categorization sheet no longer opens behind the keyboard.** Tapping
