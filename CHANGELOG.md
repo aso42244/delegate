@@ -6,6 +6,10 @@ phase (`v0.1.0-phase1`, and so on).
 
 ## [Unreleased]
 
+Nothing yet.
+
+## [0.42.0] — 2026-09-01
+
 ### Added
 
 - **The queue answers from its own history.** An uncategorized row shows where
