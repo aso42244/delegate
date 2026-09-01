@@ -16,6 +16,19 @@ import { expect, OWNER, test } from './fixtures.js';
  */
 
 /**
+ * One TOTP period ago, in seconds.
+ *
+ * Confirming enrolment spends the code it is given, exactly as signing in does.
+ * A spec that confirms with the current period's code and then signs in with a
+ * freshly generated one is offering the same code twice — correctly refused.
+ * The previous period is inside the verifier's tolerance and is a different
+ * code, which is also what a phone a few seconds slow would produce.
+ */
+function previousPeriod(): number {
+  return Math.floor(Date.now() / 1000) - 30;
+}
+
+/**
  * The setup key, from behind "Can't scan this?".
  *
  * The QR code is the offered path and the key is folded away behind a button,
@@ -78,7 +91,8 @@ test('enrols, then requires a code on the next sign-in', async ({ signedIn: page
 
   const secret = await revealSecret(page);
 
-  await page.getByLabel('Code from the app').fill(await generateOtp({ secret }));
+  const enrolmentCode = await generateOtp({ secret, epoch: previousPeriod() });
+  await page.getByLabel('Code from the app').fill(enrolmentCode);
   await page.getByRole('button', { name: 'Confirm' }).click();
 
   await expect(page.getByText('Two-factor is on.', { exact: false })).toBeVisible();
@@ -96,6 +110,20 @@ test('enrols, then requires a code on the next sign-in', async ({ signedIn: page
   await page.getByRole('button', { name: 'Sign in' }).click();
 
   await expect(page.getByLabel('Authentication code')).toBeVisible();
+  expect(page.url()).toContain('/login');
+
+  /*
+   * The code that completed enrolment is spent, and says so.
+   *
+   * This is the one place the replay defence is visible to somebody doing
+   * nothing wrong: enrol and sign in inside the same ninety seconds and the
+   * authenticator is still showing the code that was just used. "That code is
+   * not correct" would send them to check six digits they are reading
+   * correctly, and they would retype them until the period rolled over.
+   */
+  await page.getByLabel('Authentication code').fill(enrolmentCode);
+  await page.getByRole('button', { name: 'Verify' }).click();
+  await expect(page.getByText('already been used', { exact: false })).toBeVisible();
   expect(page.url()).toContain('/login');
 
   await page.getByLabel('Authentication code').fill(await generateOtp({ secret }));

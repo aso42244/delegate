@@ -4,7 +4,7 @@ import { generate as generateOtp } from 'otplib';
 import { buildApp } from '../src/app.js';
 import { loadConfig } from '../src/config.js';
 import { prisma } from '../src/db/client.js';
-import { markTwoFactorEnrolled, resetDatabase } from './helpers.js';
+import { markTwoFactorEnrolled, previousTotpPeriod, resetDatabase } from './helpers.js';
 import { sessionCookie } from './http.js';
 
 /**
@@ -61,7 +61,9 @@ beforeEach(async () => {
     method: 'POST',
     url: '/api/auth/totp/confirm',
     headers: { cookie: owner },
-    payload: { code: await generateOtp({ secret: ownerTotpSecret }) },
+    // The previous period's code: confirming spends what it is given, and
+    // `signInAsOwner` below needs a code that has not been spent.
+    payload: { code: await generateOtp({ secret: ownerTotpSecret, epoch: previousTotpPeriod() }) },
   });
 });
 
@@ -176,6 +178,58 @@ describe('household settings', () => {
       payload: { remoteOverTorEnabled: true },
     });
     expect(allowed.statusCode).toBe(200);
+  });
+});
+
+/**
+ * Where the line sits, and why it is not simply "anything that makes a request".
+ *
+ * The routes that *decide where this server sends a request* are the ones worth
+ * gating: connect stores a URL the hourly job then fetches forever, the node
+ * setting names an address every address lookup goes to, and disconnect ends
+ * the household's feed. Pressing Sync or checking the node uses what is already
+ * stored and chooses nothing — gating those would cost an ordinary account the
+ * ability to refresh its own budget and buy no security at all.
+ */
+describe('routes that choose where this server sends a request', () => {
+  it('are administrator-only', async () => {
+    const user = await partner();
+
+    const refusals = [
+      { method: 'PUT' as const, url: '/api/bitcoin/node', payload: { mode: 'none' } },
+      {
+        method: 'POST' as const,
+        url: '/api/sync/connect',
+        payload: { accessUrl: 'https://user:secret@bridge.example.test/simplefin' },
+      },
+      { method: 'POST' as const, url: '/api/sync/disconnect', payload: {} },
+    ];
+
+    for (const request of refusals) {
+      const refused = await app.inject({ ...request, headers: { cookie: user } });
+      expect(refused.statusCode, request.url).toBe(403);
+      expect(refused.json<{ error: { code: string } }>().error.code, request.url).toBe(
+        'settings_management_required',
+      );
+    }
+
+    // The credential was not stored by the refused attempt.
+    expect(
+      (await prisma.budgetSettings.findUnique({ where: { id: 1 } }))?.simplefinAccessUrlEncrypted ??
+        null,
+    ).toBeNull();
+  });
+
+  it('and refreshing your own budget is not', async () => {
+    const user = await partner();
+
+    // Not 403. What these do afterwards is beside the point — a sync with no
+    // connection reports that, and the node check reports an unset node — but
+    // an ordinary account must not be refused for lacking a role.
+    for (const url of ['/api/sync', '/api/bitcoin/node/check']) {
+      const response = await app.inject({ method: 'POST', url, headers: { cookie: user } });
+      expect(response.statusCode, url).not.toBe(403);
+    }
   });
 });
 

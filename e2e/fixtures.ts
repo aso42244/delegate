@@ -133,7 +133,14 @@ export const test = base.extend<BudgetFixtures>({
     ownerTotpSecret = ((await begun.json()) as { secret: string }).secret;
 
     await page.request.post('/api/auth/totp/confirm', {
-      data: { code: await generateOtp({ secret: ownerTotpSecret }) },
+      // The previous period's code: confirming spends what it is given, and the
+      // sign-in helper above needs a code that has not already been used.
+      data: {
+        code: await generateOtp({
+          secret: ownerTotpSecret,
+          epoch: Math.floor(Date.now() / 1000) - 30,
+        }),
+      },
     });
 
     await page.goto('/');

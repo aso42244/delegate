@@ -1,6 +1,6 @@
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import { prisma } from '../src/db/client.js';
-import { PrismaSessionStore } from '../src/plugins/session-store.js';
+import { PrismaSessionStore, pruneExpiredSessions } from '../src/plugins/session-store.js';
 import { resetDatabase, makeUser } from './helpers.js';
 
 /**
@@ -11,7 +11,8 @@ import { resetDatabase, makeUser } from './helpers.js';
  * order the race produces makes it deterministic.
  */
 
-const store = new PrismaSessionStore(prisma, 3600);
+/** An hour of idle time, and thirty days of existing, unless a test says otherwise. */
+const store = new PrismaSessionStore(prisma, 3600, 30 * 24 * 3600);
 
 /** The store speaks callbacks; these make it awaitable. */
 function asError(value: unknown): Error {
@@ -111,6 +112,50 @@ describe('ordinary use', () => {
     await set('ordinary-expired', { userId, cookie: { expires: new Date(Date.now() - 1000) } });
 
     expect(await get('ordinary-expired')).toBeNull();
+    expect(await prisma.session.count()).toBe(0);
+  });
+});
+
+/**
+ * The ceiling a rolling session cannot roll past.
+ *
+ * `expires_at` is pushed forward by every response, so a session that keeps
+ * being used has no expiry at all — which is exactly the session somebody else
+ * might be holding. `created_at` never moves, and these assert that it is the
+ * one being read.
+ */
+describe('the absolute lifetime', () => {
+  /** Deliberately not through `set`: the store has no way to write a past creation. */
+  async function ageSession(sessionId: string, days: number): Promise<void> {
+    await prisma.session.update({
+      where: { id: sessionId },
+      data: { createdAt: new Date(Date.now() - days * 24 * 3_600_000) },
+    });
+  }
+
+  it('refuses a session older than the ceiling even while its rolling expiry is fresh', async () => {
+    // An hour of life left by the rolling measure, and thirty-one days of
+    // existence — which is the combination the rolling expiry cannot catch.
+    await set('absolute-old', { userId, cookie: { expires: new Date(Date.now() + 3_600_000) } });
+    await ageSession('absolute-old', 31);
+
+    expect(await get('absolute-old')).toBeNull();
+    expect(await prisma.session.count()).toBe(0);
+  });
+
+  it('leaves a session inside the ceiling alone', async () => {
+    await set('absolute-young', { userId, cookie: { expires: new Date(Date.now() + 3_600_000) } });
+    await ageSession('absolute-young', 29);
+
+    expect(await get('absolute-young')).not.toBeNull();
+    expect(await prisma.session.count()).toBe(1);
+  });
+
+  it('sweeps an over-age session out, not only refuses it on read', async () => {
+    await set('absolute-swept', { userId, cookie: { expires: new Date(Date.now() + 3_600_000) } });
+    await ageSession('absolute-swept', 31);
+
+    expect(await pruneExpiredSessions(prisma, 30 * 24 * 3600)).toBe(1);
     expect(await prisma.session.count()).toBe(0);
   });
 });

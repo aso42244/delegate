@@ -20,7 +20,7 @@ import {
   setHoldingQuantity,
 } from '../domain/bitcoin-holdings.js';
 import { centsInLoose, centsOut, dateOut } from '../http/serialize.js';
-import { AUTHENTICATED } from '../plugins/auth.js';
+import { AUTHENTICATED, requireSettingsManagement } from '../plugins/auth.js';
 
 /**
  * Bitcoin holdings and the current price.
@@ -392,8 +392,12 @@ export const bitcoinRoutes: FastifyPluginCallback = (fastify, _options, done) =>
    * Stores where to ask. The URL is checked here rather than when it is used —
    * a public endpoint saved over plain http would sit looking fine and then send
    * every address lookup across the internet in the clear.
+   *
+   * **Administrator-only**, unlike the check below it. This is the one route
+   * that decides where this server sends a request; `node/check` merely asks the
+   * address already stored. Choosing the destination is the thing worth gating.
    */
-  fastify.put('/api/bitcoin/node', async (request) => {
+  fastify.put('/api/bitcoin/node', { preHandler: [requireSettingsManagement] }, async (request) => {
     const body = z
       .object({
         mode: z.enum(NODE_MODES),

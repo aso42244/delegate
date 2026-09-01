@@ -52,6 +52,7 @@ export class PrismaSessionStore implements SessionStore {
   constructor(
     private readonly db: Db,
     private readonly defaultTtlSeconds: number,
+    private readonly absoluteTtlSeconds: number,
   ) {}
 
   set(sessionId: string, session: Session, callback: (err?: unknown) => void): void {
@@ -96,17 +97,26 @@ export class PrismaSessionStore implements SessionStore {
 
   get(sessionId: string, callback: (err: unknown, result?: Session | null) => void): void {
     this.db.session
-      .findUnique({ where: { id: sessionId }, select: { data: true, expiresAt: true } })
+      .findUnique({
+        where: { id: sessionId },
+        select: { data: true, expiresAt: true, createdAt: true },
+      })
       .then(async (row) => {
         if (!row) {
           callback(null, null);
           return;
         }
 
-        // Expired rows are deleted on read as well as by the nightly sweep, so a
-        // stale cookie can never be resurrected by a store that simply has not
-        // been swept yet.
-        if (row.expiresAt.getTime() <= Date.now()) {
+        // Expired rows are deleted on read as well as by the sweep at sign-in,
+        // so a stale cookie can never be resurrected by a store that simply has
+        // not been swept yet.
+        //
+        // Two expiries, and they answer different questions. `expires_at` rolls
+        // forward on every response and asks "has this been idle too long";
+        // `created_at` never moves and asks "has this existed too long". Without
+        // the second, a cookie that is being used cannot expire at all — which
+        // is precisely the cookie somebody else might be holding.
+        if (row.expiresAt.getTime() <= Date.now() || this.pastAbsoluteLifetime(row.createdAt)) {
           await this.db.session.deleteMany({ where: { id: sessionId } });
           callback(null, null);
           return;
@@ -150,6 +160,10 @@ export class PrismaSessionStore implements SessionStore {
     return true;
   }
 
+  private pastAbsoluteLifetime(createdAt: Date): boolean {
+    return createdAt.getTime() + this.absoluteTtlSeconds * 1000 <= Date.now();
+  }
+
   private expiryOf(session: Session): Date {
     const cookieExpires = session.cookie?.expires;
     if (cookieExpires) return new Date(cookieExpires);
@@ -162,8 +176,23 @@ function readUserId(session: Session): string | undefined {
   return typeof value === 'string' && value.length > 0 ? value : undefined;
 }
 
-/** Deletes every expired session. Wired to a nightly job. */
-export async function pruneExpiredSessions(db: Db): Promise<number> {
-  const { count } = await db.session.deleteMany({ where: { expiresAt: { lte: new Date() } } });
+/**
+ * Deletes every session that has expired, by either measure.
+ *
+ * **Called at sign-in, not on a schedule.** The comment here used to claim a
+ * nightly job and there has never been one — signing in is the moment there is
+ * something worth sweeping, and expired rows are refused on read regardless, so
+ * the sweep is housekeeping rather than a control.
+ */
+export async function pruneExpiredSessions(db: Db, absoluteTtlSeconds: number): Promise<number> {
+  const now = new Date();
+  const { count } = await db.session.deleteMany({
+    where: {
+      OR: [
+        { expiresAt: { lte: now } },
+        { createdAt: { lte: new Date(now.getTime() - absoluteTtlSeconds * 1000) } },
+      ],
+    },
+  });
   return count;
 }

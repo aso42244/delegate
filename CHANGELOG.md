@@ -6,7 +6,82 @@ phase (`v0.1.0-phase1`, and so on).
 
 ## [Unreleased]
 
-Nothing yet.
+### Security
+
+An external review of `v0.37.0` found eight low and informational items. Six are
+fixed here, one was accepted with its reason recorded, and one — an `auth_events`
+table with a screen that shows it — is separate work. Two more of the same kind
+were found while checking the report. Nothing here is above **low**: every one of
+them needs an authenticated session or a stolen cookie to matter, which is why
+they are worth fixing cheaply rather than urgently.
+
+- **The code that completes two-factor enrolment is spent.** `confirmEnrolment`
+  verified the code and never claimed it, so the code that enrolled an account
+  stayed valid for a _sign-in_ for the rest of its ninety-second window — against
+  an account that is enrolled by the time the call returns. The single-use
+  machinery already existed; enrolment simply was not using it.
+
+  This has a consequence worth knowing, because it is visible to somebody doing
+  nothing wrong: enrol and then sign in inside the same ninety seconds and the
+  authenticator is still showing the code that was just used. So a **correct but
+  spent code is now told apart from a wrong one** — "That code has already been
+  used. Wait for your authenticator to show the next one." "Not correct" would
+  send somebody to check six digits they are reading correctly, and they would
+  retype them until the period rolled over. It reveals nothing: reaching that
+  line means already holding the password and a live challenge.
+
+- **The routes that decide where this server sends a request are
+  administrator-only.** `PUT /api/bitcoin/node`, `POST /api/sync/connect` and
+  `POST /api/sync/disconnect` now require settings management.
+
+  The line is _choosing a destination_, not _making a request_. Connect stores a
+  URL the hourly job then fetches forever; the node setting names the address
+  every address lookup goes to; disconnect silently ends the household's feed.
+  `POST /api/sync` and `POST /api/bitcoin/node/check` use what is already stored
+  and choose nothing, so they stay open to every account — gating them would cost
+  an ordinary user the ability to refresh their own budget and buy nothing.
+
+- **Link-local is no longer treated as a private address.** `169.254.0.0/16`
+  reads as private and is not the same kind of thing: it holds
+  `169.254.169.254`, the instance-metadata address on every major cloud. It was
+  accepted as a plain-http node URL. No metadata service exists on the NAS, so
+  this guards where Delegate might run rather than where it runs — which is the
+  only moment it can be added for free. `isLinkLocalHost` names it separately,
+  because it is refused for a different reason than a public host is.
+
+- **A SimpleFIN setup token cannot point at the household's own network.** The
+  token is Base64 chosen by whoever pasted it, and only its scheme was checked —
+  so claiming one made this server POST to any address given to it. A real bridge
+  is public https; both rules are therefore free, and both refuse before anything
+  is sent.
+
+- **A rolling session has a ceiling it cannot roll past.** Every response pushed
+  the idle expiry out, so a session that kept being used never expired at all —
+  which is precisely the session somebody else might be holding.
+  `SESSION_ABSOLUTE_TTL_SECONDS` (90 days) is measured from `created_at` and is
+  never extended. Two expiries, answering different questions: one asks whether
+  this has been idle too long, the other whether it has existed too long.
+
+- **A password typed into the username field no longer lands in the logs.** A
+  failed sign-in records the name when it matches a real account — which a
+  mistyped password cannot — and a short keyed digest otherwise. A guessing loop
+  against one unknown name still lines up as one name; what was typed is never
+  stored.
+
+- **The SimpleFIN access URL must really be https.** The check was `https?` while
+  the message said https, so a plain-http access URL was accepted and stored —
+  and that URL carries Basic Auth credentials for the household's bank data,
+  which would then cross the internet in the clear on every hourly sync. Found
+  while checking the report rather than in it.
+
+- **Three comments that had stopped being true.** Session pruning is not "wired
+  to a nightly job" — it runs at sign-in, and always has. And the session cookie
+  is not waiting for "TLS in Phase 3": plain http at the origin is the permanent
+  default under ADR 017, in two places that still described it as a stage.
+
+**Accepted rather than fixed, with the reasoning recorded** in
+`docs/security-review-2026-09.md`: CSP violation reporting, and unencrypted
+database dumps.
 
 ## [0.37.0] — 2026-09-01
 

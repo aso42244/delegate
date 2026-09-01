@@ -5,7 +5,7 @@ import { buildApp } from '../src/app.js';
 import { loadConfig } from '../src/config.js';
 import { prisma } from '../src/db/client.js';
 import { claimChallenge, issueChallenge, readChallenge } from '../src/domain/challenge.js';
-import { resetDatabase } from './helpers.js';
+import { previousTotpPeriod, resetDatabase } from './helpers.js';
 import { errorOf, sessionCookie, userOf } from './http.js';
 
 /**
@@ -68,11 +68,15 @@ async function enrol(cookie: string): Promise<Enrolment> {
   expect(begun.statusCode).toBe(200);
   const { secret } = begun.json<{ secret: string; uri: string }>();
 
+  // Confirmed with the *previous* period's code, which the verifier accepts
+  // inside its tolerance. Confirming spends the code it was given, exactly as
+  // signing in does, so a helper that spent the current one would leave every
+  // test below signing in with a code this line had already used.
   const confirmed = await app.inject({
     method: 'POST',
     url: '/api/auth/totp/confirm',
     headers: { cookie },
-    payload: { code: await generateOtp({ secret }) },
+    payload: { code: await generateOtp({ secret, epoch: previousTotpPeriod() }) },
   });
   expect(confirmed.statusCode).toBe(200);
   const { recoveryCodes } = confirmed.json<{ recoveryCodes: string[] }>();
@@ -537,10 +541,50 @@ describe('a code cannot be used twice', () => {
     expect(replayed.statusCode).toBe(401);
   });
 
+  /**
+   * The gap this closes. Enrolment verified the code and never spent it, so the
+   * code that completed enrolment stayed good for a sign-in for the rest of its
+   * window — against an account that is enrolled by the time the call returns.
+   */
+  it('refuses the enrolment code for a sign-in afterwards', async () => {
+    const cookie = await setUpOwner();
+
+    const begun = await app.inject({
+      method: 'POST',
+      url: '/api/auth/totp/begin',
+      headers: { cookie },
+      payload: { currentPassword: OWNER.password },
+    });
+    const { secret } = begun.json<{ secret: string }>();
+
+    const code = await generateOtp({ secret });
+    const confirmed = await app.inject({
+      method: 'POST',
+      url: '/api/auth/totp/confirm',
+      headers: { cookie },
+      payload: { code },
+    });
+    expect(confirmed.statusCode).toBe(200);
+
+    const login = await app.inject({ method: 'POST', url: '/api/auth/login', payload: OWNER });
+    const { challenge } = login.json<{ challenge: string }>();
+
+    const reused = await app.inject({
+      method: 'POST',
+      url: '/api/auth/second-factor',
+      payload: { challenge, code },
+    });
+    expect(reused.statusCode).toBe(401);
+  });
+
   it('remembers the spent code against the account that spent it', async () => {
     const cookie = await setUpOwner();
     const { secret } = await enrol(cookie);
     const code = await generateOtp({ secret });
+
+    // Enrolment spends a code of its own, so the count before is the baseline.
+    const before = await prisma.totpUsedCode.findMany();
+    expect(before).toHaveLength(1);
 
     const login = await app.inject({ method: 'POST', url: '/api/auth/login', payload: OWNER });
     await app.inject({
@@ -549,7 +593,9 @@ describe('a code cannot be used twice', () => {
       payload: { challenge: login.json<{ challenge: string }>().challenge, code },
     });
 
-    const spent = await prisma.totpUsedCode.findMany();
+    const spent = (await prisma.totpUsedCode.findMany()).filter(
+      (row) => row.codeHash !== before[0]?.codeHash,
+    );
     expect(spent).toHaveLength(1);
     // The code itself is never written down, only an HMAC of it.
     expect(spent[0]?.codeHash).not.toContain(code);

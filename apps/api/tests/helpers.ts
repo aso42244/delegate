@@ -277,3 +277,16 @@ export async function markTwoFactorEnrolled(): Promise<void> {
     },
   });
 }
+
+/**
+ * One TOTP period ago, in seconds, for `generateOtp({ secret, epoch })`.
+ *
+ * Confirming enrolment spends the code it was given, exactly as signing in
+ * does. A test that confirms with the current period's code and then signs in
+ * with a freshly generated one is offering the same code twice, and is now
+ * correctly refused — so enrolment uses the previous period, which the verifier
+ * accepts inside its tolerance and which is a different code.
+ */
+export function previousTotpPeriod(): number {
+  return Math.floor(Date.now() / 1000) - 30;
+}
