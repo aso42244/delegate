@@ -10,6 +10,7 @@ import {
 import { checksApi, type CheckMatchDto } from '../api/checks.js';
 import { ApiError } from '../api/client.js';
 import { AccountRowMenu } from '../components/AccountRowMenu.jsx';
+import { useBudgetLayout } from '../budget-layout.js';
 import { PageHeader } from '../components/layout.jsx';
 import { BalanceReading } from '../components/BalanceReading.jsx';
 import { AbsorbDialog } from '../components/AbsorbDialog.jsx';
@@ -255,6 +256,11 @@ export function MainBudget(): ReactNode {
 
   const [newGrouping, setNewGrouping] = useState(false);
 
+  // Chosen on Settings → Display and remembered per device. Read here rather
+  // than passed down: it decides only where the three sections sit, and no
+  // section needs to know which arrangement it is in.
+  const [budgetLayout] = useBudgetLayout();
+
   const view = useQuery({ queryKey: ['budget'], queryFn: budgetApi.view });
 
   /*
@@ -488,6 +494,73 @@ export function MainBudget(): ReactNode {
    */
   const difference = BigInt(view.data.identity.differenceCents);
 
+  /**
+   * Delegations, built once and placed by the layout.
+   *
+   * It renders in a different position in each arrangement — first in
+   * `columns`, last in `stacked` — and it is the largest block on the page. A
+   * variable rather than the JSX written twice: two copies of this would drift,
+   * and the one that drifted would be the one nobody had switched to.
+   */
+  const delegationsSection = (
+    <BudgetSection
+      title="Delegations"
+      section={view.data.delegations}
+      showAmountToDelegate
+      redNegatives
+      onToggleGrouping={(id, collapsed) => toggleGrouping.mutate({ id, collapsed })}
+      onEditAmount={(id, cents) => editAmount.mutate({ id, cents })}
+      onEditBalance={(id, cents) => editBalance.mutate({ id, cents })}
+      onCreate={(name) => createDelegation.mutate(name)}
+      onMoveToGrouping={(rowId, groupingId) => moveDelegation.mutate({ id: rowId, groupingId })}
+      onPlace={(rowId, groupingId, orderedIds) =>
+        placeDelegation.mutate({ id: rowId, groupingId, orderedIds })
+      }
+      {...(difference === 0n
+        ? {}
+        : {
+            onAbsorb: setAbsorbing,
+            absorbLabel: difference > 0n ? 'Move surplus here' : 'Fix deficit from here',
+          })}
+      rowAffordance={(row) => {
+        const match = matchByCheckId.get(row.id);
+        if (row.kind !== 'check' || !match) return null;
+        return (
+          <button
+            type="button"
+            onClick={() => setConfirmingCheck(match)}
+            className="rounded border border-confirm-line bg-confirm-soft px-1.5 py-0.5 text-label font-semibold whitespace-nowrap text-confirm hover:brightness-95"
+          >
+            Confirm it cleared
+          </button>
+        );
+      }}
+      rowMenu={(row) =>
+        // A check is not a delegation to rename, re-file or adjust; its menu
+        // offers only what the bank can decide.
+        row.kind === 'check' ? (
+          <CheckRowMenu row={row} />
+        ) : (
+          <DelegationRowMenu
+            row={row}
+            groupings={groupingOptions}
+            onNudge={nudge}
+            {...(difference === 0n
+              ? {}
+              : {
+                  onAbsorb: setAbsorbing,
+                  absorbLabel: difference > 0n ? 'Move surplus here' : 'Fix deficit from here',
+                })}
+            onTransferFrom={(delegationId) => {
+              setTransferFrom(delegationId);
+              setDialog('transfer');
+            }}
+          />
+        )
+      }
+    />
+  );
+
   return (
     <div>
       {/* Stacked on a phone, one row from `sm`. Side by side at 390px the
@@ -589,85 +662,62 @@ export function MainBudget(): ReactNode {
         </div>
       )}
 
-      <BudgetSection
-        title="Assets"
-        section={view.data.assets}
-        showAmountToDelegate={false}
-        redNegatives={false}
-        onToggleGrouping={(id, collapsed) => toggleGrouping.mutate({ id, collapsed })}
-        rowMenu={(row) => (
-          <AccountRowMenu row={row} groupings={groupingOptionsFor(view.data.assets)} />
-        )}
-      />
+      {/*
+        Two arrangements of the same three sections, chosen on Settings →
+        Display and stored per device (`useBudgetLayout`).
 
-      {/* Debts render in normal text, never red, despite being liabilities. */}
-      <BudgetSection
-        title="Debts"
-        section={view.data.debts}
-        showAmountToDelegate={false}
-        redNegatives={false}
-        onToggleGrouping={(id, collapsed) => toggleGrouping.mutate({ id, collapsed })}
-        rowMenu={(row) => (
-          <AccountRowMenu row={row} groupings={groupingOptionsFor(view.data.debts)} />
-        )}
-      />
+        The DOM order is the *column* order — Delegations, then the accounts —
+        and the grid is what puts them side by side from `lg`. Below that the
+        grid simply does not apply and the sections stack in the order they are
+        written, which is the order this arrangement wants on a phone anyway:
+        the envelopes first, because they are what somebody came to work
+        through.
 
-      <BudgetSection
-        title="Delegations"
-        section={view.data.delegations}
-        showAmountToDelegate
-        redNegatives
-        onToggleGrouping={(id, collapsed) => toggleGrouping.mutate({ id, collapsed })}
-        onEditAmount={(id, cents) => editAmount.mutate({ id, cents })}
-        onEditBalance={(id, cents) => editBalance.mutate({ id, cents })}
-        onCreate={(name) => createDelegation.mutate(name)}
-        onMoveToGrouping={(rowId, groupingId) => moveDelegation.mutate({ id: rowId, groupingId })}
-        onPlace={(rowId, groupingId, orderedIds) =>
-          placeDelegation.mutate({ id: rowId, groupingId, orderedIds })
+        `minmax(0, …)` on both tracks rather than `3fr 2fr`. A grid item
+        defaults to its *content* width, so a table with a long account name in
+        it would push its own column wider than its share and shove the other
+        one off the screen — the same trap the Insights card header fell into.
+
+        Three-to-two because the columns are not doing the same amount of work:
+        Delegations carries two money columns and a row menu, Assets and Debts
+        carry one money column each.
+      */}
+      <div
+        className={
+          budgetLayout === 'columns'
+            ? 'lg:grid lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)] lg:items-start lg:gap-6'
+            : undefined
         }
-        {...(difference === 0n
-          ? {}
-          : {
-              onAbsorb: setAbsorbing,
-              absorbLabel: difference > 0n ? 'Move surplus here' : 'Fix deficit from here',
-            })}
-        rowAffordance={(row) => {
-          const match = matchByCheckId.get(row.id);
-          if (row.kind !== 'check' || !match) return null;
-          return (
-            <button
-              type="button"
-              onClick={() => setConfirmingCheck(match)}
-              className="rounded border border-confirm-line bg-confirm-soft px-1.5 py-0.5 text-label font-semibold whitespace-nowrap text-confirm hover:brightness-95"
-            >
-              Confirm it cleared
-            </button>
-          );
-        }}
-        rowMenu={(row) =>
-          // A check is not a delegation to rename, re-file or adjust; its menu
-          // offers only what the bank can decide.
-          row.kind === 'check' ? (
-            <CheckRowMenu row={row} />
-          ) : (
-            <DelegationRowMenu
-              row={row}
-              groupings={groupingOptions}
-              onNudge={nudge}
-              {...(difference === 0n
-                ? {}
-                : {
-                    onAbsorb: setAbsorbing,
-                    absorbLabel: difference > 0n ? 'Move surplus here' : 'Fix deficit from here',
-                  })}
-              onTransferFrom={(delegationId) => {
-                setTransferFrom(delegationId);
-                setDialog('transfer');
-              }}
-            />
-          )
-        }
-      />
+      >
+        {budgetLayout === 'columns' && delegationsSection}
+
+        <div>
+          <BudgetSection
+            title="Assets"
+            section={view.data.assets}
+            showAmountToDelegate={false}
+            redNegatives={false}
+            onToggleGrouping={(id, collapsed) => toggleGrouping.mutate({ id, collapsed })}
+            rowMenu={(row) => (
+              <AccountRowMenu row={row} groupings={groupingOptionsFor(view.data.assets)} />
+            )}
+          />
+
+          {/* Debts render in normal text, never red, despite being liabilities. */}
+          <BudgetSection
+            title="Debts"
+            section={view.data.debts}
+            showAmountToDelegate={false}
+            redNegatives={false}
+            onToggleGrouping={(id, collapsed) => toggleGrouping.mutate({ id, collapsed })}
+            rowMenu={(row) => (
+              <AccountRowMenu row={row} groupings={groupingOptionsFor(view.data.debts)} />
+            )}
+          />
+        </div>
+
+        {budgetLayout === 'stacked' && delegationsSection}
+      </div>
 
       {absorbing && (
         <AbsorbDialog

@@ -893,3 +893,29 @@ leave the interface with no row height at all.
 It stays per-device. Which of the three reads best depends on the screen and the
 eyes in front of it, and one person's large monitor should not decide the other
 person's phone.
+
+## The Budget page has two arrangements
+
+**Stacked** — Assets, Debts, then Delegations, each the full width — is what this
+page has always done and stays the default. It reads in the order the identity is
+written, and on a phone it is the only thing that fits.
+
+**Two columns** puts the **delegations on the left and the accounts on the
+right**, Assets above Debts. The reason is what a wide monitor actually does with
+the stacked layout: the balances scroll off the top before somebody reaches the
+envelopes they came to work through, and half the width goes unused holding a
+name column and one figure.
+
+Below `lg` there is no room for two, so it collapses to one column and keeps
+**its own** order — Delegations, Assets, Debts. That is not a fall back to
+Stacked. It is the same idea at a smaller size: the envelopes are the reason the
+page exists, and on a phone that argument is stronger, not weaker.
+
+Three-to-two, not half and half. The columns are not doing equal work:
+Delegations carries two money columns and a row menu, Assets and Debts carry one
+money column each.
+
+**Per device**, on Settings → Display, like row height and the theme — it
+describes the screen in front of somebody. Two columns on a 27-inch monitor
+should not put two columns on the other person's laptop, where it would squeeze
+both and improve neither.

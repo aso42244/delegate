@@ -6,7 +6,27 @@ phase (`v0.1.0-phase1`, and so on).
 
 ## [Unreleased]
 
-Nothing yet.
+### Added
+
+- **The Budget page has two arrangements, chosen on Settings → Display.**
+
+  **Stacked** is what it has always done and stays the default: Assets, Debts,
+  then Delegations, each the full width of the page.
+
+  **Two columns** puts the **envelopes on the left and the accounts on the
+  right** — Assets above Debts. On a wide monitor the account balances had
+  scrolled off the top by the time somebody reached the delegations they came to
+  work through, and the page was using half its width for nothing.
+
+  Below `lg` there is no room for two, so it collapses to one column and keeps
+  **its own** order: Delegations, Assets, Debts. That is the point of it on a
+  phone as well — envelopes first — rather than a silent fall back to the other
+  arrangement.
+
+  **Per device**, like row height and the theme, and for the same reason: it is a
+  fact about the screen someone is looking at. Two columns on a 27-inch monitor
+  should not put two columns on the other person's laptop, where it would only
+  squeeze both.
 
 ## [0.38.0] — 2026-09-01
 
