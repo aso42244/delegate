@@ -6,6 +6,10 @@ phase (`v0.1.0-phase1`, and so on).
 
 ## [Unreleased]
 
+Nothing yet.
+
+## [0.37.0] — 2026-09-01
+
 ### Changed
 
 - **Every notification is a pill, red ones included.** v0.36.0 kept the
