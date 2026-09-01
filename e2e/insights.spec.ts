@@ -35,9 +35,45 @@ test('a widget can be added back from the catalog', async ({ signedIn }) => {
   await expect(signedIn.getByRole('heading', { name: 'Assets and debts' })).toHaveCount(0);
 
   await signedIn.getByRole('button', { name: 'New tile' }).click();
-  await signedIn.getByRole('button', { name: 'Assets and debts', exact: true }).click();
 
+  // A dialog in the middle of the page, not a panel unrolled below every tile
+  // already on the grid — where, on a full page, it opened off screen.
+  const picker = signedIn.getByRole('dialog', { name: 'Add a tile to Insights' });
+  await expect(picker).toBeVisible();
+
+  await picker.getByRole('button', { name: 'Assets and debts', exact: true }).click();
+
+  await expect(signedIn.getByRole('dialog')).toHaveCount(0);
   await expect(signedIn.getByRole('heading', { name: 'Assets and debts' })).toBeVisible();
+});
+
+/**
+ * Every option carries the shape it draws, so the page can be scanned rather
+ * than read. Schematic rather than real data: a thumbnail per option would mean
+ * twenty-one queries to answer a question about form, and on a household three
+ * days in they would all be flat lines.
+ */
+test('each option in the picker shows the shape it draws', async ({ signedIn }) => {
+  await signedIn.goto('/insights');
+  // Each removal is a write; assert it landed before making the next one.
+  await signedIn.getByRole('button', { name: 'Remove Assets and debts' }).click();
+  await expect(signedIn.getByRole('heading', { name: 'Assets and debts' })).toHaveCount(0);
+  await signedIn.getByRole('button', { name: 'Remove Net worth over time' }).click();
+  await expect(signedIn.getByRole('heading', { name: 'Net worth over time' })).toHaveCount(0);
+
+  await signedIn.getByRole('button', { name: 'New tile' }).click();
+  const picker = signedIn.getByRole('dialog', { name: 'Add a tile to Insights' });
+
+  // One preview per option, and the option is still named for a screen reader.
+  const options = picker.getByRole('listitem');
+  await expect(options).toHaveCount(2);
+  await expect(picker.locator('svg')).toHaveCount(2);
+
+  // The shapes differ: a list tile and a line tile do not draw the same thing.
+  const shapes = await picker
+    .locator('svg')
+    .evaluateAll((nodes) => nodes.map((node) => node.innerHTML));
+  expect(shapes[0]).not.toBe(shapes[1]);
 });
 
 test('reports what is held and owed', async ({ signedIn }) => {

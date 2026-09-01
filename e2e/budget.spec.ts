@@ -213,8 +213,10 @@ test('Delegate previews, distributes, and can be undone', async ({ signedIn, api
   const undo = signedIn.getByRole('button', { name: 'Undo Delegation' });
   await expect(undo).toBeVisible();
 
-  // What was delegated, and the cycle rollback, sit beside the cycle date.
-  await expect(signedIn.getByText(/This cycle began/)).toBeVisible();
+  // What was delegated, and that undoing rolls the cycle back with it. The
+  // cycle *date* is no longer here: it is a fact about the budget's settings
+  // rather than something to act on, and it lives with them now.
+  await expect(signedIn.getByText(/This cycle began/)).toHaveCount(0);
   await expect(signedIn.getByText(/Delegated \$300\.00 across 2 lines/)).toBeVisible();
   await expect(signedIn.getByText(/Undo rolls the cycle back too/)).toBeVisible();
 
@@ -256,8 +258,14 @@ test('the undo offer expires back into a Delegate button', async ({ signedIn, ap
   await signedIn.reload();
   await expect(signedIn.getByRole('button', { name: 'Delegate', exact: true })).toBeVisible();
   await expect(signedIn.getByText(/Undo rolls the cycle back too/)).toHaveCount(0);
-  // The cycle did not end when the chance to undo it did.
-  await expect(signedIn.getByText(/This cycle began/)).toBeVisible();
+
+  /*
+   * The cycle did not end when the chance to undo it did — it is still recorded,
+   * on Settings → Budget beside the undo window and the pay cadence that govern
+   * it. The Budget header carries only the offer, and only while there is one.
+   */
+  await signedIn.goto('/settings/budget');
+  await expect(signedIn.getByText(/^Cycle began/)).toBeVisible();
 });
 
 test('Transfer moves between envelopes without moving the bottom line', async ({

@@ -63,9 +63,13 @@ export function Button({
 }: ButtonHTMLAttributes<HTMLButtonElement> & { variant?: ButtonVariant }): ReactNode {
   return (
     <button
-      // 8px radius, 1px border, 13px/600 — and a 44px minimum touch target
-      // wherever the layout allows it.
-      className={`inline-flex min-h-[36px] items-center justify-center gap-2 rounded-lg border px-3 text-quiet font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${BUTTON_VARIANTS[variant]} ${className}`}
+      // 8px radius, 1px border, 13px/600.
+      //
+      // 28px, at the owner's request: 36 was more air than a row of controls
+      // needs, most visibly on a phone where the Budget header carries five of
+      // them. Above the 24px floor WCAG 2.5.8 sets, below the 44px both
+      // platforms publish as comfortable — a deliberate trade, and his to make.
+      className={`inline-flex min-h-[28px] items-center justify-center gap-2 rounded-lg border px-3 text-quiet font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${BUTTON_VARIANTS[variant]} ${className}`}
       {...props}
     />
   );

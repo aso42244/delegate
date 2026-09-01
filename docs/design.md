@@ -711,8 +711,12 @@ width is scarcest.
 | `u`   | Utility — tracked on the Utilities page    | Budget, Settings |
 | `n`   | Has a note                                 | Budget           |
 
-`p`, `s` and `r` take the yellow; the rest are the quiet grey. Yellow means
+`p` and `r` take the yellow; the rest are the quiet grey. Yellow means
 something is worth noticing, not that something is broken.
+
+`s` was yellow until v0.34.0 and is grey now. Yellow is for something to do,
+and how fresh a figure is is not something anybody can act on — where `p` and
+`r` both are. The owner asked for it and the distinction is better for it.
 
 `s` read "Not confirmed recently" until v0.30.0, which was written for a manual
 balance nobody had checked. It now covers a synced one too, where the bridge

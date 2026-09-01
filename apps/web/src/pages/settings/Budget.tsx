@@ -10,7 +10,9 @@ import {
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState, type FormEvent, type ReactNode } from 'react';
 import { ApiError } from '../../api/client.js';
+import { budgetApi } from '../../api/budget.js';
 import { settingsApi } from '../../api/settings.js';
+import { StatusLine } from '../../components/layout.jsx';
 import { Alert, Button, SelectField, TextField } from '../../components/ui.jsx';
 import { SettingsCard } from './SettingsCard.jsx';
 
@@ -31,6 +33,14 @@ import { SettingsCard } from './SettingsCard.jsx';
 export function BudgetSection(): ReactNode {
   const queryClient = useQueryClient();
   const settings = useQuery({ queryKey: ['settings'], queryFn: settingsApi.get });
+  /*
+   * The same key the Budget page uses, so this is the cache rather than a
+   * second request. Only `cycleStartedAt` is read: the cycle is what the undo
+   * window and the pay cadence below are both about, which is why the date
+   * moved here off the Budget header, where nobody could act on it.
+   */
+  const view = useQuery({ queryKey: ['budget'], queryFn: budgetApi.view });
+  const cycleStartedAt = view.data?.cycleStartedAt ?? null;
 
   const [tolerance, setTolerance] = useState<string | null>(null);
   const [undoHours, setUndoHours] = useState<string | null>(null);
@@ -130,7 +140,13 @@ export function BudgetSection(): ReactNode {
       title="How the budget reads"
       description="Tolerance, the undo window, and how often money lands."
     >
-      <form onSubmit={onSubmit} className="flex flex-col gap-4">
+      <StatusLine tone={cycleStartedAt === null ? 'muted' : 'positive'}>
+        {cycleStartedAt === null
+          ? 'No Delegate press yet.'
+          : `Cycle began ${new Date(cycleStartedAt).toLocaleDateString()}.`}
+      </StatusLine>
+
+      <form onSubmit={onSubmit} className="mt-4 flex flex-col gap-4">
         {/* Widths by content, not by grid cell: two short numbers and a select.
             They were a three-column grid, which stretched a five-character money
             field to a third of the card. */}
