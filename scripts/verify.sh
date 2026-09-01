@@ -45,6 +45,41 @@ npm run format:check >/dev/null || fail 'format:check'
 # generic term for the asset class appears nowhere. The ban is on the asset
 # class, not the word's other senses — cryptography is an ordinary engineering
 # word and `node:crypto` is a standard library module.
+# The compose file, parsed the way a deployment parses it.
+#
+# This step exists because three defects reached the owner's NAS in one deploy,
+# and every one of them was in a file this repository had never executed. The
+# handoff called that out honestly each time — "compose is reasoned about, not
+# executed" — which turned out to mean the person deploying was the integration
+# test.
+#
+# `config` interpolates and validates without starting anything, in a couple of
+# seconds. Run with an **empty environment**, because that is the case that
+# breaks: compose interpolates the whole file before it applies profiles, so a
+# required variable inside a service nobody asked to start still refuses to
+# parse. `DELEGATE_DOMAIN` was `:?` inside the `caddy` service, and a NAS that
+# had never heard of Caddy failed halfway through an upgrade.
+#
+# Verified against that exact defect: restoring the `:?` makes this step fail
+# with the message the owner saw.
+step 'The compose file parses with nothing configured'
+if docker compose version >/dev/null 2>&1; then
+  # `env -i` so no developer's shell, and no .env sourced into it, can supply a
+  # value the deploying machine will not have.
+  env -i PATH="$PATH" HOME="$HOME" docker compose --project-directory . config >/dev/null \
+    || fail 'the compose file does not parse with an empty environment'
+
+  # And with every optional profile on, so a service that is off by default is
+  # still checked rather than silently skipped.
+  env -i PATH="$PATH" HOME="$HOME" COMPOSE_PROFILES='https,tor' DELEGATE_DOMAIN='verify.example' \
+    docker compose --project-directory . config >/dev/null \
+    || fail 'the compose file does not parse with every profile enabled'
+else
+  echo '  skipped: docker compose is not installed here.'
+  echo '  This is the check that would have caught three defects in one deploy;'
+  echo '  install it with: brew install docker-compose'
+fi
+
 step 'Forbidden terminology'
 if git grep -rniE 'cryptocurrenc(y|ies)' -- ':!package-lock.json' ':!scripts/verify.sh' > /tmp/delegate-term 2>/dev/null; then
   cat /tmp/delegate-term >&2
