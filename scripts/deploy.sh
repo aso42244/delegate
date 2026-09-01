@@ -212,6 +212,39 @@ else
   exit 1
 fi
 
+# The `secrets` service runs once and every other service waits for it to exit
+# cleanly, which needs `depends_on: condition: service_completed_successfully`.
+# Compose has supported that since v2.17; before it, the condition is ignored and
+# postgres starts without a password file — which fails as "database is
+# uninitialized and superuser password is not specified", naming nothing that
+# would lead anybody here.
+#
+# Checked rather than documented, because the version somebody is running is not
+# something a README can establish.
+COMPOSE_VERSION=$($COMPOSE version --short 2>/dev/null | tr -d 'v')
+COMPOSE_MAJOR=${COMPOSE_VERSION%%.*}
+COMPOSE_REST=${COMPOSE_VERSION#*.}
+COMPOSE_MINOR=${COMPOSE_REST%%.*}
+
+case "$COMPOSE_MAJOR" in
+  ''|*[!0-9]*) echo "warning: could not read the compose version ('$COMPOSE_VERSION'); continuing." >&2 ;;
+  *)
+    if [ "$COMPOSE_MAJOR" -lt 2 ] || { [ "$COMPOSE_MAJOR" -eq 2 ] && [ "${COMPOSE_MINOR:-0}" -lt 17 ]; }; then
+      cat >&2 <<EOF
+error: docker compose $COMPOSE_VERSION is too old. v2.17 or newer is needed.
+
+  The one-shot 'secrets' service generates this deployment's secrets, and every
+  other service waits for it with 'service_completed_successfully'. Older compose
+  ignores that condition and starts postgres with no password file, which fails
+  saying only that the superuser password is not specified.
+
+  On a Synology, update Container Manager from Package Center.
+EOF
+      exit 1
+    fi
+    ;;
+esac
+
 # --- Work out exactly which image to run -----------------------------------
 
 if [ "$BUILD" = 'yes' ]; then
