@@ -8,10 +8,11 @@ import { expect, makeSyncFailure, makeSyncWarning, test } from './fixtures.js';
  * from the beginning but legible only on the Settings page, so an account could
  * quietly stop updating while everything else looked healthy.
  *
- * It is a pill in the page header rather than a bar across it. A bank wanting a
- * fresh login is real and is not an emergency, and two of these stacked above
- * the page — a yellow one and a blue one — pushed the budget a third of the way
- * down the screen to say six words. A run that *fails* still gets the bar.
+ * Every notification is a pill in the page header. They were full-width bars,
+ * and two of them stacked above the page — a yellow one and a blue one — pushed
+ * the budget a third of the way down the screen to say six words. A run that
+ * *fails* is a red pill rather than a red bar: louder in colour and in wording,
+ * not in floor space.
  */
 
 const WARNING = 'Connection to Frontier Bank may need attention. Auth required';
@@ -43,34 +44,47 @@ test('a feed complaint reaches every page, and names the bank', async ({ signedI
 });
 
 /**
- * The bar is what can be dismissed, and it is dismissed for a day rather than
- * cleared: a bar put away for a condition that is still true would be a lie the
- * interface tells on the owner's behalf.
+ * A failing run is the loudest thing this application says, and it says it in a
+ * pill like everything else.
  *
- * The pills carry no dismiss at all. Snoozing exists because a bar is in the
- * way, and a pill is not in the way.
+ * It was a bar until now, on the argument that a sync failing silently is worse
+ * than a bank wanting a fresh login — which is true, and is why it is red and
+ * why it says so in words. None of that needed a row of the Budget page.
  */
-test('a failing sync gets a bar, and the bar can be put away for a day', async ({ signedIn }) => {
-  const FAILURE = 'The last sync failed';
+test('a failing sync is a red pill, and nothing sits above the page', async ({ signedIn }) => {
   await makeSyncFailure('connection refused');
   await signedIn.reload();
 
-  const bar = signedIn.getByRole('status').filter({ hasText: FAILURE });
-  await expect(bar).toBeVisible();
+  const pill = signedIn.getByRole('link', { name: 'Sync failing' });
+  await expect(pill).toBeVisible();
+  await pill.hover();
+  await expect(signedIn.getByRole('tooltip')).toContainText(
+    'Balances and transactions are not up to date',
+  );
 
-  await bar.getByRole('button', { name: /^Dismiss:/ }).click();
-  await expect(signedIn.getByRole('status').filter({ hasText: FAILURE })).toBeHidden();
+  // The header, not a band above it: the pill sits on the same line as the title.
+  const heading = await signedIn.getByRole('heading', { name: 'Budget' }).boundingBox();
+  const box = await pill.boundingBox();
+  expect(box!.y).toBeGreaterThan(heading!.y - heading!.height);
+  expect(box!.y).toBeLessThan(heading!.y + heading!.height);
 
-  // The snooze has to survive a reload, or the X is a button that does nothing.
-  await signedIn.reload();
-  await expect(signedIn.getByRole('status').filter({ hasText: FAILURE })).toBeHidden();
+  await pill.click();
+  await expect(signedIn).toHaveURL(/\/settings\/sync$/);
 });
 
-/** A pill has no X: there is nothing about it to put away. */
-test('a pill offers no dismissal', async ({ signedIn }) => {
+/**
+ * Nothing can be put away any more, at any severity.
+ *
+ * Snoozing existed because a bar was in the way — it was a snooze rather than a
+ * clear, so the interface never told a lie on the owner's behalf about a
+ * condition that still held. A pill is not in the way, so there is nothing to
+ * put away and what makes one go away is fixing the thing.
+ */
+test('no notification offers a dismissal', async ({ signedIn }) => {
   await makeSyncWarning(WARNING);
+  await makeSyncFailure('connection refused');
   await signedIn.reload();
 
-  await expect(signedIn.getByRole('link', { name: 'Sync issue' })).toBeVisible();
-  await expect(signedIn.getByRole('button', { name: `Dismiss: ${WARNING}` })).toHaveCount(0);
+  await expect(signedIn.getByRole('link', { name: 'Sync failing' })).toBeVisible();
+  await expect(signedIn.getByRole('button', { name: /^Dismiss:/ })).toHaveCount(0);
 });

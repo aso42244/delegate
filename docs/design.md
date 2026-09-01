@@ -765,7 +765,7 @@ absorb affordance uses. That button is **always visible**, unlike the absorb one
 — it is a standing state rather than an offer, and a state nobody can see until
 they hover the right row is one the banner would be pointing at in vain.
 
-## A bar is for what costs data; everything else is a pill
+## Every notification is a pill
 
 A sync that _succeeds_ while the feed complains about one institution raises a
 notification. SimpleFIN reports an expired bank login per-institution without
@@ -777,15 +777,22 @@ own words are used: it names the bank, and paraphrasing would lose that.
 These were all full-width bars stacked above the page, and two of them at once —
 a bank wanting a fresh login and a few transactions waiting to be categorized —
 pushed the budget a third of the way down the screen to say six words between
-them. Prominence now tracks what ignoring the thing costs:
+them.
 
-- **`danger` is a bar.** The backup has never completed; the sync is failing. In
-  both, either the numbers on screen are quietly wrong or the only copy of them
-  is at risk. Two conditions, and they earn the width.
-- **Everything else is a pill** in the page header, the same object as the
-  budget's own reading and sitting immediately to its right. Two or three words
-  on its face, the whole message on hover or focus, and a press goes to where the
-  condition is dealt with.
+All eight are **pills in the page header** now: the same object as the budget's
+own reading, sitting immediately to its right, in the tone the severity names.
+Two or three words on the face, the whole message on hover or focus, and a press
+goes to where the condition is dealt with.
+
+Red is a pill too, which was tried the other way first ([ADR 039](decisions/039-a-bar-is-for-what-costs-data.md),
+[ADR 040](decisions/040-every-notification-is-a-pill.md)). **How serious a thing
+is and how much of the page it occupies are separate questions.** Severity is
+already carried twice here — in the colour and in the words — which is the rule
+every other state in this application follows, so that a reader who cannot
+separate the two still gets the answer. A bar was saying it a third time in floor
+space, on the screen whose whole purpose is the table it pushed down. And a band
+across the top is the shape people learn to scroll past, which is a poor home for
+the one state you most want re-read.
 
 A pill is a link, so on a touchscreen the press arrives before any hover could —
 which is the right trade: the page it lands on says in full what the tooltip
@@ -796,12 +803,12 @@ on the link rather than in the page's defaults, because the two ways of arriving
 want different things: the sidebar means "the register" and the pill means "the
 ones I have not dealt with". A default cannot be both.
 
-**A bar can be put away, not cleared.** Its X is a **snooze**: away for a day,
-keyed on the message so a second bank failing is news again, back afterwards if
-the condition still holds. A bar dismissed for a condition that is still true
-would be a lie the interface tells on the owner's behalf. What makes one go away
-for good is fixing it. Pills carry no X at all — snoozing exists because a bar is
-in the way, and a pill is not in the way.
+**Nothing can be put away.** Bars carried an X, and it was a snooze rather than a
+clear — away for a day, back afterwards if the condition still held — because a
+notification dismissed for something that is still true is a lie the interface
+tells on the owner's behalf. Snoozing went with the bar: it existed because a bar
+was in the way, and a pill is not in the way. What makes one go away is fixing the
+thing it is about.
 
 ## A display preference does not wait for the network
 

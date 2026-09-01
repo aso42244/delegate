@@ -51,7 +51,6 @@ export interface Notification {
   readonly pill: string;
   /** Where to go to do something about it. */
   readonly actionPath: string;
-  readonly actionLabel: string;
 }
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -150,7 +149,6 @@ export async function buildNotifications(
             ? 'No database backup has ever completed. Everything in this budget exists in one place.'
             : `The newest database backup is ${days === 1 ? 'a day' : `${days} days`} old. The nightly dump is failing.`,
         actionPath: '/settings/sync',
-        actionLabel: 'Backups',
       });
     }
   }
@@ -167,7 +165,6 @@ export async function buildNotifications(
           ? `The last sync failed ${days === 1 ? 'yesterday' : `${days} days ago`}. Balances and transactions are not up to date.`
           : 'The last sync failed. Balances and transactions are not up to date.',
       actionPath: '/settings/sync',
-      actionLabel: 'Sync',
     });
   }
 
@@ -191,7 +188,6 @@ export async function buildNotifications(
       // Multiple institutions can complain in one run.
       message: latestRun.error.split('\n').filter(Boolean).join(' · '),
       actionPath: '/settings/sync',
-      actionLabel: 'Sync',
     });
   }
 
@@ -213,7 +209,6 @@ export async function buildNotifications(
           ? `${names} ${stale.length === 1 ? 'has' : 'have'} not been confirmed recently.`
           : `${names} and ${stale.length - 3} more have not been confirmed recently.`,
       actionPath: '/settings/accounts',
-      actionLabel: 'Accounts',
     });
   }
 
@@ -225,7 +220,6 @@ export async function buildNotifications(
       severity: 'warning',
       message: `${needReview.length} ${needReview.length === 1 ? 'account was' : 'accounts were'} discovered by a sync and ${needReview.length === 1 ? 'its type is' : 'their types are'} a guess.`,
       actionPath: '/settings/accounts',
-      actionLabel: 'Review',
     });
   }
 
@@ -256,7 +250,6 @@ export async function buildNotifications(
             ? `Checks ${numbers} look like they have been cashed. Confirm each match to settle it.`
             : `${checkMatches.length} checks look like they have been cashed, including ${numbers}.`,
       actionPath: '/',
-      actionLabel: 'Confirm',
     });
   }
 
@@ -276,7 +269,6 @@ export async function buildNotifications(
       // opens on everything, which is the right default for looking something
       // up.
       actionPath: '/transactions?uncategorized=true',
-      actionLabel: 'Categorize',
     });
   }
 
@@ -290,7 +282,6 @@ export async function buildNotifications(
       severity: 'warning',
       message: `The Bitcoin price is from ${days === 1 ? 'yesterday' : `${days} days ago`}. Holdings are valued at that price.`,
       actionPath: '/settings/bitcoin',
-      actionLabel: 'Bitcoin',
     });
   }
 

@@ -3,7 +3,6 @@ import { useState, type ReactNode } from 'react';
 import { Navigate, Outlet, Route, Routes, useLocation } from 'react-router-dom';
 import { api } from './api/client.js';
 import { useSession } from './auth/SessionProvider.jsx';
-import { NotificationBanners } from './components/NotificationBanners.jsx';
 import { TabBar } from './components/TabBar.jsx';
 import { NARROW, useMediaQuery } from './useMediaQuery.js';
 import { Sidebar } from './components/Sidebar.jsx';
@@ -84,10 +83,10 @@ function AppShell({ appName }: { appName: string }): ReactNode {
         // so the last row of a table is never underneath it.
         className="flex-1 overflow-auto px-4 py-6 pb-[calc(3.5rem+env(safe-area-inset-bottom,0px)+1rem)] sm:px-6 sm:py-8 sm:pb-8 md:px-12"
       >
+        {/* Nothing above the page any more. Every notification is a pill in the
+            page header now, which `PageHeader` renders — so they still reach
+            every screen, and none of them costs the screen a row. */}
         <div className="mx-auto w-full max-w-[1200px]">
-          {/* Above the page rather than on one of them: a failing sync is not a
-              fact about the Transactions page. */}
-          <NotificationBanners />
           <Outlet />
         </div>
       </main>
