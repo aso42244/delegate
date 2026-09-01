@@ -65,6 +65,12 @@ services:
       # from `.env` or one generated on first boot. Not POSTGRES_PASSWORD: the
       # two cannot both be set, and a file is the only form compose can carry a
       # value it never sees.
+      # Read as root: the official image's entrypoint evaluates `*_FILE`
+      # variables before dropping to the postgres user, so a file written 0600
+      # and owned by the app's uid is still readable here. Verified by running
+      # it rather than reasoned about — this is the kind of assumption that
+      # fails at the end of somebody's deploy, with the database refusing to
+      # start and the message naming a permission rather than a design.
       POSTGRES_PASSWORD_FILE: /secrets/postgres-password
       POSTGRES_DB: ${POSTGRES_DB:-delegate}
     volumes:
