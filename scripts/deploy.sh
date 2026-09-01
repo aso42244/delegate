@@ -61,6 +61,71 @@ UNPACK=''
 BUILD='no'
 VERIFY='yes'
 
+# --- Unpack a release, before anything else --------------------------------
+#
+# Deliberately ahead of the argument loop, and it re-runs this script when it is
+# done. Both halves matter.
+#
+# `tar xzf` over a live directory extracts but never removes, so a source file
+# deleted between two versions survives the upgrade and gets compiled — which is
+# exactly how v0.4.0 failed here. The list of what to remove comes from the
+# tarball itself rather than being written down, so it cannot drift, and
+# anything the tarball does not contain is untouched.
+#
+# The re-exec is the other half. This script replaces *itself*, so everything
+# after this point would otherwise run from the old release — including the
+# constants at the top of the file. v0.41.0 moved image signing from `ci.yml` to
+# `publish.yml`, and the first deploy of it refused to start: the running script
+# was v0.40.0's, so it checked a perfectly good signature against the identity of
+# a workflow deleted in August. The remedy was to run the command again, which is
+# not something anybody should have to work out.
+#
+# Arguments are read here without being consumed, so the re-exec passes them on
+# intact. DELEGATE_UNPACKED stops a second pass re-entering this.
+if [ -z "${DELEGATE_UNPACKED:-}" ]; then
+  expecting_tarball='no'
+  tarball=''
+  for argument in "$@"; do
+    if [ "$expecting_tarball" = 'yes' ]; then
+      tarball="$argument"
+      expecting_tarball='no'
+      continue
+    fi
+    [ "$argument" = '--unpack' ] && expecting_tarball='yes'
+  done
+
+  if [ -n "$tarball" ]; then
+    [ -f "$tarball" ] || { echo "error: no such tarball: $tarball" >&2; exit 1; }
+
+    OWNED=$(tar tzf "$tarball" | cut -d/ -f1 | sort -u)
+
+    # Refuse rather than guess if the tarball claims anything holding live state.
+    # Nothing in `git archive` should, and if that ever changes this is where it
+    # has to be noticed rather than afterwards.
+    for entry in $OWNED; do
+      case "$entry" in
+        .env | backups | tls)
+          echo "error: that tarball contains '$entry', which holds live state." >&2
+          echo '       Refusing to replace it.' >&2
+          exit 1 ;;
+      esac
+    done
+
+    echo 'Replacing the source in this directory …'
+    for entry in $OWNED; do
+      rm -rf "./${entry}"
+    done
+    tar xzf "$tarball"
+    echo "  → unpacked $tarball"
+    echo '  → restarting with the version just unpacked'
+    echo
+
+    DELEGATE_UNPACKED=1
+    export DELEGATE_UNPACKED
+    exec "$0" "$@"
+  fi
+fi
+
 while [ $# -gt 0 ]; do
   case "$1" in
     --tag)
@@ -97,31 +162,6 @@ done
 # list comes from the tarball itself rather than being written down, so it cannot
 # drift. Anything the tarball does not contain — .env, backups/, tls/ — is not
 # touched, and .env is the one that could not be recovered.
-
-if [ -n "$UNPACK" ]; then
-  [ -f "$UNPACK" ] || { echo "error: no such tarball: $UNPACK" >&2; exit 1; }
-
-  OWNED=$(tar tzf "$UNPACK" | cut -d/ -f1 | sort -u)
-
-  # Refuse rather than guess if the tarball claims anything that holds live
-  # state. Nothing in `git archive` should, and if that ever changes this is
-  # where it must be noticed rather than after the fact.
-  for entry in $OWNED; do
-    case "$entry" in
-      .env | backups | tls)
-        echo "error: that tarball contains '$entry', which holds live state." >&2
-        echo '       Refusing to replace it.' >&2
-        exit 1 ;;
-    esac
-  done
-
-  echo 'Replacing the source in this directory …'
-  for entry in $OWNED; do
-    rm -rf "./${entry}"
-  done
-  tar xzf "$UNPACK"
-  echo "  → unpacked $UNPACK"
-fi
 
 # --- Preflight -------------------------------------------------------------
 
@@ -383,15 +423,22 @@ setting_of() {
   grep -E "^$1=" .env 2>/dev/null | head -n 1 | cut -d= -f2- | tr -d '"' || true
 }
 
-for pair in "$(setting_of TLS_DIR):./tls" "$(setting_of BACKUP_DIR):./backups"; do
-  configured=${pair%%:*}
-  fallback=${pair##*:}
-  directory=${configured:-$fallback}
-  [ -d "$directory" ] || {
-    echo "Creating $directory, which compose mounts into the container."
-    mkdir -p "$directory"
-  }
-done
+# TLS_DIR still has a host-path fallback; BACKUP_DIR does not any more. Since
+# v0.41.0 an empty BACKUP_DIR means a *named volume*, so there is no host
+# directory to create — and creating `./backups` would leave a directory nothing
+# writes to, which reads as "backups are here" to whoever finds it later.
+TLS_HOST_DIR=$(setting_of TLS_DIR)
+TLS_HOST_DIR=${TLS_HOST_DIR:-./tls}
+[ -d "$TLS_HOST_DIR" ] || {
+  echo "Creating $TLS_HOST_DIR, which compose mounts into the container."
+  mkdir -p "$TLS_HOST_DIR"
+}
+
+BACKUP_HOST_DIR=$(setting_of BACKUP_DIR)
+if [ -n "$BACKUP_HOST_DIR" ] && [ ! -d "$BACKUP_HOST_DIR" ]; then
+  echo "Creating $BACKUP_HOST_DIR, which compose mounts into the container."
+  mkdir -p "$BACKUP_HOST_DIR"
+fi
 
 # The backup directory has to be writable by the container, which runs as the
 # unprivileged `node` user — uid 1000 in the node Alpine image the Dockerfile
@@ -403,9 +450,27 @@ done
 # so without the chown below it is owned by root and every dump fails with
 # "Permission denied" — which is exactly what happened on this deployment, every
 # night from go-live, while the application stayed green.
-BACKUP_HOST_DIR=$(setting_of BACKUP_DIR)
-BACKUP_HOST_DIR=${BACKUP_HOST_DIR:-./backups}
-if [ "$(id -u)" -eq 0 ]; then
+#
+# And since v0.41.0 there may be no host directory at all. An empty BACKUP_DIR
+# means the dumps land in a Docker volume: durable, and **invisible to anything
+# backing this machine up from outside Docker**. That is the right default for a
+# deployment with no opinion and the wrong one for a NAS, where the whole point
+# of the directory is that Hyper Backup can reach it.
+#
+# Said out loud rather than left to be discovered. A dump nothing copies off the
+# machine is the failure this deployment has already had once, and it stayed
+# invisible for months because everything reported success.
+if [ -z "$BACKUP_HOST_DIR" ]; then
+  echo
+  echo 'Note: BACKUP_DIR is not set, so the nightly dumps go into a Docker volume.'
+  echo '      They are durable, and nothing outside Docker can see them — so an'
+  echo '      off-device backup of this machine will not include them.'
+  echo
+  echo '      On a NAS, set BACKUP_DIR in .env to a shared folder your existing'
+  echo '      backup already covers, for example:'
+  echo '        BACKUP_DIR=/volume1/backups/delegate'
+  echo
+elif [ "$(id -u)" -eq 0 ]; then
   chown -R 1000:1000 "$BACKUP_HOST_DIR" || {
     echo "warning: could not chown $BACKUP_HOST_DIR to uid 1000." >&2
     echo "         The nightly dump will fail until it is writable by the container." >&2

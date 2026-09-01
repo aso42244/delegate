@@ -241,7 +241,15 @@ services:
     depends_on:
       - app
     environment:
-      DELEGATE_DOMAIN: ${DELEGATE_DOMAIN:?DELEGATE_DOMAIN is required for the https profile}
+      # Not `:?`. Compose interpolates the **whole file before it applies
+      # profiles**, so a required variable inside a service nobody asked to start
+      # still refuses to parse — which is how a deployment that had never heard
+      # of Caddy failed with "DELEGATE_DOMAIN is missing a value" halfway through
+      # an upgrade.
+      #
+      # Empty is caught by the check in deploy.sh instead, where the message can
+      # name the profile and the variable together.
+      DELEGATE_DOMAIN: ${DELEGATE_DOMAIN:-}
     ports:
       - '${HTTP_PORT:-80}:80'
       - '${HTTPS_PORT:-443}:443'
