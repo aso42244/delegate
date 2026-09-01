@@ -280,7 +280,7 @@ function AccountRow({ account }: { readonly account: AccountDto }): ReactNode {
               }}
               aria-label={`Balance for ${account.name}`}
               inputMode="decimal"
-              className="money money-input money-edge ml-auto block rounded border border-accent bg-canvas px-2 py-0.5"
+              className="money money-input ml-auto block rounded border border-accent bg-canvas py-0.5 pr-3 pl-2"
             />
           ) : (
             <button
@@ -291,7 +291,7 @@ function AccountRow({ account }: { readonly account: AccountDto }): ReactNode {
                 setEditingBalance(true);
               }}
               aria-label={`Balance for ${account.name}`}
-              className={`money money-edge w-full rounded px-2 py-0.5 text-ink ${
+              className={`money w-full rounded py-0.5 pr-3 pl-2 text-ink ${
                 account.source === 'manual' ? 'hover:bg-accent-soft' : 'cursor-default'
               }`}
             >

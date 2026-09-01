@@ -8,6 +8,34 @@ import { expect, makeAccount, makeDelegation, test } from './fixtures.js';
  * found and brought back — the whole point of never hard-deleting anything.
  */
 
+/**
+ * The register's size, where it went when it left the Transactions header.
+ *
+ * It counted the whole register — a fact about how long the household has been
+ * running rather than anything the page it sat on is for.
+ */
+test('the transaction count is on Sync, not on the Transactions page', async ({
+  signedIn: page,
+  api,
+}) => {
+  const accountId = await makeAccount('Everyday Checking', 'asset', 500000n);
+  for (const [amountCents, description] of [
+    ['-4210', 'Whole Foods Market'],
+    ['-1500', 'Corner Shop'],
+  ] as const) {
+    await api.post('/api/transactions', {
+      data: { accountId, amountCents, description, postedAt: '2026-08-05T00:00:00Z' },
+    });
+  }
+
+  await page.goto('/transactions');
+  await expect(page.getByRole('heading', { name: 'Transactions' })).toBeVisible();
+  await expect(page.getByText(/transactions?\./)).toHaveCount(0);
+
+  await page.goto('/settings/sync');
+  await expect(page.getByText('2 transactions in the register.')).toBeVisible();
+});
+
 test('a delegation is edited from Settings and the Budget agrees', async ({ signedIn, api }) => {
   await makeDelegation(api, 'Grocery');
 

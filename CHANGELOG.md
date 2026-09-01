@@ -32,6 +32,21 @@ phase (`v0.1.0-phase1`, and so on).
 
 ### Changed
 
+- **A figure ends where a name begins, mirrored.** Amounts sat hard against the
+  right edge of a row while names were inset 12px from the left, so every table
+  read lopsided. Both are 12px now.
+
+  This reverses part of v0.34.0, and the reason both were right in turn: that
+  change removed a _ragged_ gap between a figure and the rule that ended the row,
+  which was the only uneven edge on the page. Removing it exposed the real
+  asymmetry underneath.
+
+- **The Transactions page no longer counts itself.** "494 transactions." was a
+  fact about how long the household has been running, not about the list somebody
+  came to that page to work through — and the pager already says which of them is
+  on screen. The count is on **Settings → Sync** now, beside the connection that
+  produced it.
+
 - **Everything on a control row is 28px** — a button, a text field, a select, a
   segmented control. Fields were 40px and the Insights window picker 36px against
   a 28px button, so a search box beside two filter buttons sat 12px taller than

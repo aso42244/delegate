@@ -212,11 +212,18 @@ export function Transactions(): ReactNode {
 
   return (
     <div>
+      {/*
+       * No subtitle. It counted the register — "494 transactions." — which is a
+       * fact about how long the household has been running, not something the
+       * page it sat on is for. It reads as a status line above a list somebody
+       * came here to *work* through, and the pager below already says which of
+       * them is on screen.
+       *
+       * The count now lives on Settings → Sync, beside the connection that
+       * produced it.
+       */}
       <PageHeader
         title="Transactions"
-        subtitle={`${total} ${total === 1 ? 'transaction' : 'transactions'}${
-          filters.uncategorized ? ' waiting to be categorized' : ''
-        }.`}
         actions={
           <Button variant="primary" onClick={() => setAdding(true)}>
             New transaction

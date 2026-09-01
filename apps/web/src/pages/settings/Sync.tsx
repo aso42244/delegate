@@ -4,6 +4,7 @@ import { backupsApi } from '../../api/backups.js';
 import { StatusLine } from '../../components/layout.jsx';
 import { describeBackupSchedule } from './backup-schedule.js';
 import { ApiError, syncApi, type SyncStatus } from '../../api/client.js';
+import { transactionsApi } from '../../api/transactions.js';
 import { Alert, Button, Modal, TextField } from '../../components/ui.jsx';
 import { SettingsCard as Card } from './SettingsCard.jsx';
 
@@ -268,6 +269,20 @@ export function SyncSection(): ReactNode {
 
   const status = useQuery({ queryKey: ['sync', 'status'], queryFn: syncApi.status });
 
+  /*
+   * How much is in the register, asked for one row.
+   *
+   * The list endpoint reports the total alongside the page, so the cheapest way
+   * to count is to ask for the smallest page there is. This is the figure that
+   * used to sit under the Transactions title, where it was a status line above a
+   * list somebody came to work through; here it is beside the connection that
+   * produced it.
+   */
+  const register = useQuery({
+    queryKey: ['transactions', 'count'],
+    queryFn: () => transactionsApi.list({ limit: 1 }),
+  });
+
   const forget = useMutation({
     mutationFn: syncApi.disconnect,
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['sync'] }),
@@ -320,6 +335,13 @@ export function SyncSection(): ReactNode {
           <StatusLine tone={summary.tone === 'positive' ? 'positive' : 'warning'}>
             {summary.text}
           </StatusLine>
+        )}
+
+        {register.data !== undefined && (
+          <p className="mt-1 text-quiet text-muted">
+            {register.data.total.toLocaleString()}{' '}
+            {register.data.total === 1 ? 'transaction' : 'transactions'} in the register.
+          </p>
         )}
 
         {/* Before the first connection the token field *is* the page. */}
