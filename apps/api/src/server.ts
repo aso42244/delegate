@@ -1,6 +1,7 @@
 import { buildApp } from './app.js';
 import { getConfig } from './config.js';
 import { prisma } from './db/client.js';
+import { assertDataKeyReadsStoredSecrets, DataKeyError } from './domain/data-key-check.js';
 import { getBudgetSettings, resolveScheduleTimezone } from './domain/settings.js';
 import { fillGaps } from './domain/snapshot-fill.js';
 import { snapshotDateFor } from './domain/snapshots.js';
@@ -17,8 +18,30 @@ import { startScheduler } from './scheduler.js';
 const config = getConfig();
 const app = await buildApp(config);
 
-// 0.0.0.0, not localhost: inside a container, binding to the loopback interface
-// makes the app unreachable from the host no matter how ports are published.
+/*
+ * Before anything listens: prove the at-rest key can still read what is stored.
+ *
+ * After `buildApp` so this reports through the same logger as everything else,
+ * and before `listen` so a container in this state never answers a request. A
+ * key that cannot read the database is not a thing to discover at a sign-in
+ * screen — the second factor is decrypted before recovery codes are even
+ * considered, so the whole household is locked out at once and the symptom names
+ * nothing.
+ *
+ * Fatal on purpose. A process that answers /health while nobody can sign in is
+ * the dead-backup shape wearing new clothes.
+ */
+try {
+  await assertDataKeyReadsStoredSecrets(prisma, config.dataKey, config.DATA_ENCRYPTION_KEY !== '');
+} catch (error) {
+  if (error instanceof DataKeyError) {
+    app.log.fatal(error.message);
+    await prisma.$disconnect();
+    process.exit(1);
+  }
+  throw error;
+}
+
 await app.listen({ port: config.PORT, host: '0.0.0.0' });
 
 /**

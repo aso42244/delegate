@@ -88,9 +88,16 @@ These are non-negotiable. Violating one is a build failure.
 
 ## Where things stand
 
-**`main` is at `v0.39.0`; the NAS is running `v0.37.0`** and needs the deploy
-below. `v0.39.0` carries `v0.38.0` with it, so it is one deploy rather than two.
-244 unit, 624 integration and 188 end-to-end tests. There is no CI: GitHub stores the code and nothing else
+**`main` is at `v0.40.0`; the NAS is running `v0.39.0`** and needs the deploy
+below.
+
+**Deploy `v0.40.0` before running `secrets:rekey`.** Until it lands,
+`DATA_ENCRYPTION_KEY` does not reach the container at all — compose reads `.env`
+to substitute into the compose file and does not hand it to the app — so the
+documented re-key would move every secret onto a key the application is not
+using and lock every account out of sign-in, recovery codes included.
+
+244 unit, 630 integration and 188 end-to-end tests. There is no CI: GitHub stores the code and nothing else
 ([ADR 022](decisions/022-the-checks-run-here-not-on-github.md)), and every gate
 runs locally through `npm run verify`.
 

@@ -58,7 +58,19 @@ services:
       LOG_LEVEL: ${LOG_LEVEL:-info}
       DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-delegate}
       SESSION_SECRET: ${SESSION_SECRET:?SESSION_SECRET is required}
+      # The key secrets at rest are encrypted with. Empty means "derive it from
+      # SESSION_SECRET", which is what every deployment did before ADR 029.
+      #
+      # **This line is why `secrets:rekey` works at all.** Compose reads `.env`
+      # to substitute into this file; it does not hand `.env` to the container.
+      # Without a line here, setting DATA_ENCRYPTION_KEY in `.env` changes
+      # nothing the application sees — so a re-key would move every secret onto
+      # a key the app is not using, and every second factor, the SimpleFIN
+      # credential and every wallet descriptor would stop decrypting at once.
+      DATA_ENCRYPTION_KEY: ${DATA_ENCRYPTION_KEY:-}
       SESSION_TTL_SECONDS: ${SESSION_TTL_SECONDS:-604800}
+      # The ceiling a rolling session cannot roll past. 90 days.
+      SESSION_ABSOLUTE_TTL_SECONDS: ${SESSION_ABSOLUTE_TTL_SECONDS:-7776000}
       # False by default, because plain http is the default (ADR 017). A browser
       # never sends a Secure cookie over plain http, so turning this on without
       # TLS in front breaks sign-in silently.
