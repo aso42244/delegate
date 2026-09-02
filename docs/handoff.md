@@ -88,15 +88,14 @@ These are non-negotiable. Violating one is a build failure.
 
 ## Where things stand
 
-**`main` is at `v0.41.2`; the NAS is running `v0.41.1`**, deployed 2026-09-01 —
+**`main` is at `v0.42.0`; the NAS is running `v0.41.1`**, deployed 2026-09-01 —
 the first release pulled as a published image rather than compiled on the NAS.
 
-`v0.41.2` is `deploy.sh`, `verify.sh` and documentation only, with **no
-application code**, so there is nothing in it the household would see. It will
-ride along with whatever ships next. One thing to know when it does: the
-`deploy.sh` fix in it ships _inside the file being replaced_, so the next
-`--unpack` deploy still runs `v0.41.1`'s copy and the one after that gets the
-fix. Nothing breaks; the sequence resolves itself a release later.
+`v0.42.0` carries `v0.41.2` with it, which was `deploy.sh`, `verify.sh` and
+documentation only. One thing to know about that: the `deploy.sh` fix in it ships
+_inside the file being replaced_, so a `--unpack` deploy still runs `v0.41.1`'s
+copy and the one after that gets the fix. The registry route is unaffected, and
+that is the ordinary deploy now. Nothing breaks either way.
 
 **Delegate installs anywhere in one line now**
 ([ADR 042](decisions/042-delegate-installs-anywhere-in-one-line.md)):
@@ -365,7 +364,7 @@ newest date is a day behind even when everything is working.
   `nightly snapshot wrote nothing` at **warn**, never an info line that reads
   like success
 
-**Since v0.41.2 — the queue teaches the rules**
+**Since v0.41.2 — the queue teaches the rules (`v0.42.0`)**
 
 Two halves of one idea, and the reason they shipped together is that they share a
 normalization neither can drift from.
