@@ -2,6 +2,7 @@ import type { ReactNode } from 'react';
 import { useBudgetLayout, type BudgetLayout } from '../../budget-layout.js';
 import { useDensity, type Density } from '../../display.js';
 import { useTheme, type ThemeChoice } from '../../theme.js';
+import { useSettingsTabs } from '../../settings-tabs.js';
 import { SettingsCard } from './SettingsCard.jsx';
 
 /**
@@ -13,9 +14,9 @@ import { SettingsCard } from './SettingsCard.jsx';
  * other sees on a phone, and one person reading in a dark room should not put
  * the other's phone into dark mode.
  *
- * All three say so once, in the last card, rather than each repeating it — and
- * inside a card rather than as a paragraph under them, because a trailing
- * explanation under the content is the thing `ui-system.md` §3 bans.
+ * They say so once, in the last card, rather than each repeating it — and inside
+ * a card rather than as a paragraph under them, because a trailing explanation
+ * under the content is the thing `ui-system.md` §3 bans.
  */
 
 const DENSITIES: readonly { value: Density; label: string; detail: string }[] = [
@@ -70,18 +71,32 @@ function Choice<T extends string>({
   );
 }
 
+const SETTINGS_TABS = [
+  { value: 'top' as const, label: 'Across the top', detail: 'A row above the cards' },
+  { value: 'side' as const, label: 'Down the side', detail: 'A column beside them' },
+];
+
 export function DisplaySection(): ReactNode {
   const [density, setDensity] = useDensity();
   const [theme, setTheme] = useTheme();
   const [budgetLayout, setBudgetLayout] = useBudgetLayout();
+  const [settingsTabs, setSettingsTabs] = useSettingsTabs();
 
   return (
     <>
-      <SettingsCard title="Theme" description="Light, dark, or whatever this device asks for.">
+      {/* Each of these is a few radio buttons, so each takes a third of the row
+          rather than all of it — which is what they were doing, three deep down
+          a page that had room for them side by side. */}
+      <SettingsCard
+        span={1}
+        title="Theme"
+        description="Light, dark, or whatever this device asks for."
+      >
         <Choice name="theme" legend="Theme" value={theme} options={THEMES} onChange={setTheme} />
       </SettingsCard>
 
       <SettingsCard
+        span={1}
         title="Budget layout"
         description="Where the three sections sit on the Budget page."
       >
@@ -104,7 +119,11 @@ export function DisplaySection(): ReactNode {
         </p>
       </SettingsCard>
 
-      <SettingsCard title="Row height" description="Spacing only — the text stays the same size.">
+      <SettingsCard
+        span={1}
+        title="Row height"
+        description="Spacing only — the text stays the same size."
+      >
         <Choice
           name="density"
           legend="Row height"
@@ -113,9 +132,23 @@ export function DisplaySection(): ReactNode {
           onChange={setDensity}
         />
 
+        <p className="mt-4 text-quiet text-muted">Remembered on this device only.</p>
+      </SettingsCard>
+
+      <SettingsCard span={1} title="Settings tabs" description="Where these sections are listed.">
+        <Choice
+          name="settingsTabs"
+          legend="Settings tabs"
+          value={settingsTabs}
+          options={SETTINGS_TABS}
+          onChange={setSettingsTabs}
+        />
+
         {/* Last card, so it closes the page — rather than a paragraph under the
             cards, which is the trailing explanation the system bans. */}
-        <p className="mt-4 text-quiet text-muted">All three are remembered on this device only.</p>
+        <p className="mt-4 text-quiet text-muted">
+          Every choice on this page is remembered on this device only.
+        </p>
       </SettingsCard>
     </>
   );

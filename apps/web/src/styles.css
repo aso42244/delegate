@@ -82,7 +82,16 @@
   --text-section: 1rem; /* 16px section titles */
   --text-page: 1.5rem; /* 24px page titles */
 
-  --spacing-sidebar: 232px;
+  /*
+   * The expanded sidebar is as wide as its longest label needs and no wider.
+   *
+   * It was a flat 232px from design.md §4, which is about 60px more than
+   * "Transactions" — the longest thing in it — actually takes, and every one of
+   * those pixels came off the page beside it. `w-fit` on the nav lets the links
+   * set the width; this caps what anything *else* in there can claim, because a
+   * long app name or an email address would otherwise size the column instead.
+   */
+  --spacing-sidebar-cap: 132px;
   --spacing-rail: 64px;
 }
 

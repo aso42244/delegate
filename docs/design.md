@@ -1019,3 +1019,39 @@ dialog to type that on the row is a step in the wrong moment.
 **It is set in one place.** The row menu opens the dialog; Settings → Delegations
 shows the target and its verdict and does not offer a second, terser editor. Two
 editors for one thing would mean the explanation exists in only one of them.
+
+## Settings, and the width the shell was taking
+
+**Eight sections.** There were twelve, and half of them held a single card, so
+the tab row read as a list of words rather than a set of places. They are grouped
+by the question somebody came to answer: **Sync** (what comes in and how it gets
+out), **Accounts**, **Budget** (the tolerance and the cadence, the delegations,
+the groupings they sit in), **Rules**, **Holdings** (Bitcoin, its node, property),
+**Access** (the household's accounts, your own credentials, the onion service),
+**Display**, **Archived**.
+
+[ADR 021](decisions/021-bitcoin-and-property-are-managed-where-they-live.md) is
+not reopened by Holdings. What it moved was the _creation_ of a holding out of the
+Accounts list, because doing it there produced one that contributed nothing to the
+identity. The cards, their create flows and their own histories are unchanged;
+only the tab they share is.
+
+**Every route that ever existed still resolves.** A section that moves is a
+bookmark that breaks and a link in somebody's notes that breaks, so the old paths
+redirect. `security` has been doing exactly that since two-factor moved to Users.
+
+**Cards are three columns, and a card states what it needs.** Settings → Display
+was three radio groups stacked down a 1,200px page, each using a fifth of its own
+row. `span` defaults to the whole row, so nothing that has not thought about it
+changed.
+
+**Where the list sits is a per-device preference** — a row across the top, or a
+rail down the side of the page. The rail is inside the page rather than in the
+shell: it belongs to Settings and disappears with it, and putting it in the shell
+would mean a second permanent column on every other screen.
+
+**The sidebar is as wide as its longest label.** §4 specified 232px, which is
+about sixty more than "Transactions" takes; the rest was margin the page beside it
+could have used. It is intrinsic now — `w-fit`, with the labels holding their line
+and anything of uncontrolled length capped and truncated, because an email address
+is wider than anything anybody navigates to.

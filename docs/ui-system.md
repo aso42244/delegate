@@ -259,7 +259,41 @@ in `vh` is sized against the window the keyboard just made a lie of.
 Most dialogs are a field or two, never scroll, and need no footer at all; their
 buttons are simply their last children.
 
-## 11. What this does not change
+## 11. Settings
+
+**Eight sections, and the row is a set of places rather than a list of words.**
+There were twelve and half of them held a single card. They are grouped by the
+question somebody came to answer — Sync, Accounts, Budget, Rules, Holdings,
+Access, Display, Archived — and every route that existed before still resolves,
+redirecting to whichever section absorbed it.
+
+**Cards are a three-column grid, and a card states what it needs.** `span` on
+`SettingsCard` is 1, 2 or 3 and **defaults to 3**, so a card that has not thought
+about it keeps the full width it always had. Three radio buttons take a third of
+a row; a table of forty rules takes all of it. Grid gutter `gap-6`, which is the
+card-to-card step from §1.
+
+**Where the sections are listed is a per-device preference**, on Settings →
+Display beside the theme and the row height: a row across the top, or a rail down
+the side of the page. The rail belongs to Settings and disappears with it, so it
+is rendered inside the page rather than in the app shell — the shell would
+otherwise need to know which page is open, and would carry a second permanent
+column everywhere else.
+
+## 12. The sidebar
+
+**Expanded, it is as wide as its longest label and no wider** — `w-fit`, not a
+number, so a renamed destination cannot leave it stale. It was a flat 232px from
+`design.md` §4, about sixty more than "Transactions" actually takes, and every one
+of those pixels came off the page beside it.
+
+Two rules make intrinsic sizing safe. Every nav label is `whitespace-nowrap`, so
+the links state a real width rather than collapsing to their longest word. And
+anything whose length nobody controls — the app name, the signed-in address — is
+capped at `--spacing-sidebar-cap` and truncates, because `w-fit` takes the widest
+child and an email address is wider than anything anybody navigates to.
+
+## 13. What this does not change
 
 Colour, the chip vocabulary, row heights, banner tones, the row-menu shell, the
 keyboard map, and every decision recorded in `design.md`. Those were settled and

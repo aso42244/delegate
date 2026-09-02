@@ -131,7 +131,7 @@ function YourAccount(): ReactNode {
   });
 
   return (
-    <SettingsCard title="Your account" description="What this budget calls you.">
+    <SettingsCard span={1} title="Your account" description="What this budget calls you.">
       <form
         onSubmit={(event: FormEvent) => {
           event.preventDefault();

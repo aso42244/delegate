@@ -58,25 +58,34 @@ beforeEach(async () => {
   });
   ownerTotpSecret = begun.json<{ secret: string }>().secret;
 
-  const confirmed = await app.inject({
-    method: 'POST',
-    url: '/api/auth/totp/confirm',
-    headers: { cookie: ownerCookie },
-    payload: { code: await generateOtp({ secret: ownerTotpSecret, epoch: previousTotpPeriod() }) },
-  });
-
   /*
-   * Asserted, because failing here is invisible otherwise.
+   * Enrolment, retried once and then asserted.
    *
    * The previous period's code is used so that a later sign-in still has an
-   * unspent one — a TOTP code is spent when used (ADR 028). A run that crosses a
-   * period boundary at the wrong moment can offer a code just outside the window
-   * the server accepts, and enrolment silently does not happen. Every later test
-   * then reads `/api/auth-events` as an un-enrolled account and gets a 403,
-   * which surfaces as "expected 403 to be 200" in a helper thirty lines away
-   * with nothing pointing at the cause. Seen once, on a loaded machine.
+   * unspent one — a TOTP code is spent when used (ADR 028). "Previous" is worked
+   * out when the code is generated, so a run that crosses a period boundary
+   * between generating and validating offers one that is two steps back, and the
+   * server refuses it. Enrolment then silently does not happen and every later
+   * test reads `/api/auth-events` as an un-enrolled account, which surfaces as
+   * "expected 403 to be 200" in a helper thirty lines away.
+   *
+   * Retrying recomputes against the new time; asserting makes the remaining case
+   * a named failure rather than a confusing one.
    */
-  expect(confirmed.statusCode, confirmed.body).toBe(200);
+  async function confirmTwoFactor(): Promise<number> {
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/auth/totp/confirm',
+      headers: { cookie: ownerCookie },
+      payload: {
+        code: await generateOtp({ secret: ownerTotpSecret, epoch: previousTotpPeriod() }),
+      },
+    });
+    return response.statusCode;
+  }
+
+  const confirmed = (await confirmTwoFactor()) === 200 ? 200 : await confirmTwoFactor();
+  expect(confirmed, 'two-factor enrolment failed twice in setup').toBe(200);
 });
 
 interface EventView {

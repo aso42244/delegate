@@ -135,16 +135,38 @@ export const test = base.extend<BudgetFixtures>({
     });
     ownerTotpSecret = ((await begun.json()) as { secret: string }).secret;
 
-    await page.request.post('/api/auth/totp/confirm', {
-      // The previous period's code: confirming spends what it is given, and the
-      // sign-in helper above needs a code that has not already been used.
-      data: {
-        code: await generateOtp({
-          secret: ownerTotpSecret,
-          epoch: Math.floor(Date.now() / 1000) - 30,
-        }),
-      },
-    });
+    /*
+     * Enrolment, checked — and retried once if the clock got in the way.
+     *
+     * The **previous** period's code is offered because confirming spends what
+     * it is given, and the sign-in helper above needs one that has not been
+     * used. The race is that "previous" is worked out when the code is
+     * generated: if the clock crosses a period boundary between generating and
+     * validating, it has become two steps back and the server refuses it.
+     *
+     * Unchecked, that failure was silent and every later request in the spec
+     * answered 403 `two_factor_required` — which surfaces as a fixture blowing
+     * up somewhere unrelated, with nothing pointing at enrolment. Retrying
+     * recomputes against the new time, and asserting means the third
+     * possibility is a named failure rather than twenty confusing ones.
+     */
+    async function confirmTwoFactor(): Promise<boolean> {
+      const response = await page.request.post('/api/auth/totp/confirm', {
+        data: {
+          code: await generateOtp({
+            secret: ownerTotpSecret,
+            epoch: Math.floor(Date.now() / 1000) - 30,
+          }),
+        },
+      });
+      return response.ok();
+    }
+
+    if (!(await confirmTwoFactor()) && !(await confirmTwoFactor())) {
+      throw new Error(
+        'Two-factor enrolment failed twice in the signed-in fixture. Every request after this would answer 403.',
+      );
+    }
 
     await page.goto('/');
     await use(page);

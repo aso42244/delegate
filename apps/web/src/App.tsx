@@ -11,15 +11,9 @@ import { SetUpTwoFactor } from './pages/SetUpTwoFactor.jsx';
 import { MainBudget } from './pages/MainBudget.jsx';
 import { AccountsSection } from './pages/settings/Accounts.jsx';
 import { ArchivedSection } from './pages/settings/Archived.jsx';
-import { BitcoinSection } from './pages/settings/Bitcoin.jsx';
-import { PropertiesSection } from './pages/settings/Properties.jsx';
-import { BudgetSection } from './pages/settings/Budget.jsx';
-import { DelegationsSection } from './pages/settings/Delegations.jsx';
-import { GroupingsSection } from './pages/settings/Groupings.jsx';
 import { RulesSection } from './pages/settings/Rules.jsx';
 import { DisplaySection } from './pages/settings/Display.jsx';
-import { TorSection } from './pages/settings/Tor.jsx';
-import { UsersSection } from './pages/settings/Users.jsx';
+import { AccessSection, BudgetGroupSection, HoldingsSection } from './pages/settings/Sections.jsx';
 import { SettingsLayout } from './pages/settings/SettingsLayout.jsx';
 import { SyncSection } from './pages/settings/Sync.jsx';
 import { Transactions } from './pages/Transactions.jsx';
@@ -146,19 +140,30 @@ export function App(): ReactNode {
             <Route index element={<SettingsLanding />} />
             <Route path="sync" element={<SyncSection />} />
             <Route path="accounts" element={<AccountsSection />} />
-            <Route path="delegations" element={<DelegationsSection />} />
-            <Route path="groupings" element={<GroupingsSection />} />
+            <Route path="budget" element={<BudgetGroupSection />} />
             <Route path="rules" element={<RulesSection />} />
-            <Route path="bitcoin" element={<BitcoinSection />} />
-            <Route path="properties" element={<PropertiesSection />} />
-            <Route path="budget" element={<BudgetSection />} />
-            <Route path="users" element={<UsersSection />} />
-            <Route path="tor" element={<TorSection />} />
-            {/* The tab was Security until two-factor moved to Users; anything
-                bookmarked or linked still lands somewhere. */}
-            <Route path="security" element={<Navigate to="/settings/tor" replace />} />
+            <Route path="holdings" element={<HoldingsSection />} />
+            <Route path="access" element={<AccessSection />} />
             <Route path="display" element={<DisplaySection />} />
             <Route path="archived" element={<ArchivedSection />} />
+
+            {/*
+              Every route this page has ever had still resolves.
+              
+              Twelve tabs became eight, and a section that moves is a bookmark
+              that breaks, a link in somebody's notes that breaks, and a test
+              that fails for a reason unrelated to what it is testing. Each of
+              these lands on whichever section absorbed it. The first was
+              `security`, which became Tor when two-factor moved to Users, and it
+              has been redirecting quietly ever since.
+            */}
+            <Route path="security" element={<Navigate to="/settings/access" replace />} />
+            <Route path="users" element={<Navigate to="/settings/access" replace />} />
+            <Route path="tor" element={<Navigate to="/settings/access" replace />} />
+            <Route path="delegations" element={<Navigate to="/settings/budget" replace />} />
+            <Route path="groupings" element={<Navigate to="/settings/budget" replace />} />
+            <Route path="bitcoin" element={<Navigate to="/settings/holdings" replace />} />
+            <Route path="properties" element={<Navigate to="/settings/holdings" replace />} />
           </Route>
         </Route>
       </Route>

@@ -35,6 +35,29 @@ phase (`v0.1.0-phase1`, and so on).
 - Bills: "Fortnightly" is now **Every two weeks**, which is what Settings → Budget
   already calls that cadence.
 
+- **Settings is eight sections, not twelve.** Half of the twelve held a single
+  card, which made the tab row a list of words to read rather than a set of
+  places to go. They are grouped by the question you came to answer: Sync,
+  Accounts, Budget, Rules, Holdings, Access, Display, Archived.
+
+  Every route that existed before still resolves — `/settings/delegations`,
+  `/settings/tor` and the rest redirect to whichever section absorbed them, so
+  bookmarks and links keep working.
+
+- **Settings cards sit side by side where they fit.** Three columns on a wide
+  screen, and each card says how much of the row it needs. Three radio buttons
+  no longer take the width of a table of forty rules; a card that has not
+  declared anything keeps the full width it always had.
+
+- **Where the section list sits is now a choice**, on Settings → Display: a row
+  across the top as before, or a rail down the side of the page. Per device, like
+  the theme and the row height.
+
+- **The sidebar is as wide as its longest label and no wider.** It was a flat
+  232px — about sixty more than "Transactions" takes, and every one of those came
+  off the page beside it. The width follows the content now, so renaming a
+  destination cannot leave it stale.
+
 ## [0.45.0] — 2026-09-02
 
 ### Added

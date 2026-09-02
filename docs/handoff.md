@@ -108,7 +108,7 @@ and the image is published multi-arch on version tags. The NAS is one deployment
 of many rather than the deployment, and it keeps working — it adopts the secrets
 already in its `.env`.
 
-293 unit, 716 integration and 206 end-to-end tests. There is no CI: GitHub stores the code and nothing else
+293 unit, 716 integration and 210 end-to-end tests. There is no CI: GitHub stores the code and nothing else
 ([ADR 022](decisions/022-the-checks-run-here-not-on-github.md)), and every gate
 runs locally through `npm run verify`.
 
@@ -536,6 +536,24 @@ and sending screenshots. None of it was visible from a test fixture.
   says "fortnightly" any more — Settings → Budget already calls that cadence
   "Every two weeks"
 
+**And the shell, from the same review**
+
+- **Settings is eight sections rather than twelve**, grouped by the question
+  somebody came to answer. Half of the twelve held a single card. **Every old
+  route redirects** — a section that moves is a bookmark that breaks and a test
+  that fails for a reason unrelated to what it tests
+- **Settings cards are a three-column grid**, and a card declares its `span`,
+  defaulting to the whole row. Display was three radio groups stacked down a
+  1,200px page, each using a fifth of its own row
+- **Where the section list sits is a per-device preference** — a row on top or a
+  rail down the side. The rail lives inside the Settings page rather than in the
+  shell: it belongs to Settings and disappears with it
+- **The sidebar is `w-fit`**, as wide as "Transactions" needs and no wider. It
+  was a flat 232px. The two things that make intrinsic sizing safe are written
+  down in `ui-system.md` §12: labels hold their line, and anything of
+  uncontrolled length is capped, because `w-fit` takes the widest child and an
+  email address is wider than anything anybody navigates to
+
 ### Known gaps to fix
 
 None outstanding. The September security review is closed — see
@@ -881,15 +899,21 @@ are not negotiable by a request, whoever wrote it.
   over contention is how the racy tests in this suite got written the first
   time. `colima start` again when the image step is needed.
 
-- **`auth-events.test.ts` can fail as a 403 in a helper, and the cause is
-  enrolment.** Its setup confirms two-factor with the _previous_ period's code,
-  so that a later sign-in still has an unspent one — a code is spent when used
-  (ADR 028). A run that crosses a period boundary at the wrong moment offers a
-  code just outside the accepted window, enrolment quietly does not happen, and
-  three tests later `/api/auth-events` answers 403 to an un-enrolled account.
-  Seen once, on 2026-09-02, on a loaded machine; it passes alone and in a clean
-  run. The confirm is asserted now, so the next occurrence names itself instead
-  of surfacing as "expected 403 to be 200" thirty lines away.
+- **A 403 `two_factor_required` from a fixture is an enrolment race, not a code
+  fault — and it is fixed now.** Both suites enrol by confirming with the
+  _previous_ period's code, so a later sign-in still has an unspent one (a code
+  is spent when used, ADR 028). "Previous" is worked out when the code is
+  generated, so a run that crosses a period boundary between generating and
+  validating offers one two steps back, and the server refuses it. Enrolment then
+  silently did not happen and every later request answered 403 — surfacing as
+  "expected 403 to be 200" in a helper thirty lines away, or as a fixture blowing
+  up in an unrelated spec.
+
+  Both **retry once and then assert** now, which removes the flake and makes the
+  remaining case a named failure. Seen twice on 2026-09-02, in
+  `auth-events.test.ts` and then in `manual-entry.spec.ts`; the second was found
+  in one read because `e2e/fixtures.ts` had started reporting the status and body
+  of a failed fixture request.
 
 - **Orphaned servers are the other thing to watch for.** A `verify` run that is
   interrupted can leave `node apps/api/dist/server.js` running against the
@@ -918,7 +942,7 @@ npm run verify:quick      # the same, minus the container image build
 
 npm run test              # 293 unit
 npm run test:integration  # 716 integration
-npm run test:e2e          # 206 end-to-end, needs a build first
+npm run test:e2e          # 210 end-to-end, needs a build first
 ```
 
 `npm run verify` is the gate. It runs migrations, typecheck, lint, formatting,
