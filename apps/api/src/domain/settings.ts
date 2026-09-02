@@ -37,6 +37,15 @@ export interface BudgetSettings {
    * the first should follow the environment if it later changes.
    */
   readonly scheduleTimezone: string | null;
+  /**
+   * Whether an overdue recurring bill puts a pill in the page header.
+   *
+   * Only the telling. The Bills page is always there — a switch that hid the
+   * list as well would make "I turned the noise off" and "there are no bills"
+   * indistinguishable, which is the state this application keeps refusing to
+   * create.
+   */
+  readonly recurringAlertsEnabled: boolean;
 }
 
 export async function getBudgetSettings(db: Db): Promise<BudgetSettings> {
@@ -50,6 +59,7 @@ export async function getBudgetSettings(db: Db): Promise<BudgetSettings> {
       remoteOverTorEnabled: true,
       remoteOverTorEnabledAt: true,
       scheduleTimezone: true,
+      recurringAlertsEnabled: true,
     },
   });
 
@@ -63,6 +73,9 @@ export async function getBudgetSettings(db: Db): Promise<BudgetSettings> {
     remoteOverTorEnabled: settings?.remoteOverTorEnabled ?? false,
     remoteOverTorEnabledAt: settings?.remoteOverTorEnabledAt ?? null,
     scheduleTimezone: settings?.scheduleTimezone ?? null,
+    // On unless a row says otherwise: a bill that stopped arriving is the reason
+    // to detect one at all.
+    recurringAlertsEnabled: settings?.recurringAlertsEnabled ?? true,
   };
 }
 
@@ -107,6 +120,7 @@ export interface UpdateBudgetSettingsInput {
   readonly identityToleranceCents?: Cents | undefined;
   readonly payCadence?: PayCadence | undefined;
   readonly remoteOverTorEnabled?: boolean | undefined;
+  readonly recurringAlertsEnabled?: boolean | undefined;
   /** Null clears the choice and returns to following `SCHEDULE_TIMEZONE`. */
   readonly scheduleTimezone?: string | null | undefined;
 }
@@ -181,6 +195,7 @@ export async function updateBudgetSettings(
       payCadence: input.payCadence ?? DEFAULT_PAY_CADENCE,
       remoteOverTorEnabled: input.remoteOverTorEnabled ?? false,
       scheduleTimezone: input.scheduleTimezone ?? null,
+      recurringAlertsEnabled: input.recurringAlertsEnabled ?? true,
     },
     update: {
       ...(input.undoWindowHours === undefined ? {} : { undoWindowHours: input.undoWindowHours }),
@@ -198,6 +213,9 @@ export async function updateBudgetSettings(
             // Stamped only when switched on, so the interface can say since when.
             remoteOverTorEnabledAt: input.remoteOverTorEnabled ? new Date() : null,
           }),
+      ...(input.recurringAlertsEnabled === undefined
+        ? {}
+        : { recurringAlertsEnabled: input.recurringAlertsEnabled }),
     },
     select: {
       undoWindowHours: true,
@@ -207,6 +225,7 @@ export async function updateBudgetSettings(
       remoteOverTorEnabled: true,
       remoteOverTorEnabledAt: true,
       scheduleTimezone: true,
+      recurringAlertsEnabled: true,
     },
   });
 

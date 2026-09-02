@@ -23,6 +23,7 @@ import { UsersSection } from './pages/settings/Users.jsx';
 import { SettingsLayout } from './pages/settings/SettingsLayout.jsx';
 import { SyncSection } from './pages/settings/Sync.jsx';
 import { Transactions } from './pages/Transactions.jsx';
+import { Bills } from './pages/Bills.jsx';
 import { Insights } from './pages/Insights.jsx';
 import { Utilities } from './pages/Utilities.jsx';
 import { SignIn } from './pages/SignIn.jsx';
@@ -138,6 +139,7 @@ export function App(): ReactNode {
         <Route element={<AppShell appName={appName} />}>
           <Route index element={<MainBudget />} />
           <Route path="transactions" element={<Transactions />} />
+          <Route path="bills" element={<Bills />} />
           <Route path="utilities" element={<Utilities />} />
           <Route path="insights" element={<Insights />} />
           <Route path="settings" element={<SettingsLayout />}>

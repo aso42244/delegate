@@ -74,6 +74,9 @@ async function resetDatabase(): Promise<void> {
       simplefinAccessUrlEncrypted: null,
       simplefinConnectedAt: null,
       bitcoinInBudgetAckAt: null,
+      // The product default. This row survives the truncate, so a value left
+      // here from one test silences the next one's notification.
+      recurringAlertsEnabled: true,
     },
   });
 }
@@ -176,6 +179,20 @@ export async function makeDelegation(
   const response = await api.post('/api/delegations', {
     data: { name, amountToDelegateCents },
   });
+
+  /*
+   * The status and the body when this goes wrong, not `undefined.id`.
+   *
+   * A fixture that fails as "Cannot read properties of undefined" reports the
+   * line that read the field rather than the request that did not answer, which
+   * is a failure in a spec nobody touched pointing at a file nobody suspects.
+   * Once, on a loaded machine, that cost a full re-run to learn nothing.
+   */
+  if (!response.ok()) {
+    throw new Error(
+      `POST /api/delegations answered ${response.status()}: ${await response.text()}`,
+    );
+  }
   const body = (await response.json()) as { delegation: { id: string } };
   return body.delegation.id;
 }

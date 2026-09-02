@@ -30,6 +30,7 @@ const updateSchema = z
     identityToleranceCents: centsIn.optional(),
     payCadence: z.enum(PAY_CADENCES).optional(),
     remoteOverTorEnabled: z.boolean().optional(),
+    recurringAlertsEnabled: z.boolean().optional(),
     /**
      * An IANA zone, or null to go back to following `SCHEDULE_TIMEZONE`.
      *
@@ -71,6 +72,7 @@ function present(
     cyclesPerYear: CYCLES_PER_YEAR[settings.payCadence],
     remoteOverTorEnabled: settings.remoteOverTorEnabled,
     remoteOverTorEnabledAt: dateOut(settings.remoteOverTorEnabledAt),
+    recurringAlertsEnabled: settings.recurringAlertsEnabled,
 
     /**
      * Three fields rather than one, because the interface has three things to

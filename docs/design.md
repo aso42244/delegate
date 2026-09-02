@@ -919,3 +919,36 @@ money column each.
 describes the screen in front of somebody. Two columns on a 27-inch monitor
 should not put two columns on the other person's laptop, where it would squeeze
 both and improve neither.
+
+## A sixth destination
+
+**Bills** joins Budget, Transactions, Utilities, Insights and Settings. It lists
+what recurs, worked out from the register itself — see
+[ADR 045](decisions/045-a-bill-is-inferred-not-entered.md) — and it is a
+destination rather than a card on an existing page because the household looks at
+it for a different reason than any of the others: not "what did we spend" but
+"what is coming, and what has not arrived".
+
+**The tab bar's columns come from the page list**, not from a number written
+beside it. It said `grid-cols-5` while the list held five, so a sixth destination
+would have appeared in the sidebar and silently off the end of the bar — the
+exact drift the shared list exists to prevent. Six tabs on a 390px screen give
+each 65px, so a label wider than that truncates: `Transacti…` under an icon that
+already says which one it is. That is the cost of the sixth and it was taken
+knowingly. A second, shorter name for one page would have been worse — two names
+for one thing is what the UI audit spent its time deleting.
+
+**The Bills table gives its width to the merchant name**, which is the only
+column whose content has no upper bound. Everything else states a width and is
+taken out of what is left. A "last seen" column was drawn and then removed on
+exactly that ground: the cadence says how often, Next says when, and an overdue
+row already carries how many days late it is, so a fourth way of saying the same
+thing was being paid for out of the one column that needed the room.
+
+**Status is a word before it is a colour.** `Overdue`, `Due now`, `Expected`,
+`Stopped?` — §9 says never to convey state by colour alone, and the colour here
+decides how fast a row is read rather than what it means.
+
+**Typical and last sit beside each other**, and the last one is marked when it is
+more than a tenth above. That comparison is the whole of how a price rise becomes
+visible, and it costs one column.

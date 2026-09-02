@@ -46,6 +46,13 @@ export function Icon({ name }: { readonly name: PageIcon }): ReactNode {
         <path d="M10 15l3.5-4" />
       </>
     ),
+    // A page with a fold: a bill in an envelope.
+    bills: (
+      <>
+        <path d="M5 3.5h10v13l-2.5-1.5L10 16.5l-2.5-1.5L5 16.5z" />
+        <path d="M8 7.5h4M8 10.5h4" />
+      </>
+    ),
     // Bars of unequal height: a comparison.
     insights: (
       <>
@@ -78,11 +85,12 @@ export function Icon({ name }: { readonly name: PageIcon }): ReactNode {
   );
 }
 
-export type PageIcon = 'budget' | 'transactions' | 'utilities' | 'insights' | 'settings';
+export type PageIcon = 'budget' | 'transactions' | 'bills' | 'utilities' | 'insights' | 'settings';
 
 export const PAGES = [
   { to: '/', label: 'Budget', icon: 'budget', end: true },
   { to: '/transactions', label: 'Transactions', icon: 'transactions', end: false },
+  { to: '/bills', label: 'Bills', icon: 'bills', end: false },
   { to: '/utilities', label: 'Utilities', icon: 'utilities', end: false },
   { to: '/insights', label: 'Insights', icon: 'insights', end: false },
   { to: '/settings', label: 'Settings', icon: 'settings', end: false },

@@ -301,6 +301,47 @@ shared rather than duplicated because a drift between them would mean a rule
 created from a suggestion no longer matched the transactions that produced it,
 and nothing would say so.
 
+## Bills are inferred, never entered
+
+A bill is a merchant whose charges have landed at a steady interval, and that is
+computed from the transactions on every request and **stored nowhere**
+([ADR 045](decisions/045-a-bill-is-inferred-not-entered.md)). There is no bills
+table and no `is_recurring` flag: a hand-maintained list is a second copy of what
+the register already says, and a second copy goes wrong in the direction nobody
+notices — nothing prompts you to delete the row for a service you cancelled.
+
+`domain/recurring.ts` holds the bounds and the reason for each. The one doing the
+real work is that nothing faster than a fortnight qualifies: groceries recur in
+the plain sense, and a tolerant consistency check would happily call the weekly
+shop a weekly bill.
+
+It **proposes and never writes**, like a check match (ADR 030) and a suggested
+delegation (ADR 044). The only column the feature added is
+`budget_settings.recurring_alerts_enabled`, which decides whether an overdue bill
+raises a pill — the page is there either way.
+
+Intervals are measured in **days in the household's zone**, not in instants: a
+charge posted at eight in the evening and one posted at nine the next morning are
+thirteen hours apart and one day apart, and it is the day the schedule is made
+of. ADR 037.
+
+## Export
+
+Three CSVs, and three rather than one because a split transaction has one amount
+and two envelope movements
+([ADR 046](decisions/046-the-export-is-three-files.md)). The register file sums
+to what left the accounts; the ledger file sums to what the delegations hold.
+
+Money leaves as a **decimal**, which is the one place in this codebase that is
+true. ADR 002 governs JSON, where a float would silently lose a cent; a CSV is
+opened in a spreadsheet, and a column of `-4210` where `-42.10` was meant is a
+column somebody sums and acts on. It is formatted from the `BIGINT` by hand, so
+the value still never passes through a float.
+
+`http/csv.ts` carries the other half: a field this application generated is
+marked `raw()` and written as-is, and everything else — anything the feed wrote —
+is defended against being read as a formula.
+
 ## Authentication
 
 A username, an argon2id password hash, a session cookie, and an optional second

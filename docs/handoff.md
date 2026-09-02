@@ -105,7 +105,7 @@ and the image is published multi-arch on version tags. The NAS is one deployment
 of many rather than the deployment, and it keeps working — it adopts the secrets
 already in its `.env`.
 
-267 unit, 668 integration and 191 end-to-end tests. There is no CI: GitHub stores the code and nothing else
+273 unit, 690 integration and 197 end-to-end tests. There is no CI: GitHub stores the code and nothing else
 ([ADR 022](decisions/022-the-checks-run-here-not-on-github.md)), and every gate
 runs locally through `npm run verify`.
 
@@ -403,6 +403,47 @@ normalization neither can drift from.
   dialog previews nothing, so a needle that is too broad shows up only after the
   next sync
 
+**Since v0.42.0 — Bills, and the way out**
+
+- **Bills is a page of its own**, sixth in the sidebar
+  ([ADR 045](decisions/045-a-bill-is-inferred-not-entered.md)). Everything on it
+  is worked out from the register and **stored nowhere** — there is no bills
+  table and nothing to maintain, because a hand-kept list of bills is a second
+  copy of what the transactions already say and is wrong within a month, in the
+  direction nobody notices.
+
+  It answers the one question nothing else here can: **the bill that did not
+  arrive.** Every other condition this application raises is about something that
+  happened; a failed autopay leaves no trace and looks exactly like a quiet
+  month. Typical and last sit beside each other on the row, so a subscription
+  that renewed higher shows up too.
+
+  The bound that does the real work is **nothing faster than a fortnight**.
+  Groceries and coffee recur in the plain sense and their gaps are regular enough
+  that a tolerant check would call the weekly shop a weekly bill. A bill that has
+  plainly stopped reads `Stopped?` and raises nothing — a warning nobody can act
+  on teaches people to stop reading warnings
+
+- **The overdue pill has a switch**, on Settings → Budget, and it is the first
+  notification here that does. It is the right one to have it: every other
+  condition is a fact the application knows, while this is a reading of a
+  schedule it inferred. **The page stays either way** — hiding the list as well
+  would make "I turned the noise off" and "there are no bills" indistinguishable
+
+- **Export**, on Settings → Sync: the register, the delegation ledger and the
+  nightly snapshots, as three CSVs
+  ([ADR 046](decisions/046-the-export-is-three-files.md)). Three rather than one
+  because a split has one amount and two envelope movements, so one wide file
+  would either double-count the amount or lose the split. Money is a **decimal**
+  rather than cents — ADR 002 is a rule about JSON, and a spreadsheet column of
+  `-4210` is one somebody sums and acts on — and a description that a spreadsheet
+  would otherwise _run_ is defused on the way out. **It is not a backup**: no
+  ids, no credentials, and it cannot restore anything
+
+- `merchantKey` is now load-bearing in three places — suggestions, the rule
+  dialog, and what counts as one bill. That is why it lives in `@budget/shared`,
+  and why a change to it now moves three features at once
+
 ### Known gaps to fix
 
 None outstanding. The September security review is closed — see
@@ -437,23 +478,16 @@ doing next, in the order they would pay off:
   to be reminded of the rest once those are deployed. They are, in the order they
   were argued:
 
-  1. **Structured targets on a delegation** — `"$2,200 by Dec 27"` as fields
-     rather than freeform `notes`. [architecture.md](architecture.md) already
-     anticipates it: the owner does that arithmetic by hand today and the column
-     is freeform precisely so structured targets stay a purely additive
-     migration. Biggest upside of the three; touches the Budget row, so read
-     `ui-system.md` first.
-  2. **Recurring-bill detection** — an expected date and amount per merchant from
-     history alone, and a pill when one is overdue. Catches a failed autopay and
-     a subscription that renewed higher. It proposes, never writes, on the same
-     line ADR 030 drew for a cleared check.
-  3. **Export** — CSV of transactions, the ledger and the snapshot series. There
-     is none anywhere in the tree; the only way data leaves is a `pg_dump` nobody
-     can read. Cheapest of the three, and the one whose value does not depend on
-     a judgement about how the household works.
+  Two of the three are now built — recurring bills (ADR 045) and the export
+  (ADR 046). What is left of that list is **structured targets on a
+  delegation**: `"$2,200 by Dec 27"` as fields rather than freeform `notes`.
+  [architecture.md](architecture.md) already anticipates it — the owner does that
+  arithmetic by hand today, and the column is freeform precisely so structured
+  targets stay a purely additive migration. It touches the Budget row, so read
+  `ui-system.md` before starting.
 
-  Ask him rather than picking. Phases 1–3 and the deploy work are done and the
-  September review is closed, so nothing here is urgent.
+  Ask him rather than picking anything else. Phases 1–3 and the deploy work are
+  done and the September review is closed, so nothing here is urgent.
 
 - If something does need doing and the end-to-end suite misbehaves, **read
   "Before believing a suite of failures" below before touching the branch.**
@@ -784,9 +818,9 @@ cannot collide.
 npm run verify            # everything, in the order CI used to run it
 npm run verify:quick      # the same, minus the container image build
 
-npm run test              # 267 unit
-npm run test:integration  # 668 integration
-npm run test:e2e          # 191 end-to-end, needs a build first
+npm run test              # 273 unit
+npm run test:integration  # 690 integration
+npm run test:e2e          # 197 end-to-end, needs a build first
 ```
 
 `npm run verify` is the gate. It runs migrations, typecheck, lint, formatting,

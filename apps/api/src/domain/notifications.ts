@@ -3,6 +3,8 @@ import type { Db } from '../db/client.js';
 import { latestPrice } from './bitcoin.js';
 import { newestBackupAt } from './backup.js';
 import { proposeCheckMatches } from './checks.js';
+import { findRecurringBills, overdueBills } from './recurring.js';
+import { getBudgetSettings } from './settings.js';
 
 /**
  * The banners the application raises about itself.
@@ -36,6 +38,7 @@ export interface Notification {
     | 'bitcoin_price_stale'
     | 'accounts_need_review'
     | 'checks_awaiting_confirmation'
+    | 'recurring_bill_overdue'
     | 'backup_failing';
   readonly severity: NotificationSeverity;
   /**
@@ -85,6 +88,7 @@ export async function buildNotifications(
   options: NotificationOptions = {},
 ): Promise<Notification[]> {
   const notifications: Notification[] = [];
+  const settings = await getBudgetSettings(db);
 
   const [latestRun, accounts, uncategorized, oldestUncategorized, price, checkMatches, oldestUser] =
     await Promise.all([
@@ -270,6 +274,35 @@ export async function buildNotifications(
       // up.
       actionPath: '/transactions?uncategorized=true',
     });
+  }
+
+  /*
+   * A bill that has not arrived.
+   *
+   * The only condition here that is about something *not* happening, which is
+   * why nothing else could raise it: a failed autopay and a cancelled service
+   * both look like an ordinary quiet week from the inside.
+   *
+   * The one notification with a switch, on Settings → Budget. It is a reading of
+   * a schedule inferred from history rather than a fact the application knows,
+   * so a household that finds it noisy can turn it off — and the page stays
+   * either way, because turning off the telling should not hide the list.
+   */
+  if (settings.recurringAlertsEnabled) {
+    const overdue = overdueBills(await findRecurringBills(db, timeZone, now));
+    if (overdue.length > 0) {
+      const first = overdue[0]!;
+      notifications.push({
+        kind: 'recurring_bill_overdue',
+        pill: overdue.length === 1 ? '1 bill overdue' : `${overdue.length} bills overdue`,
+        severity: 'warning',
+        message:
+          overdue.length === 1
+            ? `${first.name} usually arrives every ${first.intervalDays} days and is ${first.daysLate} days late.`
+            : `${overdue.length} bills have not arrived on time, the latest being ${first.name} at ${first.daysLate} days.`,
+        actionPath: '/bills',
+      });
+    }
   }
 
   // §8: a holding is never shown as zero or blank when the feed is unreachable —

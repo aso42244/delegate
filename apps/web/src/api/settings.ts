@@ -21,6 +21,8 @@ export interface BudgetSettingsDto {
   /** Whether a request over the onion address is answered at all. */
   readonly remoteOverTorEnabled: boolean;
   readonly remoteOverTorEnabledAt: string | null;
+  /** Whether an overdue bill puts a pill in the header. The page is there either way. */
+  readonly recurringAlertsEnabled: boolean;
   /** Null until the Tor service has been started and made one. */
   readonly onionAddress: string | null;
 
@@ -67,6 +69,7 @@ export const settingsApi = {
     identityToleranceCents?: string;
     payCadence?: PayCadence;
     remoteOverTorEnabled?: boolean;
+    recurringAlertsEnabled?: boolean;
     /** Null clears the choice and goes back to following `SCHEDULE_TIMEZONE`. */
     scheduleTimezone?: string | null;
   }) => api.patch<BudgetSettingsDto>('/api/settings', input),

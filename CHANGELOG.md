@@ -6,7 +6,46 @@ phase (`v0.1.0-phase1`, and so on).
 
 ## [Unreleased]
 
-Nothing yet.
+### Added
+
+- **Bills** — a page of its own, listing what recurs, worked out from the
+  register and stored nowhere.
+
+  The question it exists for is the one nothing else here can answer: **the bill
+  that did not arrive.** A failed autopay and a cancelled service look identical
+  from inside the budget — no transaction, which is also what a quiet month looks
+  like — and stay invisible until a balance is wrong. Typical and last sit beside
+  each other on the row, so a subscription that renewed higher is visible too.
+
+  Deliberately conservative: three charges, every gap within a quarter of the
+  median, nothing faster than a fortnight. That last bound is what stops the
+  weekly shop being called a weekly bill. A bill that has plainly stopped reads
+  `Stopped?` and raises nothing.
+  [ADR 045](docs/decisions/045-a-bill-is-inferred-not-entered.md).
+
+- **"Tell me when a bill is overdue"**, on Settings → Budget. The first
+  notification here with a switch, and the right one to have it: every other
+  condition is a fact the application knows, while this is a reading of a
+  schedule it inferred. The page stays either way — a switch that hid the list
+  as well would make "I turned the noise off" and "there are no bills"
+  indistinguishable.
+
+- **Export**, on Settings → Sync. Three CSV files: the register, the delegation
+  ledger, and the nightly snapshots.
+
+  Three rather than one because a split transaction has one amount and two
+  envelope movements, so a single file would either double-count the amount or
+  lose the split. Money is a decimal a spreadsheet can add up, and a description
+  that a spreadsheet would otherwise _run_ — `=HYPERLINK(...)` in a merchant
+  name — is defused on the way out.
+  [ADR 046](docs/decisions/046-the-export-is-three-files.md).
+
+### Changed
+
+- The phone's tab bar takes its column count from the shared page list rather
+  than a number written beside it. It said `grid-cols-5` while the list had five
+  entries, so a sixth destination would have appeared in the sidebar and silently
+  off the end of the bar.
 
 ## [0.42.0] — 2026-09-01
 
