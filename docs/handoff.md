@@ -88,12 +88,13 @@ These are non-negotiable. Violating one is a build failure.
 
 ## Where things stand
 
-**`main` is at `v0.43.0`; the NAS is running `v0.41.1`**, deployed 2026-09-01 —
+**`main` is at `v0.44.0`; the NAS is running `v0.41.1`**, deployed 2026-09-01 —
 the first release pulled as a published image rather than compiled on the NAS.
 
-`v0.43.0` carries `v0.41.2` and `v0.42.0` with it. The owner deliberately held
-the deploy so that the queue work, Bills and the export would land together, and
-reviewed them in one pass. One thing to know about `v0.41.2`: the `deploy.sh` fix
+Four releases are waiting: `v0.41.2` and `v0.42.0` are carried by `v0.43.0`,
+which the owner held deliberately so the queue work, Bills and the export would
+land together. `v0.44.0` adds targets, built while he reviewed the rest, and
+carries all of it. One thing to know about `v0.41.2`: the `deploy.sh` fix
 in it ships _inside the file being replaced_, so a `--unpack` deploy still runs
 `v0.41.1`'s copy and the one after that gets the fix. The registry route is
 unaffected, and that is the ordinary deploy now.
@@ -445,7 +446,7 @@ normalization neither can drift from.
   dialog, and what counts as one bill. That is why it lives in `@budget/shared`,
   and why a change to it now moves three features at once
 
-**Since v0.43.0 — targets, and the promise around them**
+**Since v0.43.0 — targets, and the promise around them (`v0.44.0`)**
 
 - **A delegation can carry a target**: what it is saving towards, and by when
   ([ADR 047](decisions/047-a-target-never-moves-an-amount.md)). This is the
