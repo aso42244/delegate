@@ -22,8 +22,20 @@ phase (`v0.1.0-phase1`, and so on).
   carries arrows on every grouping — dragging is the fast way and it is not an
   accessible one.
 
+### Fixed
+
+- **A row or heading can be dropped at the end of a list.** Dropping onto a row
+  always inserted before it, so there was no gesture that meant "after this one"
+  — the last place in every list and every grouping was unreachable by dragging.
+  The pointer's half of the row decides now, and the line shows which edge it
+  will land on. Dragging a heading over another grouping's rows means "past that
+  grouping", which is how the bottom of a long section is reached.
+
 ### Changed
 
+- **The sidebar's show/hide control is a drawn icon**, the same size and stroke
+  as the destinations below it, and when the sidebar is collapsed it sits in the
+  icon column with a rule under it.
 - **Settings cards on one line end level with each other.** Three radio groups of
   three, two and three options were drawing three different boxes.
 - **Settings cards can be a half of a row.** The grid counts in sixths now, so

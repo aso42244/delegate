@@ -186,7 +186,31 @@ export function BudgetSection({
 
   // Which row the pointer is over, so the insertion point is visible before the
   // drop rather than discovered after it.
-  const [rowTarget, setRowTarget] = useState<string | null>(null);
+  /**
+   * Which row the pointer is over and **which side of it**.
+   *
+   * The side is the whole of the fix for a list whose last place could not be
+   * reached. Dropping onto a row always inserted before it, so there was no
+   * gesture that meant "after this one" — and the bottom of every list, and of
+   * every grouping, was unreachable by dragging. The pointer's half of the row
+   * decides, which is the convention every list like this uses.
+   */
+  const [rowTarget, setRowTarget] = useState<{ id: string; after: boolean } | null>(null);
+
+  /**
+   * What is currently being dragged, kept here rather than read off the event.
+   *
+   * `dataTransfer.getData` is empty during `dragover` in every browser — the
+   * payload is only readable on drop — so a handler that has to *decide* while
+   * the pointer is moving cannot ask it. Both drags start in this component, so
+   * the answer is simply remembered.
+   *
+   * It is what lets a heading dragged over another grouping's rows mean "after
+   * that grouping". Without it, the only target for a heading was another
+   * heading, and the bottom of a long section was a strip of pixels one row
+   * tall.
+   */
+  const [dragging, setDragging] = useState<{ kind: 'row' | 'grouping'; id: string } | null>(null);
 
   const draggable = onMoveToGrouping !== undefined;
   const reorderable = onReorderGroupings !== undefined;
@@ -205,11 +229,47 @@ export function BudgetSection({
   function onDragStart(event: DragEvent, rowId: string): void {
     event.dataTransfer.setData('text/plain', rowId);
     event.dataTransfer.effectAllowed = 'move';
+    setDragging({ kind: 'row', id: rowId });
+  }
+
+  function onDragEnd(): void {
+    setDragging(null);
+    setRowTarget(null);
+    setDropTarget(undefined);
+  }
+
+  /**
+   * Which half of the row the pointer is in.
+   *
+   * `currentTarget`, not `target`: the pointer is over a cell or a span inside
+   * the row, and their rectangles are not the row's.
+   */
+  function belowMiddle(event: DragEvent): boolean {
+    const box = event.currentTarget.getBoundingClientRect();
+    return event.clientY > box.top + box.height / 2;
   }
 
   function onGroupingDragStart(event: DragEvent, groupingId: string): void {
     event.dataTransfer.setData('text/plain', `${GROUPING}${groupingId}`);
     event.dataTransfer.effectAllowed = 'move';
+    setDragging({ kind: 'grouping', id: groupingId });
+  }
+
+  /**
+   * Puts a heading after another, named by any row belonging to it.
+   *
+   * Dragging a heading over the rows underneath a grouping means "past this
+   * grouping", which is how the end of a section is reached: the last heading's
+   * own row is one row tall and sits above everything it holds.
+   */
+  function placeGroupingAfter(movingId: string, groupingId: string): void {
+    const order = section.groupings
+      .filter((grouping) => grouping.systemKey === null)
+      .map((grouping) => grouping.id);
+    const without = order.filter((id) => id !== movingId);
+    const at = without.indexOf(groupingId);
+    without.splice(at === -1 ? without.length : at + 1, 0, movingId);
+    onReorderGroupings?.(without);
   }
 
   /**
@@ -219,7 +279,7 @@ export function BudgetSection({
    * pointer is rather than one short of it — the same off-by-one the row drop
    * above avoids the same way.
    */
-  function onDropOnGrouping(event: DragEvent, targetId: string): boolean {
+  function onDropOnGrouping(event: DragEvent, targetId: string, after: boolean): boolean {
     const payload = event.dataTransfer.getData('text/plain');
     if (!payload.startsWith(GROUPING)) return false;
 
@@ -237,7 +297,8 @@ export function BudgetSection({
       .map((grouping) => grouping.id);
     const without = order.filter((id) => id !== movingId);
     const at = without.indexOf(targetId);
-    without.splice(at === -1 ? without.length : at, 0, movingId);
+    const index = at === -1 ? without.length : at + (after ? 1 : 0);
+    without.splice(index, 0, movingId);
 
     onReorderGroupings?.(without);
     return true;
@@ -257,7 +318,7 @@ export function BudgetSection({
    * inside its own grouping lands where the pointer is rather than one short of
    * it — which is the classic off-by-one in every list like this.
    */
-  function onDropOnRow(event: DragEvent, target: BudgetRowDto): void {
+  function onDropOnRow(event: DragEvent, target: BudgetRowDto, after: boolean): void {
     event.preventDefault();
     event.stopPropagation();
     setRowTarget(null);
@@ -271,7 +332,10 @@ export function BudgetSection({
     const destination = target.groupingId;
     const members = membersOf(destination).filter((row) => row.id !== rowId);
     const at = members.findIndex((row) => row.id === target.id);
-    members.splice(at === -1 ? members.length : at, 0, { ...target, id: rowId });
+    // `+ 1` for the lower half of the row, which is what makes the end of a
+    // list reachable: before this there was no gesture that meant "last".
+    const index = at === -1 ? members.length : at + (after ? 1 : 0);
+    members.splice(index, 0, { ...target, id: rowId });
 
     onPlace?.(
       rowId,
@@ -280,9 +344,9 @@ export function BudgetSection({
     );
   }
 
-  function onDrop(event: DragEvent, groupingId: string | null): void {
+  function onDrop(event: DragEvent, groupingId: string | null, after = false): void {
     // A grouping dropped on a grouping is a reorder, and is handled there.
-    if (groupingId !== null && onDropOnGrouping(event, groupingId)) return;
+    if (groupingId !== null && onDropOnGrouping(event, groupingId, after)) return;
 
     event.preventDefault();
     setDropTarget(undefined);
@@ -312,19 +376,44 @@ export function BudgetSection({
         className="group border-b border-line last:border-0"
         draggable={draggable}
         onDragStart={(event) => onDragStart(event, row.id)}
+        onDragEnd={onDragEnd}
         onDragOver={(event) => {
           if (!draggable) return;
           // Without preventDefault the drop never fires at all.
           event.preventDefault();
           event.dataTransfer.dropEffect = 'move';
-          setRowTarget(row.id);
+
+          // A heading over these rows means "after the grouping they belong
+          // to", so the row itself is not the thing being marked.
+          if (dragging?.kind === 'grouping') {
+            setRowTarget(row.groupingId === null ? null : { id: row.groupingId, after: true });
+            return;
+          }
+          setRowTarget({ id: row.id, after: belowMiddle(event) });
         }}
-        onDragLeave={() => setRowTarget((current) => (current === row.id ? null : current))}
-        onDrop={(event) => onDropOnRow(event, row)}
+        onDragLeave={() => setRowTarget((current) => (current?.id === row.id ? null : current))}
+        onDrop={(event) => {
+          if (dragging?.kind === 'grouping' && row.groupingId !== null) {
+            event.preventDefault();
+            event.stopPropagation();
+            const moving = dragging.id;
+            onDragEnd();
+            placeGroupingAfter(moving, row.groupingId);
+            return;
+          }
+          onDropOnRow(event, row, belowMiddle(event));
+        }}
         style={{
           ...(tint ? { background: tint } : {}),
-          // A line above the row being dropped onto, which is where it will land.
-          ...(rowTarget === row.id ? { boxShadow: 'inset 0 2px 0 0 var(--color-accent)' } : {}),
+          // The line marks the edge it will land on, so "after the last one" is
+          // something the page shows before the drop rather than after it.
+          ...(rowTarget?.id === row.id
+            ? {
+                boxShadow: rowTarget.after
+                  ? 'inset 0 -2px 0 0 var(--color-accent)'
+                  : 'inset 0 2px 0 0 var(--color-accent)',
+              }
+            : {}),
         }}
       >
         <td className={`row-cell pr-3 ${inGrouping ? 'pl-8' : 'pl-3'}`}>
@@ -514,21 +603,40 @@ export function BudgetSection({
             <Fragment key={grouping.id}>
               <tr
                 className={`border-b border-line bg-surface ${
-                  dropTarget === grouping.id ? 'outline-2 outline-accent' : ''
+                  // The outline says "into this grouping", which is only what a
+                  // row means. A heading means "beside it", and says so with a
+                  // line on the edge it will land on.
+                  dropTarget === grouping.id && dragging?.kind !== 'grouping'
+                    ? 'outline-2 outline-accent'
+                    : ''
                 }`}
-                style={{ background: groupingTint(grouping.color, 'header') ?? '' }}
+                style={{
+                  background: groupingTint(grouping.color, 'header') ?? '',
+                  ...(rowTarget?.id === grouping.id
+                    ? {
+                        boxShadow: rowTarget.after
+                          ? 'inset 0 -2px 0 0 var(--color-accent)'
+                          : 'inset 0 2px 0 0 var(--color-accent)',
+                      }
+                    : {}),
+                }}
                 // A heading is dragged to reorder the headings. The
                 // application's own are not: an outstanding-checks grouping
                 // sorts last by rule rather than by where anybody put it.
                 draggable={reorderable && grouping.systemKey === null}
                 onDragStart={(event) => onGroupingDragStart(event, grouping.id)}
+                onDragEnd={onDragEnd}
                 onDragOver={(event) => {
                   if (!draggable) return;
                   event.preventDefault();
                   setDropTarget(grouping.id);
+                  setRowTarget({ id: grouping.id, after: belowMiddle(event) });
                 }}
-                onDragLeave={() => setDropTarget(undefined)}
-                onDrop={(event) => onDrop(event, grouping.id)}
+                onDragLeave={() => {
+                  setDropTarget(undefined);
+                  setRowTarget((current) => (current?.id === grouping.id ? null : current));
+                }}
+                onDrop={(event) => onDrop(event, grouping.id, belowMiddle(event))}
               >
                 <td className="row-cell pl-3">
                   <button

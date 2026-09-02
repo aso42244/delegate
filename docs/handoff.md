@@ -112,7 +112,7 @@ and the image is published multi-arch on version tags. The NAS is one deployment
 of many rather than the deployment, and it keeps working — it adopts the secrets
 already in its `.env`.
 
-293 unit, 725 integration and 213 end-to-end tests. There is no CI: GitHub stores the code and nothing else
+293 unit, 725 integration and 215 end-to-end tests. There is no CI: GitHub stores the code and nothing else
 ([ADR 022](decisions/022-the-checks-run-here-not-on-github.md)), and every gate
 runs locally through `npm run verify`.
 
@@ -574,6 +574,14 @@ and sending screenshots. None of it was visible from a test fixture.
   rather than a subject at the same weight. **Access is three across then two**
 - The card prop is `span`, not `width` — a field's `width` is its own scale, and
   two vocabularies under one name is a trap
+- **A drop lands on the edge the pointer is nearest.** Dropping onto a row always
+  inserted _before_ it, so nothing could be placed last — found by the owner in
+  the first minute of using it. A heading dragged over another grouping's rows
+  means "past that grouping", which is how the bottom of a long section is
+  reached; what is being dragged is kept in state because `dataTransfer` is empty
+  during `dragover` in every browser
+- **The sidebar's toggle is a drawn icon** rather than `«`/`»`, and joins the
+  icon column when collapsed. Same mistake the nav icons were fixed for
 
 ### Known gaps to fix
 
@@ -963,7 +971,7 @@ npm run verify:quick      # the same, minus the container image build
 
 npm run test              # 293 unit
 npm run test:integration  # 725 integration
-npm run test:e2e          # 213 end-to-end, needs a build first
+npm run test:e2e          # 215 end-to-end, needs a build first
 ```
 
 `npm run verify` is the gate. It runs migrations, typecheck, lint, formatting,
