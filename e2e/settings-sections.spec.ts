@@ -218,3 +218,44 @@ test('cards that are small enough share a row', async ({ signedIn }) => {
   expect(Math.abs(theme!.y - rows!.y)).toBeLessThan(4);
   expect(rows!.x).toBeGreaterThan(theme!.x);
 });
+
+/**
+ * A card's content stays inside the card.
+ *
+ * The backups table drew its columns past its own border on a wide screen: it
+ * asked `sm:` how wide the *window* was, got 1440, and laid itself out for a
+ * card that was actually 345px across. Cards are query containers now, and this
+ * is the assertion that says so — measured, because the failure was invisible to
+ * every test that only looked for text.
+ */
+test('cards on one row sit side by side and keep their tables inside them', async ({
+  signedIn,
+  api,
+}) => {
+  await makeDelegation(api, 'Grocery');
+  await api.post('/api/groupings', { data: { name: 'Essentials', section: 'delegations' } });
+  await signedIn.setViewportSize({ width: 1440, height: 900 });
+  await signedIn.goto('/settings/budget');
+
+  const delegations = signedIn.locator('section', { has: signedIn.getByText('Every envelope') });
+  const groupings = signedIn.locator('section', {
+    has: signedIn.getByText('a grouping has no balance of its own'),
+  });
+
+  const left = await delegations.boundingBox();
+  const right = await groupings.boundingBox();
+  expect(left).not.toBeNull();
+  expect(right).not.toBeNull();
+
+  // Side by side: level with each other, and one starts where the other ends.
+  expect(Math.abs(left!.y - right!.y)).toBeLessThan(2);
+  expect(right!.x).toBeGreaterThan(left!.x + left!.width - 2);
+  // And level at the bottom, which is what `h-full` on the card is for.
+  expect(Math.abs(left!.height - right!.height)).toBeLessThan(2);
+
+  for (const card of [delegations, groupings]) {
+    const box = (await card.boundingBox())!;
+    const table = (await card.getByRole('table').boundingBox())!;
+    expect(table.x + table.width).toBeLessThanOrEqual(box.x + box.width);
+  }
+});

@@ -170,13 +170,11 @@ function ColourPicker({
 
 function GroupingRow({
   grouping,
-  section,
   first,
   last,
   onMove,
 }: {
   readonly grouping: BudgetGroupingDto;
-  readonly section: Section;
   /** Whether the arrows have anywhere to go. */
   readonly first: boolean;
   readonly last: boolean;
@@ -237,17 +235,15 @@ function GroupingRow({
           />
         </td>
 
-        <td className="row-cell w-28 text-quiet text-muted">{SECTION_LABELS[section]}</td>
-
-        <td className="row-cell w-40">
+        <td className="row-cell w-32">
           <ColourPicker grouping={grouping} onPick={(color) => recolour.mutate(color)} />
         </td>
 
-        <td className="row-cell w-20 pr-2 text-right text-quiet text-muted">
+        <td className="row-cell w-16 pr-2 text-right text-quiet text-muted">
           {grouping.rows.length}
         </td>
 
-        <td className="row-cell w-32 pr-1">
+        <td className="row-cell w-28 pr-1">
           {/*
             The keyboard route to the order that dragging a heading on the
             Budget page also gives. Dragging is the fast way and it is not an
@@ -288,7 +284,7 @@ function GroupingRow({
 
       {problem && (
         <tr>
-          <td colSpan={5} className="pb-2">
+          <td colSpan={4} className="pb-2">
             <Alert>{problem}</Alert>
           </td>
         </tr>
@@ -391,6 +387,7 @@ export function GroupingsSection(): ReactNode {
 
   return (
     <SettingsCard
+      span="half"
       title="Groupings"
       description="Organizational only — a grouping has no balance of its own."
       action={<Button onClick={() => setAdding(true)}>New grouping</Button>}
@@ -404,10 +401,9 @@ export function GroupingsSection(): ReactNode {
           <thead>
             <tr className="text-label uppercase tracking-label text-muted">
               <th className="row-cell pl-1 text-left font-normal">Grouping</th>
-              <th className="row-cell w-28 text-left font-normal">Section</th>
-              <th className="row-cell w-40 text-left font-normal">Colour</th>
-              <th className="row-cell w-20 pr-2 text-right font-normal">Lines</th>
-              <th className="row-cell w-32 pr-1" />
+              <th className="row-cell w-32 text-left font-normal">Colour</th>
+              <th className="row-cell w-16 pr-2 text-right font-normal">Lines</th>
+              <th className="row-cell w-28 pr-1" />
             </tr>
           </thead>
           <tbody>
@@ -417,25 +413,45 @@ export function GroupingsSection(): ReactNode {
               // where anybody put it, so it is not part of the order sent.
               const movable = entry.groupings.filter((grouping) => grouping.systemKey === null);
 
-              return entry.groupings.map((grouping) => {
-                const at = movable.findIndex((candidate) => candidate.id === grouping.id);
-                return (
-                  <GroupingRow
-                    key={grouping.id}
-                    grouping={grouping}
-                    section={entry.section}
-                    first={at <= 0}
-                    last={at === -1 || at === movable.length - 1}
-                    onMove={(direction) => {
-                      const to = at + direction;
-                      if (at === -1 || to < 0 || to >= movable.length) return;
-                      const ids = movable.map((candidate) => candidate.id);
-                      ids.splice(to, 0, ...ids.splice(at, 1));
-                      reorder.mutate({ section: entry.section, groupingIds: ids });
-                    }}
-                  />
-                );
-              });
+              // A section nobody has put a grouping in says nothing worth a row.
+              if (entry.groupings.length === 0) return [];
+
+              // Which section these belong to, said once above them rather than
+              // repeated as one identical word down a column of its own. The
+              // column cost 112px of a card that is now half a row wide, and
+              // spent it saying "Delegations" eleven times.
+              const heading = (
+                <tr key={`${entry.section}-heading`} className="bg-surface">
+                  <td
+                    colSpan={4}
+                    className="row-cell pl-1 text-label font-semibold uppercase tracking-label text-muted"
+                  >
+                    {SECTION_LABELS[entry.section]}
+                  </td>
+                </tr>
+              );
+
+              return [
+                heading,
+                ...entry.groupings.map((grouping) => {
+                  const at = movable.findIndex((candidate) => candidate.id === grouping.id);
+                  return (
+                    <GroupingRow
+                      key={grouping.id}
+                      grouping={grouping}
+                      first={at <= 0}
+                      last={at === -1 || at === movable.length - 1}
+                      onMove={(direction) => {
+                        const to = at + direction;
+                        if (at === -1 || to < 0 || to >= movable.length) return;
+                        const ids = movable.map((candidate) => candidate.id);
+                        ids.splice(to, 0, ...ids.splice(at, 1));
+                        reorder.mutate({ section: entry.section, groupingIds: ids });
+                      }}
+                    />
+                  );
+                }),
+              ];
             })}
           </tbody>
         </table>

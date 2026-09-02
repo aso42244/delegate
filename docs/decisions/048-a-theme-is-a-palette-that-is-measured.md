@@ -97,6 +97,6 @@ leave it: he likes the palette as it is, and High contrast — which clears ever
 bar — is the answer for anybody who needs more. So `design.md` §2 stands
 unchanged and the six entries stay. They are a decision now, not an oversight.
 
-What the recording still buys is a ratchet: Light cannot get *worse* without the
+What the recording still buys is a ratchet: Light cannot get _worse_ without the
 test failing. If the six are ever tightened, the entries come out and the floor
 returns to 4.5 on its own.

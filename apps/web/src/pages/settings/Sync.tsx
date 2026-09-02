@@ -207,15 +207,20 @@ function Backups(): ReactNode {
             </div>
           )}
 
+          {/* `table-fixed`: a dump's name is a 30-character monospace string, and
+              a content-sized table treats that as a minimum rather than as
+              something to truncate. Fixed, the named columns take what they ask
+              for and the name takes the rest — which is what keeps this inside
+              the card at a third of a row. */}
           {(backups.data?.recent.length ?? 0) > 0 && (
-            <table className="mt-4 w-full border-t-2 border-ink">
+            <table className="mt-4 w-full table-fixed border-t-2 border-ink">
               <thead>
                 <tr className="text-label uppercase tracking-label text-muted">
                   <th className="row-cell pl-1 text-left font-normal">Dump</th>
-                  <th className="hidden row-cell w-28 pr-2 text-right font-normal sm:table-cell">
+                  <th className="hidden row-cell w-20 pr-2 text-right font-normal @lg:table-cell">
                     Size
                   </th>
-                  <th className="row-cell pr-1 text-right font-normal sm:w-48">Written</th>
+                  <th className="row-cell w-24 pr-1 text-right font-normal @lg:w-40">Written</th>
                 </tr>
               </thead>
               <tbody>
@@ -230,27 +235,32 @@ function Backups(): ReactNode {
                             column is not shown on a phone and this is the half of
                             it worth keeping at every width. */}
                         {!file.hasChecksum && (
-                          <span className="shrink-0 text-label font-semibold text-warning sm:hidden">
+                          <span className="shrink-0 text-label font-semibold text-warning @lg:hidden">
                             incomplete
                           </span>
                         )}
                       </div>
                     </td>
-                    <td className="hidden row-cell w-28 pr-2 text-right text-quiet text-muted sm:table-cell">
+                    <td className="hidden row-cell w-20 pr-2 text-right text-quiet text-muted @lg:table-cell">
                       {file.hasChecksum ? (
                         readableSize(file.bytes)
                       ) : (
                         <span className="font-semibold text-warning">incomplete</span>
                       )}
                     </td>
-                    <td className="row-cell pr-1 text-right text-quiet whitespace-nowrap text-muted sm:w-48">
-                      {/* The date alone on a phone. The time is worth having and
-                          is not worth 90px of a 326px row — which is what pushed
-                          this table off the screen. */}
-                      <span className="sm:hidden">
+                    <td className="row-cell w-24 pr-1 text-right text-quiet whitespace-nowrap text-muted @lg:w-40">
+                      {/* The date alone in a narrow card. The time is worth
+                          having and is not worth 90px of a 345px row — which is
+                          what pushed this table past the card's border. It is
+                          still on the row, in the title, for anyone chasing two
+                          dumps written the same day. */}
+                      <span
+                        title={new Date(file.writtenAt).toLocaleString()}
+                        className="@lg:hidden"
+                      >
                         {new Date(file.writtenAt).toLocaleDateString()}
                       </span>
-                      <span className="hidden sm:inline">
+                      <span className="hidden @lg:inline">
                         {new Date(file.writtenAt).toLocaleString()}
                       </span>
                     </td>
@@ -283,17 +293,17 @@ function Export(): ReactNode {
     {
       href: '/api/export/transactions.csv',
       label: 'Transactions',
-      hint: 'One row per transaction, archived rows marked.',
+      hint: 'One row each.',
     },
     {
       href: '/api/export/delegation-events.csv',
       label: 'Delegation ledger',
-      hint: 'Every envelope movement, including what a split put where.',
+      hint: 'Every movement.',
     },
     {
       href: '/api/export/snapshots.csv',
       label: 'Nightly snapshots',
-      hint: 'Balances by day, accounts and delegations together.',
+      hint: 'Balances by day.',
     },
   ];
 
@@ -301,7 +311,7 @@ function Export(): ReactNode {
     <Card span="third" title="Export" description="The whole budget as CSV, for a spreadsheet.">
       <ul className="flex flex-col gap-2">
         {files.map((file) => (
-          <li key={file.href} className="flex items-baseline gap-2">
+          <li key={file.href} className="flex items-baseline gap-2 whitespace-nowrap">
             {/* Styled as a link rather than as a button: it navigates, and a
                 control that looks like a button but leaves the page is the
                 thing this design system spent an audit removing. */}
@@ -318,7 +328,7 @@ function Export(): ReactNode {
             >
               {file.label}
             </a>
-            <span className="text-label text-muted">{file.hint}</span>
+            <span className="truncate text-label text-muted">{file.hint}</span>
           </li>
         ))}
       </ul>
