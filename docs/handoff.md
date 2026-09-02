@@ -88,7 +88,7 @@ These are non-negotiable. Violating one is a build failure.
 
 ## Where things stand
 
-**`main` is at `v0.47.0`, and the NAS is running `v0.45.0`** — deployed
+**`main` is at `v0.48.0`, and the NAS is running `v0.45.0`** — deployed
 2026-09-02, the release that gave Bills its escape hatch.
 
 `v0.46.0` is what the first review _of a deployed_ Delegate asked for: repeating
@@ -583,7 +583,7 @@ and sending screenshots. None of it was visible from a test fixture.
 - **The sidebar's toggle is a drawn icon** rather than `«`/`»`, and joins the
   icon column when collapsed. Same mistake the nav icons were fixed for
 
-**Since v0.47.0 — three themes, and duplicates found rather than stumbled on**
+**Since v0.47.0 — three themes, and duplicates found rather than stumbled on (`v0.48.0`)**
 
 - **Six palettes now**: Light, Dark, System, plus **Ledger** (monospace on warm
   paper), **Reading light** (dim parchment, for late on) and **High contrast**

@@ -6,6 +6,10 @@ phase (`v0.1.0-phase1`, and so on).
 
 ## [Unreleased]
 
+Nothing yet.
+
+## [0.48.0] — 2026-09-02
+
 ### Added
 
 - **Three more themes**, on Settings → Display beside Light, Dark and System.
