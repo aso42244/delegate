@@ -407,6 +407,52 @@ describe('the backup', () => {
   });
 });
 
+describe('an overdue bill', () => {
+  /** Three monthly charges ending well before NOW, so the next one is late. */
+  async function lateWaterBill(): Promise<void> {
+    const account = await makeAccount({
+      name: 'Everyday Checking',
+      type: 'asset',
+      balanceCents: 500000n,
+    });
+    // Expected 3 August against a NOW of the 9th: six days late, which is past
+    // the grace and nowhere near the point where a bill has plainly stopped.
+    for (const day of ['2026-05-05', '2026-06-04', '2026-07-04']) {
+      await makeTransaction({
+        accountId: account.id,
+        amountCents: -11800n,
+        description: 'CITY WATER UTILITY',
+        postedAt: new Date(`${day}T15:00:00Z`),
+      });
+    }
+  }
+
+  it('is reported, and leads to the page that lists it', async () => {
+    await lateWaterBill();
+
+    const notifications = await buildNotifications(prisma, ZONE, NOW);
+    const overdue = notifications.find((entry) => entry.kind === 'recurring_bill_overdue');
+
+    expect(overdue?.pill).toBe('1 bill overdue');
+    expect(overdue?.actionPath).toBe('/bills');
+    // The count is the pill's whole detail; which bill and how late is the
+    // sentence behind it.
+    expect(overdue?.message).toContain('CITY WATER UTILITY');
+  });
+
+  it('is silent when the household has turned it off', async () => {
+    await lateWaterBill();
+    await prisma.budgetSettings.update({
+      where: { id: 1 },
+      data: { recurringAlertsEnabled: false },
+    });
+
+    const notifications = await buildNotifications(prisma, ZONE, NOW);
+
+    expect(notifications.some((entry) => entry.kind === 'recurring_bill_overdue')).toBe(false);
+  });
+});
+
 describe('the route', () => {
   it('requires a session', async () => {
     const response = await app.inject({ method: 'GET', url: '/api/notifications' });

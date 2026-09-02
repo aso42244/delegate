@@ -264,6 +264,67 @@ function Backups(): ReactNode {
   );
 }
 
+/**
+ * The way out.
+ *
+ * Beside the backups because it answers the other half of the same worry, and
+ * differently: a dump restores this application and only this application. A CSV
+ * is the household's own data in a form anything can read — a spreadsheet at tax
+ * time, a cross-check against a statement, or a look at a year in a way this
+ * application does not offer.
+ *
+ * Plain links rather than a fetch and a blob. A download is a navigation, the
+ * session cookie goes with it, and the browser's own save dialog is better than
+ * anything reimplemented here.
+ */
+function Export(): ReactNode {
+  const files = [
+    {
+      href: '/api/export/transactions.csv',
+      label: 'Transactions',
+      hint: 'One row per transaction, archived rows marked.',
+    },
+    {
+      href: '/api/export/delegation-events.csv',
+      label: 'Delegation ledger',
+      hint: 'Every envelope movement, including what a split put where.',
+    },
+    {
+      href: '/api/export/snapshots.csv',
+      label: 'Nightly snapshots',
+      hint: 'Balances by day, accounts and delegations together.',
+    },
+  ];
+
+  return (
+    <Card title="Export" description="The whole budget as CSV, for a spreadsheet.">
+      <ul className="flex flex-col gap-2">
+        {files.map((file) => (
+          <li key={file.href} className="flex items-baseline gap-2">
+            {/* Styled as a link rather than as a button: it navigates, and a
+                control that looks like a button but leaves the page is the
+                thing this design system spent an audit removing. */}
+            <a
+              href={file.href}
+              download
+              /* Named for what it does, not only for what it holds. "Transactions"
+                 is also the sidebar's link and the register's page, and a bare
+                 noun tells somebody using a screen reader nothing about the fact
+                 that following it saves a file. The visible word is kept inside
+                 the name, so the two agree. */
+              aria-label={`Download ${file.label.toLowerCase()} as CSV`}
+              className="shrink-0 text-quiet font-semibold text-accent underline"
+            >
+              {file.label}
+            </a>
+            <span className="text-label text-muted">{file.hint}</span>
+          </li>
+        ))}
+      </ul>
+    </Card>
+  );
+}
+
 export function SyncSection(): ReactNode {
   const queryClient = useQueryClient();
   const [replacing, setReplacing] = useState(false);
@@ -409,6 +470,8 @@ export function SyncSection(): ReactNode {
       </Card>
 
       <Backups />
+
+      <Export />
 
       {/* Beside the backups, because that is where its consequence lands: a dump
           without this key restores every transaction and no credential. */}

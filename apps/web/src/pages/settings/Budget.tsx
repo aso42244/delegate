@@ -13,7 +13,7 @@ import { ApiError } from '../../api/client.js';
 import { budgetApi } from '../../api/budget.js';
 import { settingsApi } from '../../api/settings.js';
 import { StatusLine } from '../../components/layout.jsx';
-import { Alert, Button, SelectField, TextField } from '../../components/ui.jsx';
+import { Alert, Button, SelectField, TextField, Toggle } from '../../components/ui.jsx';
 import { SettingsCard } from './SettingsCard.jsx';
 
 /**
@@ -127,6 +127,25 @@ export function BudgetSection(): ReactNode {
       setProblem(error instanceof ApiError ? error.message : 'Could not save that zone.'),
   });
 
+  /**
+   * Whether an overdue bill is announced.
+   *
+   * Saved on change like the cadence and the zone: one switch, nothing to
+   * mistype. It only governs the pill — the Bills page is there either way,
+   * because a switch that hid the list as well would make "I turned the noise
+   * off" and "there are no bills" impossible to tell apart.
+   */
+  const alertsSave = useMutation({
+    mutationFn: (recurringAlertsEnabled: boolean) => settingsApi.update({ recurringAlertsEnabled }),
+    onSuccess: async () => {
+      setProblem(null);
+      await queryClient.invalidateQueries({ queryKey: ['settings'] });
+      await queryClient.invalidateQueries({ queryKey: ['notifications'] });
+    },
+    onError: (error: unknown) =>
+      setProblem(error instanceof ApiError ? error.message : 'Could not save that.'),
+  });
+
   function onSubmit(event: FormEvent): void {
     event.preventDefault();
     save.mutate();
@@ -138,7 +157,7 @@ export function BudgetSection(): ReactNode {
   return (
     <SettingsCard
       title="How the budget reads"
-      description="Tolerance, the undo window, and how often money lands."
+      description="Tolerance, the undo window, how often money lands, and what gets said."
     >
       <StatusLine tone={cycleStartedAt === null ? 'muted' : 'positive'}>
         {cycleStartedAt === null
@@ -224,6 +243,15 @@ export function BudgetSection(): ReactNode {
             ))}
           </SelectField>
         </div>
+
+        <label className="flex items-center gap-2 text-quiet text-ink">
+          <Toggle
+            checked={settings.data?.recurringAlertsEnabled ?? true}
+            onChange={(next) => alertsSave.mutate(next)}
+            label="Tell me when a bill is overdue"
+          />
+          Tell me when a bill is overdue
+        </label>
 
         {/* The derived thresholds, which are otherwise invisible. One line: the
             three sentences that followed restated the two hints above and the

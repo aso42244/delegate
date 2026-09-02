@@ -1,0 +1,294 @@
+import { merchantKey, type Cents } from '@budget/shared';
+import { localDayKey } from './calendar.js';
+import type { Db } from '../db/client.js';
+
+/**
+ * Bills that arrive on a schedule, worked out from the register itself.
+ *
+ * Nothing here is entered by anybody and nothing is stored. A bill is a merchant
+ * whose charges have landed at a steady interval, and both facts — that it
+ * recurs, and when the next one is due — are already in the transactions. Asking
+ * the household to maintain a second list of the same thing would produce a list
+ * that is wrong within a month.
+ *
+ * The question it answers is the one nothing else here can: **the bill that did
+ * not arrive.** A failed autopay and a cancelled service look identical from the
+ * inside — no transaction — and are invisible until a balance is wrong or a
+ * letter arrives. A subscription that renewed at a higher price is the same
+ * shape: perfectly ordinary, and unremarkable until the two figures sit beside
+ * each other.
+ *
+ * It proposes and never writes, which is the line [ADR 030] drew for a cleared
+ * check and [ADR 044] for a suggested delegation. This is a reading of the data,
+ * recomputed every time it is asked for, and it stops existing the moment it
+ * stops being true.
+ */
+
+/**
+ * How many charges before a merchant is a bill.
+ *
+ * Three, because two give one interval and one interval cannot be checked
+ * against anything. Three give two intervals that must agree.
+ */
+const MIN_OCCURRENCES = 3;
+
+/**
+ * The shortest gap that can be a bill.
+ *
+ * Twelve days, which is the honest edge of what this can claim. Groceries,
+ * coffee and fuel recur in the plain sense — the same shop, over and over — and
+ * their gaps are erratic enough that a tolerant consistency check would happily
+ * call a weekly shop a weekly bill. A household's actual bills are fortnightly
+ * at the fastest, so the cheapest way to be right is to decline to answer below
+ * that rather than to answer confidently and wrongly.
+ */
+const MIN_INTERVAL_DAYS = 12;
+
+/** Longer than this and there is not enough history to have seen it three times. */
+const MAX_INTERVAL_DAYS = 400;
+
+/**
+ * How far back the register is read. As for suggestions: this runs whenever the
+ * page is opened, and a household's register grows for ever.
+ */
+const HISTORY_LIMIT = 5000;
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/** Names the shape of the interval, for a reader rather than for arithmetic. */
+const CADENCES = [
+  { label: 'Fortnightly', min: 12, max: 17 },
+  { label: 'Every three weeks', min: 18, max: 24 },
+  { label: 'Monthly', min: 25, max: 38 },
+  { label: 'Every two months', min: 50, max: 70 },
+  { label: 'Quarterly', min: 80, max: 100 },
+  { label: 'Twice a year', min: 170, max: 200 },
+  { label: 'Yearly', min: 340, max: 400 },
+] as const;
+
+/**
+ * What a bill is doing right now.
+ *
+ * `lapsed` exists so that a cancelled service does not read as overdue for ever.
+ * A bill nobody can act on that shouts anyway is the shape that teaches people
+ * to stop reading the thing that shouts.
+ */
+export type BillStatus = 'expected' | 'due' | 'overdue' | 'lapsed';
+
+export interface RecurringBill {
+  /** The merchant key. Stable across store numbers, and the row's identity. */
+  readonly key: string;
+  /** The most recent description, which is what the household would recognise. */
+  readonly name: string;
+  readonly cadence: string;
+  readonly intervalDays: number;
+  readonly occurrences: number;
+  /** The middle charge, which a bill that varies seasonally still has. */
+  readonly typicalAmountCents: Cents;
+  /** The most recent one. Beside the typical figure, a price rise is visible. */
+  readonly lastAmountCents: Cents;
+  readonly lastPostedAt: Date;
+  readonly expectedNextAt: Date;
+  readonly status: BillStatus;
+  /** How many days late, for an overdue bill. Zero otherwise. */
+  readonly daysLate: number;
+  /** Where charges from this merchant are usually filed, if they are. */
+  readonly delegationId: string | null;
+  readonly delegationName: string | null;
+  readonly accountName: string | null;
+}
+
+/** The middle value. Even counts take the lower of the two, which needs no averaging. */
+function median(values: readonly number[]): number {
+  const sorted = [...values].sort((a, b) => a - b);
+  return sorted[Math.floor((sorted.length - 1) / 2)] ?? 0;
+}
+
+function medianCents(values: readonly bigint[]): bigint {
+  const sorted = [...values].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+  return sorted[Math.floor((sorted.length - 1) / 2)] ?? 0n;
+}
+
+/**
+ * How far an interval may sit from the middle one and still be the same bill.
+ *
+ * A quarter of the interval, floored at four days. Month lengths differ by
+ * three, a bill that falls on a weekend moves by two, and a card that posts a
+ * day late moves by one — all of that is the same monthly bill and none of it is
+ * a different schedule.
+ */
+function toleranceDays(intervalDays: number): number {
+  return Math.max(4, Math.round(intervalDays * 0.25));
+}
+
+/**
+ * How late a bill may be before it is called late.
+ *
+ * Narrower than the tolerance above, because that one asks "is this the same
+ * bill" of history and this one asks "should somebody look" of today. Being told
+ * on the day is not useful — a bill posts a day either side routinely.
+ */
+function graceDays(intervalDays: number): number {
+  return Math.max(3, Math.round(intervalDays * 0.15));
+}
+
+function cadenceLabel(intervalDays: number): string {
+  const named = CADENCES.find(
+    (cadence) => intervalDays >= cadence.min && intervalDays <= cadence.max,
+  );
+  return named ? named.label : `Every ${intervalDays} days`;
+}
+
+function daysBetween(earlier: Date, later: Date): number {
+  return Math.round((later.getTime() - earlier.getTime()) / DAY_MS);
+}
+
+/**
+ * The charges that could be a bill: money leaving, not a transfer between owned
+ * accounts, not archived.
+ *
+ * Income is excluded because this page is about what the household owes. A
+ * transfer is excluded because a card payment is not a bill — the bill was the
+ * spending on the card, and counting both would show one obligation twice.
+ */
+export async function findRecurringBills(
+  db: Db,
+  timeZone: string,
+  now: Date = new Date(),
+): Promise<RecurringBill[]> {
+  const charges = await db.transaction.findMany({
+    where: {
+      archivedAt: null,
+      kind: 'normal',
+      amountCents: { lt: 0 },
+      // A pending charge has not settled, and its date moves when it does.
+      // Including it would shift every prediction by however long the feed took.
+      pending: false,
+    },
+    select: {
+      description: true,
+      descriptionRaw: true,
+      amountCents: true,
+      postedAt: true,
+      account: { select: { name: true, nickname: true } },
+      allocations: {
+        select: { delegationId: true, delegation: { select: { name: true, archivedAt: true } } },
+      },
+    },
+    orderBy: [{ postedAt: 'desc' }, { id: 'desc' }],
+    take: HISTORY_LIMIT,
+  });
+
+  type Charge = (typeof charges)[number];
+  const byMerchant = new Map<string, Charge[]>();
+
+  for (const charge of charges) {
+    const key = merchantKey(charge.descriptionRaw || charge.description);
+    const group = byMerchant.get(key) ?? [];
+    group.push(charge);
+    byMerchant.set(key, group);
+  }
+
+  const today = localDayKey(now, timeZone);
+  const bills: RecurringBill[] = [];
+
+  for (const [key, group] of byMerchant) {
+    if (group.length < MIN_OCCURRENCES) continue;
+
+    /*
+     * Days, in the household's zone, oldest first.
+     *
+     * The day rather than the instant, because a bill posted at eight in the
+     * evening and one posted at nine the next morning are thirteen hours apart
+     * and one day apart, and it is the day that the schedule is made of.
+     */
+    const days = group
+      .map((charge) => localDayKey(charge.postedAt, timeZone))
+      .sort((a, b) => a.getTime() - b.getTime());
+
+    const intervals: number[] = [];
+    for (let index = 1; index < days.length; index += 1) {
+      // Two charges on one day are one bill paid in parts, or a duplicate.
+      // Either way there is no interval between them to measure.
+      const gap = daysBetween(days[index - 1]!, days[index]!);
+      if (gap > 0) intervals.push(gap);
+    }
+    if (intervals.length < MIN_OCCURRENCES - 1) continue;
+
+    const intervalDays = median(intervals);
+    if (intervalDays < MIN_INTERVAL_DAYS || intervalDays > MAX_INTERVAL_DAYS) continue;
+
+    const tolerance = toleranceDays(intervalDays);
+    // Every gap, not most of them: one charge in the wrong place means this is
+    // a merchant that is sometimes billed and sometimes visited, and a schedule
+    // fitted through that is a schedule nobody can rely on.
+    if (intervals.some((gap) => Math.abs(gap - intervalDays) > tolerance)) continue;
+
+    const lastDay = days[days.length - 1]!;
+    const expectedNextAt = new Date(lastDay.getTime() + intervalDays * DAY_MS);
+    const grace = graceDays(intervalDays);
+    const late = daysBetween(expectedNextAt, today);
+
+    /*
+     * Newest first within the group, because the *last* charge is the one whose
+     * description and amount the reader is being shown.
+     */
+    const newest = group.reduce((latest, charge) =>
+      charge.postedAt > latest.postedAt ? charge : latest,
+    );
+
+    let status: BillStatus = 'expected';
+    if (late > intervalDays + grace) status = 'lapsed';
+    else if (late > grace) status = 'overdue';
+    else if (late >= -grace) status = 'due';
+
+    // Where it is usually filed. A split says the charge was several things, so
+    // it names no single envelope and is not counted here.
+    const tally = new Map<string, { name: string; count: number }>();
+    for (const charge of group) {
+      const allocation = charge.allocations.length === 1 ? charge.allocations[0] : undefined;
+      if (!allocation || allocation.delegation.archivedAt) continue;
+      const seen = tally.get(allocation.delegationId);
+      tally.set(allocation.delegationId, {
+        name: allocation.delegation.name,
+        count: (seen?.count ?? 0) + 1,
+      });
+    }
+    let filedId: string | null = null;
+    let filedName: string | null = null;
+    let filedCount = 0;
+    for (const [delegationId, entry] of tally) {
+      if (entry.count > filedCount) {
+        filedId = delegationId;
+        filedName = entry.name;
+        filedCount = entry.count;
+      }
+    }
+
+    bills.push({
+      key,
+      name: newest.description,
+      cadence: cadenceLabel(intervalDays),
+      intervalDays,
+      occurrences: group.length,
+      // Magnitudes: the reader thinks of a bill as $118, not as −$118.
+      typicalAmountCents: medianCents(group.map((charge) => -charge.amountCents)),
+      lastAmountCents: -newest.amountCents,
+      lastPostedAt: lastDay,
+      expectedNextAt,
+      status,
+      daysLate: status === 'overdue' ? late : 0,
+      delegationId: filedId,
+      delegationName: filedName,
+      accountName: newest.account.nickname ?? newest.account.name,
+    });
+  }
+
+  // Soonest first, which is the order somebody reads a list of what is coming.
+  return bills.sort((a, b) => a.expectedNextAt.getTime() - b.expectedNextAt.getTime());
+}
+
+/** The bills worth telling somebody about: late, and not so late they have stopped. */
+export function overdueBills(bills: readonly RecurringBill[]): RecurringBill[] {
+  return bills.filter((bill) => bill.status === 'overdue');
+}

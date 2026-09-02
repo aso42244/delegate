@@ -68,6 +68,9 @@ export async function resetDatabase(): Promise<void> {
       // from a previous file would move every schedule in the next one.
       scheduleTimezone: null,
       bitcoinInBudgetAckAt: null,
+      // The product default. This row survives the truncate, so a value left
+      // here from one test silences the next one's notification.
+      recurringAlertsEnabled: true,
       simplefinAccessUrlEncrypted: null,
       simplefinConnectedAt: null,
     },

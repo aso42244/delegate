@@ -3,7 +3,7 @@ import { NavLink } from 'react-router-dom';
 import { Icon, PAGES } from './Sidebar.jsx';
 
 /**
- * Navigation on a phone: the five destinations, along the bottom.
+ * Navigation on a phone: every destination, along the bottom.
  *
  * The same `PAGES` and the same icons the sidebar uses — this is that sidebar
  * rotated, not a second navigation model with its own copy of the list to drift
@@ -79,20 +79,29 @@ export function TabBar({ scroller }: { readonly scroller: HTMLElement | null }):
       // costs nothing on a device without one.
       style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}
     >
-      <div className="grid grid-cols-5">
+      {/*
+        The columns come from the list rather than a number written here. It
+        said `grid-cols-5` while `PAGES` had five entries, so adding a sixth
+        destination put it in the sidebar and silently off the end of this bar —
+        the exact drift the shared list was meant to prevent.
+      */}
+      <div className="grid" style={{ gridTemplateColumns: `repeat(${PAGES.length}, 1fr)` }}>
         {PAGES.map((page) => (
           <NavLink
             key={page.to}
             to={page.to}
             end={page.end}
             className={({ isActive }) =>
-              `flex h-14 flex-col items-center justify-center gap-1 text-label ${
+              // `min-w-0` and truncation: six destinations on a 390px screen
+              // give each 65px, and "Transactions" is wider than that at any
+              // size a thumb can read.
+              `flex h-14 min-w-0 flex-col items-center justify-center gap-1 px-0.5 text-label ${
                 isActive ? 'text-accent' : 'text-muted'
               }`
             }
           >
             <Icon name={page.icon} />
-            {page.label}
+            <span className="w-full truncate text-center">{page.label}</span>
           </NavLink>
         ))}
       </div>

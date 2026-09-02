@@ -16,6 +16,8 @@ import { insightRoutes } from './routes/insights.js';
 import { snapshotRoutes } from './routes/snapshots.js';
 import { backupRoutes } from './routes/backups.js';
 import { notificationRoutes } from './routes/notifications.js';
+import { recurringRoutes } from './routes/recurring.js';
+import { exportRoutes } from './routes/export.js';
 import { ruleRoutes } from './routes/rules.js';
 import { settingsRoutes } from './routes/settings.js';
 import { syncRoutes } from './routes/sync.js';
@@ -155,6 +157,8 @@ export async function buildApp(config: AppConfig = getConfig()): Promise<Fastify
   await app.register(bitcoinRoutes);
   await app.register(propertyRoutes);
   await app.register(notificationRoutes);
+  await app.register(recurringRoutes);
+  await app.register(exportRoutes);
   await app.register(backupRoutes);
   await app.register(utilityRoutes);
   await app.register(insightRoutes);
