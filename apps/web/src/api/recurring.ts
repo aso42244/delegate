@@ -13,7 +13,11 @@ export type BillStatus = 'expected' | 'due' | 'overdue' | 'lapsed';
 
 export interface BillDto {
   readonly key: string;
+  /** The household's own name where they gave one, the bank's otherwise. */
   readonly name: string;
+  /** What the bank calls it, always. Kept so a rename hides nothing. */
+  readonly feedName: string;
+  readonly renamed: boolean;
   readonly cadence: string;
   readonly intervalDays: number;
   readonly occurrences: number;
@@ -28,6 +32,27 @@ export interface BillDto {
   readonly accountName: string | null;
 }
 
+/** A merchant somebody has said is not a bill, and what it was called then. */
+export interface HiddenBillDto {
+  readonly key: string;
+  readonly label: string;
+}
+
 export const recurringApi = {
-  list: () => api.get<{ bills: readonly BillDto[] }>('/api/recurring'),
+  list: () =>
+    api.get<{ bills: readonly BillDto[]; hidden: readonly HiddenBillDto[] }>('/api/recurring'),
+
+  /**
+   * What somebody says back about a detected bill: that it is not one, or that
+   * it is called something else.
+   *
+   * Whatever is left out stays as it was — renaming must not put back a hidden
+   * bill, and putting one back must not throw away its name.
+   */
+  override: (input: {
+    key: string;
+    label: string;
+    hidden?: boolean;
+    displayName?: string | null;
+  }) => api.post<{ ok: boolean }>('/api/recurring/overrides', input),
 };

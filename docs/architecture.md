@@ -331,9 +331,17 @@ the plain sense, and a tolerant consistency check would happily call the weekly
 shop a weekly bill.
 
 It **proposes and never writes**, like a check match (ADR 030) and a suggested
-delegation (ADR 044). The only column the feature added is
-`budget_settings.recurring_alerts_enabled`, which decides whether an overdue bill
-raises a pill — the page is there either way.
+delegation (ADR 044). `budget_settings.recurring_alerts_enabled` decides whether
+an overdue bill raises a pill — the page is there either way.
+
+**One thing is stored: what a person says back.** `bill_overrides` holds no bills,
+no dates and no amounts — every figure is still derived on every request. It holds
+the two corrections that cannot be derived: _this is not a bill_, and _this is not
+what it is called_. The first real run listed a thrift shop visited every
+fortnight, and nothing in the register distinguishes that from a utility. Keyed by
+merchant, hidden rather than deleted, and a rename labels the row without
+replacing the bank's text. See the amendment on
+[ADR 045](decisions/045-a-bill-is-inferred-not-entered.md).
 
 Intervals are measured in **days in the household's zone**, not in instants: a
 charge posted at eight in the evening and one posted at nine the next morning are

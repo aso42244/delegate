@@ -945,6 +945,21 @@ exactly that ground: the cadence says how often, Next says when, and an overdue
 row already carries how many days late it is, so a fourth way of saying the same
 thing was being paid for out of the one column that needed the room.
 
+**A bill carries a row menu, and it offers exactly two things.** _Give it a name_
+and _Not a bill_ — a rename in red-free black, the correction in danger red. Every
+other figure on the row is arithmetic over transactions and would be a lie if it
+were editable; if the cadence is wrong, the answer is that this is not a bill, not
+that the number should be overwritten.
+
+**A renamed bill keeps the bank's text under its name**, at `text-label
+text-faint`, and stays searchable by it. A name is a label, not a claim about what
+the feed sent, and somebody reconciling against a statement needs the original.
+
+**Hidden bills live under a fold at the foot of the page**, with the count on the
+summary. A list of corrections is not what anybody comes to the page for, but a
+correction nobody can find is one nobody can undo — and the row it hid is
+invisible by design.
+
 **Status is a word before it is a colour.** `Overdue`, `Due now`, `Expected`,
 `Stopped?` — §9 says never to convey state by colour alone, and the colour here
 decides how fast a row is read rather than what it means.

@@ -1,8 +1,11 @@
 import { formatCents } from '@budget/shared';
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useMemo, useState, type ReactNode } from 'react';
 import { recurringApi, type BillDto, type BillStatus } from '../api/recurring.js';
-import { EmptyState, PageHeader } from '../components/layout.jsx';
+import { ApiError } from '../api/client.js';
+import { BillRowMenu } from '../components/BillRowMenu.jsx';
+import { Disclosure, EmptyState, PageHeader } from '../components/layout.jsx';
+import { Alert, Button } from '../components/ui.jsx';
 import { NARROW, useMediaQuery } from '../useMediaQuery.js';
 
 /**
@@ -58,13 +61,27 @@ function priceRose(bill: BillDto): boolean {
   return typical > 0n && last * 10n > typical * 11n;
 }
 
-function BillRow({ bill }: { readonly bill: BillDto }): ReactNode {
+function BillRow({
+  bill,
+  onProblem,
+}: {
+  readonly bill: BillDto;
+  readonly onProblem: (message: string) => void;
+}): ReactNode {
   return (
-    <tr className="border-b border-line">
+    // `group` so the row's menu appears on hover of the row rather than only of
+    // the trigger itself.
+    <tr className="group border-b border-line">
       <td className="row-cell pr-3 pl-3">
-        <span className="block truncate text-ink" title={bill.name}>
+        {/* The bank's description under a name of the household's own, so a
+            rename labels the row without hiding what the feed actually sent —
+            which is the half somebody reconciling against a statement needs. */}
+        <span className="block truncate text-ink" title={bill.feedName}>
           {bill.name}
         </span>
+        {bill.renamed && (
+          <span className="block truncate text-label text-faint">{bill.feedName}</span>
+        )}
       </td>
       <td className="row-cell pr-3 text-quiet whitespace-nowrap text-muted">{bill.cadence}</td>
       {/* The two "when" facts together, then the two figures together: a
@@ -90,12 +107,22 @@ function BillRow({ bill }: { readonly bill: BillDto }): ReactNode {
           {bill.status === 'overdue' && ` · ${bill.daysLate}d`}
         </span>
       </td>
+
+      <td className="hold-to-open-cell row-cell">
+        <BillRowMenu bill={bill} onProblem={onProblem} />
+      </td>
     </tr>
   );
 }
 
 /** The same bill on a phone: what it is and what it costs, then when and where. */
-function BillCard({ bill }: { readonly bill: BillDto }): ReactNode {
+function BillCard({
+  bill,
+  onProblem,
+}: {
+  readonly bill: BillDto;
+  readonly onProblem: (message: string) => void;
+}): ReactNode {
   return (
     <li className="border-b border-line py-2.5 last:border-0">
       <div className="flex items-baseline gap-2">
@@ -119,13 +146,69 @@ function BillCard({ bill }: { readonly bill: BillDto }): ReactNode {
           {bill.cadence} · next {shortDate(bill.expectedNextAt)}
           {bill.delegationName ? ` · ${bill.delegationName}` : ''}
         </span>
+
+        {/* Always drawn on a touchscreen: the rule that hides a row menu is a
+            hover a phone cannot perform. */}
+        <span className="-mr-1 shrink-0">
+          <BillRowMenu bill={bill} onProblem={onProblem} />
+        </span>
       </div>
     </li>
   );
 }
 
+/**
+ * The merchants somebody has said are not bills.
+ *
+ * Folded away, because it is a list of corrections rather than of bills and
+ * nobody comes to this page to read it — but present, because a correction
+ * nobody can find is one nobody can undo, and the row it hid is invisible by
+ * design. The count is on the summary so it says whether opening it is worth
+ * anything.
+ */
+function Hidden({
+  hidden,
+  onProblem,
+}: {
+  readonly hidden: readonly { key: string; label: string }[];
+  readonly onProblem: (message: string) => void;
+}): ReactNode {
+  const queryClient = useQueryClient();
+
+  const restore = useMutation({
+    mutationFn: (entry: { key: string; label: string }) =>
+      recurringApi.override({ key: entry.key, label: entry.label, hidden: false }),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['recurring'] });
+      await queryClient.invalidateQueries({ queryKey: ['notifications'] });
+    },
+    onError: (error: unknown) =>
+      onProblem(error instanceof ApiError ? error.message : 'That could not be put back.'),
+  });
+
+  if (hidden.length === 0) return null;
+
+  return (
+    <div className="mt-6">
+      <Disclosure summary={hidden.length === 1 ? '1 hidden' : `${hidden.length} hidden`}>
+        <ul className="mt-2 flex flex-col gap-2">
+          {hidden.map((entry) => (
+            <li key={entry.key} className="flex items-center gap-2">
+              <span className="min-w-0 flex-1 truncate text-quiet text-muted">{entry.label}</span>
+              <Button onClick={() => restore.mutate(entry)} disabled={restore.isPending}>
+                Put back
+              </Button>
+            </li>
+          ))}
+        </ul>
+      </Disclosure>
+    </div>
+  );
+}
+
 export function Bills(): ReactNode {
   const [search, setSearch] = useState('');
+  const [problem, setProblem] = useState<string | null>(null);
   const bills = useQuery({ queryKey: ['recurring'], queryFn: recurringApi.list });
   const narrow = useMediaQuery(NARROW);
 
@@ -138,6 +221,9 @@ export function Bills(): ReactNode {
     return all.filter(
       (bill) =>
         bill.name.toLowerCase().includes(needle) ||
+        // The bank's text as well as the household's name for it: a rename must
+        // not make a bill unfindable by what the statement calls it.
+        bill.feedName.toLowerCase().includes(needle) ||
         (bill.delegationName ?? '').toLowerCase().includes(needle) ||
         (bill.accountName ?? '').toLowerCase().includes(needle),
     );
@@ -175,6 +261,12 @@ export function Bills(): ReactNode {
         />
       </div>
 
+      {problem && (
+        <div className="mb-4">
+          <Alert>{problem}</Alert>
+        </div>
+      )}
+
       {bills.isLoading ? (
         <p className="text-quiet text-muted">Loading bills…</p>
       ) : all.length === 0 ? (
@@ -190,7 +282,7 @@ export function Bills(): ReactNode {
       ) : narrow ? (
         <ul className="border-t-2 border-ink">
           {shown.map((bill) => (
-            <BillCard key={bill.key} bill={bill} />
+            <BillCard key={bill.key} bill={bill} onProblem={setProblem} />
           ))}
         </ul>
       ) : (
@@ -210,21 +302,27 @@ export function Bills(): ReactNode {
                 thing paid for out of the only column that needed the room.
               */}
               <th className="row-cell pr-3 pl-3 text-left font-normal">Bill</th>
-              <th className="row-cell pr-3 text-left font-normal md:w-32">Every</th>
+              {/* Each of these is sized to the longest thing it can hold and no
+                  wider — "Every two months", "$1,234.56" — because every pixel
+                  they take comes out of the merchant name beside them. */}
+              <th className="row-cell pr-3 text-left font-normal md:w-28">Every</th>
               <th className="row-cell pr-3 text-left font-normal md:w-24">Next</th>
-              <th className="row-cell pr-3 text-right font-normal md:w-32">Typical</th>
-              <th className="row-cell pr-3 text-right font-normal md:w-32">Last</th>
+              <th className="row-cell pr-3 text-right font-normal md:w-28">Typical</th>
+              <th className="row-cell pr-3 text-right font-normal md:w-28">Last</th>
               <th className="row-cell pr-3 text-left font-normal md:w-32">Delegation</th>
               <th className="row-cell pr-3 text-left font-normal md:w-28">Status</th>
+              <th className="hold-to-open-cell row-cell" />
             </tr>
           </thead>
           <tbody>
             {shown.map((bill) => (
-              <BillRow key={bill.key} bill={bill} />
+              <BillRow key={bill.key} bill={bill} onProblem={setProblem} />
             ))}
           </tbody>
         </table>
       )}
+
+      <Hidden hidden={bills.data?.hidden ?? []} onProblem={setProblem} />
     </div>
   );
 }

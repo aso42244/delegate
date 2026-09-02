@@ -6,7 +6,30 @@ phase (`v0.1.0-phase1`, and so on).
 
 ## [Unreleased]
 
-Nothing yet.
+### Added
+
+- **A bill can be taken off the list, or given a name of its own.** The first run
+  against real data listed a thrift shop visited every fortnight as a fortnightly
+  bill — which the detection cannot know is wrong, because that spending
+  genuinely has the shape of a bill. Only you know it is a shop.
+
+  `Not a bill` on the row menu takes it off and stops it raising anything; it is
+  listed under a fold at the foot of the page with a `Put back` beside it.
+  `Give it a name` puts your own label on a row, with the bank's description kept
+  underneath it and still searchable — reconciling against a statement needs the
+  text the statement uses.
+
+  Bills themselves are still stored nowhere. What is stored is what you said
+  back, which is the one thing about them that cannot be derived. Amendment on
+  [ADR 045](docs/decisions/045-a-bill-is-inferred-not-entered.md).
+
+### Changed
+
+- Bills that have plainly stopped sort to the bottom. A lapsed bill's expected
+  date is in the past by definition, so a plain date sort put the least
+  actionable row at the very top.
+- The Bills table gives more of its width to the merchant name, taken back from
+  columns that were wider than the longest thing they can hold.
 
 ## [0.44.0] — 2026-09-02
 
