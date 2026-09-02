@@ -1,5 +1,5 @@
 import type { Page } from '@playwright/test';
-import { expect, makeDelegation, test } from './fixtures.js';
+import { expect, makeAccount, makeDelegation, test } from './fixtures.js';
 
 /** Creates a grouping through the dialog the page now opens. */
 async function makeGrouping(page: Page, name: string): Promise<void> {
@@ -184,4 +184,138 @@ test('the top line cannot be moved above itself', async ({ signedIn, api }) => {
   // was. Reloaded so this cannot pass on a stale render.
   await signedIn.reload();
   expect(await order(signedIn, NAMES)).toEqual(['Apples', 'Bananas']);
+});
+
+/**
+ * Assets, Debts and the headings above them are ordered lists too now.
+ *
+ * The argument that gave delegations a position is no different one level up or
+ * one level across: the order a household reads its own accounts in is a fact
+ * about the household, and alphabetical is nobody's reading of it.
+ */
+test('dragging an account reorders the Assets section', async ({ signedIn }) => {
+  await makeAccount('Savings', 'asset', 900000n);
+  await makeAccount('Checking', 'asset', 480000n);
+
+  await signedIn.goto('/');
+  await expect(signedIn.getByRole('button', { name: 'Checking balance' })).toBeVisible();
+
+  // Alphabetical until something is moved: Checking, then Savings.
+  const assets = signedIn.getByRole('table').filter({ hasText: 'Assets' });
+  const savings = assets.getByRole('row').filter({ hasText: 'Savings' });
+  const checking = assets.getByRole('row').filter({ hasText: 'Checking' });
+  await savings.dragTo(checking);
+
+  await expect(assets.getByRole('row').nth(2)).toContainText('Savings');
+});
+
+test('the account row menu is the route that works without a mouse', async ({ signedIn }) => {
+  await makeAccount('Savings', 'asset', 900000n);
+  await makeAccount('Checking', 'asset', 480000n);
+
+  await signedIn.goto('/');
+  await signedIn.getByRole('button', { name: 'Options for Savings' }).click();
+  await signedIn.getByRole('menuitem', { name: 'Move up' }).click();
+
+  // Dragging is the fast way and it is not an accessible one, so this is not a
+  // lesser alternative — it is the one that always works.
+  const assets = signedIn.getByRole('table').filter({ hasText: 'Assets' });
+  await expect(assets.getByRole('row').nth(2)).toContainText('Savings');
+});
+
+test('groupings can be put in an order, from Settings', async ({ signedIn, api }) => {
+  await api.post('/api/groupings', { data: { name: 'Everyday', section: 'assets' } });
+  await api.post('/api/groupings', { data: { name: 'Long term', section: 'assets' } });
+
+  await signedIn.goto('/settings/budget');
+  await expect(signedIn.getByLabel('Name of Everyday')).toBeVisible();
+
+  await signedIn.getByRole('button', { name: 'Move Long term up' }).click();
+
+  /*
+   * The arrows are the keyboard route to the order that dragging a heading on
+   * the Budget page also gives.
+   *
+   * Scoped to the Groupings card, because delegations are on this tab too and
+   * their inline editors carry the same "Name of …" label. And asserted with a
+   * retrying expectation rather than by reading the DOM once: the reorder is a
+   * write, and reading straight after one is how a test comes to describe the
+   * state before it landed.
+   */
+  const card = signedIn.locator('section').filter({ hasText: 'Organizational only' });
+  await expect(card.locator('input[aria-label^="Name of "]').first()).toHaveValue('Long term');
+});
+
+/**
+ * The end of a list has to be reachable.
+ *
+ * Dropping onto a row always inserted *before* it, so there was no gesture that
+ * meant "after this one" — and the last place in every list, and in every
+ * grouping, could not be reached by dragging at all. The pointer's half of the
+ * row decides now.
+ */
+test('a row can be dropped at the end of a list', async ({ signedIn }) => {
+  await makeAccount('Cash', 'asset', 12000n);
+  await makeAccount('Checking', 'asset', 480000n);
+  await makeAccount('Savings', 'asset', 900000n);
+
+  await signedIn.goto('/');
+  const assets = signedIn.getByRole('table').filter({ hasText: 'Assets' });
+  await expect(assets.getByRole('row').filter({ hasText: 'Cash' })).toBeVisible();
+
+  // Onto the lower half of the last row, which before this meant nothing.
+  const cash = assets.getByRole('row').filter({ hasText: 'Cash' });
+  const savings = assets.getByRole('row').filter({ hasText: 'Savings' });
+  const box = await savings.boundingBox();
+  await cash.dragTo(savings, { targetPosition: { x: 20, y: box!.height - 2 } });
+
+  // Asserted on the order rather than on a row index: this table carries a
+  // totals row and a screen-reader header before the accounts.
+  await expect
+    .poll(async () =>
+      assets.locator('tbody tr').evaluateAll((rows) => rows.map((tr) => tr.textContent ?? '')),
+    )
+    .toEqual([
+      expect.stringContaining('Checking'),
+      expect.stringContaining('Savings'),
+      expect.stringContaining('Cash'),
+    ]);
+});
+
+test('a heading can be dropped past the rows of the last grouping', async ({ signedIn, api }) => {
+  await api.post('/api/groupings', { data: { name: 'Everyday', section: 'delegations' } });
+  await api.post('/api/groupings', { data: { name: 'Long term', section: 'delegations' } });
+  const grocery = await makeDelegation(api, 'Grocery');
+
+  const groupings = await (await api.get('/api/budget')).json();
+  const target = groupings.delegations.groupings.find(
+    (grouping: { name: string }) => grouping.name === 'Long term',
+  );
+  await api.patch(`/api/delegations/${grocery}`, { data: { groupingId: target.id } });
+
+  await signedIn.goto('/');
+  await expect(signedIn.getByRole('row').filter({ hasText: 'Long term' })).toBeVisible();
+
+  /*
+   * The last heading's own row is one row tall and sits above everything it
+   * holds, so "past it" means over the rows underneath — which is where a
+   * pointer naturally goes.
+   */
+  const everyday = signedIn.getByRole('row').filter({ hasText: 'Everyday' });
+  const row = signedIn.getByRole('row').filter({ hasText: 'Grocery' });
+  await everyday.dragTo(row);
+
+  // Polled, not read once: the reorder is a write, and reading the DOM straight
+  // after one describes the state before it landed.
+  await expect
+    .poll(async () => {
+      const order = await signedIn
+        .locator('tr')
+        .evaluateAll((rows) => rows.map((tr) => tr.textContent ?? ''));
+      return (
+        order.findIndex((text) => text.includes('Long term')) <
+        order.findIndex((text) => text.includes('Everyday'))
+      );
+    })
+    .toBe(true);
 });

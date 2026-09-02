@@ -439,3 +439,46 @@ export async function placeDelegation(
     });
   }
 }
+
+/**
+ * Puts the groupings of one section in an order.
+ *
+ * The whole order for that section, for the reason `placeDelegation` takes one:
+ * a direction races, a list cannot. Restricted to a section because the three
+ * are independent lists that happen to share a table — reordering Assets must
+ * not renumber Delegations underneath somebody.
+ */
+export async function reorderGroupings(
+  db: Db,
+  section: GroupingSection,
+  orderedIds: readonly string[],
+): Promise<void> {
+  const live = await db.grouping.findMany({
+    where: { archivedAt: null, section },
+    select: { id: true, systemKey: true },
+  });
+
+  /*
+   * The application's own groupings are not moved.
+   *
+   * Outstanding checks sort last by rule rather than by position — they are
+   * where the budget puts money that has left in paper form, not a heading
+   * anybody filed anything under — so they are excluded here rather than
+   * silently renumbered into the middle.
+   */
+  const movable = live.filter((grouping) => grouping.systemKey === null).map((row) => row.id);
+  const wanted = new Set(orderedIds);
+
+  if (orderedIds.length !== movable.length || movable.some((id) => !wanted.has(id))) {
+    // A partial order would leave groupings where they were, which reads as the
+    // reorder having been ignored.
+    throw new ValidationError(
+      'incomplete_order',
+      'Reordering must list every grouping in the section exactly once.',
+    );
+  }
+
+  for (const [index, id] of orderedIds.entries()) {
+    await db.grouping.update({ where: { id }, data: { position: (index + 1) * 10 } });
+  }
+}

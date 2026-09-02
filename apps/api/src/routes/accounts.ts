@@ -7,6 +7,7 @@ import { householdTimezone } from '../domain/settings.js';
 import {
   archiveAccount,
   createManualAccount,
+  placeAccount,
   restoreAccount,
   updateAccount,
 } from '../domain/accounts.js';
@@ -175,6 +176,34 @@ export const accountRoutes: FastifyPluginCallback = (fastify, _options, done) =>
       // A typed balance becomes a valuation dated today — the household's today.
       timeZone: await householdTimezone(prisma, fastify.config.SCHEDULE_TIMEZONE),
     });
+    return { ok: true };
+  });
+
+  /**
+   * Where an account sits: which grouping, and in what order among its
+   * neighbours.
+   *
+   * The whole order, not a direction — the same shape as the delegation route
+   * beside it, and for the same reason: a "move up" that races another tab's
+   * "move down" lands somewhere neither person asked for, and a list cannot.
+   */
+  fastify.post('/api/accounts/:id/place', async (request) => {
+    const { id } = idParamsSchema.parse(request.params);
+    const body = z
+      .object({
+        groupingId: z.string().uuid().nullable(),
+        orderedIds: z.array(z.string().uuid()).min(1),
+      })
+      .parse(request.body);
+
+    await prisma.$transaction(async (tx) => {
+      await placeAccount(tx, {
+        accountId: id,
+        groupingId: body.groupingId,
+        orderedIds: body.orderedIds,
+      });
+    });
+
     return { ok: true };
   });
 

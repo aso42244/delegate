@@ -243,6 +243,7 @@ function NicknameDialog({
 export function AccountRowMenu({
   row,
   groupings,
+  onNudge,
 }: {
   readonly row: AccountMenuRow;
   /**
@@ -251,6 +252,14 @@ export function AccountRowMenu({
    * they can be seen.
    */
   readonly groupings?: readonly GroupingOption[];
+  /**
+   * Moves the account one place within its grouping.
+   *
+   * The keyboard route to the ordering that dragging a row also gives — dragging
+   * is the fast way and it is not an accessible one. Omitted in Settings →
+   * Accounts, which is one alphabetical list rather than the arrangement.
+   */
+  readonly onNudge?: (row: AccountMenuRow, direction: -1 | 1) => void;
 }): ReactNode {
   const queryClient = useQueryClient();
   const [dialog, setDialog] = useState<'none' | 'rename' | 'nickname' | 'balance'>('none');
@@ -419,6 +428,33 @@ export function AccountRowMenu({
               >
                 Mark reviewed
               </button>
+            )}
+
+            {onNudge && (
+              <>
+                <button
+                  type="button"
+                  role="menuitem"
+                  className={ITEM_CLASS}
+                  onClick={() => {
+                    onNudge(row, -1);
+                    controls.close();
+                  }}
+                >
+                  Move up
+                </button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  className={ITEM_CLASS}
+                  onClick={() => {
+                    onNudge(row, 1);
+                    controls.close();
+                  }}
+                >
+                  Move down
+                </button>
+              </>
             )}
 
             {groupings && (

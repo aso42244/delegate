@@ -60,6 +60,8 @@ export interface TargetDto {
 export interface BudgetGroupingDto {
   readonly id: string;
   readonly name: string;
+  /** Where it sits among the other groupings of its section. */
+  readonly position: number;
   readonly color: string | null;
   readonly collapsed: boolean;
   /** Set on groupings the budget owns; only "outstanding-checks" today. */
@@ -157,6 +159,19 @@ export const budgetApi = {
    */
   place: (id: string, groupingId: string | null, orderedIds: readonly string[]) =>
     api.post<BudgetViewDto>(`/api/delegations/${id}/place`, { groupingId, orderedIds }),
+
+  /** The same, for an account. Assets and Debts are ordered lists now too. */
+  placeAccount: (id: string, groupingId: string | null, orderedIds: readonly string[]) =>
+    api.post<{ ok: boolean }>(`/api/accounts/${id}/place`, { groupingId, orderedIds }),
+
+  /**
+   * The order of one section's groupings, whole.
+   *
+   * A section at a time: the three are independent lists that share a table, and
+   * reordering Assets must not renumber Delegations underneath somebody.
+   */
+  reorderGroupings: (section: 'assets' | 'debts' | 'delegations', groupingIds: readonly string[]) =>
+    api.post<{ ok: boolean }>('/api/groupings/reorder', { section, groupingIds }),
 
   view: () => api.get<BudgetViewDto>('/api/budget'),
 

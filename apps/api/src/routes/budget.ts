@@ -29,6 +29,7 @@ import {
   createDelegation,
   createGrouping,
   placeDelegation,
+  reorderGroupings,
   updateDelegation,
   updateGrouping,
 } from '../domain/delegations.js';
@@ -181,6 +182,7 @@ function presentGrouping(grouping: BudgetGrouping): Record<string, unknown> {
   return {
     id: grouping.id,
     name: grouping.name,
+    position: grouping.position,
     color: grouping.color,
     collapsed: grouping.collapsed,
     systemKey: grouping.systemKey,
@@ -300,6 +302,28 @@ export const budgetRoutes: FastifyPluginCallback = (fastify, _options, done) => 
    * arrangement nobody chose, and the row that was dragged is the one most
    * likely to be the casualty.
    */
+  /**
+   * The order of a section's groupings, whole.
+   *
+   * A section at a time, because the three are independent lists that happen to
+   * share a table — reordering Assets must not renumber Delegations underneath
+   * somebody looking at them.
+   */
+  fastify.post('/api/groupings/reorder', async (request) => {
+    const body = z
+      .object({
+        section: z.enum(GROUPING_SECTIONS),
+        groupingIds: z.array(z.string().uuid()),
+      })
+      .parse(request.body);
+
+    await prisma.$transaction(async (tx) => {
+      await reorderGroupings(tx, body.section, body.groupingIds);
+    });
+
+    return { ok: true };
+  });
+
   fastify.post('/api/delegations/:id/place', async (request) => {
     const { id } = idParamsSchema.parse(request.params);
     const body = placeSchema.parse(request.body);

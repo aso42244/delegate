@@ -73,6 +73,8 @@ export interface BudgetRow {
 export interface BudgetGrouping {
   readonly id: string;
   readonly name: string;
+  /** Where it sits among the other groupings of its section. */
+  readonly position: number;
   readonly color: string | null;
   readonly collapsed: boolean;
   /** Set on groupings the application owns, currently only outstanding checks. */
@@ -102,11 +104,11 @@ export interface BudgetView {
 }
 
 /**
- * Delegations sit where they were put; ties break on name.
+ * Rows and groupings sit where they were put; ties break on name.
  *
- * Accounts are not orderable and all carry position 0, so this falls through to
- * the alphabetical comparison for them and nothing about those sections
- * changes.
+ * Everything untouched carries position 0, so an ordering that has never been
+ * changed falls through to the alphabetical comparison and reads exactly as it
+ * always did. A row leaves the alphabet only once somebody moves it.
  */
 const byPosition = (
   a: { position: number; name: string },
@@ -139,6 +141,7 @@ function groupRows(
     collapsed: boolean;
     section: GroupingSection;
     systemKey: string | null;
+    position: number;
   }[],
   rows: readonly BudgetRow[],
 ): BudgetSection {
@@ -150,6 +153,7 @@ function groupRows(
       return {
         id: grouping.id,
         name: grouping.name,
+        position: grouping.position,
         color: grouping.color,
         collapsed: grouping.collapsed,
         systemKey: grouping.systemKey,
@@ -163,8 +167,11 @@ function groupRows(
     // and sorting them into the middle of it by name would read as if they were.
     .filter((grouping) => grouping.systemKey === null || grouping.rows.length > 0)
     .sort((a, b) => {
+      // The application's own groupings sort last however anything else is
+      // ordered: outstanding checks are where the budget puts money that has
+      // left in paper form, not a heading anybody filed anything under.
       if ((a.systemKey === null) !== (b.systemKey === null)) return a.systemKey === null ? -1 : 1;
-      return byName(a, b);
+      return byPosition(a, b);
     });
 
   const ungrouped = rows.filter((row) => row.groupingId === null).sort(byPosition);
@@ -204,6 +211,7 @@ export async function buildBudgetView(
         balanceAsOf: true,
         feedBalanceAsOf: true,
         stalenessIntervalDays: true,
+        position: true,
         inBudget: true,
         inNetWorth: true,
         managedAs: true,
@@ -238,6 +246,7 @@ export async function buildBudgetView(
         collapsed: true,
         section: true,
         systemKey: true,
+        position: true,
       },
     }),
     computeBudgetIdentity(db),
@@ -257,8 +266,7 @@ export async function buildBudgetView(
     // Assets and debts have no amount to delegate; the column is empty for them.
     amountToDelegateCents: null,
     groupingId: account.groupingId,
-    // Accounts are not orderable; the comparison falls through to the name.
-    position: 0,
+    position: account.position,
     isUtility: false,
     notes: null,
     source: account.source,

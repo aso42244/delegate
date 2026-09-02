@@ -88,7 +88,7 @@ export function DisplaySection(): ReactNode {
           rather than all of it — which is what they were doing, three deep down
           a page that had room for them side by side. */}
       <SettingsCard
-        span={1}
+        span="third"
         title="Theme"
         description="Light, dark, or whatever this device asks for."
       >
@@ -96,7 +96,7 @@ export function DisplaySection(): ReactNode {
       </SettingsCard>
 
       <SettingsCard
-        span={1}
+        span="third"
         title="Budget layout"
         description="Where the three sections sit on the Budget page."
       >
@@ -120,7 +120,7 @@ export function DisplaySection(): ReactNode {
       </SettingsCard>
 
       <SettingsCard
-        span={1}
+        span="third"
         title="Row height"
         description="Spacing only — the text stays the same size."
       >
@@ -135,7 +135,11 @@ export function DisplaySection(): ReactNode {
         <p className="mt-4 text-quiet text-muted">Remembered on this device only.</p>
       </SettingsCard>
 
-      <SettingsCard span={1} title="Settings tabs" description="Where these sections are listed.">
+      <SettingsCard
+        span="third"
+        title="Settings tabs"
+        description="Where these sections are listed."
+      >
         <Choice
           name="settingsTabs"
           legend="Settings tabs"

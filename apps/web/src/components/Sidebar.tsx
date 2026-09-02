@@ -59,6 +59,26 @@ export function Icon({ name }: { readonly name: PageIcon }): ReactNode {
         <path d="M4 16.5v-5M10 16.5v-9M16 16.5v-3" />
       </>
     ),
+    /*
+     * The panel and the arrow: a sidebar, and which way it goes.
+     *
+     * It was `«` and `»`, which is the same mistake the nav icons were fixed
+     * for — a Unicode glyph renders at whatever weight and baseline each
+     * platform decides, and beside six drawn icons it read as a different kind
+     * of thing. Same 20-unit grid, same stroke.
+     */
+    collapse: (
+      <>
+        <rect x="2.5" y="3.5" width="15" height="13" rx="2" />
+        <path d="M8 3.5v13M14.5 10h-4M12.5 8l-2 2 2 2" />
+      </>
+    ),
+    expand: (
+      <>
+        <rect x="2.5" y="3.5" width="15" height="13" rx="2" />
+        <path d="M8 3.5v13M10.5 10h4M12.5 8l2 2-2 2" />
+      </>
+    ),
     // Sliders. A gear turns to mush at this size.
     settings: (
       <>
@@ -85,7 +105,22 @@ export function Icon({ name }: { readonly name: PageIcon }): ReactNode {
   );
 }
 
-export type PageIcon = 'budget' | 'transactions' | 'bills' | 'utilities' | 'insights' | 'settings';
+/**
+ * Every drawn mark in the shell, not only the destinations.
+ *
+ * `collapse` and `expand` are here rather than typed apart because they are the
+ * same 20-unit grid and the same stroke — that sameness is the point, and a
+ * second type would let it drift.
+ */
+export type PageIcon =
+  | 'budget'
+  | 'transactions'
+  | 'bills'
+  | 'utilities'
+  | 'insights'
+  | 'settings'
+  | 'collapse'
+  | 'expand';
 
 export const PAGES = [
   { to: '/', label: 'Budget', icon: 'budget', end: true },
@@ -192,7 +227,17 @@ export function Sidebar({ appName }: { appName: string }): ReactNode {
       // found yet on their first run.
       className={`${width} hidden shrink-0 flex-col border-r border-line bg-canvas transition-[width] sm:flex`}
     >
-      <div className="flex items-center gap-2 px-3 py-3">
+      {/*
+        Collapsed, the toggle joins the icons: same size, same column, same
+        hover — with a rule under it, because it acts on the sidebar itself
+        rather than going anywhere. Expanded, it sits at the end of the name
+        row, which is where a control that closes something belongs.
+      */}
+      <div
+        className={`flex items-center gap-2 px-3 py-3 ${
+          collapsed ? 'justify-center border-b border-line' : ''
+        }`}
+      >
         {!collapsed && (
           <span className="max-w-sidebar-cap truncate font-semibold text-ink">{appName}</span>
         )}
@@ -201,9 +246,9 @@ export function Sidebar({ appName }: { appName: string }): ReactNode {
           onClick={() => setCollapsed(!collapsed)}
           aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
           aria-expanded={!collapsed}
-          className="ml-auto rounded p-1 text-muted hover:bg-surface-2"
+          className={`rounded-md p-1.5 text-muted hover:bg-surface-2 ${collapsed ? '' : 'ml-auto'}`}
         >
-          {collapsed ? '»' : '«'}
+          <Icon name={collapsed ? 'expand' : 'collapse'} />
         </button>
       </div>
 

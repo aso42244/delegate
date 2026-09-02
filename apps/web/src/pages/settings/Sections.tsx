@@ -5,7 +5,8 @@ import { DelegationsSection } from './Delegations.jsx';
 import { GroupingsSection } from './Groupings.jsx';
 import { PropertiesSection } from './Properties.jsx';
 import { TorSection } from './Tor.jsx';
-import { UsersSection } from './Users.jsx';
+import { TwoFactorCard } from './TwoFactor.jsx';
+import { UsersSection, YourAccount } from './Users.jsx';
 
 /**
  * The three sections that are several of the old ones.
@@ -52,8 +53,18 @@ export function HoldingsSection(): ReactNode {
 export function AccessSection(): ReactNode {
   return (
     <>
-      <UsersSection />
+      {/*
+        Three about getting in, then two about who has been.
+        
+        The order is the layout: `YourAccount`, two-factor and the onion service
+        are each a third of a row, and the two tables under them are halves. A
+        section that rendered all five in one fixed block could not be arranged
+        this way, which is why the cards above are separate exports.
+      */}
+      <YourAccount />
+      <TwoFactorCard />
       <TorSection />
+      <UsersSection />
     </>
   );
 }

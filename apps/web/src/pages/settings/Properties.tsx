@@ -394,6 +394,7 @@ export function PropertiesSection(): ReactNode {
       {problem !== null && problem !== '' && <Alert tone="danger">{problem}</Alert>}
 
       <SettingsCard
+        span="half"
         title="Properties"
         description="Valued on a date and kept, so history stays true."
         action={<Button onClick={() => setAdding(true)}>New property</Button>}

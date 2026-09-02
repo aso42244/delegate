@@ -267,11 +267,25 @@ question somebody came to answer — Sync, Accounts, Budget, Rules, Holdings,
 Access, Display, Archived — and every route that existed before still resolves,
 redirecting to whichever section absorbed it.
 
-**Cards are a three-column grid, and a card states what it needs.** `span` on
-`SettingsCard` is 1, 2 or 3 and **defaults to 3**, so a card that has not thought
-about it keeps the full width it always had. Three radio buttons take a third of
-a row; a table of forty rules takes all of it. Grid gutter `gap-6`, which is the
-card-to-card step from §1.
+**Cards are a six-column grid, and a card states what it needs.** `span` on
+`SettingsCard` is `third`, `half`, `two-thirds` or `full`, and **defaults to
+`full`** — a card that has not thought about it keeps the width it always had.
+Six columns rather than three because three cannot express "two side by side",
+and a half is not a whole number of thirds. Grid gutter `gap-6`, the card-to-card
+step from §1.
+
+It is `span`, not `width`: a field's `width` is its own scale (§2), and two
+vocabularies under one prop name is a trap for whoever reads it next.
+
+**Cards on one line end level.** The grid stretches its items and the card is a
+flex column with `h-full`, so its border reaches the bottom of the tallest card
+beside it rather than stopping where its own content stops. Three radio groups of
+three, two and three options drew three different boxes before that.
+
+**A card holds one subject.** Where a second card was only a property of the
+first, it belongs inside it under a rule and a `text-quiet font-semibold`
+sub-heading — the Bitcoin node is where those holdings are read from, not a
+subject beside them.
 
 **Where the sections are listed is a per-device preference**, on Settings →
 Display beside the theme and the row height: a row across the top, or a rail down

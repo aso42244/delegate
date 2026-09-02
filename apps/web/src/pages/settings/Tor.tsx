@@ -36,6 +36,7 @@ export function TorSection(): ReactNode {
     <>
       {problem && <Alert>{problem}</Alert>}
       <SettingsCard
+        span="third"
         title="Reaching the budget from away"
         description="Over Tor, with no port forwarded, no domain name, and nobody in the middle holding your data."
       >

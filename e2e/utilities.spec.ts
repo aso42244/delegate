@@ -206,7 +206,7 @@ test('changing the pay cadence changes the suggestion and the sentence', async (
   await expect(signedIn.getByText('$5.54')).toBeVisible();
 
   await signedIn.goto('/settings/budget');
-  await signedIn.getByLabel('Paid').selectOption('weekly');
+  await signedIn.getByLabel('Pay cadence').selectOption('weekly');
 
   // The field's own copy updating is the signal the write landed; reading the
   // other page before it does would race the save.
@@ -223,7 +223,7 @@ test('the amount to delegate is left alone when the cadence changes', async ({ s
   await api.patch(`/api/delegations/${water}`, { data: { isUtility: true } });
 
   await signedIn.goto('/settings/budget');
-  await signedIn.getByLabel('Paid').selectOption('weekly');
+  await signedIn.getByLabel('Pay cadence').selectOption('weekly');
   await expect(signedIn.getByText(/52 paychecks a year/)).toBeVisible();
 
   // Still $60.00 a press. Changing how often you are paid does not decide how

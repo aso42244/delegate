@@ -4,7 +4,6 @@ import { useState, type FormEvent, type ReactNode } from 'react';
 import { nodeApi } from '../../api/bitcoin.js';
 import { ApiError } from '../../api/client.js';
 import { Alert, Button, TextField } from '../../components/ui.jsx';
-import { SettingsCard } from './SettingsCard.jsx';
 
 /**
  * Settings → Bitcoin → where address data comes from.
@@ -101,7 +100,17 @@ export function BitcoinNodeSection(): ReactNode {
   }
 
   return (
-    <SettingsCard title="Where address data comes from" description="Needed to watch a wallet.">
+    /*
+     * The fields, without a card of their own.
+     *
+     * Where address data comes from is a property of the Bitcoin holdings it
+     * serves, not a second subject — it was a card beside them saying so at the
+     * same weight. It sits inside that card now, under a rule.
+     */
+    <div className="mt-4 border-t border-line pt-4">
+      <h3 className="text-quiet font-semibold text-ink">Where address data comes from</h3>
+      <p className="mb-4 text-quiet text-muted">Needed to watch a wallet.</p>
+
       {problem && <Alert tone="danger">{problem}</Alert>}
 
       <form onSubmit={submit} className="flex flex-wrap items-end gap-2">
@@ -168,6 +177,6 @@ export function BitcoinNodeSection(): ReactNode {
           </ul>
         </div>
       )}
-    </SettingsCard>
+    </div>
   );
 }

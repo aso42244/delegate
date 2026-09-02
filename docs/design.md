@@ -1055,3 +1055,54 @@ about sixty more than "Transactions" takes; the rest was margin the page beside 
 could have used. It is intrinsic now — `w-fit`, with the labels holding their line
 and anything of uncontrolled length capped and truncated, because an email address
 is wider than anything anybody navigates to.
+
+## Assets, Debts and their headings are ordered too
+
+Delegations have had a position since v0.24. The argument was that the owner's
+groupings are named "3 - Food" and "5 - Home" because ordering was the thing
+missing, and numbering them was the workaround — and that argument is no
+different one level up or one level across. The order a household reads its own
+accounts in is a fact about the household; alphabetical is nobody's reading.
+
+**A row is dragged onto the row it should sit above.** The same gesture and the
+same request shape delegations use: the whole resulting order, not a direction —
+a "move up" that races another tab's "move down" lands somewhere neither person
+asked for, and a list cannot.
+
+**A heading is dragged onto the heading it should sit above.** Rows and headings
+are dropped on the same table and mean different things there, so the payload
+says which it is; a heading dropped on a row does nothing, because filing a
+heading under a line is not a request anybody can honour.
+
+**The application's own groupings do not move.** Outstanding checks sort last by
+rule rather than by where anybody put them — that heading is where the budget
+keeps money that has left in paper form, not something anybody filed under.
+
+**Dragging is never the only route.** The account row menu carries Move up and
+Move down, and Settings → Budget carries a pair of arrows on every grouping. Drag
+and drop is the fast way and it is not an accessible one; these are the ones that
+always work.
+
+**A drop lands on the edge the pointer is nearest.** Dropping onto a row used to
+insert before it, always — so there was no gesture that meant "after this one",
+and the last place in every list and every grouping could not be reached by
+dragging at all. The pointer's half of the row decides, and the accent line is
+drawn on the edge it will land on rather than always on top.
+
+**A heading dragged over another grouping's rows means "past that grouping".**
+The last heading's own row is one row tall and sits above everything it holds, so
+reaching the bottom of a long section meant hitting a strip of pixels. What is
+being dragged is remembered in state rather than read from the event —
+`dataTransfer` is empty during `dragover` in every browser, and this is a
+decision that has to be made while the pointer is moving.
+
+**Nothing moves until somebody moves it.** Every row starts at position zero and
+a tie falls through to the name, so a budget nobody has rearranged still reads
+alphabetically.
+
+**The sidebar's toggle is a drawn icon**, on the same 20-unit grid and stroke as
+the destinations below it. It was `«` and `»`, which is the mistake §4's icon set
+was fixed for: a Unicode glyph renders at whatever weight and baseline each
+platform decides. Collapsed, it joins the icon column — same size, same centre —
+with a rule under it, because it acts on the sidebar itself rather than going
+anywhere.

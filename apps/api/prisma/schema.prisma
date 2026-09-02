@@ -337,6 +337,14 @@ model Grouping {
   name    String
   section GroupingSection
 
+  /**
+   * Where this grouping sits among its neighbours in the same section.
+   *
+   * Zero on every row until one is moved, and the sort falls through to the name
+   * when positions tie — so an untouched budget still reads alphabetically.
+   */
+  position Int @default(0)
+
   // Rendered as a 3px left rail or a small dot, never a filled row background.
   color     String?
   collapsed Boolean @default(false)
@@ -379,6 +387,15 @@ model Account {
 
   // Two orthogonal booleans. The house and the mortgage are inNetWorth only,
   // which is precisely why the mortgage does not blow up the budget identity.
+  /**
+   * Where this account sits among its neighbours in the same grouping.
+   *
+   * As for a delegation and for the same reason: the order the household reads
+   * its accounts in is a fact about the household, and alphabetical is nobody's
+   * reading of it. Ties fall through to the name.
+   */
+  position Int @default(0)
+
   inBudget   Boolean @default(true) @map("in_budget")
   inNetWorth Boolean @default(true) @map("in_net_worth")
 

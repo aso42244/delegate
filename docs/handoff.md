@@ -112,7 +112,7 @@ and the image is published multi-arch on version tags. The NAS is one deployment
 of many rather than the deployment, and it keeps working — it adopts the secrets
 already in its `.env`.
 
-293 unit, 716 integration and 210 end-to-end tests. There is no CI: GitHub stores the code and nothing else
+293 unit, 725 integration and 215 end-to-end tests. There is no CI: GitHub stores the code and nothing else
 ([ADR 022](decisions/022-the-checks-run-here-not-on-github.md)), and every gate
 runs locally through `npm run verify`.
 
@@ -558,6 +558,31 @@ and sending screenshots. None of it was visible from a test fixture.
   uncontrolled length is capped, because `w-fit` takes the widest child and an
   email address is wider than anything anybody navigates to
 
+**And the second pass over the shell**
+
+- **Assets, Debts and their headings can be dragged into an order.** Delegations
+  have had a position since v0.24; the same argument applies one level up and one
+  level across, and the owner asked for it the day he first used the page.
+  Nothing moves until it is moved — every row starts at zero and a tie falls
+  through to the name — so an untouched budget still reads alphabetically. The
+  account row menu and Settings → Budget's arrows are the routes that work
+  without a mouse
+- **Settings cards on one line end level**, and the grid counts in **sixths** so
+  a card can be a half. Three columns could not express "two side by side"
+- **Holdings is Bitcoin beside Properties**, with the node folded into the
+  Bitcoin card: where address data comes from is a property of those holdings
+  rather than a subject at the same weight. **Access is three across then two**
+- The card prop is `span`, not `width` — a field's `width` is its own scale, and
+  two vocabularies under one name is a trap
+- **A drop lands on the edge the pointer is nearest.** Dropping onto a row always
+  inserted _before_ it, so nothing could be placed last — found by the owner in
+  the first minute of using it. A heading dragged over another grouping's rows
+  means "past that grouping", which is how the bottom of a long section is
+  reached; what is being dragged is kept in state because `dataTransfer` is empty
+  during `dragover` in every browser
+- **The sidebar's toggle is a drawn icon** rather than `«`/`»`, and joins the
+  icon column when collapsed. Same mistake the nav icons were fixed for
+
 ### Known gaps to fix
 
 None outstanding. The September security review is closed — see
@@ -945,8 +970,8 @@ npm run verify            # everything, in the order CI used to run it
 npm run verify:quick      # the same, minus the container image build
 
 npm run test              # 293 unit
-npm run test:integration  # 716 integration
-npm run test:e2e          # 210 end-to-end, needs a build first
+npm run test:integration  # 725 integration
+npm run test:e2e          # 215 end-to-end, needs a build first
 ```
 
 `npm run verify` is the gate. It runs migrations, typecheck, lint, formatting,

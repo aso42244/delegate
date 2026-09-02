@@ -69,13 +69,16 @@ export function SettingsLayout(): ReactNode {
   /*
    * The cards, as a three-column grid on a wide screen.
    *
-   * Every card used to take the whole width, so Display was three radio groups
-   * stacked down a 1,200px page with each one using a fifth of its own row. A
-   * card states what it needs with `span` and the default is still the whole
-   * row, so nothing that has not thought about it changed.
+   * Six columns, so a card can be a third, a half, two-thirds or the whole row —
+   * three columns could not express "two side by side", and a half is not a
+   * whole number of thirds. A card states what it needs with `span` and the
+   * default is the whole row, so nothing that has not thought about it changed.
+   *
+   * Items stretch rather than starting at the top, so cards on one line end
+   * level with each other.
    */
   const body = (
-    <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-3">
+    <div className="grid grid-cols-1 gap-6 lg:grid-cols-6">
       {narrow && atIndex ? <SettingsIndex /> : <Outlet />}
     </div>
   );
