@@ -6,10 +6,14 @@ phase (`v0.1.0-phase1`, and so on).
 
 ## [Unreleased]
 
+Nothing yet.
+
+## [0.49.0] — 2026-09-02
+
 ### Fixed
 
 - **A settings card's content no longer draws past its own border.** The backups
-  table asked a `sm:` breakpoint how wide the *window* was, got 1440, and laid
+  table asked a `sm:` breakpoint how wide the _window_ was, got 1440, and laid
   itself out for a 640px card that was actually 345px across — so its columns
   ran out under the card beside it. Every settings card is a query container
   now, and content inside one sizes to the card rather than to the screen.
