@@ -88,13 +88,14 @@ These are non-negotiable. Violating one is a build failure.
 
 ## Where things stand
 
-**`main` is at `v0.44.0`; the NAS is running `v0.41.1`**, deployed 2026-09-01 —
+**`main` is at `v0.45.0`; the NAS is running `v0.41.1`**, deployed 2026-09-01 —
 the first release pulled as a published image rather than compiled on the NAS.
 
-Four releases are waiting: `v0.41.2` and `v0.42.0` are carried by `v0.43.0`,
-which the owner held deliberately so the queue work, Bills and the export would
-land together. `v0.44.0` adds targets, built while he reviewed the rest, and
-carries all of it. One thing to know about `v0.41.2`: the `deploy.sh` fix
+Five releases are waiting and the newest carries all of them. `v0.41.2` and
+`v0.42.0` ride in `v0.43.0`, which the owner held deliberately so the queue work,
+Bills and the export would land together; `v0.44.0` adds targets; `v0.45.0` is
+what the first real run of Bills asked for. He has been reviewing them against
+real data without deploying, which is how the thrift shop was found. One thing to know about `v0.41.2`: the `deploy.sh` fix
 in it ships _inside the file being replaced_, so a `--unpack` deploy still runs
 `v0.41.1`'s copy and the one after that gets the fix. The registry route is
 unaffected, and that is the ordinary deploy now.
@@ -478,7 +479,7 @@ normalization neither can drift from.
   say `"$2200, Dec 27"` — a text field somebody wrote by hand is not something to
   parse and overwrite
 
-**Since v0.44.0 — the first real run of Bills, and what it asked for**
+**Since v0.44.0 — the first real run of Bills, and what it asked for (`v0.45.0`)**
 
 - **A bill can be taken off the list, or given a name of its own.** Thirteen
   bills came out of the owner's real register and one of them was **SAVERS**, a

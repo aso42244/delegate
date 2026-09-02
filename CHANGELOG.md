@@ -6,6 +6,10 @@ phase (`v0.1.0-phase1`, and so on).
 
 ## [Unreleased]
 
+Nothing yet.
+
+## [0.45.0] — 2026-09-02
+
 ### Added
 
 - **A bill can be taken off the list, or given a name of its own.** The first run
