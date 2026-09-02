@@ -114,6 +114,19 @@ export function BillRowMenu({
     >
       {(controls) => (
         <>
+          {/*
+            What the bank actually calls it.
+            
+            Only where it differs from what is on the row — otherwise it is the
+            row repeated. It used to sit under the name in small grey, which put
+            a line of feed text on every renamed row and undid most of what
+            renaming was for. Here it is one press away for the person
+            reconciling against a statement, and invisible to everybody else.
+          */}
+          {bill.renamed && (
+            <p className="px-2 pb-1 text-label break-words text-muted">{bill.feedName}</p>
+          )}
+
           <button
             type="button"
             role="menuitem"

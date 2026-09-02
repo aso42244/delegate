@@ -6,7 +6,34 @@ phase (`v0.1.0-phase1`, and so on).
 
 ## [Unreleased]
 
-Nothing yet.
+### Added
+
+- **A target can repeat.** Home insurance is $2,200 on the last day of April and
+  again on the last day of October — one target with a six-month interval, not a
+  date to retype twice a year.
+
+  The date you enter is an **anchor** rather than a deadline: the reading always
+  works towards the next occurrence still ahead and rolls on by itself as each
+  passes. Months rather than days, because the last day of April recurs on the
+  last day of October, which no number of days expresses — and an anchor on the
+  31st is clamped rather than allowed to roll into the next month.
+
+- **The amount it offers is editable.** Turning on "Also set the amount to
+  delegate" now reveals a money field holding the calculated figure, and what
+  gets written is whatever is in it. $274.38 a paycheck is more likely to be
+  funded at $300, and that decision belongs where it is being made.
+  [ADR 047](docs/decisions/047-a-target-never-moves-an-amount.md), amended.
+
+### Changed
+
+- Bills: the column is **Cadence**, not "Every" — the cell under it reads
+  "Monthly", and "Every Monthly" is not a sentence.
+- Bills: a renamed bill shows its name alone. The bank's description moved into
+  the row menu, where it is one press away for reconciling against a statement
+  and still searchable. Under the name it put a line of feed text on every
+  renamed row, which is what renaming was for.
+- Bills: "Fortnightly" is now **Every two weeks**, which is what Settings → Budget
+  already calls that cadence.
 
 ## [0.45.0] — 2026-09-02
 

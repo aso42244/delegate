@@ -47,7 +47,10 @@ export interface BudgetRowDto {
 /** A calendar day, `2026-12-27` — never an instant. See ADR 037. */
 export interface TargetDto {
   readonly targetCents: string;
+  /** The occurrence being worked towards, not the anchor that was typed. */
   readonly targetDate: string | null;
+  /** Months between occurrences. Null for a one-off. */
+  readonly intervalMonths: number | null;
   readonly shortfallCents: string;
   readonly cyclesRemaining: number | null;
   readonly neededPerCycleCents: string | null;
@@ -129,6 +132,8 @@ export interface UpdateDelegationInput {
   readonly targetCents?: string | null;
   /** `2026-12-27`. Null makes it a standing target: keep this much here. */
   readonly targetDate?: string | null;
+  /** Months between occurrences. Null is a one-off deadline. */
+  readonly targetIntervalMonths?: number | null;
 }
 
 export const budgetApi = {

@@ -99,10 +99,25 @@ switch in the dialog, and afterwards it is an ordinary amount to delegate. The
 arithmetic is in `@budget/shared` because the dialog shows it live as somebody
 types, and a second copy would be a second answer.
 
-Two check constraints hold the shape: a date without an amount is a deadline for
-nothing, and a target of zero is not a target — clearing one is what null is for.
-`target_date` is a `DATE`, a decided day needing no zone, and crosses the wire as
-`2026-12-27` rather than as an instant.
+**A target can repeat.** `target_date` is an **anchor** — one occurrence of the
+series — and `target_interval_months` says how the rest follow, so a bill due on
+the last day of April and again on the last day of October is entered once and
+never goes stale. Months rather than days, because that recurrence is not
+expressible in days; `addMonthsToDayKey` keeps the end of the month and clamps a
+day the next month does not have.
+
+Three check constraints hold the shape: a date without an amount is a deadline for
+nothing, a target of zero is not a target — clearing one is what null is for — and
+an interval with no date has nothing to repeat from. `target_date` is a `DATE`, a
+decided day needing no zone, and crosses the wire as `2026-12-27` rather than as
+an instant.
+
+`updateDelegation` resolves those three fields **once**, as the values it will
+write, and validates and writes from that. They constrain each other and a request
+usually mentions one of them: validating the field that arrived refuses "remove
+this target", and writing the field that arrived while validating something else
+lets a request past the domain and into a constraint, which then surfaces as a
+Prisma error rather than as a sentence.
 
 **A delegation's balance is not a stored, freely-mutable number.** It is the sum
 of an append-only event stream:

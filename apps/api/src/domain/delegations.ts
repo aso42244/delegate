@@ -76,7 +76,11 @@ async function assertGroupingUsable(
  * The database holds both of these too. They are here so the refusal says which
  * one it is, rather than surfacing as a constraint name.
  */
-function assertTargetSane(targetCents: Cents | null, targetDate: Date | null): void {
+function assertTargetSane(
+  targetCents: Cents | null,
+  targetDate: Date | null,
+  intervalMonths: number | null = null,
+): void {
   if (targetDate !== null && targetCents === null) {
     throw new ValidationError(
       'target_date_without_amount',
@@ -88,6 +92,20 @@ function assertTargetSane(targetCents: Cents | null, targetDate: Date | null): v
       'target_not_positive',
       'A target is an amount to reach. Clear it instead of setting it to zero.',
     );
+  }
+  if (intervalMonths !== null) {
+    if (targetDate === null) {
+      throw new ValidationError(
+        'target_interval_without_date',
+        'A repeating target needs a date to repeat from.',
+      );
+    }
+    if (!Number.isInteger(intervalMonths) || intervalMonths < 1 || intervalMonths > 120) {
+      throw new ValidationError(
+        'target_interval_out_of_range',
+        'A target repeats every 1 to 120 months.',
+      );
+    }
   }
 }
 
@@ -107,6 +125,8 @@ export interface CreateDelegationInput {
    */
   readonly targetCents?: Cents | null | undefined;
   readonly targetDate?: Date | null | undefined;
+  /** How often the date comes round, in months. Null for a one-off. */
+  readonly targetIntervalMonths?: number | null | undefined;
 }
 
 export async function createDelegation(
@@ -116,7 +136,11 @@ export async function createDelegation(
   const name = normalizeName(input.name);
   await assertDelegationNameFree(db, name);
   if (input.groupingId) await assertGroupingUsable(db, input.groupingId, 'delegations');
-  assertTargetSane(input.targetCents ?? null, input.targetDate ?? null);
+  assertTargetSane(
+    input.targetCents ?? null,
+    input.targetDate ?? null,
+    input.targetIntervalMonths ?? null,
+  );
 
   return db.delegation.create({
     data: {
@@ -129,6 +153,7 @@ export async function createDelegation(
       notes: input.notes ?? null,
       targetCents: input.targetCents ?? null,
       targetDate: input.targetDate ?? null,
+      targetIntervalMonths: input.targetIntervalMonths ?? null,
     },
     select: { id: true },
   });
@@ -150,6 +175,8 @@ export interface UpdateDelegationInput {
    */
   readonly targetCents?: Cents | null | undefined;
   readonly targetDate?: Date | null | undefined;
+  /** How often the date comes round, in months. Null for a one-off. */
+  readonly targetIntervalMonths?: number | null | undefined;
 }
 
 export async function updateDelegation(
@@ -159,7 +186,14 @@ export async function updateDelegation(
 ): Promise<void> {
   const existing = await db.delegation.findUnique({
     where: { id },
-    select: { id: true, archivedAt: true, kind: true, targetCents: true, targetDate: true },
+    select: {
+      id: true,
+      archivedAt: true,
+      kind: true,
+      targetCents: true,
+      targetDate: true,
+      targetIntervalMonths: true,
+    },
   });
   if (!existing) throw new NotFoundError('Delegation', id);
   if (existing.archivedAt) {
@@ -183,28 +217,41 @@ export async function updateDelegation(
   if (input.groupingId) await assertGroupingUsable(db, input.groupingId, 'delegations');
 
   /*
-   * Checked as the pair it will be, not as the field that arrived. Clearing an
-   * amount sends one key and the date the other, and validating either alone
-   * would refuse the only request that is actually right.
+   * The target, resolved once as the three values that will actually be
+   * written, and then both validated and written from that.
+   *
+   * Doing it any other way is how this went wrong twice. A target is three
+   * fields that constrain each other — an amount, a date, and what repeats the
+   * date — and a request usually mentions one of them. Validating the field
+   * that arrived refuses "remove this target"; writing the field that arrived
+   * while validating something else lets a request past the domain and into a
+   * check constraint, which then reports itself as a Prisma error rather than
+   * as a sentence.
    */
   const nextTargetCents =
     input.targetCents === undefined ? existing.targetCents : input.targetCents;
-  assertTargetSane(
-    nextTargetCents,
-    // Clearing the amount clears the date with it, so the pair validated here
-    // has to be the pair that will be written. Checking the stored date against
-    // a cleared amount refuses the one request that is unambiguously right:
-    // "remove this target".
-    //
-    // An *explicit* null, not merely an absent one: a request that sets a date
-    // on a line which has no target is still a deadline for nothing, and must
-    // be refused with a sentence rather than by a constraint name.
+
+  // Clearing the amount clears the date with it: removing a target means the
+  // whole target, and a date with no amount is a deadline for nothing.
+  const nextTargetDate =
     input.targetCents === null
       ? null
       : input.targetDate === undefined
         ? existing.targetDate
-        : input.targetDate,
-  );
+        : input.targetDate;
+
+  // And clearing the date clears what repeats it. An interval the caller asked
+  // for explicitly is kept here rather than dropped, so that asking to repeat a
+  // target that has no date is *refused* — silently ignoring it would answer
+  // 200 to a request that did not happen.
+  const nextTargetInterval =
+    input.targetIntervalMonths !== undefined
+      ? input.targetIntervalMonths
+      : nextTargetDate === null
+        ? null
+        : existing.targetIntervalMonths;
+
+  assertTargetSane(nextTargetCents, nextTargetDate, nextTargetInterval);
 
   await db.delegation.update({
     where: { id },
@@ -216,12 +263,13 @@ export async function updateDelegation(
       ...(input.groupingId === undefined ? {} : { groupingId: input.groupingId }),
       ...(input.isUtility === undefined ? {} : { isUtility: input.isUtility }),
       ...(input.notes === undefined ? {} : { notes: input.notes }),
-      ...(input.targetCents === undefined ? {} : { targetCents: input.targetCents }),
-      // Clearing the amount clears the date with it: a deadline for nothing is
-      // the state the check constraint exists to prevent, and somebody removing
-      // a target means the whole target.
-      ...(input.targetCents === null ? { targetDate: null } : {}),
-      ...(input.targetDate === undefined ? {} : { targetDate: input.targetDate }),
+      // All three, always, from the values resolved above. A request that
+      // mentions none of them rewrites them to what it just read, which is a
+      // no-op — and one that mentions any of them cannot leave the other two
+      // saying something the validation never saw.
+      targetCents: nextTargetCents,
+      targetDate: nextTargetDate,
+      targetIntervalMonths: nextTargetInterval,
     },
   });
 }

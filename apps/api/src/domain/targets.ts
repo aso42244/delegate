@@ -30,6 +30,7 @@ export async function findBehindTargets(
       amountToDelegateCents: true,
       targetCents: true,
       targetDate: true,
+      targetIntervalMonths: true,
     },
     orderBy: { targetDate: 'asc' },
   });

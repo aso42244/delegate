@@ -226,6 +226,7 @@ export async function buildBudgetView(
         checkIssuedAt: true,
         targetCents: true,
         targetDate: true,
+        targetIntervalMonths: true,
       },
     }),
     db.grouping.findMany({

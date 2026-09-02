@@ -945,15 +945,25 @@ exactly that ground: the cadence says how often, Next says when, and an overdue
 row already carries how many days late it is, so a fourth way of saying the same
 thing was being paid for out of the one column that needed the room.
 
+**The column is `Cadence`, not `Every`.** The cell under it reads `Monthly`, and
+"Every Monthly" is not a sentence.
+
+**Nothing here says "fortnightly".** Settings → Budget offers "Every two weeks —
+26 a year" for the pay cadence, and one vocabulary for one idea is the reason the
+chip rules and the text budget exist at all.
+
 **A bill carries a row menu, and it offers exactly two things.** _Give it a name_
 and _Not a bill_ — a rename in red-free black, the correction in danger red. Every
 other figure on the row is arithmetic over transactions and would be a lie if it
 were editable; if the cadence is wrong, the answer is that this is not a bill, not
 that the number should be overwritten.
 
-**A renamed bill keeps the bank's text under its name**, at `text-label
-text-faint`, and stays searchable by it. A name is a label, not a claim about what
-the feed sent, and somebody reconciling against a statement needs the original.
+**A renamed bill shows its name and nothing else.** The bank's description is
+kept — a name is a label, not a claim about what the feed sent, and somebody
+reconciling against a statement needs the original — but it lives in the row menu.
+Drawn under the name in small grey it put a line of feed text on every renamed
+row, which is the exact noise renaming was for. It is still searchable, so a bill
+is findable by the only name a statement knows.
 
 **Hidden bills live under a fold at the foot of the page**, with the count on the
 summary. A list of corrections is not what anybody comes to the page for, but a
@@ -994,6 +1004,17 @@ shown rather than applied: what each remaining paycheck needs to carry, beside
 what the line is actually set to, stated in both directions so neither figure has
 to be remembered. Taking it is one switch, off unless somebody turns it on, and
 one line underneath says so in words.
+
+**A target's date is an anchor, and the dialog says which occurrence it means.**
+"Repeats" sits beside the date and the hint under it names the next one — `Next:
+Oct 31, 2026` — because a household entering "the last day of April" for a bill
+that also falls in October needs to see that the reading moved on without them.
+
+**The offered amount is a field, not a figure.** Turning on "Also set the amount
+to delegate" reveals a money box holding what was calculated, and what gets
+written is whatever is in it. The calculated number is the common answer, not the
+only one: $274.38 a paycheck is more likely to be funded at $300, and closing the
+dialog to type that on the row is a step in the wrong moment.
 
 **It is set in one place.** The row menu opens the dialog; Settings → Delegations
 shows the target and its verdict and does not offer a second, terser editor. Two

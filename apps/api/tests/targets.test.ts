@@ -160,6 +160,87 @@ describe('on the Budget page', () => {
   });
 });
 
+describe('a target that comes round again', () => {
+  /** Home insurance: $2,200, the last day of April and again of October. */
+  async function homeInsurance(): Promise<{ id: string }> {
+    const delegation = await makeDelegation({
+      name: 'Home Insurance',
+      amountToDelegateCents: 10000n,
+    });
+    await updateDelegation(prisma, delegation.id, {
+      targetCents: 220000n,
+      targetDate: new Date('2026-04-30T00:00:00.000Z'),
+      targetIntervalMonths: 6,
+    });
+    return delegation;
+  }
+
+  it('is worked towards its next occurrence, not the date that was typed', async () => {
+    await homeInsurance();
+
+    const view = await buildBudgetView(prisma, { timeZone: ZONE, now: NOW });
+    const row = view.delegations.ungrouped.find((entry) => entry.name === 'Home Insurance');
+
+    // April is behind us. Nothing was retyped for that to be true.
+    expect(row?.target?.targetDate?.toISOString().slice(0, 10)).toBe('2026-10-31');
+    expect(row?.target?.intervalMonths).toBe(6);
+  });
+
+  it('sends the occurrence as a day, with the interval beside it', async () => {
+    await homeInsurance();
+
+    const response = await app.inject({ method: 'GET', url: '/api/budget', headers: { cookie } });
+    const body = response.json<{
+      delegations: {
+        ungrouped: {
+          name: string;
+          target: { targetDate: string; intervalMonths: number } | null;
+        }[];
+      };
+    }>();
+    const row = body.delegations.ungrouped.find((entry) => entry.name === 'Home Insurance');
+
+    expect(row?.target?.targetDate).toBe('2026-10-31');
+    expect(row?.target?.intervalMonths).toBe(6);
+  });
+
+  it('refuses an interval with no date to repeat from', async () => {
+    const delegation = await makeDelegation({ name: 'Home Insurance' });
+
+    await expect(
+      updateDelegation(prisma, delegation.id, { targetCents: 220000n, targetIntervalMonths: 6 }),
+    ).rejects.toThrow(/date to repeat from/i);
+  });
+
+  it('is held by the database as well', async () => {
+    const delegation = await makeDelegation({ name: 'Home Insurance' });
+
+    await expect(
+      prisma.delegation.update({
+        where: { id: delegation.id },
+        data: { targetCents: 220000n, targetIntervalMonths: 6 },
+      }),
+    ).rejects.toThrow();
+  });
+
+  it('clears what repeats it when the target goes', async () => {
+    const delegation = await homeInsurance();
+
+    await updateDelegation(prisma, delegation.id, { targetCents: null });
+
+    const row = await prisma.delegation.findUniqueOrThrow({ where: { id: delegation.id } });
+    expect(row.targetDate).toBeNull();
+    expect(row.targetIntervalMonths).toBeNull();
+  });
+
+  it('leaves the amount to delegate alone, as every target does', async () => {
+    const delegation = await homeInsurance();
+
+    const row = await prisma.delegation.findUniqueOrThrow({ where: { id: delegation.id } });
+    expect(row.amountToDelegateCents).toBe(10000n);
+  });
+});
+
 describe('being told', () => {
   it('reports a line that will not make its date', async () => {
     await insuranceLine();

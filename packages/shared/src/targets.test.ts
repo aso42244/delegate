@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { cyclesUntil, targetProgress } from './targets.js';
+import { addMonthsToDayKey, cyclesUntil, targetProgress } from './targets.js';
 
 /**
  * A target's arithmetic.
@@ -133,5 +133,107 @@ describe('no target', () => {
         SEP_02,
       ),
     ).toBeNull();
+  });
+});
+
+describe('a target that comes round again', () => {
+  /**
+   * The one entered against real data: home insurance, due on the last day of
+   * April and again on the last day of October.
+   */
+  const APR_30 = new Date('2026-04-30T00:00:00.000Z');
+
+  it('keeps the end of the month across six months', () => {
+    // Not the 30th of October. Plain month arithmetic gets this wrong, and a
+    // household that wrote "the last day of April" means the last day.
+    expect(addMonthsToDayKey(APR_30, 6).toISOString().slice(0, 10)).toBe('2026-10-31');
+  });
+
+  it('clamps a day the next month does not have', () => {
+    // The 31st of January plus one month is the 28th of February, not the 3rd
+    // of March — which is a date nobody chose.
+    expect(
+      addMonthsToDayKey(new Date('2026-01-31T00:00:00.000Z'), 1).toISOString().slice(0, 10),
+    ).toBe('2026-02-28');
+  });
+
+  it('works towards the next occurrence, not the anchor that was typed', () => {
+    const progress = targetProgress(
+      {
+        balanceCents: 178500n,
+        amountToDelegateCents: 10000n,
+        targetCents: 220000n,
+        targetDate: APR_30,
+        targetIntervalMonths: 6,
+      },
+      'biweekly',
+      SEP_02,
+    );
+
+    // April is behind us; the one being saved for is October.
+    expect(progress?.targetDate?.toISOString().slice(0, 10)).toBe('2026-10-31');
+    expect(progress?.intervalMonths).toBe(6);
+    expect(progress?.shortfallCents).toBe(41500n);
+  });
+
+  it('rolls on by itself once a date passes', () => {
+    const input = {
+      balanceCents: 0n,
+      amountToDelegateCents: 10000n,
+      targetCents: 220000n,
+      targetDate: APR_30,
+      targetIntervalMonths: 6,
+    };
+
+    // The whole reason an anchor beats a deadline: nothing has to be retyped
+    // twice a year, and the target does not silently go stale.
+    expect(
+      targetProgress(input, 'biweekly', new Date('2026-11-01T00:00:00.000Z'))
+        ?.targetDate?.toISOString()
+        .slice(0, 10),
+    ).toBe('2027-04-30');
+  });
+
+  it('takes an anchor in the future back to the occurrence being saved for', () => {
+    // Somebody recording "the last day of October" in September means this
+    // October, and a series anchored later still passes through it.
+    const progress = targetProgress(
+      {
+        balanceCents: 0n,
+        amountToDelegateCents: 10000n,
+        targetCents: 220000n,
+        targetDate: new Date('2027-04-30T00:00:00.000Z'),
+        targetIntervalMonths: 6,
+      },
+      'biweekly',
+      SEP_02,
+    );
+
+    expect(progress?.targetDate?.toISOString().slice(0, 10)).toBe('2026-10-31');
+  });
+
+  it('is still one date when nothing repeats it', () => {
+    const progress = targetProgress(
+      {
+        balanceCents: 0n,
+        amountToDelegateCents: 10000n,
+        targetCents: 220000n,
+        targetDate: APR_30,
+        targetIntervalMonths: null,
+      },
+      'biweekly',
+      SEP_02,
+    );
+
+    // A one-off whose day has gone: the whole shortfall is due, and it says so
+    // rather than quietly finding a later date to be comfortable about.
+    expect(progress?.targetDate?.toISOString().slice(0, 10)).toBe('2026-04-30');
+    expect(progress?.cyclesRemaining).toBe(0);
+  });
+
+  it('still counts the day itself as a paycheck to fund it with', () => {
+    // Reporting zero on the morning money is wanted would show the whole
+    // shortfall as already too late.
+    expect(cyclesUntil(SEP_02, SEP_02, 'biweekly')).toBe(1);
   });
 });

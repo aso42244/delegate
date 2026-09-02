@@ -44,7 +44,7 @@ test('a target is set, and changes nothing about what gets delegated', async ({
     ),
   ).toBeVisible();
 
-  await signedIn.getByRole('button', { name: 'Save' }).click();
+  await signedIn.getByRole('button', { name: 'Save', exact: true }).click();
   await expect(signedIn.getByRole('dialog')).toHaveCount(0);
 
   // The promise: untouched.
@@ -65,7 +65,7 @@ test('the amount to delegate is marked when it will not make the date', async ({
   // $5,000 over a year is roughly $192 a paycheck, which $100 does not reach.
   await signedIn.getByLabel('Target amount').fill('5000.00');
   await signedIn.getByLabel('By').fill(nextYear());
-  await signedIn.getByRole('button', { name: 'Save' }).click();
+  await signedIn.getByRole('button', { name: 'Save', exact: true }).click();
   await expect(signedIn.getByRole('dialog')).toHaveCount(0);
 
   /*
@@ -93,7 +93,7 @@ test('the needed amount can be taken, in one deliberate press', async ({ signedI
   await signedIn.getByLabel('By').fill(nextYear());
 
   await signedIn.getByRole('switch', { name: /Also set the amount to delegate/ }).click();
-  await signedIn.getByRole('button', { name: 'Save' }).click();
+  await signedIn.getByRole('button', { name: 'Save', exact: true }).click();
   await expect(signedIn.getByRole('dialog')).toHaveCount(0);
 
   // It moved because somebody turned a switch on, and it is an ordinary amount
@@ -104,6 +104,66 @@ test('the needed amount can be taken, in one deliberate press', async ({ signedI
   await expect(signedIn.getByRole('link', { name: /line behind/ })).toHaveCount(0);
 });
 
+/**
+ * The one the owner entered first: home insurance, due on the last day of April
+ * and again on the last day of October. A single date records the April one and
+ * then goes stale the moment it passes — leaving the same target to be retyped
+ * twice a year, which is the arithmetic targets exist to stop doing by hand.
+ */
+test('a target can repeat, and works towards the next one', async ({ signedIn, api }) => {
+  await makeDelegation(api, 'Home Insurance', '10000');
+  await signedIn.goto('/');
+
+  await signedIn.getByRole('button', { name: 'Options for Home Insurance' }).click();
+  await signedIn.getByRole('menuitem', { name: 'Set a target' }).click();
+
+  await signedIn.getByLabel('Target amount').fill('2200.00');
+  // An occurrence in the past, deliberately: the date is an anchor for the
+  // series rather than a deadline, and the reading has to move past it.
+  await signedIn.getByLabel('By').fill('2020-04-30');
+  await signedIn.getByLabel('Repeats').selectOption({ label: 'Every 6 months' });
+
+  // The end of the month is kept: the last day of April recurs on the last day
+  // of October, which is not the 30th of it.
+  await expect(signedIn.getByText(/Next: (Apr 30|Oct 31)/)).toBeVisible();
+
+  await signedIn.getByRole('button', { name: 'Save', exact: true }).click();
+  await expect(signedIn.getByRole('dialog')).toHaveCount(0);
+
+  await expect(
+    signedIn.getByRole('button', { name: 'Home Insurance amount to delegate' }),
+  ).toHaveAttribute('title', /every 6 months/);
+});
+
+test('the calculated amount can be taken, or changed on the way past', async ({
+  signedIn,
+  api,
+}) => {
+  await makeDelegation(api, 'Home Insurance', '10000');
+  await signedIn.goto('/');
+
+  await signedIn.getByRole('button', { name: 'Options for Home Insurance' }).click();
+  await signedIn.getByRole('menuitem', { name: 'Set a target' }).click();
+  await signedIn.getByLabel('Target amount').fill('2600.00');
+  await signedIn.getByLabel('By').fill(nextYear());
+
+  await signedIn.getByRole('switch', { name: 'Also set the amount to delegate' }).click();
+
+  // Pre-filled with what was worked out, and editable — the calculated figure
+  // is the common answer rather than the only one, and rounding it up to
+  // something memorable should not mean closing this and typing on the row.
+  const field = signedIn.getByRole('textbox', { name: 'Amount to delegate' });
+  await expect(field).toHaveValue('100.00');
+  await field.fill('150.00');
+
+  await signedIn.getByRole('button', { name: 'Save', exact: true }).click();
+  await expect(signedIn.getByRole('dialog')).toHaveCount(0);
+
+  await expect(
+    signedIn.getByRole('button', { name: 'Home Insurance amount to delegate' }),
+  ).toContainText('$150.00');
+});
+
 test('a target is removed from the same dialog', async ({ signedIn, api }) => {
   await makeDelegation(api, 'Car Insurance', '10000');
   await signedIn.goto('/');
@@ -111,7 +171,7 @@ test('a target is removed from the same dialog', async ({ signedIn, api }) => {
   await signedIn.getByRole('button', { name: 'Options for Car Insurance' }).click();
   await signedIn.getByRole('menuitem', { name: 'Set a target' }).click();
   await signedIn.getByLabel('Target amount').fill('500.00');
-  await signedIn.getByRole('button', { name: 'Save' }).click();
+  await signedIn.getByRole('button', { name: 'Save', exact: true }).click();
   await expect(signedIn.getByRole('dialog')).toHaveCount(0);
 
   // A standing target: an amount to keep here, with no date to work to.

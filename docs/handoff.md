@@ -108,7 +108,7 @@ and the image is published multi-arch on version tags. The NAS is one deployment
 of many rather than the deployment, and it keeps working — it adopts the secrets
 already in its `.env`.
 
-286 unit, 710 integration and 203 end-to-end tests. There is no CI: GitHub stores the code and nothing else
+293 unit, 716 integration and 206 end-to-end tests. There is no CI: GitHub stores the code and nothing else
 ([ADR 022](decisions/022-the-checks-run-here-not-on-github.md)), and every gate
 runs locally through `npm run verify`.
 
@@ -505,6 +505,37 @@ normalization neither can drift from.
   past by definition, so a plain date sort put the least actionable row at the
   very top — which is exactly where the first real run put that thrift shop
 
+**Since v0.45.0 — the first targets and bills entered for real**
+
+Everything here came from the owner using the two features against his own data
+and sending screenshots. None of it was visible from a test fixture.
+
+- **A target can repeat**, and its date is an **anchor** rather than a deadline
+  ([ADR 047](decisions/047-a-target-never-moves-an-amount.md), amended). The
+  first one entered was home insurance: $2,200 on the last day of April and again
+  on the last day of October. A single date recorded the April one and went stale
+  the moment it passed, leaving the same target to be retyped twice a year —
+  which is the by-hand arithmetic the feature exists to stop.
+
+  **Months, not days**, because the last day of April recurs on the last day of
+  October and no number of days says that. `addMonthsToDayKey` keeps the end of
+  the month and clamps a day the next month does not have
+
+- **The amount the dialog offers is editable.** The switch reveals a money field
+  holding the calculated figure, and what is written is whatever is in it.
+  $274.38 a paycheck is more likely to be funded at $300, and that decision
+  belongs in the moment it is being made rather than on the row afterwards
+
+- **`updateDelegation` resolves the target's three fields once** and validates and
+  writes from that. Doing it any other way went wrong twice in one afternoon —
+  the fields constrain each other and a request usually mentions one of them
+
+- **Bills, from the same review**: the column is `Cadence` rather than "Every"
+  ("Every Monthly" is not a sentence); a renamed bill shows its name alone with
+  the bank's text moved into the row menu, where it stays searchable; and nothing
+  says "fortnightly" any more — Settings → Budget already calls that cadence
+  "Every two weeks"
+
 ### Known gaps to fix
 
 None outstanding. The September security review is closed — see
@@ -885,9 +916,9 @@ cannot collide.
 npm run verify            # everything, in the order CI used to run it
 npm run verify:quick      # the same, minus the container image build
 
-npm run test              # 286 unit
-npm run test:integration  # 710 integration
-npm run test:e2e          # 203 end-to-end, needs a build first
+npm run test              # 293 unit
+npm run test:integration  # 716 integration
+npm run test:e2e          # 206 end-to-end, needs a build first
 ```
 
 `npm run verify` is the gate. It runs migrations, typecheck, lint, formatting,
