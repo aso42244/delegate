@@ -899,15 +899,21 @@ are not negotiable by a request, whoever wrote it.
   over contention is how the racy tests in this suite got written the first
   time. `colima start` again when the image step is needed.
 
-- **`auth-events.test.ts` can fail as a 403 in a helper, and the cause is
-  enrolment.** Its setup confirms two-factor with the _previous_ period's code,
-  so that a later sign-in still has an unspent one — a code is spent when used
-  (ADR 028). A run that crosses a period boundary at the wrong moment offers a
-  code just outside the accepted window, enrolment quietly does not happen, and
-  three tests later `/api/auth-events` answers 403 to an un-enrolled account.
-  Seen once, on 2026-09-02, on a loaded machine; it passes alone and in a clean
-  run. The confirm is asserted now, so the next occurrence names itself instead
-  of surfacing as "expected 403 to be 200" thirty lines away.
+- **A 403 `two_factor_required` from a fixture is an enrolment race, not a code
+  fault — and it is fixed now.** Both suites enrol by confirming with the
+  _previous_ period's code, so a later sign-in still has an unspent one (a code
+  is spent when used, ADR 028). "Previous" is worked out when the code is
+  generated, so a run that crosses a period boundary between generating and
+  validating offers one two steps back, and the server refuses it. Enrolment then
+  silently did not happen and every later request answered 403 — surfacing as
+  "expected 403 to be 200" in a helper thirty lines away, or as a fixture blowing
+  up in an unrelated spec.
+
+  Both **retry once and then assert** now, which removes the flake and makes the
+  remaining case a named failure. Seen twice on 2026-09-02, in
+  `auth-events.test.ts` and then in `manual-entry.spec.ts`; the second was found
+  in one read because `e2e/fixtures.ts` had started reporting the status and body
+  of a failed fixture request.
 
 - **Orphaned servers are the other thing to watch for.** A `verify` run that is
   interrupted can leave `node apps/api/dist/server.js` running against the
