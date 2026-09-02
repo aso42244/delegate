@@ -73,15 +73,18 @@ function BillRow({
     // the trigger itself.
     <tr className="group border-b border-line">
       <td className="row-cell pr-3 pl-3">
-        {/* The bank's description under a name of the household's own, so a
-            rename labels the row without hiding what the feed actually sent —
-            which is the half somebody reconciling against a statement needs. */}
+        {/*
+          The name, and only the name.
+
+          The bank's description was drawn under it in small grey, which put a
+          line of feed text on every renamed row — the exact noise renaming was
+          for. It is still kept and still searchable; it lives in the row menu
+          now, where somebody reconciling against a statement can go and look at
+          it, and nowhere else.
+        */}
         <span className="block truncate text-ink" title={bill.feedName}>
           {bill.name}
         </span>
-        {bill.renamed && (
-          <span className="block truncate text-label text-faint">{bill.feedName}</span>
-        )}
       </td>
       <td className="row-cell pr-3 text-quiet whitespace-nowrap text-muted">{bill.cadence}</td>
       {/* The two "when" facts together, then the two figures together: a
@@ -305,7 +308,9 @@ export function Bills(): ReactNode {
               {/* Each of these is sized to the longest thing it can hold and no
                   wider — "Every two months", "$1,234.56" — because every pixel
                   they take comes out of the merchant name beside them. */}
-              <th className="row-cell pr-3 text-left font-normal md:w-28">Every</th>
+              {/* "Cadence", not "Every": the cell under it reads "Monthly", and
+                  "Every Monthly" is not a sentence. */}
+              <th className="row-cell pr-3 text-left font-normal md:w-28">Cadence</th>
               <th className="row-cell pr-3 text-left font-normal md:w-24">Next</th>
               <th className="row-cell pr-3 text-right font-normal md:w-28">Typical</th>
               <th className="row-cell pr-3 text-right font-normal md:w-28">Last</th>

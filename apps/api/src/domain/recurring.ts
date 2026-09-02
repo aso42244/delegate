@@ -62,9 +62,16 @@ const HISTORY_LIMIT = 5000;
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
-/** Names the shape of the interval, for a reader rather than for arithmetic. */
+/**
+ * Names the shape of the interval, for a reader rather than for arithmetic.
+ *
+ * "Every two weeks" rather than "fortnightly", which the rest of this
+ * application does not say — Settings → Budget offers "Every two weeks — 26 a
+ * year" for the pay cadence, and one vocabulary for one idea is the whole reason
+ * the chip and copy rules exist.
+ */
 const CADENCES = [
-  { label: 'Fortnightly', min: 12, max: 17 },
+  { label: 'Every two weeks', min: 12, max: 17 },
   { label: 'Every three weeks', min: 18, max: 24 },
   { label: 'Monthly', min: 25, max: 38 },
   { label: 'Every two months', min: 50, max: 70 },

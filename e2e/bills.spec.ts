@@ -177,7 +177,10 @@ test('a merchant that is not a bill is taken off the list, and can come back', a
   await expect(signedIn.getByText('SAVERS - 1090 SIOUX FALLS SD')).toBeVisible();
 });
 
-test('a bill can be given a name, and keeps the bank text under it', async ({ signedIn, api }) => {
+test('a bill can be given a name, and the bank text moves into the menu', async ({
+  signedIn,
+  api,
+}) => {
   const accountId = await makeAccount('Everyday Checking', 'asset', 500000n);
   await monthlyBill(
     api,
@@ -203,6 +206,42 @@ test('a bill can be given a name, and keeps the bank text under it', async ({ si
   await expect(signedIn.getByRole('dialog')).toHaveCount(0);
 
   await expect(signedIn.getByText('Water & Sewer')).toBeVisible();
-  // Never replaced — reconciling against a statement needs what the bank sent.
+
+  /*
+   * Off the row and into the menu.
+   *
+   * It was drawn under the name in small grey, which put a line of feed text on
+   * every renamed row — the exact noise renaming was for. It is still kept and
+   * still searchable; it is one press away for the person reconciling against a
+   * statement and invisible to everybody else.
+   */
+  await expect(signedIn.getByText('ACH Payment SIOUXFALLS SD UTILITY 605-367-8869')).toHaveCount(0);
+
+  await signedIn.getByRole('button', { name: 'Options for Water & Sewer' }).click();
   await expect(signedIn.getByText('ACH Payment SIOUXFALLS SD UTILITY 605-367-8869')).toBeVisible();
+});
+
+test('a renamed bill is still found by what the bank calls it', async ({ signedIn, api }) => {
+  const accountId = await makeAccount('Everyday Checking', 'asset', 500000n);
+  await monthlyBill(
+    api,
+    accountId,
+    recentMonths(),
+    '-10595',
+    'ACH Payment SIOUXFALLS SD UTILITY 605-367-8869',
+  );
+
+  await openBills(signedIn);
+  await signedIn
+    .getByRole('button', { name: 'Options for ACH Payment SIOUXFALLS SD UTILITY 605-367-8869' })
+    .click();
+  await signedIn.getByRole('menuitem', { name: 'Give it a name' }).click();
+  await signedIn.getByRole('textbox', { name: 'Name' }).fill('Water & Sewer');
+  await signedIn.getByRole('button', { name: 'Save', exact: true }).click();
+  await expect(signedIn.getByRole('dialog')).toHaveCount(0);
+
+  // Searching for the statement's words has to reach the row, or a rename
+  // would make a bill unfindable by the only name a bank statement knows.
+  await signedIn.getByLabel('Search bills').fill('siouxfalls');
+  await expect(signedIn.getByText('Water & Sewer')).toBeVisible();
 });

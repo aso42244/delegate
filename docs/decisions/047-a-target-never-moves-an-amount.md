@@ -1,6 +1,6 @@
 # 047. A target never moves an amount
 
-**Status:** accepted
+**Status:** accepted, amended 2026-09-02
 **Date:** 2026-09-02
 
 ## Context
@@ -120,3 +120,59 @@ the money is, and a tile would be a second place saying the same thing, to be
 kept in step. If targets ever want a page of their own it should be because there
 are enough of them to work through at once, which is a fact about the household
 rather than about the feature.
+
+---
+
+## Amendment, 2026-09-02: a date is an anchor, and the figure is editable
+
+The first target entered against real data was home insurance: **$2,200, due on
+the last day of April and again on the last day of October.**
+
+A single date could record the April one. It then went stale the moment it
+passed — leaving the household to retype the same target twice a year, which is
+precisely the by-hand arithmetic this feature exists to stop. A yearly insurance
+premium, a quarterly water bill and a monthly saving all have the same shape and
+none of them is a deadline.
+
+**`target_date` becomes an anchor, and `target_interval_months` says how the rest
+follow.** One occurrence of the series is stored; the reading always works towards
+the next one still ahead, and rolls on by itself as each passes. A null interval
+is a one-off, which is what every existing row is and what it stays.
+
+**Months, not days.** A bill due on the last day of April is due on the last day
+of October — thirty days later than a naive six-month jump, and not expressible in
+days at all. `addMonthsToDayKey` keeps the end of the month: an anchor that is the
+last day of its month lands on the last day of every month it reaches, and any
+other day is clamped rather than allowed to roll over, so the 31st of January plus
+one month is the 28th of February rather than the 3rd of March.
+
+**The anchor may sit either side of today.** Somebody recording "the last day of
+October" in September means this October, and a series anchored in April 2020
+means the next one after today. `nextOccurrence` walks both ways.
+
+**On the day itself, the date is still ahead.** `cyclesUntil` returns one rather
+than zero for today, because money is due _that day_ and reporting the whole
+shortfall as already too late on the morning it is wanted is the wrong answer.
+
+### The offered amount is editable
+
+The switch that applies the calculated figure now reveals a money field holding
+it, and what gets written is whatever is in that field.
+
+The calculated amount is the common answer and not the only one. Somebody funding
+$274.38 a paycheck is more likely to want $300, and closing the dialog to go and
+type that on the row is an extra step in exactly the moment they had decided.
+Nothing about the promise changes: the field is empty of consequence until the
+switch is on, the switch is off unless somebody turns it on, and the target still
+moves nothing by itself.
+
+### Three fields that constrain each other
+
+The update path resolves the amount, the date and the interval **once**, as the
+three values that will be written, and both validates and writes from that. Doing
+it any other way went wrong twice in one afternoon: validating the field that
+arrived refuses "remove this target", and writing the field that arrived while
+validating something else lets a request past the domain and into a check
+constraint — which then reports itself as a Prisma error rather than as a
+sentence. Both of those were caught by tests written against the intent rather
+than the implementation.

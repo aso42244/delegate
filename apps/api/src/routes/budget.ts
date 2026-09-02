@@ -65,6 +65,8 @@ const createDelegationSchema = z.object({
    */
   targetCents: nullableCents.optional(),
   targetDate: z.union([dayIn, z.null()]).optional(),
+  /** Months between occurrences. Null is a one-off; the date is then a deadline. */
+  targetIntervalMonths: z.union([z.number().int().min(1).max(120), z.null()]).optional(),
 });
 
 const updateDelegationSchema = z.object({
@@ -81,6 +83,8 @@ const updateDelegationSchema = z.object({
    */
   targetCents: nullableCents.optional(),
   targetDate: z.union([dayIn, z.null()]).optional(),
+  /** Months between occurrences. Null is a one-off; the date is then a deadline. */
+  targetIntervalMonths: z.union([z.number().int().min(1).max(120), z.null()]).optional(),
 });
 
 /**
@@ -160,8 +164,11 @@ function presentRow(row: BudgetRow): Record<string, unknown> {
         ? null
         : {
             targetCents: centsOut(row.target.targetCents),
-            // A decided day, sent as one. Not an instant.
+            // The occurrence being worked towards — the next one still ahead
+            // for a repeating target, not the anchor that was typed. A decided
+            // day, sent as one; not an instant.
             targetDate: dayOut(row.target.targetDate),
+            intervalMonths: row.target.intervalMonths,
             shortfallCents: centsOut(row.target.shortfallCents),
             cyclesRemaining: row.target.cyclesRemaining,
             neededPerCycleCents: centsOut(row.target.neededPerCycleCents),

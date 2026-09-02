@@ -1,5 +1,6 @@
 import { formatCents } from '@budget/shared';
 import type { BudgetRowDto } from '../api/budget.js';
+import { INTERVAL_LABELS } from './target-intervals.js';
 
 /**
  * A target, in words.
@@ -33,17 +34,23 @@ export function describeTarget(row: BudgetRowDto): string | null {
 
   const goal = formatCents(BigInt(target.targetCents));
   const by = target.targetDate === null ? '' : ` by ${dayLabel(target.targetDate, true)}`;
+  // How often it comes round, where it does. The date above is the next
+  // occurrence, so without this the row would read as a one-off deadline.
+  const repeats =
+    target.intervalMonths === null
+      ? ''
+      : `, ${INTERVAL_LABELS[target.intervalMonths] ?? `every ${target.intervalMonths} months`}`;
   const needed = formatCents(BigInt(target.neededPerCycleCents ?? '0'));
 
   switch (target.status) {
     case 'met':
-      return `Target ${goal}${by} — reached.`;
+      return `Target ${goal}${by}${repeats} — reached.`;
     case 'standing':
       return `Target ${goal} — ${formatCents(BigInt(target.shortfallCents))} short, with no date to work to.`;
     case 'on_track':
-      return `Target ${goal}${by} — needs ${needed} a paycheck, and this line delegates at least that.`;
+      return `Target ${goal}${by}${repeats} — needs ${needed} a paycheck, and this line delegates at least that.`;
     case 'behind':
-      return `Target ${goal}${by} — needs ${needed} a paycheck, more than this line is set to delegate.`;
+      return `Target ${goal}${by}${repeats} — needs ${needed} a paycheck, more than this line is set to delegate.`;
   }
 }
 

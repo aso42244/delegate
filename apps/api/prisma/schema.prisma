@@ -520,7 +520,16 @@ model Delegation {
    * read (ADR 037).
    */
   targetCents BigInt?   @map("target_cents")
-  targetDate  DateTime? @map("target_date") @db.Date
+
+  /**
+   * One occurrence of the target's date — an anchor, not a deadline.
+   *
+   * With `targetIntervalMonths` set, the rest of the series follows from it and
+   * the reading always looks at the next one still ahead. Without it, this is a
+   * single date and the target is a one-off.
+   */
+  targetDate           DateTime? @map("target_date") @db.Date
+  targetIntervalMonths Int?      @map("target_interval_months")
 
   isUtility Boolean @default(false) @map("is_utility")
 
