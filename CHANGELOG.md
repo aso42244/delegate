@@ -6,7 +6,27 @@ phase (`v0.1.0-phase1`, and so on).
 
 ## [Unreleased]
 
-Nothing yet.
+### Added
+
+- **A target on a delegation** — what the line is saving towards, and by when.
+  `"$2,200 by Dec 27"` as fields rather than freeform notes, with the
+  per-paycheck arithmetic done for you.
+
+  **It never moves the amount to delegate.** That figure is yours, typed by hand,
+  and a target only judges it: the dialog shows what each remaining paycheck
+  would have to carry beside what the line is actually set to, and offers to
+  apply it behind a switch that is off unless you turn it on. Afterwards it is an
+  ordinary amount — type over it, clear it, leave it.
+
+  A `tg` chip says a target exists; whether the line is on course shows on the
+  amount to delegate, which is the figure you would change. A pill says how many
+  lines will not make their date.
+  [ADR 047](docs/decisions/047-a-target-never-moves-an-amount.md).
+
+### Changed
+
+- The note field's placeholder is no longer `$2,200, Dec 27`. That is a target
+  now, and a note is a note again. Existing notes are untouched.
 
 ## [0.43.0] — 2026-09-02
 

@@ -1,6 +1,15 @@
-import { sumCents, type Cents, type GroupingSection, type IdentityResult } from '@budget/shared';
+import {
+  sumCents,
+  targetProgress,
+  type Cents,
+  type GroupingSection,
+  type IdentityResult,
+  type TargetProgress,
+} from '@budget/shared';
 import type { Db } from '../db/client.js';
+import { localDayKey } from './calendar.js';
 import { computeBudgetIdentity } from './identity.js';
+import { getBudgetSettings } from './settings.js';
 
 /**
  * The Budget page read model.
@@ -50,6 +59,15 @@ export interface BudgetRow {
   readonly checkNumber: string | null;
   readonly checkMemo: string | null;
   readonly checkIssuedAt: Date | null;
+  /**
+   * What this line is saving towards, and whether it will make it.
+   *
+   * Derived here rather than on the page, because the answer is a comparison
+   * against the pay cadence and the household's today — two facts the interface
+   * would otherwise need its own copy of. Null where there is no target, which
+   * is most rows.
+   */
+  readonly target: TargetProgress | null;
 }
 
 export interface BudgetGrouping {
@@ -160,8 +178,17 @@ function groupRows(
   };
 }
 
-export async function buildBudgetView(db: Db): Promise<BudgetView> {
-  const [accounts, delegations, groupings, identity, latestRun] = await Promise.all([
+/**
+ * `timeZone` decides which day "today" is, and the cadence how many paychecks
+ * are left before a target's date — both come from the household's settings, and
+ * the zone's environment fallback is the route's to resolve.
+ */
+export async function buildBudgetView(
+  db: Db,
+  options: { readonly timeZone: string; readonly now?: Date },
+): Promise<BudgetView> {
+  const [settings, accounts, delegations, groupings, identity, latestRun] = await Promise.all([
+    getBudgetSettings(db),
     db.account.findMany({
       // Off-budget accounts belong to net worth, not to this page.
       where: { archivedAt: null, inBudget: true },
@@ -197,6 +224,8 @@ export async function buildBudgetView(db: Db): Promise<BudgetView> {
         checkNumber: true,
         checkMemo: true,
         checkIssuedAt: true,
+        targetCents: true,
+        targetDate: true,
       },
     }),
     db.grouping.findMany({
@@ -244,7 +273,11 @@ export async function buildBudgetView(db: Db): Promise<BudgetView> {
     checkNumber: null,
     checkMemo: null,
     checkIssuedAt: null,
+    // An account is not saving towards anything; a target is a delegation's.
+    target: null,
   });
+
+  const today = localDayKey(options.now ?? new Date(), options.timeZone);
 
   const delegationRows: BudgetRow[] = delegations.map((delegation) => ({
     id: delegation.id,
@@ -269,6 +302,13 @@ export async function buildBudgetView(db: Db): Promise<BudgetView> {
     checkNumber: delegation.checkNumber,
     checkMemo: delegation.checkMemo,
     checkIssuedAt: delegation.checkIssuedAt,
+    /*
+     * `today` is a date key and so is `targetDate`, so the comparison between
+     * them is plain calendar arithmetic with no zone in it. The zone was spent
+     * one line up, turning an instant into the household's day — ADR 037 keeps
+     * those two ideas apart by name for exactly this reason.
+     */
+    target: targetProgress(delegation, settings.payCadence, today),
   }));
 
   return {

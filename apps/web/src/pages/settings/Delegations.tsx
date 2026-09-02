@@ -4,6 +4,7 @@ import { Fragment, useState, type ReactNode } from 'react';
 import { budgetApi, type BudgetRowDto, type BudgetViewDto } from '../../api/budget.js';
 import { ApiError } from '../../api/client.js';
 import { Chip } from '../../components/Chip.jsx';
+import { describeTarget } from '../../components/target-text.js';
 import { Alert, Button, Toggle } from '../../components/ui.jsx';
 import { SettingsCard } from './SettingsCard.jsx';
 import { EmptyState } from '../../components/layout.jsx';
@@ -107,6 +108,7 @@ function DelegationRow({
             </span>
             <span className="truncate">{row.name}</span>
             {row.isUtility && <Chip kind="utility" />}
+            {row.target !== null && <Chip kind="target" />}
             {row.notes !== null && row.notes.trim() !== '' && <Chip kind="note" />}
           </button>
         </td>
@@ -136,8 +138,7 @@ function DelegationRow({
             {/*
               One line, in the order the Budget page reads: what it is called,
               where it sits, whether it is a utility, and what it gets. The note
-              is the only thing that needs its own line, and one line is enough
-              for "$2,200, Dec 27".
+              is the only thing that needs its own line.
             */}
             <div className="flex flex-wrap items-center gap-2">
               <input
@@ -185,12 +186,24 @@ function DelegationRow({
               />
             </div>
 
+            {/*
+              Read here, set on the Budget row.
+
+              A target is edited in one place, because the dialog that sets one
+              spends most of its space saying what it does *not* do — it never
+              moves the amount to delegate — and a second, terser editor here
+              would be that explanation missing.
+            */}
+            {row.target !== null && (
+              <p className="mt-2 text-quiet text-muted">{describeTarget(row)}</p>
+            )}
+
             <div className="mt-2 flex flex-wrap items-center gap-2">
               <input
                 value={notes}
                 onChange={(event) => setNotes(event.target.value)}
                 maxLength={2000}
-                placeholder="Note — $2,200, Dec 27"
+                placeholder="Note"
                 aria-label={`Note for ${row.name}`}
                 className="min-w-40 flex-1 rounded border border-line bg-canvas px-2 py-1 text-quiet text-ink"
               />

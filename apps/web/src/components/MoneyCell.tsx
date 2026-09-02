@@ -1,5 +1,5 @@
 import { formatCents, formatCentsForInput, tryParseMoney } from '@budget/shared';
-import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
+import { useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 
 /**
  * A money cell: reads as text, edits on click.
@@ -23,6 +23,17 @@ export interface MoneyCellProps {
   /** Called on Enter, so focus can move to the next row's cell. */
   readonly onCommitAndAdvance?: () => void;
   readonly label?: string;
+  /**
+   * A sentence about this figure, on hover and reachable without a mouse.
+   *
+   * `aria-describedby` rather than more `aria-label`: the label names the cell
+   * and is what a test and a screen reader both address it by, while this is the
+   * reason the figure is marked. Appending it to the name would rename the cell
+   * every time the reason changed.
+   */
+  readonly description?: string;
+  /** Draws the figure as a thing to look at. Used when a target will not be met. */
+  readonly warn?: boolean;
 }
 
 export function MoneyCell({
@@ -34,8 +45,11 @@ export function MoneyCell({
   onCommit,
   onCommitAndAdvance,
   label,
+  description,
+  warn = false,
 }: MoneyCellProps): ReactNode {
   const [editing, setEditing] = useState(false);
+  const describedById = useId();
   const [draft, setDraft] = useState('');
   const [invalid, setInvalid] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -52,6 +66,9 @@ export function MoneyCell({
         ? 'text-quiet font-normal text-faint'
         : 'text-base';
   const colour = redWhenNegative && isNegative ? 'text-negative font-semibold' : '';
+  // The warning wins over the quiet weight: a figure that is wrong is not a
+  // figure to de-emphasise, and the To delegate column is quiet by default.
+  const warning = warn ? 'text-warning font-semibold' : '';
 
   function begin(): void {
     if (!editable) return;
@@ -124,21 +141,30 @@ export function MoneyCell({
   }
 
   return (
-    <button
-      type="button"
-      onClick={begin}
-      onFocus={editable ? undefined : undefined}
-      disabled={!editable}
-      aria-label={label}
-      className={`money w-full rounded py-0.5 pr-3 pl-2 ${weight} ${colour} ${
-        editable ? 'hover:bg-accent-soft' : 'cursor-default'
-      }`}
-    >
-      {valueCents === null ? (
-        <span className="text-faint">{emptyLabel}</span>
-      ) : (
-        formatCents(valueCents)
+    <>
+      {description !== undefined && (
+        <span id={describedById} className="sr-only">
+          {description}
+        </span>
       )}
-    </button>
+      <button
+        type="button"
+        onClick={begin}
+        disabled={!editable}
+        aria-label={label}
+        {...(description === undefined
+          ? {}
+          : { title: description, 'aria-describedby': describedById })}
+        className={`money w-full rounded py-0.5 pr-3 pl-2 ${weight} ${colour} ${warning} ${
+          editable ? 'hover:bg-accent-soft' : 'cursor-default'
+        }`}
+      >
+        {valueCents === null ? (
+          <span className="text-faint">{emptyLabel}</span>
+        ) : (
+          formatCents(valueCents)
+        )}
+      </button>
+    </>
   );
 }

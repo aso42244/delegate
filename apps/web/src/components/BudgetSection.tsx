@@ -13,6 +13,7 @@ import { NARROW, useMediaQuery } from '../useMediaQuery.js';
 import { Chips } from './Chip.jsx';
 import type { ChipKind } from './chips.js';
 import { MoneyCell } from './MoneyCell.jsx';
+import { describeTarget } from './target-text.js';
 
 /**
  * One section of the Budget page: Assets, Debts or Delegations.
@@ -94,6 +95,9 @@ function chipsFor(row: BudgetRowDto): ChipKind[] {
   // happens to say about how the account was created.
   if (row.source === 'manual' && row.managedAs === 'none') kinds.push('manual');
   if (row.isUtility) kinds.push('utility');
+  // That a target exists, not whether it is being met — that reading lives on
+  // the amount to delegate, which is the figure somebody would change.
+  if (row.target !== null) kinds.push('target');
   if (row.notes !== null && row.notes.trim() !== '') kinds.push('note');
   // Two ways a balance stops being current, one mark. A manual one nobody has
   // confirmed lately, and a synced one whose feed is answering with an old
@@ -323,11 +327,22 @@ export function BudgetSection({
           // balance on the Assets and Debts tables. Those cells have none, so
           // the 12px here was the whole of the misalignment.
           <td className="w-36 row-cell">
+            {/*
+              A target marks this figure rather than adding one of its own.
+
+              The amount to delegate is the number that decides whether the
+              target is reached, so when the two disagree it is the number to
+              change — and the sentence saying by how much belongs on it, not
+              beside the name. The chip by the name says only that a target
+              exists; this says whether it is being met.
+            */}
             <MoneyCell
               valueCents={parseCents(row.amountToDelegateCents)}
               editable={onEditAmount !== undefined}
               emphasis="quiet"
               label={`${row.name} amount to delegate`}
+              warn={row.target?.status === 'behind'}
+              {...(describeTarget(row) === null ? {} : { description: describeTarget(row)! })}
               onCommit={(cents) => onEditAmount?.(row.id, cents)}
             />
           </td>

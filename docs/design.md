@@ -952,3 +952,34 @@ decides how fast a row is read rather than what it means.
 **Typical and last sit beside each other**, and the last one is marked when it is
 more than a tenth above. That comparison is the whole of how a price rise becomes
 visible, and it costs one column.
+
+## A target marks a figure rather than adding one
+
+A delegation can carry a target — what it is saving towards, and by when. It
+lands on the Budget row in two places and neither of them is a new column, which
+is the whole design problem: the row already carries a name, two money columns
+and a menu, and on a phone it shows one money column at a time.
+
+**The chip says a target exists.** `tg`, quiet, beside the name — `t` is spent on
+transfer, and two letters where one would collide is what the vocabulary already
+does for `sp`. A chip is a classification, and "saving towards something" is one.
+
+**Whether the line is on course marks the amount to delegate.** That figure turns
+warning-coloured, and carries the sentence on hover and through
+`aria-describedby`. It is the number that decides whether the target is reached,
+so it is the number the judgement belongs on — a yellow letter beside the name
+would say something is wrong without saying which figure to change. The To
+delegate column is otherwise deliberately quiet (`#B4B1AB`); the warning wins
+over that weight, because a figure that is wrong is not one to de-emphasise.
+
+**The dialog spends most of its space on what a target does not do.** It never
+moves the amount to delegate — see
+[ADR 047](decisions/047-a-target-never-moves-an-amount.md) — so the reading is
+shown rather than applied: what each remaining paycheck needs to carry, beside
+what the line is actually set to, stated in both directions so neither figure has
+to be remembered. Taking it is one switch, off unless somebody turns it on, and
+one line underneath says so in words.
+
+**It is set in one place.** The row menu opens the dialog; Settings → Delegations
+shows the target and its verdict and does not offer a second, terser editor. Two
+editors for one thing would mean the explanation exists in only one of them.

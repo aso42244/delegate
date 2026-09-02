@@ -8,6 +8,7 @@ import {
   type BudgetViewDto,
 } from '../api/budget.js';
 import { checksApi, type CheckMatchDto } from '../api/checks.js';
+import { settingsApi } from '../api/settings.js';
 import { ApiError } from '../api/client.js';
 import { AccountRowMenu } from '../components/AccountRowMenu.jsx';
 import { useBudgetLayout } from '../budget-layout.js';
@@ -262,6 +263,16 @@ export function MainBudget(): ReactNode {
   const [budgetLayout] = useBudgetLayout();
 
   const view = useQuery({ queryKey: ['budget'], queryFn: budgetApi.view });
+  /*
+   * The pay cadence, for a target's per-paycheck figure.
+   *
+   * The same cache key Settings uses, so this is a read of what is already
+   * there rather than a second request. `biweekly` is the product default and
+   * the right fallback while it loads: the dialog it feeds recomputes the
+   * moment the real answer arrives.
+   */
+  const settings = useQuery({ queryKey: ['settings'], queryFn: settingsApi.get });
+  const cadence = settings.data?.payCadence ?? 'biweekly';
 
   /*
    * Checks the bank appears to have cashed. A sync proposes these and never
@@ -544,6 +555,7 @@ export function MainBudget(): ReactNode {
           <DelegationRowMenu
             row={row}
             groupings={groupingOptions}
+            cadence={cadence}
             onNudge={nudge}
             {...(difference === 0n
               ? {}

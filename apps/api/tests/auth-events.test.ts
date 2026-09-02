@@ -58,12 +58,25 @@ beforeEach(async () => {
   });
   ownerTotpSecret = begun.json<{ secret: string }>().secret;
 
-  await app.inject({
+  const confirmed = await app.inject({
     method: 'POST',
     url: '/api/auth/totp/confirm',
     headers: { cookie: ownerCookie },
     payload: { code: await generateOtp({ secret: ownerTotpSecret, epoch: previousTotpPeriod() }) },
   });
+
+  /*
+   * Asserted, because failing here is invisible otherwise.
+   *
+   * The previous period's code is used so that a later sign-in still has an
+   * unspent one — a TOTP code is spent when used (ADR 028). A run that crosses a
+   * period boundary at the wrong moment can offer a code just outside the window
+   * the server accepts, and enrolment silently does not happen. Every later test
+   * then reads `/api/auth-events` as an un-enrolled account and gets a 403,
+   * which surfaces as "expected 403 to be 200" in a helper thirty lines away
+   * with nothing pointing at the cause. Seen once, on a loaded machine.
+   */
+  expect(confirmed.statusCode, confirmed.body).toBe(200);
 });
 
 interface EventView {
