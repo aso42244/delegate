@@ -576,7 +576,7 @@ export function UsersSection(): ReactNode {
           ) : (
             <table className="w-full border-t-2 border-ink">
               <thead>
-                <tr className="text-label uppercase tracking-[0.05em] text-muted">
+                <tr className="text-label uppercase tracking-label text-muted">
                   <th className="row-cell pl-1 text-left font-normal">Name</th>
                   {/* The phone column policy: a name, and the menu that acts on
                       it. Role, the second factor and whether the account is

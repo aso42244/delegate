@@ -112,7 +112,7 @@ and the image is published multi-arch on version tags. The NAS is one deployment
 of many rather than the deployment, and it keeps working — it adopts the secrets
 already in its `.env`.
 
-293 unit, 725 integration and 215 end-to-end tests. There is no CI: GitHub stores the code and nothing else
+318 unit, 735 integration and 217 end-to-end tests. There is no CI: GitHub stores the code and nothing else
 ([ADR 022](decisions/022-the-checks-run-here-not-on-github.md)), and every gate
 runs locally through `npm run verify`.
 
@@ -583,6 +583,34 @@ and sending screenshots. None of it was visible from a test fixture.
 - **The sidebar's toggle is a drawn icon** rather than `«`/`»`, and joins the
   icon column when collapsed. Same mistake the nav icons were fixed for
 
+**Since v0.47.0 — three themes, and duplicates found rather than stumbled on**
+
+- **Six palettes now**: Light, Dark, System, plus **Ledger** (monospace on warm
+  paper), **Reading light** (dim parchment, for late on) and **High contrast**
+  ([ADR 048](decisions/048-a-theme-is-a-palette-that-is-measured.md)). A theme is
+  a token swap and nothing else — colours, `--font-sans`, `--tracking-label`
+
+- **`theme-contrast.test.ts` measures every palette** against WCAG AA on the
+  pairs that actually appear on screen. **It found six pairs in the shipped
+  Light palette under 4.5:1**, the worst being positive green on its own green
+  fill at **2.76:1**. They are recorded at today's values rather than changed:
+  `design.md` §2 is the owner's settled specification, so tightening them is his
+  call — and they can no longer get worse without the gate failing. **This is an
+  open question for him, not a closed one**
+
+- **Possible duplicates are read out** on the Transactions page
+  ([ADR 049](decisions/049-a-duplicate-is-proposed-never-archived.md)): same
+  account, same amount to the cent, within two days. It writes nothing. The
+  re-import case is the one from `handoff.md` — reconnecting an institution
+  brings a card's whole history back, and until now that was found by noticing a
+  balance was wrong
+
+- **No pill for duplicates**, and the reason is worth keeping: one was built and
+  taken out within the hour, because it is computed on the server and went on
+  saying "1 possible duplicate" after the panel had been waved off. ADR 030 is
+  why it was not fixed by storing the refusal. The uncategorized-backlog pill
+  already leads to that page
+
 ### Known gaps to fix
 
 None outstanding. The September security review is closed — see
@@ -969,9 +997,9 @@ cannot collide.
 npm run verify            # everything, in the order CI used to run it
 npm run verify:quick      # the same, minus the container image build
 
-npm run test              # 293 unit
-npm run test:integration  # 725 integration
-npm run test:e2e          # 215 end-to-end, needs a build first
+npm run test              # 318 unit
+npm run test:integration  # 735 integration
+npm run test:e2e          # 217 end-to-end, needs a build first
 ```
 
 `npm run verify` is the gate. It runs migrations, typecheck, lint, formatting,

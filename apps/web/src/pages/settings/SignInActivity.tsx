@@ -98,7 +98,7 @@ export function SignInActivity(): ReactNode {
       ) : (
         <table className="w-full border-t-2 border-ink">
           <thead>
-            <tr className="text-label uppercase tracking-[0.05em] text-muted">
+            <tr className="text-label uppercase tracking-label text-muted">
               {/* Fixed, so the name column takes what is left. These labels
                   have a known longest — "Turned off two-factor" — and letting
                   two flexible columns split the width evenly truncated a

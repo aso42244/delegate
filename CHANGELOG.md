@@ -6,7 +6,35 @@ phase (`v0.1.0-phase1`, and so on).
 
 ## [Unreleased]
 
-Nothing yet.
+### Added
+
+- **Three more themes**, on Settings → Display beside Light, Dark and System.
+  [ADR 048](docs/decisions/048-a-theme-is-a-palette-that-is-measured.md).
+
+  **Ledger** is monospace on warm paper with a burnt amber accent — the whole
+  page on one grid rather than only the money column, which is what a ledger
+  wants. **Reading light** is a dim parchment ground with the blue taken out, for
+  doing this late in a lit room. **High contrast** is pure black on white with
+  every value at the far end and borders that read as real boundaries.
+
+- **Possible duplicates are read out** on the Transactions page. Reconnecting an
+  institution changes every external id, so a sync brings back a card's whole
+  recent history as though it were new — and until now that was found by
+  noticing a balance was wrong.
+
+  Same account, same amount to the cent, within two days. Both rows are shown,
+  the one carrying a categorization is marked, and either can be archived —
+  nothing happens until you say so.
+  [ADR 049](docs/decisions/049-a-duplicate-is-proposed-never-archived.md).
+
+- **Every theme's contrast is now measured by a test.** It reads the stylesheet
+  and checks the pairs that actually appear on screen against WCAG AA.
+
+  It found six pairs in the **shipped Light palette** under 4.5:1 — the worst
+  being the positive green on its own green fill at 2.76:1. Those are recorded at
+  what they measure today rather than quietly changed: the hexes are in
+  `design.md` §2, which is settled, so tightening them is your call. They can
+  never get worse without the gate failing.
 
 ## [0.47.0] — 2026-09-02
 

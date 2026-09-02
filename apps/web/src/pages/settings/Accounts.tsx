@@ -351,7 +351,7 @@ function AccountsTable({
   return (
     <table className="w-full table-fixed border-t-2 border-ink">
       <thead>
-        <tr className="text-label uppercase tracking-[0.05em] text-muted">
+        <tr className="text-label uppercase tracking-label text-muted">
           <th className="row-cell pl-3 text-left font-semibold text-ink">{section}</th>
           <th className="w-36 row-cell pr-2 text-right font-normal">Balance</th>
           <th className="hidden w-20 row-cell text-left font-normal sm:table-cell">In budget</th>

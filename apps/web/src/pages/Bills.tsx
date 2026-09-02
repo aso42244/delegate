@@ -291,7 +291,7 @@ export function Bills(): ReactNode {
       ) : (
         <table className="w-full border-t-2 border-ink md:table-fixed">
           <thead>
-            <tr className="text-label uppercase tracking-[0.05em] text-muted">
+            <tr className="text-label uppercase tracking-label text-muted">
               {/*
                 No width on the name: under a fixed layout the unsized column
                 takes what the others leave, which is the right job for the one

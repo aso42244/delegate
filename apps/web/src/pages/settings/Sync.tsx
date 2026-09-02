@@ -210,7 +210,7 @@ function Backups(): ReactNode {
           {(backups.data?.recent.length ?? 0) > 0 && (
             <table className="mt-4 w-full border-t-2 border-ink">
               <thead>
-                <tr className="text-label uppercase tracking-[0.05em] text-muted">
+                <tr className="text-label uppercase tracking-label text-muted">
                   <th className="row-cell pl-1 text-left font-normal">Dump</th>
                   <th className="hidden row-cell w-28 pr-2 text-right font-normal sm:table-cell">
                     Size
@@ -418,7 +418,7 @@ export function SyncSection(): ReactNode {
           <div className="mt-4">
             <table className="w-full border-t-2 border-ink">
               <thead>
-                <tr className="text-label uppercase tracking-[0.05em] text-muted">
+                <tr className="text-label uppercase tracking-label text-muted">
                   <th className="row-cell pl-1 text-left font-semibold text-ink">Recent syncs</th>
                   <th className="row-cell text-left font-normal">Result</th>
                   <th className="row-cell pr-1 text-right font-normal">When</th>

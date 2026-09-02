@@ -46,7 +46,7 @@ export function TorSection(): ReactNode {
           is the only thing an attacker would need to find this at all, so
           it is shown here and nowhere else. */}
             <div>
-              <p className="text-label uppercase tracking-[0.05em] text-muted">Address</p>
+              <p className="text-label uppercase tracking-label text-muted">Address</p>
               <p className="mt-1 font-mono text-quiet break-all text-ink">
                 {settings.data.onionAddress}
               </p>

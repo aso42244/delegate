@@ -51,7 +51,7 @@ export function DelegationHistory({
       ) : (
         <table className="w-full border-t-2 border-ink">
           <thead>
-            <tr className="text-label uppercase tracking-[0.05em] text-muted">
+            <tr className="text-label uppercase tracking-label text-muted">
               <th className="py-2 text-left font-normal">When</th>
               <th className="py-2 text-left font-normal">What</th>
               <th className="py-2 text-left font-normal">Who</th>

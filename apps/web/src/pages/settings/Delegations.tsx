@@ -259,7 +259,7 @@ export function DelegationsSection(): ReactNode {
       ) : (
         <table className="w-full table-fixed border-t-2 border-ink">
           <thead>
-            <tr className="text-label uppercase tracking-[0.05em] text-muted">
+            <tr className="text-label uppercase tracking-label text-muted">
               <th className="row-cell pl-1 text-left font-normal">Delegation</th>
               <th className="row-cell w-36 pr-2 text-right font-normal">Remaining</th>
               <th className="row-cell w-32 pr-1 text-right font-normal text-faint">To delegate</th>

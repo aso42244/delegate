@@ -380,6 +380,21 @@ the value still never passes through a float.
 marked `raw()` and written as-is, and everything else — anything the feed wrote —
 is defended against being read as a formula.
 
+## Duplicates are proposed, never archived
+
+Reconnecting an institution changes every account's external id, so a sync brings
+back a card's whole recent history as though it were new — recorded in
+`handoff.md` as something that happened. `domain/duplicates.ts` reads the
+register for two rows in one account, the same amount to the cent, within two
+days, and offers them
+([ADR 049](decisions/049-a-duplicate-is-proposed-never-archived.md)).
+
+It writes nothing: archiving reverses whatever a row moved, and picking wrongly
+between two identical rows is not something to find out about later. The match is
+deliberately narrow — a near amount is a fee, a different account is a transfer,
+and a different description is still the same charge, because feeds reword their
+own text between the pending and posted versions of one purchase.
+
 ## Authentication
 
 A username, an argon2id password hash, a session cookie, and an optional second

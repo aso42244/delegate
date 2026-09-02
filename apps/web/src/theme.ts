@@ -1,7 +1,7 @@
 import { useCallback, useSyncExternalStore } from 'react';
 
 /**
- * Light, dark, or whatever the device says.
+ * Which palette the interface is drawn in.
  *
  * Stored per device rather than on the server, for exactly the reason row
  * density is: this is a fact about the screen someone is looking at, not about
@@ -9,16 +9,31 @@ import { useCallback, useSyncExternalStore } from 'react';
  * other person's phone into dark mode.
  *
  * **System is resolved here rather than in CSS.** The stylesheet carries one
- * dark palette, keyed on `data-theme="dark"`, and this module decides when that
+ * palette per theme, keyed on `data-theme`, and this module decides which
  * attribute goes on. The alternative — a second `prefers-color-scheme` block —
  * means two copies of the same twenty-five colours, and a media query cannot be
  * added to a selector list to avoid that. Two copies of a palette drift, and the
  * drift shows up as one screen in the wrong grey.
+ *
+ * **`system` is the only choice that resolves to something else.** It means
+ * "follow the device", and the device has exactly two opinions. Every other
+ * choice is stamped as itself: a theme is a palette somebody picked, and no
+ * media query gets to overrule it.
  */
 
-export type ThemeChoice = 'system' | 'light' | 'dark';
+export type ThemeChoice = 'system' | 'light' | 'dark' | 'ledger' | 'reading' | 'contrast';
 
-const CHOICES: readonly ThemeChoice[] = ['system', 'light', 'dark'];
+/** What actually reaches `data-theme`. `system` never does. */
+export type ThemeName = Exclude<ThemeChoice, 'system'>;
+
+const CHOICES: readonly ThemeChoice[] = [
+  'system',
+  'light',
+  'dark',
+  'ledger',
+  'reading',
+  'contrast',
+];
 
 /** What an unset or unrecognised stored value means. */
 const DEFAULT_CHOICE: ThemeChoice = 'system';
@@ -45,7 +60,7 @@ function systemPrefersDark(): boolean {
 }
 
 /** The choice resolved to something the stylesheet can key on. */
-export function resolveTheme(choice: ThemeChoice): 'light' | 'dark' {
+export function resolveTheme(choice: ThemeChoice): ThemeName {
   if (choice === 'system') return systemPrefersDark() ? 'dark' : 'light';
   return choice;
 }

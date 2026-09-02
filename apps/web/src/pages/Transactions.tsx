@@ -14,6 +14,7 @@ import { Chips } from '../components/Chip.jsx';
 import type { ChipKind } from '../components/chips.js';
 import { DelegationPicker } from '../components/DelegationPicker.jsx';
 import { NewTransactionDialog } from '../components/NewTransactionDialog.jsx';
+import { DuplicateSuggestions } from '../components/DuplicateSuggestions.jsx';
 import { PairSuggestions } from '../components/PairSuggestions.jsx';
 import { RuleFromTransactionDialog } from '../components/RuleFromTransactionDialog.jsx';
 import { MatchCheckDialog } from '../components/MatchCheckDialog.jsx';
@@ -244,6 +245,9 @@ export function Transactions(): ReactNode {
     // And the row just categorized is now evidence rather than a question, so
     // the next merchant like it has one more decision behind it.
     await queryClient.invalidateQueries({ queryKey: ['transaction-suggestions'] });
+    // Archiving a row, or categorizing one, changes what the duplicate reading
+    // is looking at.
+    await queryClient.invalidateQueries({ queryKey: ['duplicates'] });
   };
 
   const onError = (error: unknown): void =>
@@ -331,6 +335,10 @@ export function Transactions(): ReactNode {
         Touch and hold still works; it is a shortcut rather than the route.
       */}
 
+      {/* Above the pairs: a duplicate is a row that should not be in the
+          register at all, and every figure below it is wrong while it is. */}
+      <DuplicateSuggestions />
+
       <PairSuggestions />
 
       <div className="mb-4 flex flex-wrap items-center gap-2">
@@ -412,7 +420,7 @@ export function Transactions(): ReactNode {
       ) : (
         <table className="w-full border-t-2 border-ink md:table-fixed">
           <thead>
-            <tr className="text-label uppercase tracking-[0.05em] text-muted">
+            <tr className="text-label uppercase tracking-label text-muted">
               {/*
                 From `md` up only. These add to more than a phone screen is
                 wide, and a fixed layout that is over-subscribed gives the

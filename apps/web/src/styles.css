@@ -75,6 +75,15 @@
 
   --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
 
+  /*
+   * The letter-spacing on an 11px uppercase column header.
+   *
+   * A token rather than a number written into nineteen `<th>` elements, because
+   * one theme needs it to be zero: a monospace face is already wide, and the
+   * spacing turns a header into a row of gaps rather than a word.
+   */
+  --tracking-label: 0.05em;
+
   --text-label: 0.6875rem; /* 11px column headers */
   --text-quiet: 0.8125rem; /* 13px de-emphasised data and menu items */
   --text-base: 0.875rem; /* 14px body and table rows */
@@ -193,6 +202,207 @@
   --color-series-6: #e79bba;
   --color-series-7: #6fc9d6;
   --color-series-8: #ef8f84;
+}
+
+/**
+ * Ledger: a dot-matrix printout, in monospace.
+ *
+ * The one theme that changes the typeface, and it changes it everywhere. A page
+ * half in monospace reads as a mistake rather than a decision — and this
+ * application is a ledger, so the whole grid lining up is the point: names,
+ * dates and amounts on one set of columns rather than only the money.
+ *
+ * Everything else gets quieter to pay for it. The face carries the personality,
+ * so the ground is a flat warm paper, the accent is a burnt amber rather than a
+ * blue that would compete, and `--tracking-label` goes to zero because a
+ * monospace capital is already wide enough without it.
+ *
+ * The cost is width: monospace runs about 15% wider at the same size, so long
+ * merchant names truncate sooner here than anywhere else.
+ */
+:root[data-theme='ledger'] {
+  color-scheme: light;
+
+  --font-sans:
+    ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace;
+  --tracking-label: 0;
+
+  --color-ink: #23201a;
+  --color-muted: #6b6355;
+  --color-faint: #93897a;
+  --color-canvas: #fdfbf6;
+  --color-surface: #f4efe4;
+  --color-surface-2: #e9e2d2;
+  --color-line: #ddd3bd;
+
+  --color-accent: #9a5b16;
+  --color-accent-soft: #faf0e0;
+  --color-on-accent: #fdfbf6;
+
+  --color-positive: #2f6b46;
+  --color-positive-soft: #e3eee7;
+
+  --color-confirm: #5c3a86;
+  --color-confirm-soft: #efe6f7;
+  --color-confirm-line: #d9c9ec;
+  --color-confirm-dot: #7b57a5;
+
+  --color-warning: #7a5a10;
+  --color-warning-soft: #fdf3d8;
+  --color-warning-line: #e8d5a4;
+  --color-warning-dot: #a97a1c;
+
+  --color-danger: #8a2f26;
+  --color-danger-soft: #fae5e1;
+  --color-danger-line: #edc3bc;
+  --color-danger-dot: #b8493c;
+
+  --color-negative: #a8362b;
+
+  /* Ink-adjacent rather than bright: these are tinted at 4% and 10% behind
+     rows, and a saturated preset on paper reads as a highlighter. */
+  --color-group-green: #2f6b46;
+  --color-group-blue: #2b5c8a;
+  --color-group-orange: #9a5b16;
+  --color-group-purple: #5c3a86;
+  --color-group-grey: #6b6355;
+
+  --color-series-1: #2b5c8a;
+  --color-series-2: #9a7a16;
+  --color-series-3: #2f6b46;
+  --color-series-4: #5c3a86;
+  --color-series-5: #9a5b16;
+  --color-series-6: #8a3a5c;
+  --color-series-7: #1f6b70;
+  --color-series-8: #a8362b;
+}
+
+/**
+ * Reading light: the budget at ten at night.
+ *
+ * The only theme here with a use rather than a look. A parchment ground at
+ * reduced luminance and a brown-black ink, with the blue taken out of both —
+ * dark mode is for a dark room, and this is for a lit one late on, where a white
+ * page is the thing that hurts.
+ *
+ * Not a dimmed copy of Light. The semantics are re-chosen against this ground:
+ * terracotta where the accent was blue, moss where positive was green, because a
+ * cool accent on a warm dim ground is the combination that reads as a screen
+ * with the brightness turned down rather than as paper under a lamp.
+ */
+:root[data-theme='reading'] {
+  color-scheme: light;
+
+  --color-ink: #33291d;
+  --color-muted: #6d5f4c;
+  --color-faint: #8f8069;
+  --color-canvas: #efe6d8;
+  --color-surface: #e7ddcc;
+  --color-surface-2: #ded2be;
+  --color-line: #cfc1a9;
+
+  --color-accent: #8f4526;
+  --color-accent-soft: #f6e6d8;
+  --color-on-accent: #fbf6ec;
+
+  --color-positive: #3d6b42;
+  --color-positive-soft: #e3ecdd;
+
+  --color-confirm: #5b3a80;
+  --color-confirm-soft: #ece3f2;
+  --color-confirm-line: #cfbfdf;
+  --color-confirm-dot: #7a5aa0;
+
+  --color-warning: #78530d;
+  --color-warning-soft: #f7ecd0;
+  --color-warning-line: #ddc99b;
+  --color-warning-dot: #a8791a;
+
+  --color-danger: #8f2f22;
+  --color-danger-soft: #f6ded8;
+  --color-danger-line: #dcb8ae;
+  --color-danger-dot: #b8503f;
+
+  --color-negative: #a03626;
+
+  --color-group-green: #3d6b42;
+  --color-group-blue: #2f5a78;
+  --color-group-orange: #8f4526;
+  --color-group-purple: #5b3a80;
+  --color-group-grey: #6d5f4c;
+
+  --color-series-1: #2f5a78;
+  --color-series-2: #8a6a14;
+  --color-series-3: #3d6b42;
+  --color-series-4: #5b3a80;
+  --color-series-5: #8f4526;
+  --color-series-6: #8a3a58;
+  --color-series-7: #276064;
+  --color-series-8: #a03626;
+}
+
+/**
+ * High contrast: a setting rather than a style.
+ *
+ * Pure white, pure black, and every other colour pushed to the most saturated
+ * value that still clears its ratio with room to spare. The one thing here that
+ * is not a colour choice is `--color-line`: at 5:1 against the canvas a hairline
+ * reads as a real boundary instead of a suggestion, which is what a table of
+ * sixty rows needs from somebody who is struggling to see it.
+ *
+ * Nothing about the layout changes. This is the same application with every
+ * contrast decision taken at the far end, and it exists because "quiet greys"
+ * is a preference and legibility is not.
+ */
+:root[data-theme='contrast'] {
+  color-scheme: light;
+
+  --color-ink: #000000;
+  --color-muted: #3a3a3a;
+  --color-faint: #565656;
+  --color-canvas: #ffffff;
+  --color-surface: #ffffff;
+  --color-surface-2: #ebebeb;
+  --color-line: #6f6f6f;
+
+  --color-accent: #0b4fbf;
+  --color-accent-soft: #e6eefb;
+  --color-on-accent: #ffffff;
+
+  --color-positive: #0a6b39;
+  --color-positive-soft: #e6f2eb;
+
+  --color-confirm: #5417a8;
+  --color-confirm-soft: #f0e8fb;
+  --color-confirm-line: #b79ce0;
+  --color-confirm-dot: #5417a8;
+
+  --color-warning: #6d4300;
+  --color-warning-soft: #fdf1d6;
+  --color-warning-line: #c79a3d;
+  --color-warning-dot: #6d4300;
+
+  --color-danger: #a81b12;
+  --color-danger-soft: #fde8e6;
+  --color-danger-line: #d4776f;
+  --color-danger-dot: #a81b12;
+
+  --color-negative: #a81b12;
+
+  --color-group-green: #0a6b39;
+  --color-group-blue: #0b4fbf;
+  --color-group-orange: #8a4000;
+  --color-group-purple: #5417a8;
+  --color-group-grey: #3a3a3a;
+
+  --color-series-1: #0b4fbf;
+  --color-series-2: #6d4300;
+  --color-series-3: #0a6b39;
+  --color-series-4: #5417a8;
+  --color-series-5: #8a4000;
+  --color-series-6: #a3005c;
+  --color-series-7: #005f6b;
+  --color-series-8: #a81b12;
 }
 
 /**

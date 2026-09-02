@@ -402,7 +402,7 @@ export function GroupingsSection(): ReactNode {
       ) : (
         <table className="w-full table-fixed border-t-2 border-ink">
           <thead>
-            <tr className="text-label uppercase tracking-[0.05em] text-muted">
+            <tr className="text-label uppercase tracking-label text-muted">
               <th className="row-cell pl-1 text-left font-normal">Grouping</th>
               <th className="row-cell w-28 text-left font-normal">Section</th>
               <th className="row-cell w-40 text-left font-normal">Colour</th>

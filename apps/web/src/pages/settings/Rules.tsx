@@ -548,7 +548,7 @@ export function RulesSection(): ReactNode {
       ) : (
         <table className="w-full table-fixed border-t-2 border-ink">
           <thead>
-            <tr className="text-label uppercase tracking-[0.05em] text-muted">
+            <tr className="text-label uppercase tracking-label text-muted">
               <th className="row-cell w-10 pl-1 text-left font-normal">#</th>
               <th className="row-cell text-left font-normal">Rule</th>
               {/* "Categorizes as" named one of the two things a rule can do.
