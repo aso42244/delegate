@@ -1106,3 +1106,36 @@ was fixed for: a Unicode glyph renders at whatever weight and baseline each
 platform decides. Collapsed, it joins the icon column — same size, same centre —
 with a rule under it, because it acts on the sidebar itself rather than going
 anywhere.
+
+## Six palettes, and a number under each one
+
+`design.md` §2 fixes the Light palette and ADR 034 added Dark as a second design
+rather than an inversion. Three more join them, and the rule that makes that a
+system rather than a pile is in
+[ADR 048](decisions/048-a-theme-is-a-palette-that-is-measured.md): **a theme is a
+token swap** — colours, the font stack, the label tracking — and nothing about
+layout is themeable.
+
+**Ledger** is monospace, everywhere. A page half in monospace reads as a mistake
+rather than a decision, and this application is a ledger: with the face swapped
+the whole grid lines up — names, dates and amounts — instead of only the money
+column. The rest gets quieter to pay for it. Warm paper, a burnt amber accent
+where blue would compete, ink-adjacent grouping presets because a saturated tint
+on paper reads as a highlighter, and `--tracking-label` at zero because a
+monospace capital is wide enough already. It costs about 15% width, so long
+merchant names truncate sooner here than anywhere else.
+
+**Reading light** is the one with a use rather than a look: a parchment ground at
+reduced luminance with the blue taken out, for ten at night in a lit room. Its
+semantics are re-chosen against that ground — terracotta, moss — because a cool
+accent on a warm dim ground reads as a screen with the brightness turned down.
+
+**High contrast** is a setting, not a style. Pure black on pure white, every
+value at the far end, and `--color-line` at 5:1 so a hairline reads as a boundary
+rather than a suggestion.
+
+**§9 is now checked rather than asserted.** A test reads the stylesheet and
+measures every palette. It found six pairs in the shipped Light palette under
+4.5:1 — the worst being positive green on its own green fill at 2.76:1 — and
+those are recorded at today's values rather than changed, because this document
+is settled and moving them is the owner's decision. They cannot get worse.

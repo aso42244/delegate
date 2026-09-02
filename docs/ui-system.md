@@ -307,7 +307,25 @@ anything whose length nobody controls — the app name, the signed-in address �
 capped at `--spacing-sidebar-cap` and truncates, because `w-fit` takes the widest
 child and an email address is wider than anything anybody navigates to.
 
-## 13. What this does not change
+## 13. Themes
+
+**A theme is a token swap and nothing else** — the colour tokens, plus
+`--font-sans` and `--tracking-label`. Layout, spacing, the chip vocabulary, row
+heights and every measurement above are outside it. A theme that needs a
+different layout is not a theme.
+[ADR 048](decisions/048-a-theme-is-a-palette-that-is-measured.md).
+
+**Every theme is measured.** `theme-contrast.test.ts` reads `styles.css` and
+holds each palette to WCAG AA on the pairs that actually appear: body text on
+both grounds, each semantic colour on its own soft fill, `on-accent` on `accent`,
+and a negative amount on the canvas — 4.5:1 throughout. A seventh theme satisfies
+it or changes it deliberately.
+
+**`--tracking-label` exists for one theme.** Monospace capitals are already wide,
+and 0.05em turns an 11px column header into a row of gaps. It is a token rather
+than a number written into nineteen `<th>` elements.
+
+## 14. What this does not change
 
 Colour, the chip vocabulary, row heights, banner tones, the row-menu shell, the
 keyboard map, and every decision recorded in `design.md`. Those were settled and

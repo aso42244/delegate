@@ -160,7 +160,7 @@ export function BitcoinNodeSection(): ReactNode {
 
       {data && data.suggestions.length > 0 && (
         <div className="mt-4">
-          <p className="text-label uppercase tracking-[0.05em] text-muted">Public options</p>
+          <p className="text-label uppercase tracking-label text-muted">Public options</p>
           <ul className="mt-1 flex flex-col gap-1">
             {data.suggestions.map((suggestion) => (
               <li key={suggestion.url} className="text-quiet">

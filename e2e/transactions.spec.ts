@@ -422,3 +422,46 @@ test('a rule can be built from a row already filed', async ({ signedIn, api }) =
   await signedIn.goto('/settings/rules');
   await expect(signedIn.getByText('Description contains “WHOLEFDS MKT”')).toBeVisible();
 });
+
+/**
+ * The same charge, in the register twice.
+ *
+ * Reconnecting an institution at the bridge changes every account's external id,
+ * so a sync brings back a card's whole recent history as though it were new.
+ * `handoff.md` records this as something that happened; until now it was found
+ * by noticing a balance was wrong.
+ */
+test('a duplicated charge is offered, and archiving one settles it', async ({ signedIn, api }) => {
+  const accountId = await makeAccount('Everyday Checking', 'asset', 500000n);
+  await makeTransaction(api, accountId, '-4210', 'WHOLEFDS MKT #10234');
+  await makeTransaction(api, accountId, '-4210', 'WHOLEFDS MKT #10234');
+
+  await signedIn.getByRole('link', { name: 'Transactions', exact: true }).click();
+
+  await expect(signedIn.getByRole('heading', { name: '1 possible duplicate' })).toBeVisible();
+
+  // Nothing has happened yet: both rows are still in the register.
+  await expect(signedIn.getByRole('row').filter({ hasText: 'WHOLEFDS' })).toHaveCount(2);
+
+  await signedIn.getByRole('button', { name: /^Archive the later/ }).click();
+
+  // The offer goes when the duplicate does, rather than repeating.
+  await expect(signedIn.getByRole('row').filter({ hasText: 'WHOLEFDS' })).toHaveCount(1);
+  await expect(signedIn.getByRole('heading', { name: /possible duplicate/ })).toHaveCount(0);
+});
+
+test('a suggestion can be waved off without archiving anything', async ({ signedIn, api }) => {
+  const accountId = await makeAccount('Everyday Checking', 'asset', 500000n);
+  await makeTransaction(api, accountId, '-1200', 'COFFEE');
+  await makeTransaction(api, accountId, '-1200', 'COFFEE');
+
+  await signedIn.getByRole('link', { name: 'Transactions', exact: true }).click();
+  await expect(signedIn.getByRole('heading', { name: '1 possible duplicate' })).toBeVisible();
+
+  // Two coffees on one card in one day is a real thing, and saying so must not
+  // touch the register.
+  await signedIn.getByRole('button', { name: /^Dismiss the duplicate/ }).click();
+
+  await expect(signedIn.getByRole('heading', { name: /possible duplicate/ })).toHaveCount(0);
+  await expect(signedIn.getByRole('row').filter({ hasText: 'COFFEE' })).toHaveCount(2);
+});

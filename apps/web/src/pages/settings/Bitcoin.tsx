@@ -249,13 +249,13 @@ export function BitcoinSection(): ReactNode {
             other action in the header. */}
         <div className="mb-4 flex flex-wrap items-baseline gap-x-6 gap-y-2">
           <div>
-            <p className="text-label uppercase tracking-[0.05em] text-muted">Price</p>
+            <p className="text-label uppercase tracking-label text-muted">Price</p>
             <p className="money text-hero font-bold text-ink">
               {price === null ? '—' : formatCents(BigInt(price.priceCents))}
             </p>
           </div>
           <div>
-            <p className="text-label uppercase tracking-[0.05em] text-muted">Held</p>
+            <p className="text-label uppercase tracking-label text-muted">Held</p>
             <p className="money text-hero font-bold text-ink">{formatBitcoin(totalSats)}</p>
           </div>
         </div>
@@ -269,7 +269,7 @@ export function BitcoinSection(): ReactNode {
         ) : (
           <table className="w-full border-t-2 border-ink">
             <thead>
-              <tr className="text-label uppercase tracking-[0.05em] text-muted">
+              <tr className="text-label uppercase tracking-label text-muted">
                 <th className="row-cell pl-3 text-left font-normal">Name</th>
                 <th className="row-cell text-left font-normal">Quantity</th>
                 <th className="row-cell pr-2 text-right font-normal">Worth</th>

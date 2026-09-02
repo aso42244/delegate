@@ -252,7 +252,7 @@ export function HoldingHistory({
       {data && data.events.length > 0 && (
         <table className="mt-4 w-full">
           <thead>
-            <tr className="text-label uppercase tracking-[0.05em] text-muted">
+            <tr className="text-label uppercase tracking-label text-muted">
               <th className="row-cell pl-1 text-left font-normal">Date</th>
               <th className="row-cell text-left font-normal">What</th>
               <th className="row-cell pr-2 text-right font-normal">Amount</th>

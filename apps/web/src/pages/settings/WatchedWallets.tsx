@@ -81,7 +81,7 @@ export function WatchedWallets({ accountId }: { readonly accountId: string }): R
 
   return (
     <div className="mt-4">
-      <p className="text-label uppercase tracking-[0.05em] text-muted">Watched wallets</p>
+      <p className="text-label uppercase tracking-label text-muted">Watched wallets</p>
 
       {problem && <Alert tone="danger">{problem}</Alert>}
       {done && <Alert tone="positive">{done}</Alert>}

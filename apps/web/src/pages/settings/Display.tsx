@@ -30,10 +30,19 @@ const LAYOUTS: readonly { value: BudgetLayout; label: string; detail: string }[]
   { value: 'columns', label: 'Two columns', detail: 'Delegations beside the accounts' },
 ];
 
+/**
+ * The three device-following states first, then the three that are a decision.
+ *
+ * Each of the last three gets a line, because a name alone does not say what it
+ * is for — and one of them is a setting rather than a taste.
+ */
 const THEMES: readonly { value: ThemeChoice; label: string; detail: string }[] = [
   { value: 'system', label: 'System', detail: 'Follows this device' },
   { value: 'light', label: 'Light', detail: '' },
   { value: 'dark', label: 'Dark', detail: '' },
+  { value: 'ledger', label: 'Ledger', detail: 'Monospace, on paper' },
+  { value: 'reading', label: 'Reading light', detail: 'Warm and dim, for late on' },
+  { value: 'contrast', label: 'High contrast', detail: 'Every value at the far end' },
 ];
 
 /** One radio list, since both cards are exactly that. */
@@ -90,7 +99,7 @@ export function DisplaySection(): ReactNode {
       <SettingsCard
         span="third"
         title="Theme"
-        description="Light, dark, or whatever this device asks for."
+        description="Six palettes, or whatever this device asks for."
       >
         <Choice name="theme" legend="Theme" value={theme} options={THEMES} onChange={setTheme} />
       </SettingsCard>

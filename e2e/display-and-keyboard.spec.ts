@@ -334,12 +334,14 @@ test.describe('theme', () => {
         getComputedStyle(document.documentElement).getPropertyValue('--color-ink').trim(),
       );
 
-    await page.getByLabel('Light').check();
+    // `exact`: "Reading light" carries the word too, and an accessible name is
+    // matched as a substring.
+    await page.getByLabel('Light', { exact: true }).check();
     await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
     const lightCanvas = await canvas();
     const lightInk = await ink();
 
-    await page.getByLabel('Dark').check();
+    await page.getByLabel('Dark', { exact: true }).check();
     await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
     expect(await canvas()).not.toBe(lightCanvas);
     expect(await ink()).not.toBe(lightInk);
@@ -365,7 +367,7 @@ test.describe('theme', () => {
     signedIn: page,
   }) => {
     await page.goto('/settings/display');
-    await page.getByLabel('Dark').check();
+    await page.getByLabel('Dark', { exact: true }).check();
 
     await page.reload();
     await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
@@ -381,7 +383,7 @@ test.describe('theme', () => {
     await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
 
     // And an explicit choice is not overruled by the device changing.
-    await page.getByLabel('Dark').check();
+    await page.getByLabel('Dark', { exact: true }).check();
     await page.emulateMedia({ colorScheme: 'light' });
     await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
   });

@@ -18,6 +18,7 @@ import {
   DEFAULT_PAGE_SIZE,
 } from '../domain/transactions.js';
 import { confirmPair, findPairCandidates, unpair } from '../domain/pairing.js';
+import { findDuplicates } from '../domain/duplicates.js';
 import { suggestDelegations } from '../domain/suggestions.js';
 import { booleanQuery, centsInLoose, centsOut, dateOut } from '../http/serialize.js';
 import { AUTHENTICATED } from '../plugins/auth.js';
@@ -238,6 +239,36 @@ export const transactionRoutes: FastifyPluginCallback = (fastify, _options, done
    */
   fastify.get('/api/transactions/suggestions', async () => {
     return { suggestions: await suggestDelegations(prisma) };
+  });
+
+  /**
+   * The same charge, in the register twice.
+   *
+   * Read-only, like every other proposal here. Reconnecting an institution at
+   * the bridge changes every external id, so a sync brings back a card's whole
+   * recent history as though it were new — and until now that was found by
+   * noticing a balance was wrong.
+   */
+  fastify.get('/api/transactions/duplicates', async () => {
+    const candidates = await findDuplicates(prisma);
+
+    const side = (entry: (typeof candidates)[number]['original']): Record<string, unknown> => ({
+      id: entry.id,
+      accountName: entry.accountName,
+      postedAt: dateOut(entry.postedAt),
+      amountCents: centsOut(entry.amountCents),
+      description: entry.description,
+      categorized: entry.categorized,
+    });
+
+    return {
+      candidates: candidates.map((candidate) => ({
+        original: side(candidate.original),
+        copy: side(candidate.copy),
+        daysApart: candidate.daysApart,
+        differentExternalIds: candidate.differentExternalIds,
+      })),
+    };
   });
 
   fastify.get('/api/transactions/pair-candidates', async () => {

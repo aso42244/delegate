@@ -579,7 +579,7 @@ export function BudgetSection({
           {/* Assets and debts have one money column, under a heading that already
               says what it is. Delegations has two, which do need naming. */}
           <tr
-            className={`text-label uppercase tracking-[0.05em] text-muted ${
+            className={`text-label uppercase tracking-label text-muted ${
               showAmountToDelegate ? '' : 'sr-only'
             }`}
           >

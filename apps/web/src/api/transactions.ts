@@ -99,6 +99,25 @@ export interface SuggestionDto {
   readonly totalCount: number;
 }
 
+/** Two rows that look like one charge. Advice: nothing is archived until asked. */
+export interface DuplicateSideDto {
+  readonly id: string;
+  readonly accountName: string;
+  readonly postedAt: string;
+  readonly amountCents: string;
+  readonly description: string;
+  /** Archiving this one puts money back in an envelope; the other does not. */
+  readonly categorized: boolean;
+}
+
+export interface DuplicateCandidateDto {
+  readonly original: DuplicateSideDto;
+  readonly copy: DuplicateSideDto;
+  readonly daysApart: number;
+  /** The re-import signature: two feed rows for one charge, with different ids. */
+  readonly differentExternalIds: boolean;
+}
+
 export interface PairCandidateDto {
   readonly outflow: PairSideDto;
   readonly inflow: PairSideDto;
@@ -163,6 +182,10 @@ export const transactionsApi = {
    */
   suggestions: () =>
     api.get<{ suggestions: readonly SuggestionDto[] }>('/api/transactions/suggestions'),
+
+  /** Read-only. Archiving is a separate, deliberate press. */
+  duplicates: () =>
+    api.get<{ candidates: readonly DuplicateCandidateDto[] }>('/api/transactions/duplicates'),
 
   /** Suggestions only — §7: wrong automatic pairing is worse than no pairing. */
   pairCandidates: () =>
