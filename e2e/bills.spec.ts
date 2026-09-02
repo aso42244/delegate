@@ -145,3 +145,64 @@ test('the overdue pill can be switched off, and the page stays', async ({ signed
   await expect(signedIn.getByRole('link', { name: /bill overdue/ })).toHaveCount(0);
   await expect(signedIn.getByRole('cell', { name: /Overdue/ })).toBeVisible();
 });
+
+/**
+ * The escape hatch the first real run asked for.
+ *
+ * A thrift shop visited every fortnight has exactly the shape of a fortnightly
+ * bill, and no threshold will ever know it is a shop. Only the household does,
+ * so the page has to let them say it.
+ */
+test('a merchant that is not a bill is taken off the list, and can come back', async ({
+  signedIn,
+  api,
+}) => {
+  const accountId = await makeAccount('Everyday Checking', 'asset', 500000n);
+  await monthlyBill(api, accountId, recentMonths(), '-7150', 'SAVERS - 1090 SIOUX FALLS SD');
+  await monthlyBill(api, accountId, recentMonths());
+
+  await openBills(signedIn);
+  await expect(signedIn.getByText('SAVERS - 1090 SIOUX FALLS SD')).toBeVisible();
+
+  await signedIn.getByRole('button', { name: 'Options for SAVERS - 1090 SIOUX FALLS SD' }).click();
+  await signedIn.getByRole('menuitem', { name: 'Not a bill' }).click();
+
+  await expect(signedIn.getByText('SAVERS - 1090 SIOUX FALLS SD')).toHaveCount(0);
+  // The other one is untouched: this is a judgement about one merchant.
+  await expect(signedIn.getByText('CITY WATER UTILITY')).toBeVisible();
+
+  // And it is findable again, which is what makes saying it safe.
+  await signedIn.getByRole('button', { name: '1 hidden' }).click();
+  await signedIn.getByRole('button', { name: 'Put back' }).click();
+  await expect(signedIn.getByText('SAVERS - 1090 SIOUX FALLS SD')).toBeVisible();
+});
+
+test('a bill can be given a name, and keeps the bank text under it', async ({ signedIn, api }) => {
+  const accountId = await makeAccount('Everyday Checking', 'asset', 500000n);
+  await monthlyBill(
+    api,
+    accountId,
+    recentMonths(),
+    '-10595',
+    'ACH Payment SIOUXFALLS SD UTILITY 605-367-8869',
+  );
+
+  await openBills(signedIn);
+  await signedIn
+    .getByRole('button', { name: 'Options for ACH Payment SIOUXFALLS SD UTILITY 605-367-8869' })
+    .click();
+  await signedIn.getByRole('menuitem', { name: 'Give it a name' }).click();
+
+  // `getByRole`, not `getByLabel`: the dialog's own name is "Rename …", and an
+  // accessible name is matched as a substring — so "Name" resolves to the
+  // dialog as well as to the field inside it.
+  await signedIn.getByRole('textbox', { name: 'Name' }).fill('Water & Sewer');
+  // `exact`, because an accessible name is matched as a substring and a
+  // merchant called SAVERS puts "Save" in its row menu's trigger.
+  await signedIn.getByRole('button', { name: 'Save', exact: true }).click();
+  await expect(signedIn.getByRole('dialog')).toHaveCount(0);
+
+  await expect(signedIn.getByText('Water & Sewer')).toBeVisible();
+  // Never replaced — reconciling against a statement needs what the bank sent.
+  await expect(signedIn.getByText('ACH Payment SIOUXFALLS SD UTILITY 605-367-8869')).toBeVisible();
+});

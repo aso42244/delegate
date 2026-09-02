@@ -22,6 +22,13 @@ import type { Db } from '../db/client.js';
  * check and [ADR 044] for a suggested delegation. This is a reading of the data,
  * recomputed every time it is asked for, and it stops existing the moment it
  * stops being true.
+ *
+ * **One thing is stored: what a person says back.** The first real run listed a
+ * thrift shop visited every fortnight as a fortnightly bill, and no threshold
+ * would have known better — the spending genuinely has the shape of a bill, and
+ * only the household knows it is a shop. So a bill can be taken off the list or
+ * given a name of its own, and those corrections live in `bill_overrides`,
+ * keyed by merchant. Still no bills stored; only the answers to them.
  */
 
 /**
@@ -78,8 +85,12 @@ export type BillStatus = 'expected' | 'due' | 'overdue' | 'lapsed';
 export interface RecurringBill {
   /** The merchant key. Stable across store numbers, and the row's identity. */
   readonly key: string;
-  /** The most recent description, which is what the household would recognise. */
+  /** The name to show: the household's own where they gave one, the feed's otherwise. */
   readonly name: string;
+  /** What the bank calls it, always. Shown where the two differ, so a rename hides nothing. */
+  readonly feedName: string;
+  /** True when the name above is the household's rather than the bank's. */
+  readonly renamed: boolean;
   readonly cadence: string;
   readonly intervalDays: number;
   readonly occurrences: number;
@@ -156,6 +167,11 @@ export async function findRecurringBills(
   timeZone: string,
   now: Date = new Date(),
 ): Promise<RecurringBill[]> {
+  const overrides = await db.billOverride.findMany({
+    select: { merchantKey: true, hidden: true, displayName: true },
+  });
+  const overrideFor = new Map(overrides.map((override) => [override.merchantKey, override]));
+
   const charges = await db.transaction.findMany({
     where: {
       archivedAt: null,
@@ -194,6 +210,10 @@ export async function findRecurringBills(
 
   for (const [key, group] of byMerchant) {
     if (group.length < MIN_OCCURRENCES) continue;
+    // Taken off the list by somebody who knows it is not a bill. Skipped before
+    // any arithmetic, so a hidden merchant costs nothing and — the point of the
+    // whole exercise — can raise no notification.
+    if (overrideFor.get(key)?.hidden === true) continue;
 
     /*
      * Days, in the household's zone, oldest first.
@@ -265,9 +285,16 @@ export async function findRecurringBills(
       }
     }
 
+    const override = overrideFor.get(key);
+
     bills.push({
       key,
-      name: newest.description,
+      // The household's name where they gave one. The bank's is kept beside it
+      // rather than replaced: a rename is a label, not a claim about what the
+      // feed said, and reconciling against a statement needs the original.
+      name: override?.displayName ?? newest.description,
+      feedName: newest.description,
+      renamed: override?.displayName != null,
       cadence: cadenceLabel(intervalDays),
       intervalDays,
       occurrences: group.length,
@@ -284,8 +311,84 @@ export async function findRecurringBills(
     });
   }
 
-  // Soonest first, which is the order somebody reads a list of what is coming.
-  return bills.sort((a, b) => a.expectedNextAt.getTime() - b.expectedNextAt.getTime());
+  /*
+   * Soonest first, with anything that has plainly stopped at the bottom.
+   *
+   * A lapsed bill's expected date is by definition in the past, so a plain date
+   * sort puts the least actionable row at the top of the page — which is exactly
+   * where the first real run put a thrift shop last seen in July.
+   */
+  return bills.sort((a, b) => {
+    const lapsed = Number(a.status === 'lapsed') - Number(b.status === 'lapsed');
+    return lapsed !== 0 ? lapsed : a.expectedNextAt.getTime() - b.expectedNextAt.getTime();
+  });
+}
+
+export interface HiddenBill {
+  readonly key: string;
+  readonly label: string;
+}
+
+/**
+ * The merchants somebody has said are not bills.
+ *
+ * Listed so a correction can be undone. A hidden merchant has no detected bill
+ * to take a name from — that is what hiding it means — so the label recorded at
+ * the time is the only thing left to call it.
+ */
+export async function listHiddenBills(db: Db): Promise<HiddenBill[]> {
+  const rows = await db.billOverride.findMany({
+    where: { hidden: true },
+    select: { merchantKey: true, label: true },
+    orderBy: { label: 'asc' },
+  });
+  return rows.map((row) => ({ key: row.merchantKey, label: row.label }));
+}
+
+export interface BillOverrideInput {
+  readonly key: string;
+  /** What it is called now, kept so a hidden bill can still be named. */
+  readonly label: string;
+  readonly hidden?: boolean | undefined;
+  /** A name of the household's own. Null clears it and the bank's returns. */
+  readonly displayName?: string | null | undefined;
+}
+
+/**
+ * Records what somebody said about a merchant.
+ *
+ * An upsert on the merchant key, because a correction is about the merchant
+ * rather than about any one charge. A row that hides nothing and renames nothing
+ * says nothing, so it is deleted rather than kept — which is not a deletion of
+ * data in the sense the hard constraint means: it is the absence of an opinion,
+ * and the bill it was about is derived from transactions that are all still
+ * there.
+ */
+export async function setBillOverride(db: Db, input: BillOverrideInput): Promise<void> {
+  const hidden = input.hidden ?? false;
+  const displayName = input.displayName?.trim() || null;
+
+  if (!hidden && displayName === null) {
+    await db.billOverride.deleteMany({ where: { merchantKey: input.key } });
+    return;
+  }
+
+  await db.billOverride.upsert({
+    where: { merchantKey: input.key },
+    create: { merchantKey: input.key, label: input.label, hidden, displayName },
+    update: { label: input.label, hidden, displayName },
+  });
+}
+
+/** What is currently recorded about a merchant, for a caller changing one part of it. */
+export async function getBillOverride(
+  db: Db,
+  key: string,
+): Promise<{ hidden: boolean; displayName: string | null } | null> {
+  return db.billOverride.findUnique({
+    where: { merchantKey: key },
+    select: { hidden: true, displayName: true },
+  });
 }
 
 /** The bills worth telling somebody about: late, and not so late they have stopped. */

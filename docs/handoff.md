@@ -107,7 +107,7 @@ and the image is published multi-arch on version tags. The NAS is one deployment
 of many rather than the deployment, and it keeps working — it adopts the secrets
 already in its `.env`.
 
-286 unit, 702 integration and 201 end-to-end tests. There is no CI: GitHub stores the code and nothing else
+286 unit, 710 integration and 203 end-to-end tests. There is no CI: GitHub stores the code and nothing else
 ([ADR 022](decisions/022-the-checks-run-here-not-on-github.md)), and every gate
 runs locally through `npm run verify`.
 
@@ -477,6 +477,32 @@ normalization neither can drift from.
 - `notes` is a note again. Existing notes are untouched, including the ones that
   say `"$2200, Dec 27"` — a text field somebody wrote by hand is not something to
   parse and overwrite
+
+**Since v0.44.0 — the first real run of Bills, and what it asked for**
+
+- **A bill can be taken off the list, or given a name of its own.** Thirteen
+  bills came out of the owner's real register and one of them was **SAVERS**, a
+  thrift shop visited every fortnight. The detection was not wrong in a way any
+  threshold could fix — that spending genuinely has the shape of a fortnightly
+  bill — so the fix is that a person can say otherwise. Amendment on
+  [ADR 045](decisions/045-a-bill-is-inferred-not-entered.md).
+
+- **"Stored nowhere" still holds for bills.** `bill_overrides` contains no bills,
+  no dates and no amounts; every figure is still derived on every request. It
+  holds the one class of fact that cannot be derived — what somebody said back.
+  Hidden rather than deleted, listed under a fold with `Put back`, and a rename
+  **labels** rather than replaces: the bank's text stays under the name and stays
+  searchable, because reconciling against a statement needs the words the
+  statement uses
+
+- **Two corrections and no more.** Every other figure on the row is arithmetic
+  over transactions and would be a lie if it were editable. If the cadence looks
+  wrong the answer is that this is not a bill, never that the number should be
+  overwritten
+
+- Lapsed bills sort to the bottom now. A lapsed bill's expected date is in the
+  past by definition, so a plain date sort put the least actionable row at the
+  very top — which is exactly where the first real run put that thrift shop
 
 ### Known gaps to fix
 
@@ -859,8 +885,8 @@ npm run verify            # everything, in the order CI used to run it
 npm run verify:quick      # the same, minus the container image build
 
 npm run test              # 286 unit
-npm run test:integration  # 702 integration
-npm run test:e2e          # 201 end-to-end, needs a build first
+npm run test:integration  # 710 integration
+npm run test:e2e          # 203 end-to-end, needs a build first
 ```
 
 `npm run verify` is the gate. It runs migrations, typecheck, lint, formatting,

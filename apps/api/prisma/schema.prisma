@@ -742,6 +742,37 @@ model TransactionAllocation {
   @@map("transaction_allocations")
 }
 
+/**
+ * What a person says about a detected bill.
+ *
+ * ADR 045 says bills are stored nowhere, and that stays true — this holds no
+ * bills. It holds corrections to what the detection concluded, which is the one
+ * kind of fact about them that cannot be derived: a thrift shop visited every
+ * fortnight has exactly the shape of a fortnightly bill, and only the household
+ * knows it is a shop.
+ *
+ * Keyed by the merchant key, because it is the merchant that is not a bill and
+ * the charges behind it change every month.
+ */
+model BillOverride {
+  id          String @id @default(uuid()) @db.Uuid
+  merchantKey String @unique @map("merchant_key")
+
+  /** What it was called when the correction was made, so a hidden one can be named. */
+  label String
+
+  /** Taken off the list. Putting one back flips this; the row is never deleted. */
+  hidden Boolean @default(false)
+
+  /** Shown instead of the bank's description. Null keeps what the feed sent. */
+  displayName String? @map("display_name")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("bill_overrides")
+}
+
 // ---------------------------------------------------------------------------
 // Auto-categorization
 // ---------------------------------------------------------------------------

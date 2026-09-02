@@ -4,7 +4,12 @@ import { buildApp } from '../src/app.js';
 import { loadConfig } from '../src/config.js';
 import { prisma } from '../src/db/client.js';
 import { categorizeTransaction } from '../src/domain/allocations.js';
-import { findRecurringBills, overdueBills } from '../src/domain/recurring.js';
+import {
+  findRecurringBills,
+  listHiddenBills,
+  overdueBills,
+  setBillOverride,
+} from '../src/domain/recurring.js';
 import {
   makeAccount,
   makeDelegation,
@@ -273,10 +278,181 @@ describe('being late', () => {
   });
 });
 
+describe('saying it is not a bill', () => {
+  /** The case from the first real run: a thrift shop visited every fortnight. */
+  async function thriftShop(accountId: string): Promise<void> {
+    for (const day of ['2026-07-21', '2026-08-04', '2026-08-18']) {
+      await charge(accountId, day, 7150n, 'SAVERS - 1090 SIOUX FALLS SD');
+    }
+  }
+
+  it('takes it off the list, and it stays off', async () => {
+    const accountId = await checking();
+    await thriftShop(accountId);
+
+    const [detected] = await findRecurringBills(prisma, ZONE, NOW);
+    expect(detected?.name).toBe('SAVERS - 1090 SIOUX FALLS SD');
+
+    await setBillOverride(prisma, { key: detected!.key, label: detected!.name, hidden: true });
+
+    // No threshold would have known this was a shop. Only the household does.
+    expect(await findRecurringBills(prisma, ZONE, NOW)).toEqual([]);
+  });
+
+  it('raises nothing once hidden', async () => {
+    const accountId = await checking();
+    // Three monthly charges that stopped, so it would otherwise be overdue.
+    for (const day of ['2026-05-05', '2026-06-04', '2026-07-04']) {
+      await charge(accountId, day, 11800n, 'CITY WATER UTILITY');
+    }
+
+    const [detected] = await findRecurringBills(prisma, ZONE, NOW);
+    expect(overdueBills([detected!])).toHaveLength(1);
+
+    await setBillOverride(prisma, { key: detected!.key, label: detected!.name, hidden: true });
+
+    expect(overdueBills(await findRecurringBills(prisma, ZONE, NOW))).toEqual([]);
+  });
+
+  it('is listed so it can be put back, under the name it had', async () => {
+    const accountId = await checking();
+    await thriftShop(accountId);
+    const [detected] = await findRecurringBills(prisma, ZONE, NOW);
+    await setBillOverride(prisma, { key: detected!.key, label: detected!.name, hidden: true });
+
+    // A hidden merchant has no detected bill to take a name from — that is what
+    // hiding it means — so the label recorded at the time is all there is.
+    expect(await listHiddenBills(prisma)).toEqual([
+      { key: detected!.key, label: 'SAVERS - 1090 SIOUX FALLS SD' },
+    ]);
+
+    await setBillOverride(prisma, { key: detected!.key, label: detected!.name, hidden: false });
+    expect(await findRecurringBills(prisma, ZONE, NOW)).toHaveLength(1);
+    expect(await listHiddenBills(prisma)).toEqual([]);
+  });
+});
+
+describe('giving it a name', () => {
+  it('shows the household name and keeps the bank text beside it', async () => {
+    const accountId = await checking();
+    for (const day of ['2026-06-04', '2026-07-04', '2026-08-04']) {
+      await charge(accountId, day, 10595n, 'ACH Payment SIOUXFALLS SD UTILITY 605-367-8869');
+    }
+
+    const [detected] = await findRecurringBills(prisma, ZONE, NOW);
+    await setBillOverride(prisma, {
+      key: detected!.key,
+      label: detected!.name,
+      displayName: 'Water & Sewer',
+    });
+
+    const [renamed] = await findRecurringBills(prisma, ZONE, NOW);
+    expect(renamed?.name).toBe('Water & Sewer');
+    expect(renamed?.renamed).toBe(true);
+    // The original is never replaced: reconciling against a statement needs it.
+    expect(renamed?.feedName).toBe('ACH Payment SIOUXFALLS SD UTILITY 605-367-8869');
+  });
+
+  it('goes back to the bank description when the name is cleared', async () => {
+    const accountId = await checking();
+    for (const day of ['2026-06-04', '2026-07-04', '2026-08-04']) {
+      await charge(accountId, day, 10595n, 'SIOUXFALLS SD UTILITY');
+    }
+    const [detected] = await findRecurringBills(prisma, ZONE, NOW);
+
+    await setBillOverride(prisma, {
+      key: detected!.key,
+      label: detected!.name,
+      displayName: 'Water & Sewer',
+    });
+    await setBillOverride(prisma, {
+      key: detected!.key,
+      label: detected!.name,
+      displayName: null,
+    });
+
+    const [plain] = await findRecurringBills(prisma, ZONE, NOW);
+    expect(plain?.name).toBe('SIOUXFALLS SD UTILITY');
+    expect(plain?.renamed).toBe(false);
+    // A row that hides nothing and renames nothing says nothing, so nothing is
+    // kept: the bill is derived from transactions that are all still there.
+    expect(await prisma.billOverride.count()).toBe(0);
+  });
+
+  it('keeps a name and a hiding apart', async () => {
+    const accountId = await checking();
+    for (const day of ['2026-06-04', '2026-07-04', '2026-08-04']) {
+      await charge(accountId, day, 10595n, 'SIOUXFALLS SD UTILITY');
+    }
+    const [detected] = await findRecurringBills(prisma, ZONE, NOW);
+
+    await setBillOverride(prisma, {
+      key: detected!.key,
+      label: detected!.name,
+      displayName: 'Water & Sewer',
+      hidden: true,
+    });
+
+    expect(await findRecurringBills(prisma, ZONE, NOW)).toEqual([]);
+    expect(await listHiddenBills(prisma)).toHaveLength(1);
+  });
+});
+
+describe('the order', () => {
+  it('puts a bill that has plainly stopped at the bottom', async () => {
+    const accountId = await checking();
+    // Stopped in March, so its expected date is months in the past.
+    for (const day of ['2026-01-04', '2026-02-04', '2026-03-04']) {
+      await charge(accountId, day, 4599n, 'CANCELLED SERVICE');
+    }
+    for (const day of ['2026-06-04', '2026-07-04', '2026-08-04']) {
+      await charge(accountId, day, 11800n, 'CITY WATER UTILITY');
+    }
+
+    /*
+     * A plain date sort puts the least actionable row first, which is exactly
+     * where the first real run put a thrift shop last seen in July.
+     */
+    const bills = await findRecurringBills(prisma, ZONE, NOW);
+    expect(bills.map((bill) => bill.status)).toEqual(['due', 'lapsed']);
+  });
+});
+
 describe('the route', () => {
   it('requires a session', async () => {
     const response = await app.inject({ method: 'GET', url: '/api/recurring' });
     expect(response.statusCode).toBe(401);
+  });
+
+  it('records a correction, and leaves the rest of it alone', async () => {
+    const accountId = await checking();
+    for (const day of ['2026-06-04', '2026-07-04', '2026-08-04']) {
+      await charge(accountId, day, 10595n, 'SIOUXFALLS SD UTILITY');
+    }
+    const [detected] = await findRecurringBills(prisma, ZONE, NOW);
+
+    const named = await app.inject({
+      method: 'POST',
+      url: '/api/recurring/overrides',
+      headers: { cookie },
+      payload: { key: detected!.key, label: detected!.name, displayName: 'Water & Sewer' },
+    });
+    expect(named.statusCode).toBe(200);
+
+    // Hiding it afterwards must not throw the name away, and the request that
+    // hides it says nothing about a name.
+    await app.inject({
+      method: 'POST',
+      url: '/api/recurring/overrides',
+      headers: { cookie },
+      payload: { key: detected!.key, label: detected!.name, hidden: true },
+    });
+
+    const stored = await prisma.billOverride.findUniqueOrThrow({
+      where: { merchantKey: detected!.key },
+    });
+    expect(stored.hidden).toBe(true);
+    expect(stored.displayName).toBe('Water & Sewer');
   });
 
   it('serializes money as strings, never JSON numbers', async () => {

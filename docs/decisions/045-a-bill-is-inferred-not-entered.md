@@ -1,6 +1,6 @@
 # 045. A bill is inferred, not entered
 
-**Status:** accepted
+**Status:** accepted, amended 2026-09-02
 **Date:** 2026-09-02
 
 ## Context
@@ -98,3 +98,54 @@ where "Transactions" now truncates. The bar's column count comes from the shared
 page list rather than from a number written beside it — it said `grid-cols-5`
 while the list had five entries, so a new destination would have appeared in the
 sidebar and silently off the end of the bar.
+
+---
+
+## Amendment, 2026-09-02: a correction is stored, the bill still is not
+
+The first run against real data listed thirteen bills, and one of them was
+**SAVERS**, a thrift shop visited every fortnight.
+
+The detection was not wrong in any way a threshold could fix. That spending
+genuinely has the shape of a fortnightly bill — steady interval, consistent
+enough amount, months of history — and every bound above was already at the edge
+of what it can honestly claim. Only the household knows it is a shop.
+
+So a bill can now be **taken off the list**, and it can be **given a name of its
+own**. Those corrections live in `bill_overrides`, keyed by merchant.
+
+**"Stored nowhere" still holds for bills.** That table holds no bills, no dates
+and no amounts: every figure on the page is still derived from transactions on
+every request, and nothing about the detection is cached. What is stored is the
+one class of fact that cannot be derived — what a person said back. There is
+nothing in the register that distinguishes a thrift shop from a utility, and
+there never will be.
+
+- **Keyed by the merchant key**, because it is the merchant that is not a bill
+  and the charges behind it change every month. If a feed reworded a description
+  enough to move it to a new key, the correction would stop applying and the row
+  would come back. That is visible and one press to redo, which is a better
+  failure than keying on something that changes more often.
+- **Hidden, never deleted.** A hidden merchant is listed under a fold on the page
+  with a `Put back` beside it, under the name it had when it was hidden — a
+  hidden bill has no detected row to take a name from, which is what hiding it
+  means. It raises no notification while it is hidden, which is the main thing
+  somebody wants when they say "that is not a bill".
+- **A rename labels, it does not replace.** The bank's description stays under
+  the household's name on the row and is still searchable, because reconciling
+  against a statement needs the text the statement uses.
+- **A row that hides nothing and renames nothing is removed rather than kept.**
+  That is not a deletion in the sense the hard constraint means: it is the
+  absence of an opinion, and the bill it was about is derived from transactions
+  that are all still there. A check constraint refuses such a row anyway.
+
+**Two corrections and no more.** Everything else on a row — the cadence, the next
+date, the typical amount — is arithmetic over transactions, and would be a lie if
+it were editable. If one of those figures is wrong, the answer is that this is not
+a bill, or that the register is wrong; it is never that the number should be
+overwritten.
+
+**The order changed with it.** Lapsed bills now sort to the bottom. A lapsed
+bill's expected date is by definition in the past, so a plain date sort put the
+least actionable row at the very top — which is exactly where the first real run
+put that thrift shop.
