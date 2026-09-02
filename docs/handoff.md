@@ -88,14 +88,18 @@ These are non-negotiable. Violating one is a build failure.
 
 ## Where things stand
 
-**`main` is at `v0.45.0`; the NAS is running `v0.41.1`**, deployed 2026-09-01 —
-the first release pulled as a published image rather than compiled on the NAS.
+**`main` is at `v0.46.0`, and the NAS is running `v0.45.0`** — deployed
+2026-09-02, the release that gave Bills its escape hatch.
 
-Five releases are waiting and the newest carries all of them. `v0.41.2` and
-`v0.42.0` ride in `v0.43.0`, which the owner held deliberately so the queue work,
-Bills and the export would land together; `v0.44.0` adds targets; `v0.45.0` is
-what the first real run of Bills asked for. He has been reviewing them against
-real data without deploying, which is how the thrift shop was found. One thing to know about `v0.41.2`: the `deploy.sh` fix
+`v0.46.0` is what the first review _of a deployed_ Delegate asked for: repeating
+targets, the four Bills corrections, and the settings shell. Everything before it
+is already on the NAS.
+
+The pattern is worth keeping. Each of the last three releases came from the owner
+using the previous one against real data and sending screenshots — the thrift shop
+listed as a fortnightly bill, "Every Monthly" in a column header, home insurance
+that needed two dates a year. None of it was visible from a test fixture, and all
+of it was obvious within a minute of real use. One thing to know about `v0.41.2`: the `deploy.sh` fix
 in it ships _inside the file being replaced_, so a `--unpack` deploy still runs
 `v0.41.1`'s copy and the one after that gets the fix. The registry route is
 unaffected, and that is the ordinary deploy now.
@@ -505,7 +509,7 @@ normalization neither can drift from.
   past by definition, so a plain date sort put the least actionable row at the
   very top — which is exactly where the first real run put that thrift shop
 
-**Since v0.45.0 — the first targets and bills entered for real**
+**Since v0.45.0 — the first targets and bills entered for real (`v0.46.0`)**
 
 Everything here came from the owner using the two features against his own data
 and sending screenshots. None of it was visible from a test fixture.
@@ -536,7 +540,7 @@ and sending screenshots. None of it was visible from a test fixture.
   says "fortnightly" any more — Settings → Budget already calls that cadence
   "Every two weeks"
 
-**And the shell, from the same review**
+**And the shell, from the same review (`v0.46.0`)**
 
 - **Settings is eight sections rather than twelve**, grouped by the question
   somebody came to answer. Half of the twelve held a single card. **Every old

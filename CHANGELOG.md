@@ -6,6 +6,10 @@ phase (`v0.1.0-phase1`, and so on).
 
 ## [Unreleased]
 
+Nothing yet.
+
+## [0.46.0] — 2026-09-02
+
 ### Added
 
 - **A target can repeat.** Home insurance is $2,200 on the last day of April and
