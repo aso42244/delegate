@@ -88,7 +88,7 @@ These are non-negotiable. Violating one is a build failure.
 
 ## Where things stand
 
-**`main` is at `v0.46.0`, and the NAS is running `v0.45.0`** — deployed
+**`main` is at `v0.47.0`, and the NAS is running `v0.45.0`** — deployed
 2026-09-02, the release that gave Bills its escape hatch.
 
 `v0.46.0` is what the first review _of a deployed_ Delegate asked for: repeating
@@ -558,7 +558,7 @@ and sending screenshots. None of it was visible from a test fixture.
   uncontrolled length is capped, because `w-fit` takes the widest child and an
   email address is wider than anything anybody navigates to
 
-**And the second pass over the shell**
+**And the second pass over the shell (`v0.47.0`)**
 
 - **Assets, Debts and their headings can be dragged into an order.** Delegations
   have had a position since v0.24; the same argument applies one level up and one
