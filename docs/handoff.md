@@ -88,14 +88,15 @@ These are non-negotiable. Violating one is a build failure.
 
 ## Where things stand
 
-**`main` is at `v0.42.0`; the NAS is running `v0.41.1`**, deployed 2026-09-01 —
+**`main` is at `v0.43.0`; the NAS is running `v0.41.1`**, deployed 2026-09-01 —
 the first release pulled as a published image rather than compiled on the NAS.
 
-`v0.42.0` carries `v0.41.2` with it, which was `deploy.sh`, `verify.sh` and
-documentation only. One thing to know about that: the `deploy.sh` fix in it ships
-_inside the file being replaced_, so a `--unpack` deploy still runs `v0.41.1`'s
-copy and the one after that gets the fix. The registry route is unaffected, and
-that is the ordinary deploy now. Nothing breaks either way.
+`v0.43.0` carries `v0.41.2` and `v0.42.0` with it. The owner deliberately held
+the deploy so that the queue work, Bills and the export would land together, and
+reviewed them in one pass. One thing to know about `v0.41.2`: the `deploy.sh` fix
+in it ships _inside the file being replaced_, so a `--unpack` deploy still runs
+`v0.41.1`'s copy and the one after that gets the fix. The registry route is
+unaffected, and that is the ordinary deploy now.
 
 **Delegate installs anywhere in one line now**
 ([ADR 042](decisions/042-delegate-installs-anywhere-in-one-line.md)):
@@ -403,7 +404,7 @@ normalization neither can drift from.
   dialog previews nothing, so a needle that is too broad shows up only after the
   next sync
 
-**Since v0.42.0 — Bills, and the way out**
+**Since v0.42.0 — Bills, and the way out (`v0.43.0`)**
 
 - **Bills is a page of its own**, sixth in the sidebar
   ([ADR 045](decisions/045-a-bill-is-inferred-not-entered.md)). Everything on it

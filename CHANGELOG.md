@@ -6,6 +6,10 @@ phase (`v0.1.0-phase1`, and so on).
 
 ## [Unreleased]
 
+Nothing yet.
+
+## [0.43.0] — 2026-09-02
+
 ### Added
 
 - **Bills** — a page of its own, listing what recurs, worked out from the
