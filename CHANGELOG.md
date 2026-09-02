@@ -6,6 +6,10 @@ phase (`v0.1.0-phase1`, and so on).
 
 ## [Unreleased]
 
+Nothing yet.
+
+## [0.44.0] — 2026-09-02
+
 ### Added
 
 - **A target on a delegation** — what the line is saving towards, and by when.
