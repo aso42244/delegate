@@ -70,10 +70,13 @@ function block(selector: string): Record<string, string> {
  *
  * Those six are **not** silently excused and **not** quietly changed. The exact
  * hexes are in `design.md` §2, which is the owner's specification and is marked
- * settled — moving them is his call, not a side effect of adding a theme. So
- * they are recorded here at what they measure today, which means the ratio can
- * never get *worse* without this failing, and the numbers are written down where
- * the decision can be taken rather than living in nobody's head.
+ * settled — moving them was his call, not a side effect of adding a theme.
+ *
+ * It was put to him on 2026-09-02, with these numbers, and he kept the palette:
+ * Light stays as designed, and High contrast — which clears every bar — is the
+ * answer for anyone who needs more. So these are a decision rather than a
+ * backlog. What they still buy is a ratchet: Light can never get *worse* without
+ * this test failing.
  */
 const RECORDED: Record<string, number> = {
   'light --color-muted on --color-canvas': 4.27,

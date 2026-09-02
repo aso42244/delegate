@@ -91,5 +91,12 @@ overrule.
 the whole point. The alternative is what happened here: a palette shipping with a
 2.76:1 pair in it for a year, because nobody had a number.
 
-**The recorded exceptions are a standing question, not a settlement.** If Light's
-six are ever tightened, the entries come out and the floor returns to 4.5.
+**The recorded exceptions were put to the owner, and he kept them.** Asked on
+2026-09-02 whether Light should be tightened to clear 4.5:1, the answer was to
+leave it: he likes the palette as it is, and High contrast — which clears every
+bar — is the answer for anybody who needs more. So `design.md` §2 stands
+unchanged and the six entries stay. They are a decision now, not an oversight.
+
+What the recording still buys is a ratchet: Light cannot get *worse* without the
+test failing. If the six are ever tightened, the entries come out and the floor
+returns to 4.5 on its own.
