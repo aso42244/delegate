@@ -251,7 +251,11 @@ export function DelegationsSection(): ReactNode {
     })) ?? [];
 
   return (
-    <SettingsCard title="Delegations" description="Every envelope, and everything about it.">
+    <SettingsCard
+      span="half"
+      title="Delegations"
+      description="Every envelope, and everything about it."
+    >
       {view.isLoading ? (
         <EmptyState>Loading…</EmptyState>
       ) : rows.length === 0 ? (

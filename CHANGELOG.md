@@ -6,7 +6,21 @@ phase (`v0.1.0-phase1`, and so on).
 
 ## [Unreleased]
 
-Nothing yet.
+### Fixed
+
+- **A settings card's content no longer draws past its own border.** The backups
+  table asked a `sm:` breakpoint how wide the *window* was, got 1440, and laid
+  itself out for a 640px card that was actually 345px across — so its columns
+  ran out under the card beside it. Every settings card is a query container
+  now, and content inside one sizes to the card rather than to the screen.
+
+### Changed
+
+- **Delegations and Groupings sit side by side** on Settings → Budget. Groupings
+  gave up its Section column, which said one identical word down every row, for
+  a heading above each section — and an empty section no longer draws a heading
+  over nothing.
+- **The export links read on one line each.**
 
 ## [0.48.0] — 2026-09-02
 

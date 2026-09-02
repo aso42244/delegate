@@ -68,9 +68,17 @@ export function SettingsCard({
      * default, but the section is what is stretched — without this the content
      * keeps its own height and the border stops where the content does, which
      * is what made three radio groups draw three different boxes.
+     *
+     * `@container` so what is inside can ask how wide *this card* is.
+     * A `sm:` breakpoint asks how wide the window is, which is the wrong
+     * question the moment a card stops being the whole row: a third-width card
+     * on a 1440px screen is 345px across and was being handed the layout meant
+     * for a 640px one. That is how the backups table came to draw its columns
+     * past the card's own border. Every card is a container; content inside one
+     * uses `@sm:`/`@md:`/`@lg:`, never `sm:`.
      */
     <section
-      className={`flex h-full min-w-0 flex-col rounded-lg border border-line bg-canvas p-4 ${WIDTHS[span]}`}
+      className={`@container flex h-full min-w-0 flex-col rounded-lg border border-line bg-canvas p-4 ${WIDTHS[span]}`}
     >
       <div className="mb-4 flex flex-wrap items-baseline justify-between gap-x-4 gap-y-2">
         {/* `min-w-0` so a long description wraps rather than shoving the action
