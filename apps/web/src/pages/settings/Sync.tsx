@@ -164,6 +164,7 @@ function Backups(): ReactNode {
 
   return (
     <Card
+      span={1}
       title="Backups"
       description={
         backups.data
@@ -297,7 +298,7 @@ function Export(): ReactNode {
   ];
 
   return (
-    <Card title="Export" description="The whole budget as CSV, for a spreadsheet.">
+    <Card span={1} title="Export" description="The whole budget as CSV, for a spreadsheet.">
       <ul className="flex flex-col gap-2">
         {files.map((file) => (
           <li key={file.href} className="flex items-baseline gap-2">

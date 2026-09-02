@@ -108,7 +108,7 @@ and the image is published multi-arch on version tags. The NAS is one deployment
 of many rather than the deployment, and it keeps working — it adopts the secrets
 already in its `.env`.
 
-293 unit, 716 integration and 206 end-to-end tests. There is no CI: GitHub stores the code and nothing else
+293 unit, 716 integration and 210 end-to-end tests. There is no CI: GitHub stores the code and nothing else
 ([ADR 022](decisions/022-the-checks-run-here-not-on-github.md)), and every gate
 runs locally through `npm run verify`.
 
@@ -536,6 +536,24 @@ and sending screenshots. None of it was visible from a test fixture.
   says "fortnightly" any more — Settings → Budget already calls that cadence
   "Every two weeks"
 
+**And the shell, from the same review**
+
+- **Settings is eight sections rather than twelve**, grouped by the question
+  somebody came to answer. Half of the twelve held a single card. **Every old
+  route redirects** — a section that moves is a bookmark that breaks and a test
+  that fails for a reason unrelated to what it tests
+- **Settings cards are a three-column grid**, and a card declares its `span`,
+  defaulting to the whole row. Display was three radio groups stacked down a
+  1,200px page, each using a fifth of its own row
+- **Where the section list sits is a per-device preference** — a row on top or a
+  rail down the side. The rail lives inside the Settings page rather than in the
+  shell: it belongs to Settings and disappears with it
+- **The sidebar is `w-fit`**, as wide as "Transactions" needs and no wider. It
+  was a flat 232px. The two things that make intrinsic sizing safe are written
+  down in `ui-system.md` §12: labels hold their line, and anything of
+  uncontrolled length is capped, because `w-fit` takes the widest child and an
+  email address is wider than anything anybody navigates to
+
 ### Known gaps to fix
 
 None outstanding. The September security review is closed — see
@@ -918,7 +936,7 @@ npm run verify:quick      # the same, minus the container image build
 
 npm run test              # 293 unit
 npm run test:integration  # 716 integration
-npm run test:e2e          # 206 end-to-end, needs a build first
+npm run test:e2e          # 210 end-to-end, needs a build first
 ```
 
 `npm run verify` is the gate. It runs migrations, typecheck, lint, formatting,

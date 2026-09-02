@@ -72,7 +72,11 @@ export function TwoFactorCard(): ReactNode {
   const enrolled = status.data?.enrolled === true;
 
   return (
-    <SettingsCard title="Two-factor authentication" description="A code on top of your password.">
+    <SettingsCard
+      span={2}
+      title="Two-factor authentication"
+      description="A code on top of your password."
+    >
       {problem && <Alert>{problem}</Alert>}
 
       {recoveryCodes && (

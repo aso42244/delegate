@@ -138,7 +138,9 @@ test.describe('on a phone', () => {
   test('settings is an index, and a section comes back to it', async ({ signedIn: page }) => {
     await page.goto('/settings');
 
-    await expect(page.getByRole('link', { name: /^Delegations/ })).toBeVisible();
+    // Not "Budget": the tab bar carries a link of that name too, and an
+    // accessible name is matched as a substring.
+    await expect(page.getByRole('link', { name: /^Holdings/ })).toBeVisible();
     await expect(page.getByRole('navigation', { name: 'Settings sections' })).toHaveCount(0);
 
     await page.getByRole('link', { name: /^Accounts/ }).click();
@@ -386,4 +388,38 @@ test.describe('at 390px, on every screen', () => {
       expect(wrapped, `${route} wraps something that should hold one line`).toEqual([]);
     }
   });
+});
+
+/**
+ * The expanded sidebar is as wide as its longest label needs and no wider.
+ *
+ * It was a flat 232px, which is about sixty more than "Transactions" takes —
+ * and every one of those came off the page beside it.
+ */
+test('the sidebar is only as wide as the longest thing in it', async ({ signedIn: page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.goto('/');
+
+  const sidebar = page.getByRole('navigation', { name: 'Main' });
+  const box = await sidebar.boundingBox();
+  const label = await page.getByRole('link', { name: 'Transactions', exact: true }).boundingBox();
+
+  // Wide enough for the longest label with its icon and padding, and not much
+  // more. The bound is deliberately loose: this asserts that the width follows
+  // the content rather than pinning a number that a rename would falsify.
+  expect(box!.width).toBeGreaterThan(label!.width);
+  expect(box!.width).toBeLessThan(200);
+
+  /*
+   * And a long signed-in address does not set it. `w-fit` takes the widest
+   * child, and an email is wider than anything anybody navigates to — so the
+   * identity block is capped and truncates instead.
+   *
+   * Asserted on the element's own geometry rather than on its text: `truncate`
+   * is a visual rule, and the whole address is still in the DOM and still read
+   * aloud, which is the behaviour wanted.
+   */
+  const address = page.getByText('e2e-owner@example.test', { exact: true });
+  const overflowing = await address.evaluate((node) => node.scrollWidth > node.clientWidth);
+  expect(overflowing).toBe(true);
 });

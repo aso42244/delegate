@@ -170,7 +170,18 @@ export function Sidebar({ appName }: { appName: string }): ReactNode {
     }
   }
 
-  const width = collapsed ? 'w-rail' : 'w-sidebar';
+  /*
+   * Expanded, the sidebar is as wide as its longest label — "Transactions" —
+   * plus the icon, the gap and the padding around it. `w-fit` rather than a
+   * number, so it stays right if a destination is ever renamed.
+   *
+   * Two things make that safe. Every nav label is `whitespace-nowrap`, so the
+   * links state a real intrinsic width rather than collapsing to their longest
+   * word. And the app name and the signed-in address are capped and truncated,
+   * because `w-fit` takes the widest child and an email address is wider than
+   * anything anybody navigates to.
+   */
+  const width = collapsed ? 'w-rail' : 'w-fit min-w-rail';
 
   return (
     <nav
@@ -182,7 +193,9 @@ export function Sidebar({ appName }: { appName: string }): ReactNode {
       className={`${width} hidden shrink-0 flex-col border-r border-line bg-canvas transition-[width] sm:flex`}
     >
       <div className="flex items-center gap-2 px-3 py-3">
-        {!collapsed && <span className="truncate font-semibold text-ink">{appName}</span>}
+        {!collapsed && (
+          <span className="max-w-sidebar-cap truncate font-semibold text-ink">{appName}</span>
+        )}
         <button
           type="button"
           onClick={() => setCollapsed(!collapsed)}
@@ -208,7 +221,7 @@ export function Sidebar({ appName }: { appName: string }): ReactNode {
               }
             >
               <Icon name={page.icon} />
-              {!collapsed && <span>{page.label}</span>}
+              {!collapsed && <span className="whitespace-nowrap">{page.label}</span>}
             </NavLink>
           </li>
         ))}
@@ -225,7 +238,7 @@ export function Sidebar({ appName }: { appName: string }): ReactNode {
         </Button>
 
         {!collapsed && (
-          <p className="mt-1 px-1 text-label text-muted">
+          <p className="mt-1 max-w-sidebar-cap px-1 text-label text-muted">
             {syncStatus.data?.configured === false
               ? 'Not configured'
               : formatLastSync(syncStatus.data?.lastSyncAt ?? null)}
@@ -241,7 +254,7 @@ export function Sidebar({ appName }: { appName: string }): ReactNode {
 
       <div className="border-t border-line px-3 py-3">
         {!collapsed && user && (
-          <div className="mb-2">
+          <div className="mb-2 max-w-sidebar-cap">
             <p className="truncate text-quiet font-semibold text-ink">{user.username}</p>
             <p className="text-label text-muted">
               {user.role === 'super_admin'
