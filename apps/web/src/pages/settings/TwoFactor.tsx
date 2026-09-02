@@ -73,7 +73,7 @@ export function TwoFactorCard(): ReactNode {
 
   return (
     <SettingsCard
-      span={2}
+      span="third"
       title="Two-factor authentication"
       description="A code on top of your password."
     >

@@ -1055,3 +1055,34 @@ about sixty more than "Transactions" takes; the rest was margin the page beside 
 could have used. It is intrinsic now — `w-fit`, with the labels holding their line
 and anything of uncontrolled length capped and truncated, because an email address
 is wider than anything anybody navigates to.
+
+## Assets, Debts and their headings are ordered too
+
+Delegations have had a position since v0.24. The argument was that the owner's
+groupings are named "3 - Food" and "5 - Home" because ordering was the thing
+missing, and numbering them was the workaround — and that argument is no
+different one level up or one level across. The order a household reads its own
+accounts in is a fact about the household; alphabetical is nobody's reading.
+
+**A row is dragged onto the row it should sit above.** The same gesture and the
+same request shape delegations use: the whole resulting order, not a direction —
+a "move up" that races another tab's "move down" lands somewhere neither person
+asked for, and a list cannot.
+
+**A heading is dragged onto the heading it should sit above.** Rows and headings
+are dropped on the same table and mean different things there, so the payload
+says which it is; a heading dropped on a row does nothing, because filing a
+heading under a line is not a request anybody can honour.
+
+**The application's own groupings do not move.** Outstanding checks sort last by
+rule rather than by where anybody put them — that heading is where the budget
+keeps money that has left in paper form, not something anybody filed under.
+
+**Dragging is never the only route.** The account row menu carries Move up and
+Move down, and Settings → Budget carries a pair of arrows on every grouping. Drag
+and drop is the fast way and it is not an accessible one; these are the ones that
+always work.
+
+**Nothing moves until somebody moves it.** Every row starts at position zero and
+a tie falls through to the name, so a budget nobody has rearranged still reads
+alphabetically.

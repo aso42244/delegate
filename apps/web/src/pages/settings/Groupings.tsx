@@ -171,9 +171,16 @@ function ColourPicker({
 function GroupingRow({
   grouping,
   section,
+  first,
+  last,
+  onMove,
 }: {
   readonly grouping: BudgetGroupingDto;
   readonly section: Section;
+  /** Whether the arrows have anywhere to go. */
+  readonly first: boolean;
+  readonly last: boolean;
+  readonly onMove: (direction: -1 | 1) => void;
 }): ReactNode {
   const queryClient = useQueryClient();
   const [name, setName] = useState(grouping.name);
@@ -240,16 +247,42 @@ function GroupingRow({
           {grouping.rows.length}
         </td>
 
-        <td className="row-cell w-24 pr-1 text-right">
-          <button
-            type="button"
-            onClick={() => archive.mutate()}
-            disabled={archive.isPending}
-            aria-label={`Archive ${grouping.name}`}
-            className="row-menu-trigger rounded px-1.5 py-0.5 text-label font-semibold text-danger hover:bg-danger-soft"
-          >
-            Archive
-          </button>
+        <td className="row-cell w-32 pr-1">
+          {/*
+            The keyboard route to the order that dragging a heading on the
+            Budget page also gives. Dragging is the fast way and it is not an
+            accessible one, so this is not a lesser alternative — it is the one
+            that always works.
+          */}
+          <div className="row-menu-trigger flex items-center justify-end gap-0.5">
+            <button
+              type="button"
+              onClick={() => onMove(-1)}
+              disabled={first}
+              aria-label={`Move ${grouping.name} up`}
+              className="rounded px-1.5 py-0.5 text-quiet text-muted hover:bg-surface-2 disabled:opacity-30"
+            >
+              ↑
+            </button>
+            <button
+              type="button"
+              onClick={() => onMove(1)}
+              disabled={last}
+              aria-label={`Move ${grouping.name} down`}
+              className="rounded px-1.5 py-0.5 text-quiet text-muted hover:bg-surface-2 disabled:opacity-30"
+            >
+              ↓
+            </button>
+            <button
+              type="button"
+              onClick={() => archive.mutate()}
+              disabled={archive.isPending}
+              aria-label={`Archive ${grouping.name}`}
+              className="rounded px-1.5 py-0.5 text-label font-semibold text-danger hover:bg-danger-soft"
+            >
+              Archive
+            </button>
+          </div>
         </td>
       </tr>
 
@@ -343,8 +376,15 @@ function sectionsOf(
 }
 
 export function GroupingsSection(): ReactNode {
+  const queryClient = useQueryClient();
   const view = useQuery({ queryKey: ['budget'], queryFn: budgetApi.view });
   const [adding, setAdding] = useState(false);
+
+  const reorder = useMutation({
+    mutationFn: ({ section, groupingIds }: { section: Section; groupingIds: string[] }) =>
+      budgetApi.reorderGroupings(section, groupingIds),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['budget'] }),
+  });
 
   const sections = view.data ? sectionsOf(view.data) : [];
   const total = sections.reduce((sum, entry) => sum + entry.groupings.length, 0);
@@ -367,15 +407,36 @@ export function GroupingsSection(): ReactNode {
               <th className="row-cell w-28 text-left font-normal">Section</th>
               <th className="row-cell w-40 text-left font-normal">Colour</th>
               <th className="row-cell w-20 pr-2 text-right font-normal">Lines</th>
-              <th className="row-cell w-24 pr-1" />
+              <th className="row-cell w-32 pr-1" />
             </tr>
           </thead>
           <tbody>
-            {sections.flatMap((entry) =>
-              entry.groupings.map((grouping) => (
-                <GroupingRow key={grouping.id} grouping={grouping} section={entry.section} />
-              )),
-            )}
+            {sections.flatMap((entry) => {
+              // The application's own groupings are not moved: an
+              // outstanding-checks heading sorts last by rule rather than by
+              // where anybody put it, so it is not part of the order sent.
+              const movable = entry.groupings.filter((grouping) => grouping.systemKey === null);
+
+              return entry.groupings.map((grouping) => {
+                const at = movable.findIndex((candidate) => candidate.id === grouping.id);
+                return (
+                  <GroupingRow
+                    key={grouping.id}
+                    grouping={grouping}
+                    section={entry.section}
+                    first={at <= 0}
+                    last={at === -1 || at === movable.length - 1}
+                    onMove={(direction) => {
+                      const to = at + direction;
+                      if (at === -1 || to < 0 || to >= movable.length) return;
+                      const ids = movable.map((candidate) => candidate.id);
+                      ids.splice(to, 0, ...ids.splice(at, 1));
+                      reorder.mutate({ section: entry.section, groupingIds: ids });
+                    }}
+                  />
+                );
+              });
+            })}
           </tbody>
         </table>
       )}

@@ -7,7 +7,6 @@ import { DANGER_ITEM_CLASS, ITEM_CLASS, RowMenuShell } from '../../components/Ro
 import { Alert, Button, Modal, SelectField, TextField } from '../../components/ui.jsx';
 import { SettingsCard } from './SettingsCard.jsx';
 import { SignInActivity } from './SignInActivity.jsx';
-import { TwoFactorCard } from './TwoFactor.jsx';
 
 /**
  * Settings → Users.
@@ -88,7 +87,7 @@ function messageOf(error: unknown): string {
  * the sidebar, against a manual adjustment in an envelope's history. A name is
  * what makes those lines legible, and it is nobody's business but yours.
  */
-function YourAccount(): ReactNode {
+export function YourAccount(): ReactNode {
   const { user, refresh } = useSession();
   const [name, setName] = useState<string | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
@@ -131,7 +130,7 @@ function YourAccount(): ReactNode {
   });
 
   return (
-    <SettingsCard span={1} title="Your account" description="What this budget calls you.">
+    <SettingsCard span="third" title="Your account" description="What this budget calls you.">
       <form
         onSubmit={(event: FormEvent) => {
           event.preventDefault();
@@ -523,6 +522,19 @@ function runRowAction(
     .catch((error: unknown) => setProblem(messageOf(error)));
 }
 
+/**
+ * The household's accounts, and what has happened to credentials.
+ *
+ * Separated from `YourAccount` and `TwoFactorCard` so the Access tab can lay
+ * them out: those two are about you and are the size of a form, these two are
+ * about everybody and are tables.
+ *
+ * The table below is **not** `table-fixed`. This card is half a row now, and a
+ * fixed layout hands the unsized column whatever the stated widths leave — which
+ * at this width was nothing, so the name collapsed to zero and vanished. Every
+ * column here is short and bounded; the name is the longest and is the one that
+ * should take the slack.
+ */
 export function UsersSection(): ReactNode {
   const { user: actor } = useSession();
   const mayManage = actor ? canManageUsers(actor.role) : false;
@@ -541,14 +553,12 @@ export function UsersSection(): ReactNode {
 
   return (
     <>
-      <YourAccount />
-
-      {/* Two-factor is a credential of the account above, not a property of the
-          network, which is where it used to live. */}
-      <TwoFactorCard />
-
       {!mayManage ? (
-        <SettingsCard title="The household" description="Who else can sign in to this budget.">
+        <SettingsCard
+          span="half"
+          title="The household"
+          description="Who else can sign in to this budget."
+        >
           <p className="text-quiet text-muted">
             Only an administrator can manage accounts. Everything else in this application is
             shared.
@@ -556,6 +566,7 @@ export function UsersSection(): ReactNode {
         </SettingsCard>
       ) : (
         <SettingsCard
+          span="half"
           title="The household"
           description="Everyone sees the whole budget."
           action={<Button onClick={() => setCreating(true)}>New person</Button>}
@@ -563,7 +574,7 @@ export function UsersSection(): ReactNode {
           {users.isLoading ? (
             <p className="text-quiet text-muted">Loading accounts…</p>
           ) : (
-            <table className="w-full table-fixed border-t-2 border-ink">
+            <table className="w-full border-t-2 border-ink">
               <thead>
                 <tr className="text-label uppercase tracking-[0.05em] text-muted">
                   <th className="row-cell pl-1 text-left font-normal">Name</th>

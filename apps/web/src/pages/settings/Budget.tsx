@@ -197,7 +197,7 @@ export function BudgetSection(): ReactNode {
           {/* The hint is the confirmation. This select saves on change, so
               without it nothing on screen says the choice landed. */}
           <SelectField
-            label="Paid"
+            label="Pay cadence"
             width="md"
             hint={`${CYCLES_PER_YEAR[cadence]} paychecks a year.`}
             value={cadence}

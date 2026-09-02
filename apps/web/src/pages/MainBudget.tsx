@@ -7,6 +7,7 @@ import {
   type BudgetSectionDto,
   type BudgetViewDto,
 } from '../api/budget.js';
+import { accountsApi } from '../api/accounts.js';
 import { checksApi, type CheckMatchDto } from '../api/checks.js';
 import { settingsApi } from '../api/settings.js';
 import { ApiError } from '../api/client.js';
@@ -388,6 +389,47 @@ export function MainBudget(): ReactNode {
     onError,
   });
 
+  /**
+   * Accounts and groupings, put where somebody dropped them.
+   *
+   * Assets and Debts are ordered lists now too. The order the household reads
+   * its accounts in is a fact about the household, and alphabetical is nobody's
+   * reading of it — which is the argument that gave delegations a position in
+   * the first place, and is no different one level across.
+   */
+  const moveAccount = useMutation({
+    mutationFn: ({ id, groupingId }: { id: string; groupingId: string | null }) =>
+      accountsApi.update(id, { groupingId }),
+    onSuccess: refresh,
+    onError,
+  });
+
+  const placeAccount = useMutation({
+    mutationFn: ({
+      id,
+      groupingId,
+      orderedIds,
+    }: {
+      id: string;
+      groupingId: string | null;
+      orderedIds: string[];
+    }) => budgetApi.placeAccount(id, groupingId, orderedIds),
+    onSuccess: refresh,
+    onError,
+  });
+
+  const reorderGroupings = useMutation({
+    mutationFn: ({
+      section,
+      groupingIds,
+    }: {
+      section: 'assets' | 'debts' | 'delegations';
+      groupingIds: string[];
+    }) => budgetApi.reorderGroupings(section, groupingIds),
+    onSuccess: refresh,
+    onError,
+  });
+
   const placeDelegation = useMutation({
     mutationFn: ({
       id,
@@ -424,6 +466,39 @@ export function MainBudget(): ReactNode {
     orderedIds.splice(to, 0, ...orderedIds.splice(from, 1));
 
     placeDelegation.mutate({ id: row.id, groupingId: row.groupingId, orderedIds });
+  }
+
+  /**
+   * The same, for an account.
+   *
+   * Dragging is the fast way and it is not an accessible one, so this is not a
+   * lesser alternative — it is the one that always works, including under a
+   * thumb. The section is passed in because Assets and Debts are separate lists.
+   */
+  function nudgeAccount(
+    section: {
+      groupings: readonly { id: string; rows: readonly BudgetRowDto[] }[];
+      ungrouped: readonly BudgetRowDto[];
+    },
+    // The menu's own narrower row shape: it needs an id and a grouping, and the
+    // ordering is worked out from the section beside it.
+    row: { id: string; groupingId?: string | null | undefined },
+    direction: -1 | 1,
+  ): void {
+    const groupingId = row.groupingId ?? null;
+    const siblings =
+      groupingId === null
+        ? section.ungrouped
+        : (section.groupings.find((grouping) => grouping.id === groupingId)?.rows ?? []);
+
+    const from = siblings.findIndex((sibling) => sibling.id === row.id);
+    const to = from + direction;
+    if (from === -1 || to < 0 || to >= siblings.length) return;
+
+    const orderedIds = siblings.map((sibling) => sibling.id);
+    orderedIds.splice(to, 0, ...orderedIds.splice(from, 1));
+
+    placeAccount.mutate({ id: row.id, groupingId, orderedIds });
   }
 
   /**
@@ -526,6 +601,9 @@ export function MainBudget(): ReactNode {
       onMoveToGrouping={(rowId, groupingId) => moveDelegation.mutate({ id: rowId, groupingId })}
       onPlace={(rowId, groupingId, orderedIds) =>
         placeDelegation.mutate({ id: rowId, groupingId, orderedIds })
+      }
+      onReorderGroupings={(groupingIds) =>
+        reorderGroupings.mutate({ section: 'delegations', groupingIds })
       }
       {...(difference === 0n
         ? {}
@@ -710,8 +788,19 @@ export function MainBudget(): ReactNode {
             showAmountToDelegate={false}
             redNegatives={false}
             onToggleGrouping={(id, collapsed) => toggleGrouping.mutate({ id, collapsed })}
+            onMoveToGrouping={(rowId, groupingId) => moveAccount.mutate({ id: rowId, groupingId })}
+            onPlace={(rowId, groupingId, orderedIds) =>
+              placeAccount.mutate({ id: rowId, groupingId, orderedIds })
+            }
+            onReorderGroupings={(groupingIds) =>
+              reorderGroupings.mutate({ section: 'assets', groupingIds })
+            }
             rowMenu={(row) => (
-              <AccountRowMenu row={row} groupings={groupingOptionsFor(view.data.assets)} />
+              <AccountRowMenu
+                row={row}
+                groupings={groupingOptionsFor(view.data.assets)}
+                onNudge={(target, direction) => nudgeAccount(view.data.assets, target, direction)}
+              />
             )}
           />
 
@@ -722,8 +811,19 @@ export function MainBudget(): ReactNode {
             showAmountToDelegate={false}
             redNegatives={false}
             onToggleGrouping={(id, collapsed) => toggleGrouping.mutate({ id, collapsed })}
+            onMoveToGrouping={(rowId, groupingId) => moveAccount.mutate({ id: rowId, groupingId })}
+            onPlace={(rowId, groupingId, orderedIds) =>
+              placeAccount.mutate({ id: rowId, groupingId, orderedIds })
+            }
+            onReorderGroupings={(groupingIds) =>
+              reorderGroupings.mutate({ section: 'debts', groupingIds })
+            }
             rowMenu={(row) => (
-              <AccountRowMenu row={row} groupings={groupingOptionsFor(view.data.debts)} />
+              <AccountRowMenu
+                row={row}
+                groupings={groupingOptionsFor(view.data.debts)}
+                onNudge={(target, direction) => nudgeAccount(view.data.debts, target, direction)}
+              />
             )}
           />
         </div>

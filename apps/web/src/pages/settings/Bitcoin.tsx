@@ -230,6 +230,7 @@ export function BitcoinSection(): ReactNode {
   return (
     <>
       <SettingsCard
+        span="half"
         title="Bitcoin"
         description="Quantities held, valued at the price on the day."
         action={
@@ -283,6 +284,10 @@ export function BitcoinSection(): ReactNode {
             </tbody>
           </table>
         )}
+
+        {/* Where the addresses are read from lives here rather than in a card of
+            its own: it is a property of these holdings, not a second subject. */}
+        <BitcoinNodeSection />
       </SettingsCard>
 
       {adding && (
@@ -366,8 +371,6 @@ export function BitcoinSection(): ReactNode {
           </form>
         </Modal>
       )}
-
-      <BitcoinNodeSection />
     </>
   );
 }

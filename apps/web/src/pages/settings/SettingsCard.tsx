@@ -9,41 +9,69 @@ import type { ReactNode } from 'react';
  * creating form all the way down the page, below the list, permanently open.
  * One button, one dialog, and the list keeps the room.
  *
- * **A card states how much of the row it needs.** Settings is laid out as three
- * columns on a wide screen, and a card that holds three radio buttons has no
- * business taking the width of one that holds a table of forty rules. `span` is
- * how it says so, and it defaults to the whole row — a card that has not thought
- * about it keeps exactly the width it always had.
+ * **A card states how much of the row it needs.** A card that holds three radio
+ * buttons has no business taking the width of one that holds a table of forty
+ * rules. `span` is how it says so — a third, a half, two-thirds or the whole
+ * row — and it defaults to the whole row.
+ *
+ * **Cards on one line end level.** The grid stretches them and the card is a
+ * column, so the border reaches the bottom of the tallest one beside it rather
+ * than stopping where its own content happens to stop.
  */
 /**
+ * Six columns underneath, four widths on top.
+ *
+ * Three columns could not say "two side by side" — a half is not a whole number
+ * of thirds — so the grid counts in sixths and a card names a fraction rather
+ * than a column count. `full` is the default, so a card that has not thought
+ * about it keeps the width it always had.
+ *
  * Written out rather than interpolated, because Tailwind reads the source for
- * class names and never sees one that was assembled at runtime.
+ * class names and never sees one assembled at runtime.
  */
-const SPANS: Record<1 | 2 | 3, string> = {
-  1: 'lg:col-span-1',
-  2: 'lg:col-span-2',
-  3: 'lg:col-span-3',
-};
+const WIDTHS = {
+  third: 'lg:col-span-2',
+  half: 'lg:col-span-3',
+  'two-thirds': 'lg:col-span-4',
+  full: 'lg:col-span-6',
+} as const;
+
+export type CardSpan = keyof typeof WIDTHS;
 
 export function SettingsCard({
   title,
   description,
   action,
-  span = 3,
+  span = 'full',
   children,
 }: {
   readonly title: string;
   readonly description: string;
   /** Rendered right-aligned, baseline-aligned with the title. */
   readonly action?: ReactNode;
-  /** How many of the three columns this needs on a wide screen. */
-  readonly span?: 1 | 2 | 3;
+  /**
+   * How much of the row this needs on a wide screen.
+   *
+   * `span`, not `width`: a field's `width` is its own scale in this codebase
+   * (`ui-system.md` §2), and two vocabularies under one prop name is a trap for
+   * whoever reads it next.
+   */
+  readonly span?: CardSpan;
   readonly children: ReactNode;
 }): ReactNode {
   return (
-    // `min-w-0`: a grid item defaults to its content width, so a card holding a
-    // table would size the column rather than the column sizing the table.
-    <section className={`min-w-0 rounded-lg border border-line bg-canvas p-4 ${SPANS[span]}`}>
+    /*
+     * `min-w-0`: a grid item defaults to its content width, so a card holding a
+     * table would size the column rather than the column sizing the table.
+     *
+     * `h-full` so cards on one line end level. Grid stretches its items by
+     * default, but the section is what is stretched — without this the content
+     * keeps its own height and the border stops where the content does, which
+     * is what made three radio groups draw three different boxes.
+     */
+    <section
+      className={`flex h-full min-w-0 flex-col rounded-lg border border-line bg-canvas p-4 ${WIDTHS[span]}`}
+    >
       <div className="mb-4 flex flex-wrap items-baseline justify-between gap-x-4 gap-y-2">
         {/* `min-w-0` so a long description wraps rather than shoving the action
             onto a line of its own. */}

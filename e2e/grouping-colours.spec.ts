@@ -1,5 +1,5 @@
 import type { Page } from '@playwright/test';
-import { expect, makeDelegation, test } from './fixtures.js';
+import { expect, makeAccount, makeDelegation, test } from './fixtures.js';
 
 /** Creates a grouping through the dialog the page now opens. */
 async function makeGrouping(page: Page, name: string): Promise<void> {
@@ -184,4 +184,64 @@ test('the top line cannot be moved above itself', async ({ signedIn, api }) => {
   // was. Reloaded so this cannot pass on a stale render.
   await signedIn.reload();
   expect(await order(signedIn, NAMES)).toEqual(['Apples', 'Bananas']);
+});
+
+/**
+ * Assets, Debts and the headings above them are ordered lists too now.
+ *
+ * The argument that gave delegations a position is no different one level up or
+ * one level across: the order a household reads its own accounts in is a fact
+ * about the household, and alphabetical is nobody's reading of it.
+ */
+test('dragging an account reorders the Assets section', async ({ signedIn }) => {
+  await makeAccount('Savings', 'asset', 900000n);
+  await makeAccount('Checking', 'asset', 480000n);
+
+  await signedIn.goto('/');
+  await expect(signedIn.getByRole('button', { name: 'Checking balance' })).toBeVisible();
+
+  // Alphabetical until something is moved: Checking, then Savings.
+  const assets = signedIn.getByRole('table').filter({ hasText: 'Assets' });
+  const savings = assets.getByRole('row').filter({ hasText: 'Savings' });
+  const checking = assets.getByRole('row').filter({ hasText: 'Checking' });
+  await savings.dragTo(checking);
+
+  await expect(assets.getByRole('row').nth(2)).toContainText('Savings');
+});
+
+test('the account row menu is the route that works without a mouse', async ({ signedIn }) => {
+  await makeAccount('Savings', 'asset', 900000n);
+  await makeAccount('Checking', 'asset', 480000n);
+
+  await signedIn.goto('/');
+  await signedIn.getByRole('button', { name: 'Options for Savings' }).click();
+  await signedIn.getByRole('menuitem', { name: 'Move up' }).click();
+
+  // Dragging is the fast way and it is not an accessible one, so this is not a
+  // lesser alternative — it is the one that always works.
+  const assets = signedIn.getByRole('table').filter({ hasText: 'Assets' });
+  await expect(assets.getByRole('row').nth(2)).toContainText('Savings');
+});
+
+test('groupings can be put in an order, from Settings', async ({ signedIn, api }) => {
+  await api.post('/api/groupings', { data: { name: 'Everyday', section: 'assets' } });
+  await api.post('/api/groupings', { data: { name: 'Long term', section: 'assets' } });
+
+  await signedIn.goto('/settings/budget');
+  await expect(signedIn.getByLabel('Name of Everyday')).toBeVisible();
+
+  await signedIn.getByRole('button', { name: 'Move Long term up' }).click();
+
+  /*
+   * The arrows are the keyboard route to the order that dragging a heading on
+   * the Budget page also gives.
+   *
+   * Scoped to the Groupings card, because delegations are on this tab too and
+   * their inline editors carry the same "Name of …" label. And asserted with a
+   * retrying expectation rather than by reading the DOM once: the reorder is a
+   * write, and reading straight after one is how a test comes to describe the
+   * state before it landed.
+   */
+  const card = signedIn.locator('section').filter({ hasText: 'Organizational only' });
+  await expect(card.locator('input[aria-label^="Name of "]').first()).toHaveValue('Long term');
 });

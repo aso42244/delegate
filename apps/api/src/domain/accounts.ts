@@ -287,3 +287,85 @@ export async function computeEquityCents(db: Db, propertyAccountId: string): Pro
 
   return property.balanceCents - property.mortgageAccount.balanceCents;
 }
+
+/**
+ * Puts an account in a place: which grouping it belongs to, and where among its
+ * neighbours it sits.
+ *
+ * The same shape as `placeDelegation`, and deliberately so — the whole order is
+ * sent rather than a direction or an index, because a list is the only
+ * description of an ordering that cannot be interpreted two ways. A "move up"
+ * that races another tab's "move down" produces a state neither person asked
+ * for; a whole order applied at once cannot.
+ */
+export async function placeAccount(
+  db: Db,
+  input: {
+    readonly accountId: string;
+    readonly groupingId: string | null;
+    readonly orderedIds: readonly string[];
+  },
+): Promise<void> {
+  const moving = await db.account.findUnique({
+    where: { id: input.accountId },
+    select: { id: true, type: true, archivedAt: true },
+  });
+  if (!moving || moving.archivedAt) throw new NotFoundError('Account', input.accountId);
+
+  if (input.groupingId !== null) {
+    const grouping = await db.grouping.findUnique({
+      where: { id: input.groupingId },
+      select: { id: true, section: true, archivedAt: true },
+    });
+    if (!grouping || grouping.archivedAt) throw new NotFoundError('Grouping', input.groupingId);
+
+    /*
+     * An asset cannot be filed under a debt heading, and the reverse.
+     *
+     * The section a row sits in *is* its type on this page — Settings → Accounts
+     * deleted the Type column on exactly that ground — so allowing the two to
+     * disagree would make the page state something untrue about the account.
+     */
+    const wanted = moving.type === 'asset' ? 'assets' : 'debts';
+    if (grouping.section !== wanted) {
+      // "An asset", not "A asset". The article is written out rather than
+      // interpolated because there are exactly two of these and one of them
+      // needs the other article.
+      const subject = moving.type === 'asset' ? 'An asset' : 'A debt';
+      throw new ValidationError(
+        'wrong_section',
+        `${subject} can only be filed under a grouping in the ${wanted} section.`,
+      );
+    }
+  }
+
+  if (!input.orderedIds.includes(input.accountId)) {
+    throw new ValidationError(
+      'incomplete_order',
+      'The new order must include the account being moved.',
+    );
+  }
+
+  const live = await db.account.findMany({
+    where: { id: { in: [...input.orderedIds] }, archivedAt: null },
+    select: { id: true },
+  });
+  if (live.length !== new Set(input.orderedIds).size) {
+    throw new ValidationError(
+      'unknown_account',
+      'The new order names an account that does not exist.',
+    );
+  }
+
+  // Gaps of ten, as delegations and rules use: inserting between two neighbours
+  // later does not have to renumber everything.
+  for (const [index, id] of input.orderedIds.entries()) {
+    await db.account.update({
+      where: { id },
+      data: {
+        position: (index + 1) * 10,
+        ...(id === input.accountId ? { groupingId: input.groupingId } : {}),
+      },
+    });
+  }
+}

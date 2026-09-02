@@ -53,6 +53,15 @@ export interface BudgetSectionProps {
    */
   readonly onPlace?: (rowId: string, groupingId: string | null, orderedIds: string[]) => void;
   /**
+   * Dropping a grouping header onto another: the whole order of this section's
+   * groupings, afterwards.
+   *
+   * A separate prop rather than a mode of `onPlace`, because a grouping is not a
+   * row — it holds rows, it has no balance of its own, and moving one moves
+   * everything under it.
+   */
+  readonly onReorderGroupings?: (orderedIds: string[]) => void;
+  /**
    * Offers to close the budget's reading against this line.
    *
    * Supplied only by the Delegations section, and only while there is a reading
@@ -128,6 +137,7 @@ export function BudgetSection({
   rowMenu,
   onMoveToGrouping,
   onPlace,
+  onReorderGroupings,
   onAbsorb,
   absorbLabel,
   rowAffordance,
@@ -179,10 +189,58 @@ export function BudgetSection({
   const [rowTarget, setRowTarget] = useState<string | null>(null);
 
   const draggable = onMoveToGrouping !== undefined;
+  const reorderable = onReorderGroupings !== undefined;
+
+  /**
+   * What is being dragged, said in the payload itself.
+   *
+   * A row travels as its bare id and a grouping as `grouping:<id>`, because the
+   * two are dropped on the same targets and mean entirely different things
+   * there. Reading the prefix is how a drop knows whether it is being handed a
+   * line or a heading — `dataTransfer` types would be tidier and are not
+   * readable during `dragover`, which is where the decision has to be made.
+   */
+  const GROUPING = 'grouping:';
 
   function onDragStart(event: DragEvent, rowId: string): void {
     event.dataTransfer.setData('text/plain', rowId);
     event.dataTransfer.effectAllowed = 'move';
+  }
+
+  function onGroupingDragStart(event: DragEvent, groupingId: string): void {
+    event.dataTransfer.setData('text/plain', `${GROUPING}${groupingId}`);
+    event.dataTransfer.effectAllowed = 'move';
+  }
+
+  /**
+   * Drops a grouping onto another: it takes that one's place.
+   *
+   * Removed first and then inserted, so moving a grouping down lands where the
+   * pointer is rather than one short of it — the same off-by-one the row drop
+   * above avoids the same way.
+   */
+  function onDropOnGrouping(event: DragEvent, targetId: string): boolean {
+    const payload = event.dataTransfer.getData('text/plain');
+    if (!payload.startsWith(GROUPING)) return false;
+
+    event.preventDefault();
+    event.stopPropagation();
+    setDropTarget(undefined);
+
+    const movingId = payload.slice(GROUPING.length);
+    if (movingId === targetId) return true;
+
+    // The application's own groupings are not moved, and are not counted in the
+    // order sent: an outstanding-checks heading sorts last by rule.
+    const order = section.groupings
+      .filter((grouping) => grouping.systemKey === null)
+      .map((grouping) => grouping.id);
+    const without = order.filter((id) => id !== movingId);
+    const at = without.indexOf(targetId);
+    without.splice(at === -1 ? without.length : at, 0, movingId);
+
+    onReorderGroupings?.(without);
+    return true;
   }
 
   /** Every row of the grouping the target sits in, in the order shown. */
@@ -206,7 +264,9 @@ export function BudgetSection({
     setDropTarget(undefined);
 
     const rowId = event.dataTransfer.getData('text/plain');
-    if (rowId === '' || rowId === target.id) return;
+    // A grouping dropped on a row is not a request to file a heading under a
+    // line. Nothing sensible to do, so nothing is done.
+    if (rowId === '' || rowId.startsWith(GROUPING) || rowId === target.id) return;
 
     const destination = target.groupingId;
     const members = membersOf(destination).filter((row) => row.id !== rowId);
@@ -221,10 +281,13 @@ export function BudgetSection({
   }
 
   function onDrop(event: DragEvent, groupingId: string | null): void {
+    // A grouping dropped on a grouping is a reorder, and is handled there.
+    if (groupingId !== null && onDropOnGrouping(event, groupingId)) return;
+
     event.preventDefault();
     setDropTarget(undefined);
     const rowId = event.dataTransfer.getData('text/plain');
-    if (rowId !== '') onMoveToGrouping?.(rowId, groupingId);
+    if (rowId !== '' && !rowId.startsWith(GROUPING)) onMoveToGrouping?.(rowId, groupingId);
   }
 
   function onNewKeyDown(event: KeyboardEvent<HTMLInputElement>): void {
@@ -454,6 +517,11 @@ export function BudgetSection({
                   dropTarget === grouping.id ? 'outline-2 outline-accent' : ''
                 }`}
                 style={{ background: groupingTint(grouping.color, 'header') ?? '' }}
+                // A heading is dragged to reorder the headings. The
+                // application's own are not: an outstanding-checks grouping
+                // sorts last by rule rather than by where anybody put it.
+                draggable={reorderable && grouping.systemKey === null}
+                onDragStart={(event) => onGroupingDragStart(event, grouping.id)}
                 onDragOver={(event) => {
                   if (!draggable) return;
                   event.preventDefault();

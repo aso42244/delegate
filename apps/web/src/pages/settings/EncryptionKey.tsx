@@ -63,7 +63,7 @@ export function EncryptionKey(): ReactNode {
 
   return (
     <SettingsCard
-      span={1}
+      span="third"
       title="Encryption key"
       description="Opens the second factors and credentials inside a backup."
     >

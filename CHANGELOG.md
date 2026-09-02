@@ -6,7 +6,34 @@ phase (`v0.1.0-phase1`, and so on).
 
 ## [Unreleased]
 
-Nothing yet.
+### Added
+
+- **Assets, Debts and their headings can be dragged into an order.** Drag a row
+  onto the row it should sit above, or a heading onto the heading it should sit
+  above.
+
+  Delegations have had this since v0.24, and the argument was that your
+  groupings are named "3 - Food" and "5 - Home" because ordering was the thing
+  missing. That argument is no different one level up or one level across.
+
+  Nothing moves until you move it: every row starts equal and ties fall through
+  to the name, so a budget nobody has rearranged still reads alphabetically. The
+  account row menu carries **Move up** and **Move down**, and Settings → Budget
+  carries arrows on every grouping — dragging is the fast way and it is not an
+  accessible one.
+
+### Changed
+
+- **Settings cards on one line end level with each other.** Three radio groups of
+  three, two and three options were drawing three different boxes.
+- **Settings cards can be a half of a row.** The grid counts in sixths now, so
+  "two side by side" is expressible — three columns could not say it.
+- **Holdings is two cards**: Bitcoin, with the node it reads addresses from
+  inside it, beside Properties. Where address data comes from is a property of
+  those holdings, not a second subject at the same weight.
+- **Access is three cards then two**: your account, two-factor and remote access
+  across the top, the household and sign-in activity beneath.
+- Settings → Budget says **Pay cadence** rather than "Paid".
 
 ## [0.46.0] — 2026-09-02
 

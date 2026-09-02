@@ -86,13 +86,17 @@ export function SignInActivity(): ReactNode {
   const events = useQuery({ queryKey: ['auth-events'], queryFn: authEventsApi.list });
 
   return (
-    <SettingsCard title="Sign-in activity" description="The last 90 days of credential changes.">
+    <SettingsCard
+      span="half"
+      title="Sign-in activity"
+      description="The last 90 days of credential changes."
+    >
       {events.isLoading ? (
         <p className="text-quiet text-muted">Loading activity…</p>
       ) : (events.data?.events.length ?? 0) === 0 ? (
         <EmptyState>Nothing recorded yet.</EmptyState>
       ) : (
-        <table className="w-full table-fixed border-t-2 border-ink">
+        <table className="w-full border-t-2 border-ink">
           <thead>
             <tr className="text-label uppercase tracking-[0.05em] text-muted">
               {/* Fixed, so the name column takes what is left. These labels
