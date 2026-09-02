@@ -88,12 +88,12 @@ These are non-negotiable. Violating one is a build failure.
 
 ## Where things stand
 
-**`main` is at `v0.48.0`, and the NAS is running `v0.45.0`** — deployed
-2026-09-02, the release that gave Bills its escape hatch.
+**`main` is at `v0.49.0`, and the NAS is running `v0.48.0`** — deployed
+2026-09-02, the release that added the three themes and duplicate detection.
 
-`v0.46.0` is what the first review _of a deployed_ Delegate asked for: repeating
-targets, the four Bills corrections, and the settings shell. Everything before it
-is already on the NAS.
+Note that **`v0.46.0` has no published image**. Its workflow run never produced
+one, so a deploy must name `v0.47.0` or later; everything `v0.46.0` contained is
+in the releases after it.
 
 The pattern is worth keeping. Each of the last three releases came from the owner
 using the previous one against real data and sending screenshots — the thrift shop
@@ -610,6 +610,37 @@ and sending screenshots. None of it was visible from a test fixture.
   saying "1 possible duplicate" after the panel had been waved off. ADR 030 is
   why it was not fixed by storing the refusal. The uncategorized-backlog pill
   already leads to that page
+
+**Since v0.48.0 — a card's content stays inside the card (`v0.49.0`)**
+
+- **A settings card is a query container.** The backups table drew its columns
+  out past the card's border and under the card beside it: it sized itself with
+  `sm:`, which asks how wide the _window_ is. That was the right question while a
+  card was always the whole row and the wrong one from the moment cards started
+  taking a third of it — on a 1440px screen that card is 345px across and was
+  being handed the 640px layout. **Content inside a card uses `@sm:`/`@md:`/`@lg:`
+  now, never `sm:`**, and an e2e test measures the boxes rather than reading the
+  text, because this failure was invisible to every test that only looked for
+  words
+
+- **Delegations and Groupings share a row** on Settings → Budget. Groupings paid
+  for the width with its Section column, which repeated one identical word down
+  every row — a heading above each section now, and no heading over an empty one
+
+- **The three export links read on one line each**
+
+- **The Light palette's contrast exceptions are settled, not outstanding.** Asked
+  whether to tighten the six sub-AA pairs, the owner kept the palette as designed;
+  High contrast is the answer for anyone who needs more. ADR 048 and the test say
+  so, so this does not come back as a question
+
+- **A GUI deploy button was scoped and then dropped**, deliberately. A container
+  cannot replace itself with a different image, so the only two routes are a
+  root-owned watcher script on the NAS or mounting `/var/run/docker.sock` into
+  this container. The second hands root on the NAS to the process that holds the
+  bank credential and faces the tunnel, and is not on the table. The owner chose
+  to keep the one-line deploy as the only way in. **Do not build this without
+  asking him again**
 
 ### Known gaps to fix
 
