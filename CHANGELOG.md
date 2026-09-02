@@ -6,6 +6,10 @@ phase (`v0.1.0-phase1`, and so on).
 
 ## [Unreleased]
 
+Nothing yet.
+
+## [0.47.0] — 2026-09-02
+
 ### Added
 
 - **Assets, Debts and their headings can be dragged into an order.** Drag a row
