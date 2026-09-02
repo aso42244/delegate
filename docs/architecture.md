@@ -85,9 +85,24 @@ null is not zero: null means "this line is ad hoc, add nothing when Delegate is
 pressed", and the UI shows an empty cell rather than `$0`. Both move nothing at
 Delegate time; only the display differs.
 
-`notes` is freeform text with no structure. The owner writes `"$2200, Dec 27"` and
-does the per-cycle arithmetic himself. It is a real column so structured target
-fields remain a purely additive migration later.
+`notes` is freeform text with no structure — anything about a line the fields do
+not cover. It used to carry the target too: the owner wrote `"$2200, Dec 27"` here
+and did the per-cycle arithmetic himself, and the column was kept freeform on the
+understanding that structured fields would be a purely additive migration later.
+They were, and they are `target_cents` and `target_date`
+([ADR 047](decisions/047-a-target-never-moves-an-amount.md)).
+
+**A target is a reading, never a write.** It changes no balance and no amount to
+delegate; it works out what each remaining paycheck would have to carry and says
+so beside the figure the household controls. Taking that figure is one explicit
+switch in the dialog, and afterwards it is an ordinary amount to delegate. The
+arithmetic is in `@budget/shared` because the dialog shows it live as somebody
+types, and a second copy would be a second answer.
+
+Two check constraints hold the shape: a date without an amount is a deadline for
+nothing, and a target of zero is not a target — clearing one is what null is for.
+`target_date` is a `DATE`, a decided day needing no zone, and crosses the wire as
+`2026-12-27` rather than as an instant.
 
 **A delegation's balance is not a stored, freely-mutable number.** It is the sum
 of an append-only event stream:

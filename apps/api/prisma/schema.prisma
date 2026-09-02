@@ -511,6 +511,17 @@ model Delegation {
   // pressed", and renders as an empty cell rather than $0. Null is not zero.
   amountToDelegateCents BigInt? @map("amount_to_delegate_cents")
 
+  /**
+   * What this line is saving towards, and by when.
+   *
+   * Both nullable, and null is no target. A date without an amount is refused by
+   * a check constraint: it would be a deadline for nothing. `targetDate` is a
+   * `DATE` because it is a date key — a day already decided, needing no zone to
+   * read (ADR 037).
+   */
+  targetCents BigInt?   @map("target_cents")
+  targetDate  DateTime? @map("target_date") @db.Date
+
   isUtility Boolean @default(false) @map("is_utility")
 
   /// Where this line sits among its neighbours, ascending.

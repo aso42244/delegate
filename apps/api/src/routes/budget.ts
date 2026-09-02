@@ -32,8 +32,9 @@ import {
   updateDelegation,
   updateGrouping,
 } from '../domain/delegations.js';
+import { householdTimezone } from '../domain/settings.js';
 import { transferBetweenDelegations } from '../domain/transfer.js';
-import { centsIn, centsOut, dateOut } from '../http/serialize.js';
+import { centsIn, centsOut, dateOut, dayIn, dayOut } from '../http/serialize.js';
 import { AUTHENTICATED } from '../plugins/auth.js';
 
 /**
@@ -56,6 +57,14 @@ const createDelegationSchema = z.object({
   groupingId: z.string().uuid().nullish(),
   isUtility: z.boolean().optional(),
   notes: z.string().max(2000).nullish(),
+  /**
+   * What the line is saving towards. Null clears it.
+   *
+   * A date without an amount is refused by the database as well as here: it
+   * would be a deadline for nothing.
+   */
+  targetCents: nullableCents.optional(),
+  targetDate: z.union([dayIn, z.null()]).optional(),
 });
 
 const updateDelegationSchema = z.object({
@@ -64,6 +73,14 @@ const updateDelegationSchema = z.object({
   groupingId: z.string().uuid().nullish(),
   isUtility: z.boolean().optional(),
   notes: z.string().max(2000).nullish(),
+  /**
+   * What the line is saving towards. Null clears it.
+   *
+   * A date without an amount is refused by the database as well as here: it
+   * would be a deadline for nothing.
+   */
+  targetCents: nullableCents.optional(),
+  targetDate: z.union([dayIn, z.null()]).optional(),
 });
 
 /**
@@ -132,6 +149,24 @@ function presentRow(row: BudgetRow): Record<string, unknown> {
     checkNumber: row.checkNumber,
     checkMemo: row.checkMemo,
     checkIssuedAt: dateOut(row.checkIssuedAt),
+    /*
+     * The target and its reading together. The interface shows the figures and
+     * never recomputes the verdict: whether a line will make its date depends on
+     * the pay cadence and on which day it is here, and a second copy of that
+     * arithmetic is a second answer waiting to disagree.
+     */
+    target:
+      row.target === null
+        ? null
+        : {
+            targetCents: centsOut(row.target.targetCents),
+            // A decided day, sent as one. Not an instant.
+            targetDate: dayOut(row.target.targetDate),
+            shortfallCents: centsOut(row.target.shortfallCents),
+            cyclesRemaining: row.target.cyclesRemaining,
+            neededPerCycleCents: centsOut(row.target.neededPerCycleCents),
+            status: row.target.status,
+          },
   };
 }
 
@@ -165,7 +200,11 @@ export const budgetRoutes: FastifyPluginCallback = (fastify, _options, done) => 
 
   /** The whole page in one request, totals included, so nothing is recomputed client-side. */
   fastify.get('/api/budget', async () => {
-    const view = await buildBudgetView(prisma);
+    const view = await buildBudgetView(prisma, {
+      // Which day it is decides how many paychecks are left before a target's
+      // date. ADR 037: the household's day, not the process clock's.
+      timeZone: await householdTimezone(prisma, fastify.config.SCHEDULE_TIMEZONE),
+    });
 
     return {
       assets: presentSection(view.assets),
@@ -266,7 +305,8 @@ export const budgetRoutes: FastifyPluginCallback = (fastify, _options, done) => 
       });
     });
 
-    return buildBudgetView(prisma).then((view) => ({
+    const timeZone = await householdTimezone(prisma, fastify.config.SCHEDULE_TIMEZONE);
+    return buildBudgetView(prisma, { timeZone }).then((view) => ({
       assets: presentSection(view.assets),
       debts: presentSection(view.debts),
       delegations: presentSection(view.delegations),

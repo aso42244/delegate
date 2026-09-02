@@ -1,9 +1,11 @@
-import { formatCents, tryParseMoney } from '@budget/shared';
+import { formatCents, tryParseMoney, type PayCadence } from '@budget/shared';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useState, type FormEvent, type ReactNode } from 'react';
 import { budgetApi, type BudgetRowDto } from '../api/budget.js';
 import { ApiError } from '../api/client.js';
 import { DelegationHistory } from './DelegationHistory.jsx';
+import { TargetDialog } from './TargetDialog.jsx';
+import { summarizeTarget } from './target-text.js';
 import {
   DANGER_ITEM_CLASS,
   ITEM_CLASS,
@@ -25,7 +27,7 @@ import { Alert, Button, Modal, TextArea, TextField, Toggle } from './ui.jsx';
  * that does not exist.
  */
 
-type Dialog = 'none' | 'rename' | 'note' | 'adjust' | 'history';
+type Dialog = 'none' | 'rename' | 'note' | 'adjust' | 'history' | 'target';
 
 /** Rename. Its own dialog, because a name is worth seeing while it is typed. */
 function RenameDialog({
@@ -85,9 +87,12 @@ function RenameDialog({
 /**
  * The note.
  *
- * Freeform text with no structure, deliberately: the owner writes "$2200,
- * Dec 27" and does the per-cycle arithmetic himself. Structured target fields
- * were declined, and a text column keeps them a purely additive migration later.
+ * Freeform text with no structure — anything a line needs said that the fields
+ * do not cover. It used to be where a target lived too: the owner wrote
+ * "$2200, Dec 27" here and did the per-cycle arithmetic himself, and the column
+ * was kept freeform on the understanding that structured fields would come
+ * later. They have (ADR 047), so this is a note again rather than a target in
+ * disguise, and an existing note is left exactly as it was written.
  */
 function NoteDialog({
   row,
@@ -128,7 +133,7 @@ function NoteDialog({
           onChange={(event) => setNotes(event.target.value)}
           rows={4}
           maxLength={2000}
-          placeholder="$2,200, Dec 27"
+          placeholder="Renews in March"
           autoFocus
         />
         {problem && <Alert>{problem}</Alert>}
@@ -252,6 +257,7 @@ function AdjustDialog({
 export function DelegationRowMenu({
   row,
   groupings,
+  cadence,
   onTransferFrom,
   onNudge,
   onAbsorb,
@@ -259,6 +265,12 @@ export function DelegationRowMenu({
 }: {
   readonly row: BudgetRowDto;
   readonly groupings: readonly GroupingOption[];
+  /**
+   * How often money lands, which is what turns a target's shortfall into a
+   * per-paycheck figure. Passed down rather than fetched here so every row's
+   * menu reads one answer.
+   */
+  readonly cadence: PayCadence;
   /** Opens the page's Transfer dialog with this line as the source. */
   readonly onTransferFrom: (delegationId: string) => void;
   /**
@@ -342,6 +354,9 @@ export function DelegationRowMenu({
                 setBlocked(null);
               }}
             />
+          )}
+          {dialog === 'target' && (
+            <TargetDialog row={row} cadence={cadence} onClose={() => setDialog('none')} />
           )}
           {dialog === 'history' && (
             <DelegationHistory
@@ -427,6 +442,28 @@ export function DelegationRowMenu({
               }}
             >
               {row.notes ? 'Edit note' : 'Add a note'}
+            </button>
+
+            {/*
+              Above the adjustment, because it is the more ordinary act and it
+              writes nothing: a target states what this line is for, while an
+              adjustment moves money.
+            */}
+            <button
+              type="button"
+              role="menuitem"
+              className={`${ITEM_CLASS} flex-col items-start gap-0`}
+              onClick={() => {
+                setDialog('target');
+                controls.close();
+              }}
+            >
+              <span>{row.target ? 'Edit the target' : 'Set a target'}</span>
+              <span className="text-label text-muted">
+                {row.target
+                  ? summarizeTarget(row)
+                  : 'What this line is saving towards. Changes nothing on its own.'}
+              </span>
             </button>
 
             <button

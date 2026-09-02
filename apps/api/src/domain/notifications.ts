@@ -1,9 +1,11 @@
-import { isBalanceStale } from '@budget/shared';
+import { formatCents, isBalanceStale } from '@budget/shared';
 import type { Db } from '../db/client.js';
 import { latestPrice } from './bitcoin.js';
 import { newestBackupAt } from './backup.js';
 import { proposeCheckMatches } from './checks.js';
+import { localDayKey } from './calendar.js';
 import { findRecurringBills, overdueBills } from './recurring.js';
+import { findBehindTargets } from './targets.js';
 import { getBudgetSettings } from './settings.js';
 
 /**
@@ -39,6 +41,7 @@ export interface Notification {
     | 'accounts_need_review'
     | 'checks_awaiting_confirmation'
     | 'recurring_bill_overdue'
+    | 'targets_behind'
     | 'backup_failing';
   readonly severity: NotificationSeverity;
   /**
@@ -303,6 +306,32 @@ export async function buildNotifications(
         actionPath: '/bills',
       });
     }
+  }
+
+  /*
+   * A line that will not make its date at the amount it is set to.
+   *
+   * No switch, unlike the overdue bill above, and the difference is worth
+   * stating: a bill is a schedule this application *inferred* and can be wrong
+   * about, while a target is a number the household typed. Being behind on it is
+   * arithmetic on their own figures, and turning off arithmetic is not a
+   * preference — it is hiding the answer to the question they asked.
+   */
+  const behind = await findBehindTargets(db, localDayKey(now, timeZone), settings.payCadence);
+  if (behind.length > 0) {
+    const first = behind[0]!;
+    notifications.push({
+      kind: 'targets_behind',
+      pill: behind.length === 1 ? '1 line behind' : `${behind.length} lines behind`,
+      severity: 'warning',
+      message:
+        behind.length === 1
+          ? `${first.name} needs ${formatCents(first.progress.neededPerCycleCents ?? 0n)} a paycheck to make its date.`
+          : `${behind.length} lines will not make their date at the amount they are set to, the soonest being ${first.name}.`,
+      // The Budget page: the amount that is wrong is a cell on that row, and
+      // fixing it is typing over it.
+      actionPath: '/',
+    });
   }
 
   // §8: a holding is never shown as zero or blank when the feed is unreachable —

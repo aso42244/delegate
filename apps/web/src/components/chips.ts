@@ -55,6 +55,18 @@ export const CHIPS = {
   // ── Delegations ───────────────────────────────────────────────────────────
   utility: { mark: 'u', meaning: 'Utility — tracked on the Utilities page', tone: 'quiet' },
   note: { mark: 'n', meaning: 'Has a note', tone: 'quiet' },
+  /**
+   * `tg`, because `t` is spent on transfer — two letters where one would
+   * collide, which the vocabulary already allows for `sp`.
+   *
+   * Quiet, and there is deliberately no second mark for a line that will not
+   * make its target. A chip is a classification, and "has a target" is the
+   * classification; whether the line is on course is a **reading**, and it
+   * belongs on the figure that is wrong — the amount to delegate turns warning
+   * and carries the sentence. A yellow letter beside the name would say
+   * something is off without saying which number to change.
+   */
+  target: { mark: 'tg', meaning: 'Saving towards a target', tone: 'quiet' },
 } as const satisfies Record<string, ChipSpec>;
 
 export type ChipKind = keyof typeof CHIPS;

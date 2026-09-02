@@ -33,6 +33,25 @@ export interface BudgetRowDto {
   readonly checkNumber: string | null;
   readonly checkMemo: string | null;
   readonly checkIssuedAt: string | null;
+  /**
+   * What this line is saving towards, and the server's reading of whether it
+   * will get there. Null on most rows.
+   *
+   * The verdict is not recomputed here. Whether a line makes its date depends on
+   * the pay cadence and on which day it is in the household's zone, and a second
+   * copy of that arithmetic is a second answer waiting to disagree.
+   */
+  readonly target: TargetDto | null;
+}
+
+/** A calendar day, `2026-12-27` — never an instant. See ADR 037. */
+export interface TargetDto {
+  readonly targetCents: string;
+  readonly targetDate: string | null;
+  readonly shortfallCents: string;
+  readonly cyclesRemaining: number | null;
+  readonly neededPerCycleCents: string | null;
+  readonly status: 'met' | 'on_track' | 'behind' | 'standing';
 }
 
 export interface BudgetGroupingDto {
@@ -106,6 +125,10 @@ export interface UpdateDelegationInput {
   readonly groupingId?: string | null;
   readonly isUtility?: boolean;
   readonly notes?: string | null;
+  /** Null clears the target. Clearing the amount clears the date with it. */
+  readonly targetCents?: string | null;
+  /** `2026-12-27`. Null makes it a standing target: keep this much here. */
+  readonly targetDate?: string | null;
 }
 
 export const budgetApi = {

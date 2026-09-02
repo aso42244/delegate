@@ -50,6 +50,33 @@ export function dateOut(value: Date | null | undefined): string | null {
 }
 
 /**
+ * A date key at the boundary: `2026-12-27`, never an instant.
+ *
+ * A decided day has no zone (ADR 037), and sending one as a full ISO timestamp
+ * invites the browser to place it in the reader's — so a target due on the 27th
+ * renders as the 26th for anybody west of UTC. Ten characters, and the ambiguity
+ * cannot arise.
+ */
+export function dayOut(value: Date): string;
+export function dayOut(value: Date | null | undefined): string | null;
+export function dayOut(value: Date | null | undefined): string | null {
+  return value === null || value === undefined ? null : value.toISOString().slice(0, 10);
+}
+
+/**
+ * The way back in. Midnight UTC, which is how every `DATE` column here is filed.
+ *
+ * `z.coerce.date()` would accept a timestamp and quietly keep the time on it,
+ * and a target dated "2026-12-27T18:00:00-06:00" is a target that compares
+ * wrongly against a day.
+ */
+export const dayIn = z
+  .string()
+  .regex(/^\d{4}-\d{2}-\d{2}$/, 'Must be a calendar day, as YYYY-MM-DD')
+  .transform((value) => new Date(`${value}T00:00:00.000Z`))
+  .refine((value) => !Number.isNaN(value.getTime()), { message: 'Not a real calendar day' });
+
+/**
  * A boolean in a query string.
  *
  * `z.coerce.boolean()` is `Boolean(value)`, and a query string carries text —

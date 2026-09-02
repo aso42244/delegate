@@ -106,7 +106,7 @@ and the image is published multi-arch on version tags. The NAS is one deployment
 of many rather than the deployment, and it keeps working — it adopts the secrets
 already in its `.env`.
 
-273 unit, 690 integration and 197 end-to-end tests. There is no CI: GitHub stores the code and nothing else
+286 unit, 702 integration and 201 end-to-end tests. There is no CI: GitHub stores the code and nothing else
 ([ADR 022](decisions/022-the-checks-run-here-not-on-github.md)), and every gate
 runs locally through `npm run verify`.
 
@@ -445,6 +445,38 @@ normalization neither can drift from.
   dialog, and what counts as one bill. That is why it lives in `@budget/shared`,
   and why a change to it now moves three features at once
 
+**Since v0.43.0 — targets, and the promise around them**
+
+- **A delegation can carry a target**: what it is saving towards, and by when
+  ([ADR 047](decisions/047-a-target-never-moves-an-amount.md)). This is the
+  migration `architecture.md` had been anticipating beside `notes` — the owner
+  was writing `"$2200, Dec 27"` there and doing the per-paycheck arithmetic in
+  his head.
+
+- **It never moves the amount to delegate, and that is the whole feature.** That
+  figure is multiplied by every line on the next Delegate press, so an
+  application that rewrote it on its own would be moving real money for a reason
+  nobody asked for. A target only judges it: the dialog shows what each remaining
+  paycheck would have to carry beside what the line is set to, and offers to
+  apply the figure behind **a switch that is off unless somebody turns it on**.
+  Afterwards it is an ordinary amount — typed over, cleared, left alone. The
+  owner asked for exactly this: optional, overridable by hand, and unmistakable
+  about what setting one does
+
+- **The chip says a target exists; the amount to delegate says whether it is
+  being met.** `tg` beside the name, and the figure itself turns warning with the
+  sentence on hover and through `aria-describedby`. A yellow letter beside a name
+  says something is wrong without saying which number to change
+
+- **The pill has no switch**, unlike the overdue bill from ADR 045, and the
+  difference is worth keeping straight: a bill is a schedule this application
+  _inferred_, while a target is a number the household typed. Turning off
+  arithmetic on their own figures is hiding the answer to the question they asked
+
+- `notes` is a note again. Existing notes are untouched, including the ones that
+  say `"$2200, Dec 27"` — a text field somebody wrote by hand is not something to
+  parse and overwrite
+
 ### Known gaps to fix
 
 None outstanding. The September security review is closed — see
@@ -479,16 +511,12 @@ doing next, in the order they would pay off:
   to be reminded of the rest once those are deployed. They are, in the order they
   were argued:
 
-  Two of the three are now built — recurring bills (ADR 045) and the export
-  (ADR 046). What is left of that list is **structured targets on a
-  delegation**: `"$2,200 by Dec 27"` as fields rather than freeform `notes`.
-  [architecture.md](architecture.md) already anticipates it — the owner does that
-  arithmetic by hand today, and the column is freeform precisely so structured
-  targets stay a purely additive migration. It touches the Budget row, so read
-  `ui-system.md` before starting.
+  **All five are built.** The queue suggestions and labelling rules (ADRs 043 and
+  044), recurring bills and the export (045 and 046), and targets (047). There is
+  no backlog behind them.
 
-  Ask him rather than picking anything else. Phases 1–3 and the deploy work are
-  done and the September review is closed, so nothing here is urgent.
+  Ask him rather than picking. Phases 1–3 and the deploy work are done and the
+  September review is closed, so nothing here is urgent.
 
 - If something does need doing and the end-to-end suite misbehaves, **read
   "Before believing a suite of failures" below before touching the branch.**
@@ -794,6 +822,16 @@ are not negotiable by a request, whoever wrote it.
   over contention is how the racy tests in this suite got written the first
   time. `colima start` again when the image step is needed.
 
+- **`auth-events.test.ts` can fail as a 403 in a helper, and the cause is
+  enrolment.** Its setup confirms two-factor with the _previous_ period's code,
+  so that a later sign-in still has an unspent one — a code is spent when used
+  (ADR 028). A run that crosses a period boundary at the wrong moment offers a
+  code just outside the accepted window, enrolment quietly does not happen, and
+  three tests later `/api/auth-events` answers 403 to an un-enrolled account.
+  Seen once, on 2026-09-02, on a loaded machine; it passes alone and in a clean
+  run. The confirm is asserted now, so the next occurrence names itself instead
+  of surfacing as "expected 403 to be 200" thirty lines away.
+
 - **Orphaned servers are the other thing to watch for.** A `verify` run that is
   interrupted can leave `node apps/api/dist/server.js` running against the
   **test** database, still executing the sync, price and backup schedules. It
@@ -819,9 +857,9 @@ cannot collide.
 npm run verify            # everything, in the order CI used to run it
 npm run verify:quick      # the same, minus the container image build
 
-npm run test              # 273 unit
-npm run test:integration  # 690 integration
-npm run test:e2e          # 197 end-to-end, needs a build first
+npm run test              # 286 unit
+npm run test:integration  # 702 integration
+npm run test:e2e          # 201 end-to-end, needs a build first
 ```
 
 `npm run verify` is the gate. It runs migrations, typecheck, lint, formatting,

@@ -70,12 +70,43 @@ async function assertGroupingUsable(
   }
 }
 
+/**
+ * A target is an amount, optionally by a day.
+ *
+ * The database holds both of these too. They are here so the refusal says which
+ * one it is, rather than surfacing as a constraint name.
+ */
+function assertTargetSane(targetCents: Cents | null, targetDate: Date | null): void {
+  if (targetDate !== null && targetCents === null) {
+    throw new ValidationError(
+      'target_date_without_amount',
+      'A target needs an amount. A date on its own is a deadline for nothing.',
+    );
+  }
+  if (targetCents !== null && targetCents <= 0n) {
+    throw new ValidationError(
+      'target_not_positive',
+      'A target is an amount to reach. Clear it instead of setting it to zero.',
+    );
+  }
+}
+
 export interface CreateDelegationInput {
   readonly name: string;
   readonly amountToDelegateCents?: Cents | null | undefined;
   readonly groupingId?: string | null | undefined;
   readonly isUtility?: boolean | undefined;
   readonly notes?: string | null | undefined;
+  /**
+   * What the line is saving towards, and by when. Null on either clears it.
+   *
+   * The date is optional and turns "keep this much here" into "have this much by
+   * then". A date with no amount is refused — it is a deadline for nothing — and
+   * the database refuses it too, so a caller that never comes through here
+   * cannot write one either.
+   */
+  readonly targetCents?: Cents | null | undefined;
+  readonly targetDate?: Date | null | undefined;
 }
 
 export async function createDelegation(
@@ -85,6 +116,7 @@ export async function createDelegation(
   const name = normalizeName(input.name);
   await assertDelegationNameFree(db, name);
   if (input.groupingId) await assertGroupingUsable(db, input.groupingId, 'delegations');
+  assertTargetSane(input.targetCents ?? null, input.targetDate ?? null);
 
   return db.delegation.create({
     data: {
@@ -95,6 +127,8 @@ export async function createDelegation(
       groupingId: input.groupingId ?? null,
       isUtility: input.isUtility ?? false,
       notes: input.notes ?? null,
+      targetCents: input.targetCents ?? null,
+      targetDate: input.targetDate ?? null,
     },
     select: { id: true },
   });
@@ -106,6 +140,16 @@ export interface UpdateDelegationInput {
   readonly groupingId?: string | null | undefined;
   readonly isUtility?: boolean | undefined;
   readonly notes?: string | null | undefined;
+  /**
+   * What the line is saving towards, and by when. Null on either clears it.
+   *
+   * The date is optional and turns "keep this much here" into "have this much by
+   * then". A date with no amount is refused — it is a deadline for nothing — and
+   * the database refuses it too, so a caller that never comes through here
+   * cannot write one either.
+   */
+  readonly targetCents?: Cents | null | undefined;
+  readonly targetDate?: Date | null | undefined;
 }
 
 export async function updateDelegation(
@@ -115,7 +159,7 @@ export async function updateDelegation(
 ): Promise<void> {
   const existing = await db.delegation.findUnique({
     where: { id },
-    select: { id: true, archivedAt: true, kind: true },
+    select: { id: true, archivedAt: true, kind: true, targetCents: true, targetDate: true },
   });
   if (!existing) throw new NotFoundError('Delegation', id);
   if (existing.archivedAt) {
@@ -138,6 +182,30 @@ export async function updateDelegation(
   if (name !== undefined) await assertDelegationNameFree(db, name, id);
   if (input.groupingId) await assertGroupingUsable(db, input.groupingId, 'delegations');
 
+  /*
+   * Checked as the pair it will be, not as the field that arrived. Clearing an
+   * amount sends one key and the date the other, and validating either alone
+   * would refuse the only request that is actually right.
+   */
+  const nextTargetCents =
+    input.targetCents === undefined ? existing.targetCents : input.targetCents;
+  assertTargetSane(
+    nextTargetCents,
+    // Clearing the amount clears the date with it, so the pair validated here
+    // has to be the pair that will be written. Checking the stored date against
+    // a cleared amount refuses the one request that is unambiguously right:
+    // "remove this target".
+    //
+    // An *explicit* null, not merely an absent one: a request that sets a date
+    // on a line which has no target is still a deadline for nothing, and must
+    // be refused with a sentence rather than by a constraint name.
+    input.targetCents === null
+      ? null
+      : input.targetDate === undefined
+        ? existing.targetDate
+        : input.targetDate,
+  );
+
   await db.delegation.update({
     where: { id },
     data: {
@@ -148,6 +216,12 @@ export async function updateDelegation(
       ...(input.groupingId === undefined ? {} : { groupingId: input.groupingId }),
       ...(input.isUtility === undefined ? {} : { isUtility: input.isUtility }),
       ...(input.notes === undefined ? {} : { notes: input.notes }),
+      ...(input.targetCents === undefined ? {} : { targetCents: input.targetCents }),
+      // Clearing the amount clears the date with it: a deadline for nothing is
+      // the state the check constraint exists to prevent, and somebody removing
+      // a target means the whole target.
+      ...(input.targetCents === null ? { targetDate: null } : {}),
+      ...(input.targetDate === undefined ? {} : { targetDate: input.targetDate }),
     },
   });
 }
