@@ -2,6 +2,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useState, type FormEvent, type ReactNode } from 'react';
 import { recurringApi, type BillDto } from '../api/recurring.js';
 import { ApiError } from '../api/client.js';
+import { BillLinkDialog } from './BillLinkDialog.jsx';
 import { DANGER_ITEM_CLASS, ITEM_CLASS, RowMenuShell } from './RowMenuShell.jsx';
 import { Alert, Button, Modal, TextField } from './ui.jsx';
 
@@ -13,9 +14,19 @@ import { Alert, Button, Modal, TextField } from './ui.jsx';
  * visited every fortnight has exactly the shape of a fortnightly bill, and only
  * the household knows it is a shop. This is where they say so.
  *
- * Two corrections, and they are the only two worth having: **this is not a
- * bill**, and **this is not what it is called**. Everything else on the row is
- * arithmetic over transactions and would be a lie if it were editable.
+ * Three corrections, and they are the only three worth having: **this is not a
+ * bill**, **this is not what it is called**, and **that charge is this one**.
+ * Everything else on the row is arithmetic over transactions and would be a lie
+ * if it were editable.
+ *
+ * The third came from the first real run: a life insurance payment sat in the
+ * register while its bill read Overdue, because the charge was pending and
+ * pending charges are excluded from the detection on purpose. That particular
+ * case is fixed in the detection itself — a pending charge now answers "has it
+ * arrived" without touching the schedule — but the general one is not fixable
+ * by any threshold. A merchant that renames itself between charges leaves its
+ * old bill overdue for ever, and only the household knows the new name is the
+ * same bill.
  */
 
 function RenameDialog({
@@ -94,6 +105,7 @@ export function BillRowMenu({
 }): ReactNode {
   const queryClient = useQueryClient();
   const [renaming, setRenaming] = useState(false);
+  const [linking, setLinking] = useState(false);
 
   const hide = useMutation({
     mutationFn: () => recurringApi.override({ key: bill.key, label: bill.feedName, hidden: true }),
@@ -110,7 +122,13 @@ export function BillRowMenu({
   return (
     <RowMenuShell
       name={bill.name}
-      overlay={renaming ? <RenameDialog bill={bill} onClose={() => setRenaming(false)} /> : null}
+      overlay={
+        renaming ? (
+          <RenameDialog bill={bill} onClose={() => setRenaming(false)} />
+        ) : linking ? (
+          <BillLinkDialog bill={bill} onClose={() => setLinking(false)} />
+        ) : null
+      }
     >
       {(controls) => (
         <>
@@ -137,6 +155,35 @@ export function BillRowMenu({
             }}
           >
             {bill.renamed ? 'Change the name' : 'Give it a name'}
+          </button>
+
+          {/*
+            The escape hatch for a bill that has been paid and does not know it.
+            Worded as the thing the reader believes rather than as the mechanism:
+            they are not "creating a link", they are saying the charge arrived.
+
+            Offered on every row, not only an overdue one — the same correction
+            fixes a bill whose merchant renamed itself, which reads as expected
+            right up until the day it does not.
+          */}
+          <button
+            type="button"
+            role="menuitem"
+            className={`${ITEM_CLASS} flex-col items-start gap-0`}
+            onClick={() => {
+              setLinking(true);
+              controls.close();
+            }}
+          >
+            <span>
+              The charge did arrive
+              {bill.linkedCount > 0 && (
+                <span className="ml-2 text-label text-muted">{bill.linkedCount} attached</span>
+              )}
+            </span>
+            <span className="text-label text-muted">
+              Point at the payment. Moves the last-seen date, not the cadence.
+            </span>
           </button>
 
           <div className="my-1 border-t border-line" />

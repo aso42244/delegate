@@ -100,7 +100,17 @@
    * set the width; this caps what anything *else* in there can claim, because a
    * long app name or an email address would otherwise size the column instead.
    */
-  --spacing-sidebar-cap: 132px;
+  /*
+   * The expanded sidebar's floor, and the cap on what may set its width.
+   *
+   * `w-fit` alone made it as narrow as "Transactions" plus its chrome — about
+   * 145px — which is correct arithmetic and reads as cramped beside a page. 180
+   * is a floor rather than a fixed width, so a longer destination name still
+   * widens it; it is well short of the 232px this started at, which was the
+   * width that prompted the original complaint.
+   */
+  --spacing-sidebar: 180px;
+  --spacing-sidebar-cap: 156px;
   --spacing-rail: 64px;
 }
 

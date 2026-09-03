@@ -219,6 +219,7 @@ model User {
   insightLayouts      InsightLayout[]
   recoveryCodes       RecoveryCode[]
   duplicateDismissals DuplicateDismissal[]
+  billLinks           BillLink[]
   authEvents          AuthEvent[]           @relation("AuthEventSubject")
   authEventsPerformed AuthEvent[]           @relation("AuthEventActor")
 
@@ -388,6 +389,8 @@ model Account {
   // Two orthogonal booleans. The house and the mortgage are inNetWorth only,
   // which is precisely why the mortgage does not blow up the budget identity.
   /**
+   * /**
+   * /**
    * /**
    * Where this account sits among its neighbours in the same grouping.
    * As for a delegation and for the same reason: the order the household reads
@@ -741,6 +744,9 @@ model Transaction {
   dismissedAgainst DuplicateDismissal[] @relation("dismissalFirst")
   dismissedBy      DuplicateDismissal[] @relation("dismissalSecond")
 
+  // "This charge is that bill", where the description does not say so.
+  billLink BillLink?
+
   @@unique([accountId, externalId], name: "transaction_account_external_id")
   @@index([postedAt])
   @@index([accountId, postedAt])
@@ -803,6 +809,39 @@ model BillOverride {
   updatedAt DateTime @updatedAt @map("updated_at")
 
   @@map("bill_overrides")
+}
+
+/**
+ * A transaction somebody has said belongs to a bill.
+ * [ADR 045](../../../docs/decisions/045-a-bill-is-inferred-not-entered.md) keeps
+ * bills out of the database, and this holds none: no schedule, no amount, no
+ * name. Only the one fact the inference cannot reach — that this charge is that
+ * merchant's bill even though its description does not say so.
+ * A link answers "has it arrived" and moves the last-seen date. It is
+ * deliberately kept out of the interval arithmetic, so one correction can never
+ * drop a bill off the list by putting an unfittable gap in its history.
+ */
+model BillLink {
+  id String @id @default(uuid()) @db.Uuid
+
+  /**
+   * The merchant whose bill this is. No foreign key: a bill is a computation.
+   */
+  merchantKey String @map("merchant_key")
+
+  /**
+   * One transaction belongs to at most one bill.
+   */
+  transactionId String      @unique @map("transaction_id") @db.Uuid
+  transaction   Transaction @relation(fields: [transactionId], references: [id], onDelete: Cascade)
+
+  linkedBy String? @map("linked_by") @db.Uuid
+  linker   User?   @relation(fields: [linkedBy], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([merchantKey])
+  @@map("bill_links")
 }
 
 /**

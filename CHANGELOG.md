@@ -6,7 +6,28 @@ phase (`v0.1.0-phase1`, and so on).
 
 ## [Unreleased]
 
+### Added
+
+- **A bill can be told its charge arrived.** Third correction on the Bills row
+  menu, beside "not a bill" and "give it a name": point at the payment, and the
+  bill's last-seen date moves to it. Its cadence does not change — a link is a
+  correction, not evidence about the schedule.
+  [ADR 051](docs/decisions/051-a-bill-can-be-told-a-charge-arrived.md).
+
+### Fixed
+
+- **A bill whose charge is still pending no longer reads as overdue.** Pending
+  charges are excluded from the detection because their date moves when they
+  settle — a sound reason about arithmetic, wrongly applied to the whole row, so
+  the charge that answers "has this arrived?" was excluded from answering it. A
+  life insurance payment sat in the register while its bill said Overdue · 5d.
+  Such a bill now reads **Paid, pending**, and raises no notification.
+
 ### Changed
+
+- **The sidebar is a little wider** — 180px rather than the ~145px `w-fit` gave
+  it, and well short of the 232px it started at. The content gutter beside it
+  comes back to 32px, which is what `design.md` §4 asks for.
 
 - **`deploy.sh` says why a tag could not be pulled.** A version tag is not
   deployable until its image finishes building, and until then the registry

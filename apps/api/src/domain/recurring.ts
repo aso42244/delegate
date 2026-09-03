@@ -1,6 +1,7 @@
 import { merchantKey, type Cents } from '@budget/shared';
 import { localDayKey } from './calendar.js';
 import type { Db } from '../db/client.js';
+import { ValidationError } from './errors.js';
 
 /**
  * Bills that arrive on a schedule, worked out from the register itself.
@@ -86,8 +87,16 @@ const CADENCES = [
  * `lapsed` exists so that a cancelled service does not read as overdue for ever.
  * A bill nobody can act on that shouts anyway is the shape that teaches people
  * to stop reading the thing that shouts.
+ *
+ * `arrived` exists because of a worse version of the same failure. A life
+ * insurance payment left the account and sat in the register while its bill read
+ * **Overdue · 5d** — the charge was pending, and pending charges are excluded
+ * from this detection on purpose, because their date moves when they settle.
+ * Excluding them from the *arithmetic* is right. Excluding them from the
+ * question "has this arrived?" was not, and it made the page say something the
+ * register plainly contradicted.
  */
-export type BillStatus = 'expected' | 'due' | 'overdue' | 'lapsed';
+export type BillStatus = 'expected' | 'arrived' | 'due' | 'overdue' | 'lapsed';
 
 export interface RecurringBill {
   /** The merchant key. Stable across store numbers, and the row's identity. */
@@ -110,6 +119,16 @@ export interface RecurringBill {
   readonly status: BillStatus;
   /** How many days late, for an overdue bill. Zero otherwise. */
   readonly daysLate: number;
+  /**
+   * The charge that answered for this period but has not settled.
+   *
+   * Set on an `arrived` bill and null otherwise. It is what makes the status
+   * legible rather than mysterious: the row can say the money has gone and is
+   * still pending, instead of quietly not being overdue any more.
+   */
+  readonly pendingSince: Date | null;
+  /** How many charges were attached by hand, so the row can offer to undo it. */
+  readonly linkedCount: number;
   /** Where charges from this merchant are usually filed, if they are. */
   readonly delegationId: string | null;
   readonly delegationName: string | null;
@@ -179,20 +198,40 @@ export async function findRecurringBills(
   });
   const overrideFor = new Map(overrides.map((override) => [override.merchantKey, override]));
 
+  /*
+   * Charges attached by hand, and the merchant each was attached to.
+   *
+   * Read first so that a linked charge can be routed to its bill's group in the
+   * same pass that groups everything else — and so a charge that was linked is
+   * never also counted under its own description's key.
+   */
+  const links = await db.billLink.findMany({
+    select: { merchantKey: true, transactionId: true },
+  });
+  const linkedTo = new Map(links.map((link) => [link.transactionId, link.merchantKey]));
+
   const charges = await db.transaction.findMany({
     where: {
       archivedAt: null,
       kind: 'normal',
       amountCents: { lt: 0 },
-      // A pending charge has not settled, and its date moves when it does.
-      // Including it would shift every prediction by however long the feed took.
-      pending: false,
+      /*
+       * Pending rows come back too, and are separated below.
+       *
+       * A pending charge's date moves when it settles, so it must not reach the
+       * interval arithmetic — that was the reason for excluding it, and the
+       * reason stands. But it is the whole answer to "has this arrived?", and
+       * leaving it out of that made a bill read Overdue while the payment sat in
+       * the register. Fetched together and used differently.
+       */
     },
     select: {
+      id: true,
       description: true,
       descriptionRaw: true,
       amountCents: true,
       postedAt: true,
+      pending: true,
       account: { select: { name: true, nickname: true } },
       allocations: {
         select: { delegationId: true, delegation: { select: { name: true, archivedAt: true } } },
@@ -203,13 +242,29 @@ export async function findRecurringBills(
   });
 
   type Charge = (typeof charges)[number];
+
+  /**
+   * Which bill a charge belongs to.
+   *
+   * A hand-made link wins over the description, which is the entire point of
+   * having one: the charge arrived under a name the detection cannot connect,
+   * and somebody said where it belongs.
+   */
+  function keyOf(charge: Charge): string {
+    return linkedTo.get(charge.id) ?? merchantKey(charge.descriptionRaw || charge.description);
+  }
+
+  /** Settled charges — the only ones the schedule is fitted from. */
   const byMerchant = new Map<string, Charge[]>();
+  /** Pending charges, which answer "has it arrived" and nothing else. */
+  const pendingByMerchant = new Map<string, Charge[]>();
 
   for (const charge of charges) {
-    const key = merchantKey(charge.descriptionRaw || charge.description);
-    const group = byMerchant.get(key) ?? [];
+    const key = keyOf(charge);
+    const into = charge.pending ? pendingByMerchant : byMerchant;
+    const group = into.get(key) ?? [];
     group.push(charge);
-    byMerchant.set(key, group);
+    into.set(key, group);
   }
 
   const today = localDayKey(now, timeZone);
@@ -229,7 +284,20 @@ export async function findRecurringBills(
      * evening and one posted at nine the next morning are thirteen hours apart
      * and one day apart, and it is the day that the schedule is made of.
      */
-    const days = group
+    /*
+     * The schedule is fitted from charges that matched on their own, and only
+     * those.
+     *
+     * A hand-linked charge is a correction, not evidence about the schedule. If
+     * it were fitted too, linking one late payment would put a gap in the
+     * history that no longer fits — and the bill would vanish from the page
+     * entirely, which is a spectacularly unhelpful answer to "this did arrive".
+     * So a link moves the last-seen date and never the cadence.
+     */
+    const own = group.filter((charge) => !linkedTo.has(charge.id));
+    if (own.length < MIN_OCCURRENCES) continue;
+
+    const days = own
       .map((charge) => localDayKey(charge.postedAt, timeZone))
       .sort((a, b) => a.getTime() - b.getTime());
 
@@ -251,7 +319,18 @@ export async function findRecurringBills(
     // fitted through that is a schedule nobody can rely on.
     if (intervals.some((gap) => Math.abs(gap - intervalDays) > tolerance)) continue;
 
-    const lastDay = days[days.length - 1]!;
+    /*
+     * The last time this bill was actually paid — including a charge that was
+     * linked by hand, which is the whole reason somebody linked it.
+     *
+     * The schedule above came from `own`; the clock runs from here. A bill told
+     * that its charge arrived stops being overdue and its next date moves
+     * forward by one interval, exactly as if the detection had seen it.
+     */
+    const settledDays = group
+      .map((charge) => localDayKey(charge.postedAt, timeZone))
+      .sort((a, b) => a.getTime() - b.getTime());
+    const lastDay = settledDays[settledDays.length - 1]!;
     const expectedNextAt = new Date(lastDay.getTime() + intervalDays * DAY_MS);
     const grace = graceDays(intervalDays);
     const late = daysBetween(expectedNextAt, today);
@@ -263,9 +342,27 @@ export async function findRecurringBills(
     const newest = group.reduce((latest, charge) =>
       charge.postedAt > latest.postedAt ? charge : latest,
     );
+    /* The feed's own words for this merchant, which a linked charge is not. */
+    const newestOwn = own.reduce((latest, charge) =>
+      charge.postedAt > latest.postedAt ? charge : latest,
+    );
+
+    /*
+     * A charge that has arrived but not settled, newer than the last one that
+     * did. It answers this period, whatever the calendar says.
+     *
+     * Newer than the last settled day, because a pending row *older* than that
+     * is the tail of a period already accounted for — usually a charge caught
+     * mid-settlement, which would otherwise mark every bill as arrived for ever.
+     */
+    const pendingNewest = (pendingByMerchant.get(key) ?? [])
+      .map((charge) => ({ charge, day: localDayKey(charge.postedAt, timeZone) }))
+      .filter((entry) => entry.day.getTime() > lastDay.getTime())
+      .sort((a, b) => b.day.getTime() - a.day.getTime())[0];
 
     let status: BillStatus = 'expected';
-    if (late > intervalDays + grace) status = 'lapsed';
+    if (pendingNewest) status = 'arrived';
+    else if (late > intervalDays + grace) status = 'lapsed';
     else if (late > grace) status = 'overdue';
     else if (late >= -grace) status = 'due';
 
@@ -299,8 +396,14 @@ export async function findRecurringBills(
       // The household's name where they gave one. The bank's is kept beside it
       // rather than replaced: a rename is a label, not a claim about what the
       // feed said, and reconciling against a statement needs the original.
-      name: override?.displayName ?? newest.description,
-      feedName: newest.description,
+      name: override?.displayName ?? newestOwn.description,
+      /*
+       * What the bank calls *this merchant*, taken from a charge that matched on
+       * its own. A linked charge came in under some other name — that is why it
+       * had to be linked — and showing it here would rename the bill to the
+       * thing that went wrong.
+       */
+      feedName: newestOwn.description,
       renamed: override?.displayName != null,
       cadence: cadenceLabel(intervalDays),
       intervalDays,
@@ -312,6 +415,12 @@ export async function findRecurringBills(
       expectedNextAt,
       status,
       daysLate: status === 'overdue' ? late : 0,
+      pendingSince: pendingNewest?.day ?? null,
+      // Only the settled ones are in this group; a pending linked charge is
+      // counted too, because the offer to undo the link has to reach it.
+      linkedCount:
+        group.filter((charge) => linkedTo.has(charge.id)).length +
+        (pendingByMerchant.get(key) ?? []).filter((charge) => linkedTo.has(charge.id)).length,
       delegationId: filedId,
       delegationName: filedName,
       accountName: newest.account.nickname ?? newest.account.name,
@@ -401,4 +510,176 @@ export async function getBillOverride(
 /** The bills worth telling somebody about: late, and not so late they have stopped. */
 export function overdueBills(bills: readonly RecurringBill[]): RecurringBill[] {
   return bills.filter((bill) => bill.status === 'overdue');
+}
+
+/**
+ * "That charge is this bill."
+ *
+ * The escape hatch for the two cases no threshold reaches: a charge still
+ * pending under a name the detection cannot connect, and a merchant that renamed
+ * itself between charges so its old bill goes overdue for ever.
+ *
+ * One transaction belongs to at most one bill, so this moves a link rather than
+ * adding a second — saying a charge belongs somewhere is also saying it does not
+ * belong where it was.
+ */
+export async function linkChargeToBill(
+  db: Db,
+  input: {
+    readonly key: string;
+    readonly transactionId: string;
+    readonly userId: string | null;
+  },
+): Promise<void> {
+  const transaction = await db.transaction.findUnique({
+    where: { id: input.transactionId },
+    select: { id: true, archivedAt: true, kind: true, amountCents: true },
+  });
+
+  if (!transaction || transaction.archivedAt !== null) {
+    throw new ValidationError('not_in_register', 'That transaction is not in the register.');
+  }
+  // The same three the detection itself reads. A bill is money going out, once,
+  // as spending — an income row or a transfer is not a bill however it is filed.
+  if (transaction.kind !== 'normal' || transaction.amountCents >= 0n) {
+    throw new ValidationError('not_spending', 'Only ordinary spending can be attached to a bill.');
+  }
+
+  await db.billLink.upsert({
+    where: { transactionId: input.transactionId },
+    create: { merchantKey: input.key, transactionId: input.transactionId, linkedBy: input.userId },
+    update: { merchantKey: input.key, linkedBy: input.userId },
+  });
+}
+
+/** Undoes one. The charge goes back to being read by its own description. */
+export async function unlinkChargeFromBill(db: Db, transactionId: string): Promise<void> {
+  await db.billLink.deleteMany({ where: { transactionId } });
+}
+
+/** What is attached to a bill by hand, newest first, so it can be undone. */
+export async function linkedCharges(
+  db: Db,
+  key: string,
+): Promise<
+  {
+    readonly transactionId: string;
+    readonly description: string;
+    readonly postedAt: Date;
+    readonly amountCents: Cents;
+    readonly pending: boolean;
+  }[]
+> {
+  const links = await db.billLink.findMany({
+    where: { merchantKey: key },
+    select: {
+      transactionId: true,
+      transaction: {
+        select: { description: true, postedAt: true, amountCents: true, pending: true },
+      },
+    },
+  });
+
+  return links
+    .map((link) => ({
+      transactionId: link.transactionId,
+      description: link.transaction.description,
+      postedAt: link.transaction.postedAt,
+      amountCents: -link.transaction.amountCents,
+      pending: link.transaction.pending,
+    }))
+    .sort((a, b) => b.postedAt.getTime() - a.postedAt.getTime());
+}
+
+/**
+ * How far either side of a bill's expected date to offer charges from.
+ *
+ * Wide enough to hold a payment that slipped a fortnight, narrow enough that the
+ * list is a handful of rows rather than a second register. Somebody who needs a
+ * charge from outside it can search, which is what the dialog's field is for.
+ */
+export const LINK_WINDOW_DAYS = 45;
+
+/**
+ * Charges that could be the one, nearest the expected date first.
+ *
+ * Ordered by *closeness to what is expected* rather than by date, because the
+ * reader is looking for one specific payment and the machine already knows
+ * roughly when it should have landed and roughly what it should have cost. The
+ * one they want is usually the first row.
+ */
+export async function linkCandidates(
+  db: Db,
+  input: {
+    readonly expectedNextAt: Date;
+    readonly typicalAmountCents: Cents;
+    readonly search: string | null;
+  },
+): Promise<
+  {
+    readonly id: string;
+    readonly description: string;
+    readonly postedAt: Date;
+    readonly amountCents: Cents;
+    readonly pending: boolean;
+    readonly accountName: string;
+    readonly linkedElsewhere: boolean;
+  }[]
+> {
+  const from = new Date(input.expectedNextAt.getTime() - LINK_WINDOW_DAYS * DAY_MS);
+  const to = new Date(input.expectedNextAt.getTime() + LINK_WINDOW_DAYS * DAY_MS);
+  const search = input.search?.trim() ?? '';
+
+  const rows = await db.transaction.findMany({
+    where: {
+      archivedAt: null,
+      kind: 'normal',
+      amountCents: { lt: 0 },
+      // A search is a deliberate act and reaches the whole register; without one
+      // the offer is the window around the date this bill was expected.
+      ...(search === '' ? { postedAt: { gte: from, lte: to } } : {}),
+      ...(search === '' ? {} : { description: { contains: search, mode: 'insensitive' as const } }),
+    },
+    select: {
+      id: true,
+      description: true,
+      postedAt: true,
+      amountCents: true,
+      pending: true,
+      account: { select: { name: true, nickname: true } },
+      billLink: { select: { merchantKey: true } },
+    },
+    orderBy: [{ postedAt: 'desc' }],
+    take: 200,
+  });
+
+  const expected = input.expectedNextAt.getTime();
+  const typical = input.typicalAmountCents;
+
+  return rows
+    .map((row) => ({
+      id: row.id,
+      description: row.description,
+      postedAt: row.postedAt,
+      amountCents: -row.amountCents,
+      pending: row.pending,
+      accountName: row.account.nickname ?? row.account.name,
+      // Said on the row rather than hidden, because attaching it here takes it
+      // off whatever bill it is on now.
+      linkedElsewhere: row.billLink !== null,
+    }))
+    .sort((a, b) => {
+      // Days from the expected date, then how far the amount is off, in that
+      // order: a bill arrives on roughly the right day far more reliably than
+      // for exactly the right amount.
+      const dayGap =
+        Math.abs(a.postedAt.getTime() - expected) - Math.abs(b.postedAt.getTime() - expected);
+      if (Math.abs(dayGap) > DAY_MS) return dayGap;
+
+      const amountGap =
+        Number(a.amountCents - typical < 0n ? typical - a.amountCents : a.amountCents - typical) -
+        Number(b.amountCents - typical < 0n ? typical - b.amountCents : b.amountCents - typical);
+      return amountGap;
+    })
+    .slice(0, 25);
 }

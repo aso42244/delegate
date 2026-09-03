@@ -33,6 +33,10 @@ import { NARROW, useMediaQuery } from '../useMediaQuery.js';
 const STATUS_TEXT: Record<BillStatus, string> = {
   overdue: 'Overdue',
   due: 'Due now',
+  // The money has gone and the bank has not finished with it. Said as a fact
+  // about the charge rather than as a state of the bill, because that is what
+  // the reader is checking against their own account.
+  arrived: 'Paid, pending',
   expected: 'Expected',
   lapsed: 'Stopped?',
 };
@@ -40,6 +44,8 @@ const STATUS_TEXT: Record<BillStatus, string> = {
 const STATUS_TONE: Record<BillStatus, string> = {
   overdue: 'text-danger font-semibold',
   due: 'text-accent font-semibold',
+  // Positive, and not bold: nothing here needs doing, which is the whole point.
+  arrived: 'text-positive',
   expected: 'text-muted',
   lapsed: 'text-faint',
 };
