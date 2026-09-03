@@ -6,7 +6,20 @@ phase (`v0.1.0-phase1`, and so on).
 
 ## [Unreleased]
 
-Nothing yet.
+### Fixed
+
+- **Two different payees that cost the same are no longer read as one charge
+  twice.** Duplicate detection compared account and amount and ignored the
+  description entirely, so `ACH Payment Strike` and `ACH Payment City of Sioux
+Fa`, both $60.00 two days apart, were offered as a duplicate. The merchant key
+  is part of the match now — a store number still does not split one merchant in
+  two, but two payees are two payees.
+  [ADR 049](docs/decisions/049-a-duplicate-is-proposed-never-archived.md).
+
+- **"Not a duplicate" is remembered.** It dismissed for a session only, so the
+  same wrong pair came back on the next page load — and since two settled
+  transactions never change, it came back for ever. The refusal is stored against
+  the pair, so both rows stay eligible to be proposed against anything else.
 
 ## [0.49.0] — 2026-09-02
 

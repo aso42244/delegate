@@ -464,4 +464,36 @@ test('a suggestion can be waved off without archiving anything', async ({ signed
 
   await expect(signedIn.getByRole('heading', { name: /possible duplicate/ })).toHaveCount(0);
   await expect(signedIn.getByRole('row').filter({ hasText: 'COFFEE' })).toHaveCount(2);
+
+  /*
+   * And it is still gone after a reload. This is the bug the feature shipped
+   * with: the dismissal lived in component state, so the same pair came back on
+   * every page load — and for two settled rows, nothing about them will ever
+   * change, so it came back for ever.
+   */
+  await signedIn.reload();
+  await expect(signedIn.getByRole('row').filter({ hasText: 'COFFEE' })).toHaveCount(2);
+  await expect(signedIn.getByRole('heading', { name: /possible duplicate/ })).toHaveCount(0);
+});
+
+/**
+ * The false positive from the first real run.
+ *
+ * Two bills, both $60.00, two days apart, on one account — read as one charge
+ * twice because the detector compared account and amount and ignored the
+ * description. A household paying two bills in a week is not rare, and the pair
+ * had nothing about it that would ever change.
+ */
+test('two different payees that cost the same are not offered as a duplicate', async ({
+  signedIn,
+  api,
+}) => {
+  const accountId = await makeAccount('Frontier Checking', 'asset', 500000n);
+  await makeTransaction(api, accountId, '-6000', 'ACH Payment Strike (Zap Solu 06/29');
+  await makeTransaction(api, accountId, '-6000', 'ACH Payment City of Sioux Fa 6053678860');
+
+  await signedIn.getByRole('link', { name: 'Transactions', exact: true }).click();
+
+  await expect(signedIn.getByRole('row').filter({ hasText: 'ACH Payment' })).toHaveCount(2);
+  await expect(signedIn.getByRole('heading', { name: /possible duplicate/ })).toHaveCount(0);
 });

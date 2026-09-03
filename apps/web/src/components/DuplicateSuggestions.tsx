@@ -22,21 +22,23 @@ import { Alert, Button } from './ui.jsx';
  * archiving that one puts money back in an envelope, and archiving the other
  * does not. That is the fact a reader needs before pressing anything.
  *
- * **No header pill, and the dismissal lasts a session** — the same shape the
- * pair suggestions have had for months. A pill was tried and taken out: it is
- * computed on the server from the rows, so it kept saying "1 possible duplicate"
- * after the panel had been waved off, and the two disagreed on screen.
- * [ADR 030](../../../../docs/decisions/030-a-cleared-check-is-confirmed-not-assumed.md)
- * gives the reason not to fix that by storing the refusal: a remembered "no"
- * needs its own clearing rules and its own bugs.
+ * **"Not a duplicate" is remembered**, and that is a correction to how this
+ * shipped. It dismissed for a session only, on the reasoning that a refusal is
+ * not a fact worth storing — which is right for a cleared check, whose proposal
+ * expires by itself once the check clears. Two settled transactions never
+ * change, so the same wrong pair came back on every page load, for ever. The
+ * first real run produced exactly that, on two different payees that happened to
+ * cost the same. See
+ * [ADR 049](../../../../docs/decisions/049-a-duplicate-is-proposed-never-archived.md).
  *
- * Nothing is lost by having no pill. A re-import arrives as uncategorized rows,
- * so the backlog pill already leads here — which is where these are dealt with.
+ * **No header pill.** One was tried and taken out: computed on the server, it
+ * kept saying "1 possible duplicate" after the panel had been waved off. Nothing
+ * is lost — a re-import arrives as uncategorized rows, so the backlog pill
+ * already leads here, which is where these are dealt with.
  */
 export function DuplicateSuggestions(): ReactNode {
   const queryClient = useQueryClient();
   const [problem, setProblem] = useState<string | null>(null);
-  const [dismissed, setDismissed] = useState<Set<string>>(new Set());
 
   const candidates = useQuery({
     queryKey: ['duplicates'],
@@ -56,9 +58,23 @@ export function DuplicateSuggestions(): ReactNode {
       setProblem(error instanceof ApiError ? error.message : 'That row could not be archived.'),
   });
 
-  const shown = (candidates.data?.candidates ?? []).filter(
-    (candidate) => !dismissed.has(candidate.copy.id),
-  );
+  const dismiss = useMutation({
+    mutationFn: (candidate: { readonly firstId: string; readonly secondId: string }) =>
+      transactionsApi.dismissDuplicate(candidate.firstId, candidate.secondId),
+    onSuccess: async () => {
+      setProblem(null);
+      // Read back rather than filtered here: the server is what decides what is
+      // proposed, and one place deciding is what stopped the pill disagreeing
+      // with the panel.
+      await queryClient.invalidateQueries({ queryKey: ['duplicates'] });
+    },
+    onError: (error: unknown) =>
+      setProblem(
+        error instanceof ApiError ? error.message : 'That suggestion could not be dismissed.',
+      ),
+  });
+
+  const shown = candidates.data?.candidates ?? [];
   if (shown.length === 0) return null;
 
   return (
@@ -133,9 +149,21 @@ export function DuplicateSuggestions(): ReactNode {
               >
                 Archive the first
               </Button>
+              {/*
+                Remembered, not waved off. Recorded against the pair, so both
+                rows stay eligible to be proposed against anything else — which
+                matters when a charge really was imported three times and only
+                one of the pairings is wrong.
+              */}
               <Button
                 variant="ghost"
-                onClick={() => setDismissed((previous) => new Set(previous).add(candidate.copy.id))}
+                onClick={() =>
+                  dismiss.mutate({
+                    firstId: candidate.original.id,
+                    secondId: candidate.copy.id,
+                  })
+                }
+                disabled={dismiss.isPending}
                 aria-label={`Dismiss the duplicate suggestion for ${candidate.copy.description}`}
               >
                 Not a duplicate

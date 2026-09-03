@@ -187,6 +187,15 @@ export const transactionsApi = {
   duplicates: () =>
     api.get<{ candidates: readonly DuplicateCandidateDto[] }>('/api/transactions/duplicates'),
 
+  /**
+   * "These two are not the same charge", kept.
+   *
+   * Recorded against the pair rather than against a row: both stay eligible to
+   * be proposed against anything else.
+   */
+  dismissDuplicate: (firstId: string, secondId: string) =>
+    api.post<{ ok: boolean }>('/api/transactions/duplicates/dismiss', { firstId, secondId }),
+
   /** Suggestions only — §7: wrong automatic pairing is worse than no pairing. */
   pairCandidates: () =>
     api.get<{ candidates: readonly PairCandidateDto[] }>('/api/transactions/pair-candidates'),
