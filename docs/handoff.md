@@ -88,8 +88,9 @@ These are non-negotiable. Violating one is a build failure.
 
 ## Where things stand
 
-**`main` is at `v0.50.0`, and the NAS is running `v0.49.0`** — deployed
-2026-09-02, the release that stopped a settings card drawing past its own border.
+**`main` is at `v0.51.0`, and the NAS is running `v0.50.0`** — deployed
+2026-09-03, the release that narrowed duplicate detection and made a refusal
+stick.
 
 Note that **`v0.46.0` has no published image**. Its workflow run never produced
 one, so a deploy must name `v0.47.0` or later; everything `v0.46.0` contained is
@@ -670,6 +671,47 @@ against real data. Worth reading as a pair.
   it about the thrift shop; this learned it again. Before citing ADR 030 for a
   new proposal, check whether the thing being proposed about can expire on its
   own. If it cannot, the refusal has to be storable
+
+**Since v0.50.0 — the page contradicted the register (`v0.51.0`)**
+
+- **A bill whose charge was still pending read as Overdue.** A $30.96 life
+  insurance payment sat in the register while the Bills page said **Overdue ·
+  5d**. Pending charges are excluded from bill detection because a pending date
+  moves when it settles — **a sound reason about arithmetic, applied to the whole
+  row**, so the charge that answers "has this arrived?" was excluded from
+  answering it. Pending charges are separated now: the schedule is still fitted
+  from settled ones only, and a pending charge newer than the last settled one
+  reads **Paid, pending** and announces nothing.
+
+  The shape of this mistake is worth carrying: _a filter justified by one
+  question was applied to every question._ Worth checking wherever a `where`
+  clause carries a comment explaining why
+
+- **A bill can be told its charge arrived**
+  ([ADR 051](decisions/051-a-bill-can-be-told-a-charge-arrived.md)). The general
+  case no threshold reaches: a merchant that renames itself gets a new merchant
+  key, so its old bill goes overdue for ever while the new one needs three months
+  to be detected at all. **A link moves the last-seen date and never the
+  cadence** — fitting one would put a gap in the history that fails the tolerance
+  test, and the bill would vanish from the page, which is a spectacularly
+  unhelpful answer to "this did arrive"
+
+- **A suggested categorization asks before it files.** The evidence behind the
+  guess lived on a `title` — invisible to anybody not hovering — and the press
+  was immediate and silent. Three answers now, and the third, **Confirm and
+  always**, writes the rule. That route existed but was buried in a row menu and
+  reachable only _after_ the row was filed, which is not the moment somebody
+  knows the decision repeats
+
+- **Rules left Settings for the sidebar.** Seven settings sections;
+  `/settings/rules` redirects. A rule is written while categorizing and read when
+  a charge lands somewhere surprising — the register's rhythm, not a thing
+  configured once
+
+- **The sidebar is 180px**, up from the ~145px `w-fit` gave it and short of the
+  232px it started at, and the gutter beside it is back to the 32px `design.md`
+  §4 asks for. Both from the owner looking at it: the first width was right
+  arithmetic and read as cramped
 
 ### Known gaps to fix
 

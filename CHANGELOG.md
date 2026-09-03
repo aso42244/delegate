@@ -6,6 +6,10 @@ phase (`v0.1.0-phase1`, and so on).
 
 ## [Unreleased]
 
+Nothing yet.
+
+## [0.51.0] — 2026-09-03
+
 ### Added
 
 - **A suggested categorization asks before it files.** Pressing the suggestion
