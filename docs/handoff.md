@@ -88,8 +88,8 @@ These are non-negotiable. Violating one is a build failure.
 
 ## Where things stand
 
-**`main` is at `v0.49.0`, and the NAS is running `v0.48.0`** — deployed
-2026-09-02, the release that added the three themes and duplicate detection.
+**`main` is at `v0.50.0`, and the NAS is running `v0.49.0`** — deployed
+2026-09-02, the release that stopped a settings card drawing past its own border.
 
 Note that **`v0.46.0` has no published image**. Its workflow run never produced
 one, so a deploy must name `v0.47.0` or later; everything `v0.46.0` contained is
@@ -641,6 +641,35 @@ and sending screenshots. None of it was visible from a test fixture.
   bank credential and faces the tunnel, and is not on the table. The owner chose
   to keep the one-line deploy as the only way in. **Do not build this without
   asking him again**
+
+**Since v0.49.0 — the duplicate panel was wrong twice (`v0.50.0`)**
+
+Both of these were mistakes in **ADR 049 itself**, not in the code that
+implemented it, and both were found the first time a person used the feature
+against real data. Worth reading as a pair.
+
+- **The match ignored the description.** `ACH Payment Strike (Zap Solu` and
+  `ACH Payment City of Sioux Fa`, both $60.00, two days apart on one account,
+  were offered as one charge twice — a household paying two bills in a week.
+  ADR 049 argued a different description is still a duplicate, because a feed
+  rewords its own text between pending and posted. **That reasoning bought a
+  speculative case and paid in false positives:** a re-import, the case the
+  feature exists for, replays the feed's own rows, so the descriptions come back
+  identical and never needed the looseness. `merchantKey` is in the bucket now
+
+- **"Not a duplicate" lasted a session.** So the same wrong pair returned on
+  every page load — and because two settled transactions never change, it
+  returned for ever. **ADR 030 was the wrong authority to borrow.** A cleared
+  check's proposal expires by itself once the check clears; there is nothing to
+  remember. Two settled rows are permanent, so the proposal is permanent, so the
+  refusal has to be too. `duplicate_dismissals` stores it, **keyed on the pair
+  rather than on a row**, so both rows stay eligible against anything else
+
+- The general lesson, which is the one to carry: **a proposal that cannot be
+  refused permanently is one somebody stops reading.** `bill_overrides` learned
+  it about the thrift shop; this learned it again. Before citing ADR 030 for a
+  new proposal, check whether the thing being proposed about can expire on its
+  own. If it cannot, the refusal has to be storable
 
 ### Known gaps to fix
 

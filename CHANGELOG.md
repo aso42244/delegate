@@ -6,6 +6,10 @@ phase (`v0.1.0-phase1`, and so on).
 
 ## [Unreleased]
 
+Nothing yet.
+
+## [0.50.0] — 2026-09-02
+
 ### Fixed
 
 - **Two different payees that cost the same are no longer read as one charge
