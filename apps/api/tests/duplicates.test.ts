@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { prisma } from '../src/db/client.js';
 import { categorizeTransaction } from '../src/domain/allocations.js';
-import { findDuplicates } from '../src/domain/duplicates.js';
+import { dismissDuplicate, findDuplicates } from '../src/domain/duplicates.js';
 import { makeAccount, makeDelegation, makeTransaction, resetDatabase } from './helpers.js';
 
 /**
@@ -77,15 +77,31 @@ describe('finding one', () => {
     expect(candidate?.copy.id).toBe(second.id);
   });
 
-  it('matches across a reworded description', async () => {
+  it('matches across a store number, because that is the same merchant', async () => {
     const accountId = await checking();
     await synced(accountId, '2026-08-04', -4210n, 'WHOLEFDS MKT #10234', 'old-id');
-    // A feed rewords its own text between the pending and posted versions of one
-    // purchase, so requiring the descriptions to match would miss the commonest
-    // case there is.
-    await synced(accountId, '2026-08-04', -4210n, 'Whole Foods Market', 'new-id');
+    // The merchant key drops the reference fragment, so one shop does not become
+    // two merchants because the feed appended a different store number.
+    await synced(accountId, '2026-08-04', -4210n, 'WHOLEFDS MKT #99', 'new-id');
 
     expect(await findDuplicates(prisma)).toHaveLength(1);
+  });
+
+  /**
+   * The false positive from the first real run, and the reason this test file
+   * exists in the shape it does.
+   *
+   * Two bills, both $60.00, two days apart, on one account. The detector paired
+   * them because it compared account and amount and ignored the description
+   * entirely — and the pair had nothing about it that would ever change, so it
+   * came back on every page load.
+   */
+  it('does not pair two different payees that cost the same', async () => {
+    const accountId = await checking();
+    await synced(accountId, '2026-06-30', -6000n, 'ACH Payment Strike (Zap Solu 06/29', 'a');
+    await synced(accountId, '2026-07-02', -6000n, 'ACH Payment City of Sioux Fa 6053678860', 'b');
+
+    expect(await findDuplicates(prisma)).toEqual([]);
   });
 
   it('says which of the two carries a categorization', async () => {
@@ -187,5 +203,91 @@ describe('declining to offer one', () => {
     const [candidate] = await findDuplicates(prisma);
     expect(candidate?.daysApart).toBe(0);
     expect(candidate?.differentExternalIds).toBe(false);
+  });
+});
+
+/**
+ * Refusing a proposal, for good.
+ *
+ * The reason this is stored at all: two settled transactions never change, so a
+ * proposal about them is permanent and a dismissal that lasted a session meant
+ * the same wrong pair returned on every page load.
+ */
+describe('saying two rows are not the same charge', () => {
+  it('stops that pair being proposed again', async () => {
+    const accountId = await checking();
+    const first = await synced(accountId, '2026-08-04', -4210n, 'WHOLEFDS MKT', 'old-id');
+    const second = await synced(accountId, '2026-08-04', -4210n, 'WHOLEFDS MKT', 'new-id');
+
+    expect(await findDuplicates(prisma)).toHaveLength(1);
+
+    await dismissDuplicate(prisma, { firstId: first.id, secondId: second.id, userId: null });
+
+    expect(await findDuplicates(prisma)).toEqual([]);
+  });
+
+  it('is the same dismissal whichever way round the pair is given', async () => {
+    const accountId = await checking();
+    const first = await synced(accountId, '2026-08-04', -4210n, 'WHOLEFDS MKT', 'old-id');
+    const second = await synced(accountId, '2026-08-04', -4210n, 'WHOLEFDS MKT', 'new-id');
+
+    // Written the other way round on purpose: the pair is ordered by id before
+    // it is stored, so this is the same row rather than a second one.
+    await dismissDuplicate(prisma, { firstId: second.id, secondId: first.id, userId: null });
+    await dismissDuplicate(prisma, { firstId: first.id, secondId: second.id, userId: null });
+
+    expect(await prisma.duplicateDismissal.count()).toBe(1);
+    expect(await findDuplicates(prisma)).toEqual([]);
+  });
+
+  /**
+   * A refusal is about the pair, not about either row.
+   *
+   * Three copies of one charge produce two proposals. Refusing the first must
+   * leave the rows in the second one free to be offered — otherwise saying "not
+   * these two" quietly hides a duplicate that is real.
+   */
+  it('leaves both rows eligible to be proposed against anything else', async () => {
+    const accountId = await checking();
+    const first = await synced(accountId, '2026-08-04', -4210n, 'WHOLEFDS MKT', 'a');
+    const second = await synced(
+      accountId,
+      '2026-08-04',
+      -4210n,
+      'WHOLEFDS MKT',
+      'b',
+      new Date('2026-08-04T16:00:00Z'),
+    );
+    const third = await synced(
+      accountId,
+      '2026-08-04',
+      -4210n,
+      'WHOLEFDS MKT',
+      'c',
+      new Date('2026-08-04T17:00:00Z'),
+    );
+
+    await dismissDuplicate(prisma, { firstId: first.id, secondId: second.id, userId: null });
+
+    /*
+     * The refused pair is gone and a proposal is still made. It is the first
+     * against the *third*, not the second against the third: the loop moves past
+     * a refused pair to the next unspent row rather than giving up on the row it
+     * started from. Refusing "these two" must never hide a duplicate that is
+     * real, and the first row is still one of three identical charges.
+     */
+    const remaining = await findDuplicates(prisma);
+    expect(remaining).toHaveLength(1);
+    expect(remaining[0]?.original.id).toBe(first.id);
+    expect(remaining[0]?.copy.id).toBe(third.id);
+  });
+
+  it('refuses to dismiss a transaction against itself', async () => {
+    const accountId = await checking();
+    const only = await synced(accountId, '2026-08-04', -4210n, 'WHOLEFDS MKT', 'a');
+
+    await expect(
+      dismissDuplicate(prisma, { firstId: only.id, secondId: only.id, userId: null }),
+    ).rejects.toThrow(/itself/);
   });
 });

@@ -218,6 +218,7 @@ model User {
   accountValuations   AccountValuation[]
   insightLayouts      InsightLayout[]
   recoveryCodes       RecoveryCode[]
+  duplicateDismissals DuplicateDismissal[]
   authEvents          AuthEvent[]           @relation("AuthEventSubject")
   authEventsPerformed AuthEvent[]           @relation("AuthEventActor")
 
@@ -339,7 +340,6 @@ model Grouping {
 
   /**
    * Where this grouping sits among its neighbours in the same section.
-   *
    * Zero on every row until one is moved, and the sort falls through to the name
    * when positions tie — so an untouched budget still reads alphabetically.
    */
@@ -388,8 +388,8 @@ model Account {
   // Two orthogonal booleans. The house and the mortgage are inNetWorth only,
   // which is precisely why the mortgage does not blow up the budget identity.
   /**
+   * /**
    * Where this account sits among its neighbours in the same grouping.
-   *
    * As for a delegation and for the same reason: the order the household reads
    * its accounts in is a fact about the household, and alphabetical is nobody's
    * reading of it. Ties fall through to the name.
@@ -530,17 +530,15 @@ model Delegation {
 
   /**
    * What this line is saving towards, and by when.
-   *
    * Both nullable, and null is no target. A date without an amount is refused by
    * a check constraint: it would be a deadline for nothing. `targetDate` is a
    * `DATE` because it is a date key — a day already decided, needing no zone to
    * read (ADR 037).
    */
-  targetCents BigInt?   @map("target_cents")
+  targetCents BigInt? @map("target_cents")
 
   /**
    * One occurrence of the target's date — an anchor, not a deadline.
-   *
    * With `targetIntervalMonths` set, the rest of the series follows from it and
    * the reading always looks at the next one still ahead. Without it, this is a
    * single date and the target is a one-off.
@@ -739,6 +737,10 @@ model Transaction {
   allocations       TransactionAllocation[]
   delegationEvents  DelegationEvent[]
 
+  // "These two are not the same charge", from either side of the pair.
+  dismissedAgainst DuplicateDismissal[] @relation("dismissalFirst")
+  dismissedBy      DuplicateDismissal[] @relation("dismissalSecond")
+
   @@unique([accountId, externalId], name: "transaction_account_external_id")
   @@index([postedAt])
   @@index([accountId, postedAt])
@@ -770,13 +772,11 @@ model TransactionAllocation {
 
 /**
  * What a person says about a detected bill.
- *
  * ADR 045 says bills are stored nowhere, and that stays true — this holds no
  * bills. It holds corrections to what the detection concluded, which is the one
  * kind of fact about them that cannot be derived: a thrift shop visited every
  * fortnight has exactly the shape of a fortnightly bill, and only the household
  * knows it is a shop.
- *
  * Keyed by the merchant key, because it is the merchant that is not a bill and
  * the charges behind it change every month.
  */
@@ -784,19 +784,58 @@ model BillOverride {
   id          String @id @default(uuid()) @db.Uuid
   merchantKey String @unique @map("merchant_key")
 
-  /** What it was called when the correction was made, so a hidden one can be named. */
+  /**
+   * What it was called when the correction was made, so a hidden one can be named.
+   */
   label String
 
-  /** Taken off the list. Putting one back flips this; the row is never deleted. */
+  /**
+   * Taken off the list. Putting one back flips this; the row is never deleted.
+   */
   hidden Boolean @default(false)
 
-  /** Shown instead of the bank's description. Null keeps what the feed sent. */
+  /**
+   * Shown instead of the bank's description. Null keeps what the feed sent.
+   */
   displayName String? @map("display_name")
 
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
   @@map("bill_overrides")
+}
+
+/**
+ * A pair of transactions somebody has said are not the same charge.
+ * [ADR 049](../../../docs/decisions/049-a-duplicate-is-proposed-never-archived.md)
+ * proposes duplicates and never archives one. This is the other half of that:
+ * a proposal you can refuse for good.
+ * Two settled transactions never change, so a wrong proposal about them would
+ * be offered again on every page load for ever. That is the difference from a
+ * cleared check ([ADR 030](../../../docs/decisions/030-a-cleared-check-is-proposed-never-cleared.md)),
+ * whose proposal expires by itself once the check clears.
+ * Keyed on the pair rather than on a row: these two are not each other, and both
+ * stay eligible to be proposed against anything else.
+ */
+model DuplicateDismissal {
+  id String @id @default(uuid()) @db.Uuid
+
+  /**
+   * Ordered by id, so one pair is one row whichever way it was read.
+   */
+  firstTransactionId  String @map("first_transaction_id") @db.Uuid
+  secondTransactionId String @map("second_transaction_id") @db.Uuid
+
+  first  Transaction @relation("dismissalFirst", fields: [firstTransactionId], references: [id], onDelete: Cascade)
+  second Transaction @relation("dismissalSecond", fields: [secondTransactionId], references: [id], onDelete: Cascade)
+
+  dismissedBy String? @map("dismissed_by") @db.Uuid
+  dismisser   User?   @relation(fields: [dismissedBy], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@unique([firstTransactionId, secondTransactionId])
+  @@map("duplicate_dismissals")
 }
 
 // ---------------------------------------------------------------------------
@@ -820,7 +859,6 @@ model CategorizationRule {
 
   /**
    * What the rule does, and exactly one of these is set.
-   *
    * `delegationId` categorizes; `setKind` says what the transaction *is* —
    * income or a transfer between owned accounts, both of which allocate to
    * nothing by definition. A database check constraint holds the "exactly one"
@@ -1165,7 +1203,6 @@ model BudgetSettings {
 
   /**
    * Whether an overdue recurring bill puts a pill in the page header.
-   *
    * The page itself is always there; this is only about being told. On by
    * default — a bill that stopped arriving is the reason to detect one at all.
    */

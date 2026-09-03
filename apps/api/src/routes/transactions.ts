@@ -18,7 +18,7 @@ import {
   DEFAULT_PAGE_SIZE,
 } from '../domain/transactions.js';
 import { confirmPair, findPairCandidates, unpair } from '../domain/pairing.js';
-import { findDuplicates } from '../domain/duplicates.js';
+import { dismissDuplicate, findDuplicates } from '../domain/duplicates.js';
 import { suggestDelegations } from '../domain/suggestions.js';
 import { booleanQuery, centsInLoose, centsOut, dateOut } from '../http/serialize.js';
 import { AUTHENTICATED } from '../plugins/auth.js';
@@ -71,6 +71,12 @@ const categorizeBodySchema = z.union([
   }),
   z.object({ delegationIds: z.array(z.string().uuid()).min(2) }),
 ]);
+
+/** Two rows a person has said are not the same charge. */
+const dismissDuplicateSchema = z.object({
+  firstId: z.string().uuid(),
+  secondId: z.string().uuid(),
+});
 
 const bulkCategorizeBodySchema = z.object({
   transactionIds: z.array(z.string().uuid()).min(1).max(500),
@@ -269,6 +275,49 @@ export const transactionRoutes: FastifyPluginCallback = (fastify, _options, done
         differentExternalIds: candidate.differentExternalIds,
       })),
     };
+  });
+
+  /**
+   * "These two are not the same charge."
+   *
+   * The other half of a proposal that is never acted on: one that can be refused
+   * for good. Two settled transactions never change, so without this the same
+   * wrong pair is offered again on every page load, for ever — which is what the
+   * first real run produced, and what stops anybody reading the panel.
+   *
+   * Recorded against the pair, so both rows stay eligible to be proposed against
+   * anything else.
+   */
+  fastify.post('/api/transactions/duplicates/dismiss', async (request, reply) => {
+    const body = dismissDuplicateSchema.parse(request.body);
+
+    if (body.firstId === body.secondId) {
+      return reply.code(400).send({
+        error: {
+          code: 'invalid_pair',
+          message: 'A transaction cannot be dismissed against itself.',
+        },
+      });
+    }
+
+    // Both have to exist. A dismissal naming a row that is not here would sit in
+    // the table for ever suppressing nothing.
+    const found = await prisma.transaction.count({
+      where: { id: { in: [body.firstId, body.secondId] } },
+    });
+    if (found !== 2) {
+      return reply.code(404).send({
+        error: { code: 'not_found', message: 'One of those transactions no longer exists.' },
+      });
+    }
+
+    await dismissDuplicate(prisma, {
+      firstId: body.firstId,
+      secondId: body.secondId,
+      userId: request.currentUser?.id ?? null,
+    });
+
+    return { ok: true };
   });
 
   fastify.get('/api/transactions/pair-candidates', async () => {

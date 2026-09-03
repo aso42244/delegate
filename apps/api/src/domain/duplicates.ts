@@ -1,4 +1,4 @@
-import type { Cents } from '@budget/shared';
+import { merchantKey, type Cents } from '@budget/shared';
 import type { Db } from '../db/client.js';
 
 /**
@@ -73,15 +73,75 @@ export interface DuplicateSide {
  *   accounts on one day is what a transfer looks like, and there is already a
  *   pairing proposal for that. Offering to archive half of one would be wrong in
  *   a way that is expensive to undo.
- * - **A different description is still a duplicate.** A feed rewords its own text
- *   between the pending and posted versions of one purchase, so requiring the
- *   descriptions to match would miss the commonest case of all.
+ * - **A different merchant is not a duplicate.** This bullet used to say the
+ *   opposite — that a feed rewords its own text between the pending and posted
+ *   versions of a purchase, so descriptions need not match. The first real run
+ *   showed what that costs: `ACH Payment Strike (Zap Solu` and `ACH Payment City
+ *   of Sioux Fa`, both $60.00, two days apart, read as one charge twice. That is
+ *   a household paying two bills in a week, which is not rare at all.
+ *
+ *   The reasoning was wrong in a specific way. A re-import — the case this
+ *   exists for — replays the feed's own rows, so the descriptions come back
+ *   **identical**. Nothing about that case needed the looseness, and the
+ *   looseness is what produced a false positive that could never go away.
+ *   `merchantKey` is the test, so a store number or a reference fragment still
+ *   does not split one merchant in two.
  *
  * A pair that came back with different external ids is marked, because that is
  * the re-import signature: a genuine second identical charge on one day — two
  * coffees, the same card — carries one id from the feed and appears once.
  */
+/**
+ * One pair, in the order the table stores it.
+ *
+ * Sorted by id so that "A and B are not each other" and "B and A are not each
+ * other" are the same row. The check constraint on the table enforces the same
+ * thing, so a row written any other way is refused rather than duplicated.
+ */
+export function dismissalPair(
+  first: string,
+  second: string,
+): { readonly firstTransactionId: string; readonly secondTransactionId: string } {
+  const [low, high] = [first, second].sort();
+  return { firstTransactionId: low!, secondTransactionId: high! };
+}
+
+/**
+ * Records that two rows are not the same charge.
+ *
+ * An upsert, because pressing the button twice is a thing that happens and the
+ * second press means the same as the first.
+ */
+export async function dismissDuplicate(
+  db: Db,
+  input: { readonly firstId: string; readonly secondId: string; readonly userId: string | null },
+): Promise<void> {
+  if (input.firstId === input.secondId) {
+    throw new Error('A transaction cannot be dismissed against itself.');
+  }
+
+  const pair = dismissalPair(input.firstId, input.secondId);
+  await db.duplicateDismissal.upsert({
+    where: { firstTransactionId_secondTransactionId: pair },
+    create: { ...pair, dismissedBy: input.userId },
+    update: {},
+  });
+}
+
 export async function findDuplicates(db: Db): Promise<DuplicateCandidate[]> {
+  /*
+   * Read first and held as a set of `a:b` keys. There are few of these by
+   * construction — a household refuses a handful of proposals, not thousands —
+   * and the alternative is a query per candidate pair inside the loop.
+   */
+  const dismissed = new Set(
+    (
+      await db.duplicateDismissal.findMany({
+        select: { firstTransactionId: true, secondTransactionId: true },
+      })
+    ).map((row) => `${row.firstTransactionId}:${row.secondTransactionId}`),
+  );
+
   const transactions = await db.transaction.findMany({
     where: { archivedAt: null },
     select: {
@@ -99,10 +159,17 @@ export async function findDuplicates(db: Db): Promise<DuplicateCandidate[]> {
     take: HISTORY_LIMIT,
   });
 
-  /** Account and amount together: everything else is a comparison within a bucket. */
+  /**
+   * Account, amount and merchant together: everything else is a comparison
+   * within a bucket.
+   *
+   * The merchant is part of the key rather than a filter inside the loop so that
+   * two different payees at the same amount never meet — which is the false
+   * positive this bucketing used to produce.
+   */
   const buckets = new Map<string, typeof transactions>();
   for (const transaction of transactions) {
-    const key = `${transaction.accountId}:${transaction.amountCents}`;
+    const key = `${transaction.accountId}:${transaction.amountCents}:${merchantKey(transaction.description)}`;
     const bucket = buckets.get(key) ?? [];
     bucket.push(transaction);
     buckets.set(key, bucket);
@@ -133,6 +200,14 @@ export async function findDuplicates(db: Db): Promise<DuplicateCandidate[]> {
           Math.abs(copy.postedAt.getTime() - original.postedAt.getTime()) / DAY_MS,
         );
         if (days > DUPLICATE_WINDOW_DAYS) continue;
+
+        /*
+         * Already refused. `continue` rather than `break`: this pair is settled,
+         * and the row may still be a genuine copy of a third one further down.
+         * Neither id is spent, so both stay eligible.
+         */
+        const pair = dismissalPair(original.id, copy.id);
+        if (dismissed.has(`${pair.firstTransactionId}:${pair.secondTransactionId}`)) continue;
 
         /*
          * Each row is named once. Three copies of one charge are two proposals
