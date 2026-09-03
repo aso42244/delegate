@@ -12,7 +12,13 @@ phase (`v0.1.0-phase1`, and so on).
   deployable until its image finishes building, and until then the registry
   answers `manifest unknown` — a true statement that reads like a typo. The
   script now names the likely cause, links the workflow, and lists the versions
-  that *are* published, asked of the registry itself.
+  that _are_ published, asked of the registry itself.
+
+- **An unsigned image and a wrongly signed one no longer share a message.** The
+  workflow pushes an image before it signs it, so a version is pullable a minute
+  or two before it is verifiable — and a deploy run in that window failed with
+  wording that reads like a supply-chain attack. The two are told apart now, and
+  an unrecognized verification failure is treated as the alarming kind.
 
 ## [0.50.0] — 2026-09-02
 
