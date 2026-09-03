@@ -443,13 +443,59 @@ MISSING
   # the Sigstore transparency log. There is no key for anyone to hold, leak or
   # rotate. The identity regexp pins it to this repository's CI workflow, so a
   # signature from any other workflow — or any other repository — fails.
-  if ! cosign verify \
+  #
+  # Two different failures wear the same words unless they are told apart, and
+  # they mean opposite things.
+  #
+  # **No signature at all** is ordinary and expected on the day a version is
+  # cut. The workflow pushes the image and signs it as a *separate* step
+  # afterwards, so a tag becomes pullable a minute or so before it becomes
+  # verifiable. A deploy started in that window resolves a digest, fails here,
+  # and — with the old wording — reads exactly like a supply-chain attack. This
+  # happened on v0.50.0.
+  #
+  # **A signature from somewhere else** is the thing this check exists for, and
+  # it keeps every alarming word.
+  #
+  # Anything unrecognized is treated as the second kind. A check that guesses
+  # "probably just a timing thing" when it does not understand the failure is not
+  # a check.
+  if ! VERIFY_OUTPUT=$(cosign verify \
     --certificate-oidc-issuer "$OIDC_ISSUER" \
     --certificate-identity-regexp "$WORKFLOW_IDENTITY" \
-    "$PINNED" >/dev/null 2>&1; then
-    echo 'error: the signature did not verify.' >&2
-    echo '       This image does not demonstrably come from this repository.' >&2
-    echo '       Not starting it.' >&2
+    "$PINNED" 2>&1); then
+
+    case "$VERIFY_OUTPUT" in
+      *'no matching signatures'*|*'no signatures found'*|*'MANIFEST_UNKNOWN'*|*'NAME_UNKNOWN'*)
+        cat >&2 <<SIGNING
+error: this image is not signed yet. Not starting it.
+
+  The publish workflow pushes the image first and signs it as a separate step,
+  so a version is pullable for a minute or two before it is verifiable. A deploy
+  run in that window lands exactly here.
+
+  Nothing has been changed. Wait for the run to finish, then run this again:
+
+    https://github.com/aso42244/delegate/actions/workflows/publish.yml
+
+  If that run finished long ago and this still says the image is unsigned, then
+  it is not a timing problem — do not pass --skip-verify to get past it.
+SIGNING
+        ;;
+      *)
+        cat >&2 <<MISMATCH
+error: the signature did not verify. Not starting it.
+
+  This image does not demonstrably come from this repository. That is what this
+  check exists to catch, and it is not the same as an image that has not been
+  signed yet — which says so in as many words.
+
+  cosign said:
+
+$(echo "$VERIFY_OUTPUT" | sed 's/^/    /')
+MISMATCH
+        ;;
+    esac
     exit 1
   fi
   echo '  → signed by this repository’s workflow.'

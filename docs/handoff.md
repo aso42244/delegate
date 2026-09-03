@@ -864,13 +864,25 @@ restarts. That is a smaller and more honest loop than the source route below: it
 deploys the artefact `npm run verify` was run against rather than recompiling it
 on a machine that has never run the tests.
 
-**A tag is not deployable the moment it is pushed.** The publish workflow takes
-about fifteen minutes — the arm64 half is emulated — and until it finishes the
-registry answers `manifest unknown`, which is a true statement that reads like a
-typo. This happened: a deploy command was handed over a minute after the tag, and
-run twice. Two things now: `deploy.sh` catches that failure and says the image
-may still be building, listing what _is_ published; and **do not hand over a
-deploy command until the workflow has finished.** Check with:
+**A tag is not deployable the moment it is pushed, and there are _two_ ready
+signals rather than one.** The publish workflow takes about fifteen minutes — the
+arm64 half is emulated — and it pushes the image before it signs it, as separate
+steps. So a version passes through two states on the way to deployable:
+
+1. **Not in the registry.** The pull fails with `manifest unknown`, which is true
+   and reads like a typo.
+2. **Pushed but not signed.** The pull succeeds and resolves a digest, then
+   `cosign verify` fails — which, worded carelessly, reads like a supply-chain
+   attack on a release cut four minutes ago.
+
+Both happened on `v0.50.0`, in that order, and the second is the worse failure
+because the obvious way past it looks like `--skip-verify`. `deploy.sh` now names
+each one and says the image may still be building; an unsigned image and a
+_wrongly_ signed one no longer share a message, and an unrecognized cosign
+failure is treated as the alarming kind rather than the benign one.
+
+**The rule: do not hand over a deploy command until the workflow run has
+completed** — not until the tag resolves, until the run is green. Check with:
 
 ```sh
 gh run list --workflow publish.yml --limit 1
