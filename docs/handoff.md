@@ -864,6 +864,18 @@ restarts. That is a smaller and more honest loop than the source route below: it
 deploys the artefact `npm run verify` was run against rather than recompiling it
 on a machine that has never run the tests.
 
+**A tag is not deployable the moment it is pushed.** The publish workflow takes
+about fifteen minutes — the arm64 half is emulated — and until it finishes the
+registry answers `manifest unknown`, which is a true statement that reads like a
+typo. This happened: a deploy command was handed over a minute after the tag, and
+run twice. Two things now: `deploy.sh` catches that failure and says the image
+may still be building, listing what _is_ published; and **do not hand over a
+deploy command until the workflow has finished.** Check with:
+
+```sh
+gh run list --workflow publish.yml --limit 1
+```
+
 **The source route still works** and is what every deploy before `v0.41.0` used.
 Keep it for an unreleased commit, or when the registry is not reachable. Two
 commands.

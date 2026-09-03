@@ -29,6 +29,33 @@ REPO_IMAGE='ghcr.io/aso42244/delegate'
 WORKFLOW_IDENTITY='^https://github\.com/aso42244/delegate/\.github/workflows/publish\.yml@refs/.+$'
 OIDC_ISSUER='https://token.actions.githubusercontent.com'
 
+# What the registry actually holds, so a failed deploy says what *would* work.
+#
+# Anonymous: the package is public, and a token here would be a credential kept
+# for a read anybody can do. Every step is allowed to fail — this runs only when
+# something has already gone wrong, and a curl that cannot reach GitHub must not
+# turn a clear error into a confusing one.
+published_tags() {
+  command -v curl >/dev/null 2>&1 || return 0
+
+  _token=$(curl -fsSL --max-time 10 \
+    "https://ghcr.io/token?scope=repository:aso42244/delegate:pull&service=ghcr.io" 2>/dev/null |
+    sed -n 's/.*"token":"\([^"]*\)".*/\1/p')
+  [ -n "$_token" ] || return 0
+
+  # One tag per line, versions only, newest first. `sort -V` is version-aware,
+  # which matters the moment there is a v0.9.0 and a v0.48.0: sorted as text,
+  # the older one wins.
+  _tags=$(curl -fsSL --max-time 10 -H "Authorization: Bearer $_token" \
+    "https://ghcr.io/v2/aso42244/delegate/tags/list" 2>/dev/null |
+    tr ',' '\n' | sed -n 's/.*"\(v[0-9][0-9.]*\)".*/\1/p' |
+    sort -Vr | head -n 5)
+  [ -n "$_tags" ] || return 0
+
+  echo 'Published versions, newest first:'
+  echo "$_tags" | sed 's/^/  /'
+}
+
 usage() {
   cat <<'USAGE'
 Usage: deploy.sh [--unpack TARBALL] [--build | --tag TAG | --digest sha256:… |
@@ -335,7 +362,47 @@ elif [ -n "$DIGEST" ]; then
 
 else
   echo "Resolving ${REPO_IMAGE}:${TAG} to a digest …"
-  docker pull "${REPO_IMAGE}:${TAG}" >/dev/null
+
+  # Captured rather than left to `set -e`, so that a failed pull can be
+  # explained instead of ending the script on the daemon's own three words.
+  # `manifest unknown` is what the registry says for a tag that is not there —
+  # which, on the day a version is cut, usually means the image is still being
+  # built rather than that anything is wrong.
+  if ! PULL_OUTPUT=$(docker pull "${REPO_IMAGE}:${TAG}" 2>&1); then
+    echo "$PULL_OUTPUT" >&2
+    echo >&2
+
+    case "$PULL_OUTPUT" in
+      *'manifest unknown'*|*'not found'*|*'manifest for'*)
+        echo "There is no ${TAG} in the registry." >&2
+        echo >&2
+        published_tags >&2
+        cat >&2 <<TAGHELP
+
+If you have just pushed this tag, its image is probably still being built —
+that takes about 15 minutes, because the arm64 half is emulated. Watch it at:
+
+  https://github.com/aso42244/delegate/actions/workflows/publish.yml
+
+Then run this command again. Nothing has been changed.
+TAGHELP
+        ;;
+      *'unauthorized'*|*'denied'*)
+        cat >&2 <<'AUTHHELP'
+The registry refused the request. If this package is private, sign in first:
+
+  docker login ghcr.io -u <github-username> --password-stdin
+AUTHHELP
+        ;;
+      *)
+        cat >&2 <<'NETHELP'
+The pull failed for a reason that is not a missing tag. If this machine has no
+route out, --image-file deploys from a `docker save` tarball and needs none.
+NETHELP
+        ;;
+    esac
+    exit 1
+  fi
 
   # RepoDigests is what the registry served, not what the local daemon made up.
   DIGEST=$(docker image inspect "${REPO_IMAGE}:${TAG}" \
@@ -343,9 +410,9 @@ else
     grep "^${REPO_IMAGE}@" | head -n 1 | cut -d@ -f2)
 
   [ -n "$DIGEST" ] || {
-    echo 'error: could not resolve that tag to a digest.' >&2
-    echo '       If this is a private package, sign in first:' >&2
-    echo '         docker login ghcr.io -u <github-username> --password-stdin' >&2
+    echo 'error: the tag pulled but carries no registry digest.' >&2
+    echo '       That happens with a locally built image sharing the name.' >&2
+    echo "       Remove it and try again:  docker image rm ${REPO_IMAGE}:${TAG}" >&2
     exit 1
   }
   PINNED="${REPO_IMAGE}@${DIGEST}"

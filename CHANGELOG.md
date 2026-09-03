@@ -6,7 +6,13 @@ phase (`v0.1.0-phase1`, and so on).
 
 ## [Unreleased]
 
-Nothing yet.
+### Changed
+
+- **`deploy.sh` says why a tag could not be pulled.** A version tag is not
+  deployable until its image finishes building, and until then the registry
+  answers `manifest unknown` — a true statement that reads like a typo. The
+  script now names the likely cause, links the workflow, and lists the versions
+  that *are* published, asked of the registry itself.
 
 ## [0.50.0] — 2026-09-02
 
