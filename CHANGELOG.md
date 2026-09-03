@@ -8,6 +8,13 @@ phase (`v0.1.0-phase1`, and so on).
 
 ### Added
 
+- **A suggested categorization asks before it files.** Pressing the suggestion
+  chip used to categorize immediately, with the evidence behind the guess — _14
+  of 15 before went to Groceries_ — hidden on a tooltip. It now opens a dialog
+  showing the charge and the count, with three answers: **Not {delegation}**,
+  **Confirm delegation**, and **Confirm and always**, which files it and writes
+  the rule so the next one arrives categorized.
+
 - **A bill can be told its charge arrived.** Third correction on the Bills row
   menu, beside "not a bill" and "give it a name": point at the payment, and the
   bill's last-seen date moves to it. Its cadence does not change — a link is a
@@ -24,6 +31,11 @@ phase (`v0.1.0-phase1`, and so on).
   Such a bill now reads **Paid, pending**, and raises no notification.
 
 ### Changed
+
+- **Rules has its own place in the sidebar**, out of Settings. A rule is written
+  while categorizing and read whenever a charge lands somewhere surprising —
+  the register's rhythm rather than something configured once, and it was three
+  clicks from the page it is about. `/settings/rules` still lands on it.
 
 - **The sidebar is a little wider** — 180px rather than the ~145px `w-fit` gave
   it, and well short of the 232px it started at. The content gutter beside it

@@ -16,6 +16,7 @@ import { DelegationPicker } from '../components/DelegationPicker.jsx';
 import { NewTransactionDialog } from '../components/NewTransactionDialog.jsx';
 import { DuplicateSuggestions } from '../components/DuplicateSuggestions.jsx';
 import { PairSuggestions } from '../components/PairSuggestions.jsx';
+import { ConfirmSuggestionDialog } from '../components/ConfirmSuggestionDialog.jsx';
 import { RuleFromTransactionDialog } from '../components/RuleFromTransactionDialog.jsx';
 import { MatchCheckDialog } from '../components/MatchCheckDialog.jsx';
 import { TransactionRowMenu } from '../components/TransactionRowMenu.jsx';
@@ -59,7 +60,7 @@ function AllocationSummary({ transaction }: { transaction: TransactionDto }): Re
 }
 
 /**
- * Accepting the suggestion, in one press.
+ * The suggestion, and the way to act on it.
  *
  * The picker carries the same suggestion as its first entry, which is the
  * keyboard path; this is the one for an eye running down the queue, so that
@@ -68,20 +69,27 @@ function AllocationSummary({ transaction }: { transaction: TransactionDto }): Re
  * Two or three words on the face and the whole sentence on hover or focus —
  * the same division a header pill makes, for the same reason: the column is
  * 256px wide and the count is what a reader wants only once they doubt it.
+ *
+ * **It asks rather than files.** Pressing it used to categorize immediately,
+ * which is right for somebody who trusts the queue and wrong for the moment they
+ * do not — and the evidence behind the guess lived on a `title`, invisible to
+ * anybody not hovering. The press now opens a dialog that shows the charge and
+ * the count, and offers the three answers a person actually means, including
+ * writing the rule that stops the question being asked again.
  */
 function SuggestionButton({
   suggestion,
-  onAccept,
+  onOpen,
 }: {
   readonly suggestion: SuggestionDto;
-  readonly onAccept: () => void;
+  readonly onOpen: () => void;
 }): ReactNode {
   const evidence = `${suggestion.matchCount} of ${suggestion.totalCount} before went to ${suggestion.delegationName}`;
 
   return (
     <button
       type="button"
-      onClick={onAccept}
+      onClick={onOpen}
       title={evidence}
       aria-label={`Categorize as ${suggestion.delegationName} — ${evidence}`}
       className="max-w-[50%] shrink-0 truncate rounded border border-accent bg-accent-soft px-2 py-0.5 text-quiet font-semibold text-accent"
@@ -167,6 +175,11 @@ export function Transactions(): ReactNode {
   const [picking, setPicking] = useState<TransactionDto | null>(null);
   /** The row a rule is being built from, if any. */
   const [ruling, setRuling] = useState<TransactionDto | null>(null);
+  /** The suggestion being confirmed, with the row it is about. */
+  const [confirming, setConfirming] = useState<{
+    readonly transaction: TransactionDto;
+    readonly suggestion: SuggestionDto;
+  } | null>(null);
 
   const query = {
     ...filters,
@@ -550,12 +563,7 @@ export function Transactions(): ReactNode {
                         {suggestion && transaction.allocations.length === 0 && (
                           <SuggestionButton
                             suggestion={suggestion}
-                            onAccept={() =>
-                              categorize.mutate({
-                                id: transaction.id,
-                                delegationId: suggestion.delegationId,
-                              })
-                            }
+                            onOpen={() => setConfirming({ transaction, suggestion })}
                           />
                         )}
                         {/* `min-w-0`: a flex item defaults to its content width,
@@ -709,6 +717,51 @@ export function Transactions(): ReactNode {
         />
       )}
       {matching && <MatchCheckDialog transaction={matching} onClose={() => setMatching(null)} />}
+
+      {confirming && (
+        <ConfirmSuggestionDialog
+          transaction={confirming.transaction}
+          suggestion={confirming.suggestion}
+          onConfirm={() => {
+            categorize.mutate({
+              id: confirming.transaction.id,
+              delegationId: confirming.suggestion.delegationId,
+            });
+            setConfirming(null);
+          }}
+          /*
+           * Files it, then hands the same row to the rule dialog.
+           *
+           * The row is passed with the allocation written in rather than
+           * re-read: `RuleFromTransactionDialog` takes the delegation from
+           * `allocations[0]`, and the list this row came from has not been
+           * refetched yet — the mutation was fired a line above. Waiting for the
+           * refetch to open the second dialog would put a visible gap between
+           * one press and the thing it asked for.
+           */
+          onConfirmAndRule={() => {
+            const { transaction, suggestion } = confirming;
+            categorize.mutate({ id: transaction.id, delegationId: suggestion.delegationId });
+            setRuling({
+              ...transaction,
+              allocations: [
+                {
+                  id: 'pending',
+                  delegationId: suggestion.delegationId,
+                  amountCents: transaction.amountCents,
+                  delegation: {
+                    id: suggestion.delegationId,
+                    name: suggestion.delegationName,
+                    archivedAt: null,
+                  },
+                },
+              ],
+            });
+            setConfirming(null);
+          }}
+          onClose={() => setConfirming(null)}
+        />
+      )}
 
       {/* The delegation comes from the row itself: the rule files future
           matches where this one was filed, which is the whole of what

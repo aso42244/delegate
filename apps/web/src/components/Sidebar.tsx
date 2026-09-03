@@ -53,6 +53,19 @@ export function Icon({ name }: { readonly name: PageIcon }): ReactNode {
         <path d="M8 7.5h4M8 10.5h4" />
       </>
     ),
+    /*
+     * A funnel: things go in at the top and come out sorted.
+     *
+     * Not a gear, which is what a settings icon looks like and is what this
+     * moved away from being. Not a filter's usual funnel-with-a-handle either,
+     * because the register's own filters use that shape and two meanings for one
+     * drawing is the mistake the chip vocabulary exists to prevent.
+     */
+    rules: (
+      <>
+        <path d="M3 4.5h14l-5.5 6v6l-3-2v-4z" />
+      </>
+    ),
     // Bars of unequal height: a comparison.
     insights: (
       <>
@@ -116,6 +129,7 @@ export type PageIcon =
   | 'budget'
   | 'transactions'
   | 'bills'
+  | 'rules'
   | 'utilities'
   | 'insights'
   | 'settings'
@@ -125,6 +139,15 @@ export type PageIcon =
 export const PAGES = [
   { to: '/', label: 'Budget', icon: 'budget', end: true },
   { to: '/transactions', label: 'Transactions', icon: 'transactions', end: false },
+  /*
+   * Beside Transactions rather than inside Settings.
+   *
+   * A rule is written while categorizing, reordered when one shadows another,
+   * and read whenever a charge lands somewhere surprising. That is the register's
+   * rhythm, not a thing configured once — and under Settings it was three clicks
+   * from the page it is about.
+   */
+  { to: '/rules', label: 'Rules', icon: 'rules', end: false },
   { to: '/bills', label: 'Bills', icon: 'bills', end: false },
   { to: '/utilities', label: 'Utilities', icon: 'utilities', end: false },
   { to: '/insights', label: 'Insights', icon: 'insights', end: false },

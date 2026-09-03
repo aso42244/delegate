@@ -154,11 +154,14 @@ test('Archived says so plainly when there is nothing in it', async ({ signedIn }
  * Twelve tabs became eight, and half of the twelve held a single card. A tab row
  * that long is a list of words to read rather than a set of places to go.
  */
-test('the sections are eight, and every old route still lands somewhere', async ({ signedIn }) => {
+test('the sections are seven, and every old route still lands somewhere', async ({ signedIn }) => {
   await signedIn.goto('/settings/sync');
 
+  // Seven since Rules left for the sidebar: a rule is written while
+  // categorizing and read when a charge lands somewhere surprising, which is
+  // the register's rhythm rather than a thing configured once.
   const tabs = signedIn.getByRole('navigation', { name: 'Settings sections' });
-  await expect(tabs.getByRole('link')).toHaveCount(8);
+  await expect(tabs.getByRole('link')).toHaveCount(7);
 
   // A section that moves is a bookmark that breaks, a link in somebody's notes
   // that breaks, and a test that fails for a reason unrelated to what it tests.
@@ -174,6 +177,10 @@ test('the sections are eight, and every old route still lands somewhere', async 
     await signedIn.goto(`/settings/${was}`);
     await expect(signedIn).toHaveURL(new RegExp(`/settings/${now}$`));
   }
+
+  // Rules left Settings entirely, so its old path lands outside it.
+  await signedIn.goto('/settings/rules');
+  await expect(signedIn).toHaveURL(/\/rules$/);
 });
 
 test('the section list can move to a rail beside the sidebar', async ({ signedIn }) => {

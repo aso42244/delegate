@@ -24,7 +24,6 @@ export const SECTIONS = [
   { to: 'sync', label: 'Sync' },
   { to: 'accounts', label: 'Accounts' },
   { to: 'budget', label: 'Budget' },
-  { to: 'rules', label: 'Rules' },
   { to: 'holdings', label: 'Holdings' },
   { to: 'access', label: 'Access' },
   { to: 'display', label: 'Display' },
