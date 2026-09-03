@@ -11,7 +11,7 @@ import { SetUpTwoFactor } from './pages/SetUpTwoFactor.jsx';
 import { MainBudget } from './pages/MainBudget.jsx';
 import { AccountsSection } from './pages/settings/Accounts.jsx';
 import { ArchivedSection } from './pages/settings/Archived.jsx';
-import { RulesSection } from './pages/settings/Rules.jsx';
+import { Rules } from './pages/Rules.jsx';
 import { DisplaySection } from './pages/settings/Display.jsx';
 import { AccessSection, BudgetGroupSection, HoldingsSection } from './pages/settings/Sections.jsx';
 import { SettingsLayout } from './pages/settings/SettingsLayout.jsx';
@@ -139,6 +139,7 @@ export function App(): ReactNode {
           <Route index element={<MainBudget />} />
           <Route path="transactions" element={<Transactions />} />
           <Route path="bills" element={<Bills />} />
+          <Route path="rules" element={<Rules />} />
           <Route path="utilities" element={<Utilities />} />
           <Route path="insights" element={<Insights />} />
           <Route path="settings" element={<SettingsLayout />}>
@@ -146,7 +147,6 @@ export function App(): ReactNode {
             <Route path="sync" element={<SyncSection />} />
             <Route path="accounts" element={<AccountsSection />} />
             <Route path="budget" element={<BudgetGroupSection />} />
-            <Route path="rules" element={<RulesSection />} />
             <Route path="holdings" element={<HoldingsSection />} />
             <Route path="access" element={<AccessSection />} />
             <Route path="display" element={<DisplaySection />} />
@@ -162,6 +162,8 @@ export function App(): ReactNode {
               `security`, which became Tor when two-factor moved to Users, and it
               has been redirecting quietly ever since.
             */}
+            {/* Rules left Settings for the sidebar; the old path still lands. */}
+            <Route path="rules" element={<Navigate to="/rules" replace />} />
             <Route path="security" element={<Navigate to="/settings/access" replace />} />
             <Route path="users" element={<Navigate to="/settings/access" replace />} />
             <Route path="tor" element={<Navigate to="/settings/access" replace />} />

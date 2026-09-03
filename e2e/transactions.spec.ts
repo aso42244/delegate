@@ -383,11 +383,62 @@ test('a merchant filed twice is suggested on the third', async ({ signedIn, api 
 
   await suggestion.click();
 
+  /*
+   * It asks now rather than filing on the press. The evidence that was on a
+   * `title` — invisible to anybody not hovering — is on screen, and the three
+   * answers are the three things a person means.
+   */
+  await expect(
+    signedIn.getByRole('heading', { name: 'File this where the last ones went?' }),
+  ).toBeVisible();
+  await expect(signedIn.getByRole('button', { name: 'Not Grocery' })).toBeVisible();
+  await signedIn.getByRole('button', { name: 'Confirm delegation' }).click();
+
   // Assert the write landed before doing anything else: the row leaving the
   // queue is the signal, and navigating before it does makes this test lie.
   await expect(signedIn.getByRole('button', { name: /Categorize as Grocery/ })).toHaveCount(0);
   await signedIn.goto('/');
   await expect(signedIn.getByRole('button', { name: 'Grocery balance' })).toContainText('-$117.20');
+});
+
+/**
+ * Confirming, and stopping the question being asked again.
+ *
+ * The third answer is the one that changes anything twice: it files this charge
+ * and writes the rule, so the next one arrives categorized. Offered at the
+ * moment the decision is being confirmed rather than buried in a row menu,
+ * because that is when somebody knows it repeats.
+ */
+test('a suggestion can be confirmed and turned into a rule at once', async ({ signedIn, api }) => {
+  const accountId = await makeAccount('Everyday Checking', 'asset', 500000n);
+  const grocery = await makeDelegation(api, 'Grocery');
+
+  for (const store of ['#123', '#4471']) {
+    const filed = await makeTransaction(api, accountId, '-4210', `KROGER ${store} CINCINNATI`);
+    await api.post(`/api/transactions/${filed}/categorize`, { data: { delegationId: grocery } });
+  }
+  await makeTransaction(api, accountId, '-3300', 'KROGER #9982 CINCINNATI');
+
+  await signedIn.getByRole('link', { name: 'Transactions', exact: true }).click();
+  await signedIn.getByRole('button', { name: /Categorize as Grocery — 2 of 2 before/ }).click();
+  await signedIn.getByRole('button', { name: 'Confirm and always' }).click();
+
+  // Straight into the rule dialog, on the same row, filing into the delegation
+  // just confirmed — and matching on the merchant rather than on the whole
+  // description, which would match nothing but the row it came from.
+  const rule = signedIn.getByRole('dialog', { name: /Create a rule from/ });
+  await expect(rule).toContainText('Files future matches into Grocery.');
+  await expect(rule.getByLabel('When the description contains')).toHaveValue('KROGER');
+  await rule.getByRole('button', { name: 'Add' }).click();
+  await expect(signedIn.getByRole('dialog')).toHaveCount(0);
+
+  // Both happened: the charge is filed, and the rule exists.
+  await expect(signedIn.getByRole('button', { name: /Categorize as Grocery/ })).toHaveCount(0);
+  await signedIn.getByRole('link', { name: 'Rules', exact: true }).click();
+  // `exact`: the card below the title is "Auto-categorization rules", and a
+  // substring match resolves to both.
+  await expect(signedIn.getByRole('heading', { name: 'Rules', exact: true })).toBeVisible();
+  await expect(signedIn.getByText('KROGER')).toBeVisible();
 });
 
 /**
