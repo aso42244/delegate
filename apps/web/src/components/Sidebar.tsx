@@ -215,8 +215,13 @@ export function Sidebar({ appName }: { appName: string }): ReactNode {
    * word. And the app name and the signed-in address are capped and truncated,
    * because `w-fit` takes the widest child and an email address is wider than
    * anything anybody navigates to.
+   *
+   * With a floor under it. `w-fit` alone is about 145px, which is right and
+   * reads as cramped — the labels sit against the edge with nothing around
+   * them. `min-w-sidebar` is 180px: more than the content strictly needs, less
+   * than the 232px this started at.
    */
-  const width = collapsed ? 'w-rail' : 'w-fit min-w-rail';
+  const width = collapsed ? 'w-rail' : 'w-fit min-w-sidebar';
 
   return (
     <nav

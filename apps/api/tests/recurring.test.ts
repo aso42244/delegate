@@ -6,9 +6,12 @@ import { prisma } from '../src/db/client.js';
 import { categorizeTransaction } from '../src/domain/allocations.js';
 import {
   findRecurringBills,
+  linkChargeToBill,
+  linkedCharges,
   listHiddenBills,
   overdueBills,
   setBillOverride,
+  unlinkChargeFromBill,
 } from '../src/domain/recurring.js';
 import {
   makeAccount,
@@ -473,5 +476,222 @@ describe('the route', () => {
     // ADR 002: a JSON number cannot hold large cent values exactly.
     expect(bill?.typicalAmountCents).toBe('11800');
     expect(bill?.cadence).toBe('Monthly');
+  });
+});
+
+/**
+ * A bill that has been paid and does not know it.
+ *
+ * Both of these come from the first run against real data. A life insurance
+ * payment left the account and sat in the register while its bill read
+ * **Overdue · 5d**, because the charge was still pending — and pending charges
+ * are excluded from the detection on purpose, since their date moves when they
+ * settle. Excluding them from the arithmetic is right; excluding them from the
+ * question "has this arrived?" was not.
+ */
+describe('a charge that has arrived but not settled', () => {
+  it('stops a bill reading overdue, and says what it is instead', async () => {
+    const accountId = await checking();
+    // Monthly on the 28th, last seen in July: expected 27 August, and by
+    // 2 September it is six days late.
+    for (const day of ['2026-05-28', '2026-06-28', '2026-07-28']) {
+      await charge(accountId, day, 3096n, 'ACH Payment +Lincoln Nationa EDI PYMNTS');
+    }
+
+    const [before] = await findRecurringBills(prisma, ZONE, NOW);
+    expect(before?.status).toBe('overdue');
+
+    await makeTransaction({
+      accountId,
+      amountCents: -3096n,
+      description: 'ACH Payment +Lincoln Nationa EDI PYMNTS',
+      postedAt: new Date('2026-09-01T15:00:00Z'),
+      pending: true,
+    });
+
+    const [after] = await findRecurringBills(prisma, ZONE, NOW);
+    expect(after?.status).toBe('arrived');
+    expect(after?.daysLate).toBe(0);
+    expect(after?.pendingSince?.toISOString().slice(0, 10)).toBe('2026-09-01');
+  });
+
+  /**
+   * The reason pending charges were excluded in the first place, still true.
+   *
+   * A pending date moves when it settles, so letting one into the arithmetic
+   * would shift the prediction by however long the feed took.
+   */
+  it('does not move the schedule or the next expected date', async () => {
+    const accountId = await checking();
+    for (const day of ['2026-05-28', '2026-06-28', '2026-07-28']) {
+      await charge(accountId, day, 3096n, 'ACH Payment +Lincoln Nationa EDI PYMNTS');
+    }
+    const [before] = await findRecurringBills(prisma, ZONE, NOW);
+
+    await makeTransaction({
+      accountId,
+      amountCents: -3096n,
+      description: 'ACH Payment +Lincoln Nationa EDI PYMNTS',
+      postedAt: new Date('2026-09-01T15:00:00Z'),
+      pending: true,
+    });
+
+    const [after] = await findRecurringBills(prisma, ZONE, NOW);
+    expect(after?.cadence).toBe(before?.cadence);
+    expect(after?.intervalDays).toBe(before?.intervalDays);
+    expect(after?.expectedNextAt.getTime()).toBe(before?.expectedNextAt.getTime());
+  });
+
+  it('is not announced, because nothing needs doing about it', async () => {
+    const accountId = await checking();
+    for (const day of ['2026-05-28', '2026-06-28', '2026-07-28']) {
+      await charge(accountId, day, 3096n, 'ACH Payment +Lincoln Nationa EDI PYMNTS');
+    }
+    await makeTransaction({
+      accountId,
+      amountCents: -3096n,
+      description: 'ACH Payment +Lincoln Nationa EDI PYMNTS',
+      postedAt: new Date('2026-09-01T15:00:00Z'),
+      pending: true,
+    });
+
+    expect(overdueBills(await findRecurringBills(prisma, ZONE, NOW))).toEqual([]);
+  });
+
+  /**
+   * A pending row older than the last settled charge is the tail of a period
+   * already accounted for — usually one caught mid-settlement. Counting it would
+   * mark every bill as arrived for ever.
+   */
+  it('ignores a pending charge older than the last settled one', async () => {
+    const accountId = await checking();
+    for (const day of ['2026-05-28', '2026-06-28', '2026-07-28']) {
+      await charge(accountId, day, 3096n, 'ACH Payment +Lincoln Nationa EDI PYMNTS');
+    }
+    await makeTransaction({
+      accountId,
+      amountCents: -3096n,
+      description: 'ACH Payment +Lincoln Nationa EDI PYMNTS',
+      postedAt: new Date('2026-07-27T15:00:00Z'),
+      pending: true,
+    });
+
+    const [bill] = await findRecurringBills(prisma, ZONE, NOW);
+    expect(bill?.status).toBe('overdue');
+  });
+});
+
+/**
+ * Saying so by hand, for what no threshold reaches.
+ *
+ * A merchant that renames itself between charges gets a new key, so its old bill
+ * goes overdue for ever while the new one has too little history to be detected
+ * at all. Only the household knows they are the same bill.
+ */
+describe('attaching a charge to a bill', () => {
+  it('moves the last-seen date and clears the overdue', async () => {
+    const accountId = await checking();
+    for (const day of ['2026-05-28', '2026-06-28', '2026-07-28']) {
+      await charge(accountId, day, 3096n, 'LINCOLN LIFE PREMIUM');
+    }
+    // The same bill, under the name the insurer changed to.
+    const renamed = await charge(accountId, '2026-08-31', 3096n, 'PROTECTIVE LIFE PREMIUM');
+
+    const [before] = await findRecurringBills(prisma, ZONE, NOW);
+    expect(before?.status).toBe('overdue');
+
+    await linkChargeToBill(prisma, {
+      key: before!.key,
+      transactionId: renamed.id,
+      userId: null,
+    });
+
+    const [after] = await findRecurringBills(prisma, ZONE, NOW);
+    expect(after?.status).not.toBe('overdue');
+    expect(after?.lastPostedAt.toISOString().slice(0, 10)).toBe('2026-08-31');
+    expect(after?.linkedCount).toBe(1);
+  });
+
+  /**
+   * The reason a link is kept out of the interval arithmetic.
+   *
+   * A charge three days after the last one puts a three-day gap in a monthly
+   * history. Fitted, that gap fails the tolerance test and the bill disappears
+   * from the page — a spectacularly unhelpful answer to "this did arrive".
+   */
+  it('never changes the cadence, and never drops the bill off the page', async () => {
+    const accountId = await checking();
+    for (const day of ['2026-05-28', '2026-06-28', '2026-07-28']) {
+      await charge(accountId, day, 3096n, 'LINCOLN LIFE PREMIUM');
+    }
+    const nearby = await charge(accountId, '2026-08-31', 3096n, 'PROTECTIVE LIFE PREMIUM');
+
+    const [before] = await findRecurringBills(prisma, ZONE, NOW);
+    await linkChargeToBill(prisma, { key: before!.key, transactionId: nearby.id, userId: null });
+
+    const after = await findRecurringBills(prisma, ZONE, NOW);
+    expect(after).toHaveLength(1);
+    expect(after[0]?.cadence).toBe('Monthly');
+    expect(after[0]?.intervalDays).toBe(before?.intervalDays);
+  });
+
+  it('keeps the bill named after the merchant, not the charge attached to it', async () => {
+    const accountId = await checking();
+    for (const day of ['2026-05-28', '2026-06-28', '2026-07-28']) {
+      await charge(accountId, day, 3096n, 'LINCOLN LIFE PREMIUM');
+    }
+    const renamed = await charge(accountId, '2026-08-31', 3096n, 'PROTECTIVE LIFE PREMIUM');
+
+    const [before] = await findRecurringBills(prisma, ZONE, NOW);
+    await linkChargeToBill(prisma, { key: before!.key, transactionId: renamed.id, userId: null });
+
+    const [after] = await findRecurringBills(prisma, ZONE, NOW);
+    expect(after?.feedName).toBe('LINCOLN LIFE PREMIUM');
+  });
+
+  it('is undone, and the bill goes back to what the register said', async () => {
+    const accountId = await checking();
+    for (const day of ['2026-05-28', '2026-06-28', '2026-07-28']) {
+      await charge(accountId, day, 3096n, 'LINCOLN LIFE PREMIUM');
+    }
+    const renamed = await charge(accountId, '2026-08-31', 3096n, 'PROTECTIVE LIFE PREMIUM');
+    const [before] = await findRecurringBills(prisma, ZONE, NOW);
+
+    await linkChargeToBill(prisma, { key: before!.key, transactionId: renamed.id, userId: null });
+    await unlinkChargeFromBill(prisma, renamed.id);
+
+    const [after] = await findRecurringBills(prisma, ZONE, NOW);
+    expect(after?.status).toBe('overdue');
+    expect(after?.linkedCount).toBe(0);
+  });
+
+  it('refuses income and transfers, whatever they are filed as', async () => {
+    const accountId = await checking();
+    const income = await makeTransaction({
+      accountId,
+      amountCents: 320000n,
+      description: 'ACME PAYROLL',
+      postedAt: new Date('2026-09-01T15:00:00Z'),
+      kind: 'income',
+    });
+
+    await expect(
+      linkChargeToBill(prisma, {
+        key: 'lincoln life premium',
+        transactionId: income.id,
+        userId: null,
+      }),
+    ).rejects.toThrow(/ordinary spending/);
+  });
+
+  it('belongs to one bill at a time, so attaching it again moves it', async () => {
+    const accountId = await checking();
+    const only = await charge(accountId, '2026-09-01', 3096n, 'SOMETHING');
+
+    await linkChargeToBill(prisma, { key: 'bill one', transactionId: only.id, userId: null });
+    await linkChargeToBill(prisma, { key: 'bill two', transactionId: only.id, userId: null });
+
+    expect(await linkedCharges(prisma, 'bill one')).toEqual([]);
+    expect(await linkedCharges(prisma, 'bill two')).toHaveLength(1);
   });
 });

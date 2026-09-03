@@ -76,7 +76,12 @@ function AppShell({ appName }: { appName: string }): ReactNode {
         ref={setScroller}
         // The bottom padding is the tab bar's height plus its safe-area inset,
         // so the last row of a table is never underneath it.
-        className="flex-1 overflow-auto px-4 py-6 pb-[calc(3.5rem+env(safe-area-inset-bottom,0px)+1rem)] sm:px-6 sm:py-8 sm:pb-8 md:px-12"
+        /*
+         * `md:px-8` rather than `px-12`. design.md §4 puts the content gutter at
+         * 28–36px; 48 was over it, and beside a narrow sidebar it read as a gap
+         * between the page and the navigation rather than as breathing room.
+         */
+        className="flex-1 overflow-auto px-4 py-6 pb-[calc(3.5rem+env(safe-area-inset-bottom,0px)+1rem)] sm:px-6 sm:py-8 sm:pb-8 md:px-8"
       >
         {/* Nothing above the page any more. Every notification is a pill in the
             page header now, which `PageHeader` renders — so they still reach

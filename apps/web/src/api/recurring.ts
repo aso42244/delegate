@@ -8,8 +8,11 @@ import { api } from './client.js';
  * `lapsed` is the one worth understanding: a bill so far past due that it has
  * probably stopped rather than slipped. It is shown and never announced, so a
  * cancelled service does not shout for ever.
+ *
+ * `arrived` means the charge is in the register and has not settled. It exists
+ * because a bill that has plainly been paid must never read as overdue.
  */
-export type BillStatus = 'expected' | 'due' | 'overdue' | 'lapsed';
+export type BillStatus = 'expected' | 'arrived' | 'due' | 'overdue' | 'lapsed';
 
 export interface BillDto {
   readonly key: string;
@@ -27,9 +30,34 @@ export interface BillDto {
   readonly expectedNextAt: string;
   readonly status: BillStatus;
   readonly daysLate: number;
+  /** When the unsettled charge arrived. Set on an `arrived` bill, null otherwise. */
+  readonly pendingSince: string | null;
+  /** How many charges were attached to this bill by hand. */
+  readonly linkedCount: number;
   readonly delegationId: string | null;
   readonly delegationName: string | null;
   readonly accountName: string | null;
+}
+
+/** A charge that could be the one a bill is waiting for. */
+export interface LinkCandidateDto {
+  readonly id: string;
+  readonly description: string;
+  readonly postedAt: string;
+  readonly amountCents: string;
+  readonly pending: boolean;
+  readonly accountName: string;
+  /** Attaching it here takes it off whatever bill it is on now. */
+  readonly linkedElsewhere: boolean;
+}
+
+/** A charge already attached to a bill by hand. */
+export interface BillLinkDto {
+  readonly transactionId: string;
+  readonly description: string;
+  readonly postedAt: string;
+  readonly amountCents: string;
+  readonly pending: boolean;
 }
 
 /** A merchant somebody has said is not a bill, and what it was called then. */
@@ -55,4 +83,36 @@ export const recurringApi = {
     hidden?: boolean;
     displayName?: string | null;
   }) => api.post<{ ok: boolean }>('/api/recurring/overrides', input),
+
+  /**
+   * Charges that could be the one this bill is waiting for, nearest what was
+   * expected first. A search reaches the whole register; without one the offer
+   * is the window around the expected date.
+   */
+  linkCandidates: (input: {
+    expectedNextAt: string;
+    typicalAmountCents: string;
+    search?: string;
+  }) => {
+    const params = new URLSearchParams({
+      expectedNextAt: input.expectedNextAt,
+      typicalAmountCents: input.typicalAmountCents,
+    });
+    if (input.search !== undefined && input.search !== '') params.set('search', input.search);
+    return api.get<{ candidates: readonly LinkCandidateDto[] }>(
+      `/api/recurring/link-candidates?${params.toString()}`,
+    );
+  },
+
+  links: (key: string) =>
+    api.get<{ links: readonly BillLinkDto[] }>(
+      `/api/recurring/links?key=${encodeURIComponent(key)}`,
+    ),
+
+  /** "That charge is this bill." Moves the last-seen date, never the cadence. */
+  link: (key: string, transactionId: string) =>
+    api.post<{ ok: boolean }>('/api/recurring/links', { key, transactionId }),
+
+  unlink: (transactionId: string) =>
+    api.post<{ ok: boolean }>('/api/recurring/unlink', { transactionId }),
 };

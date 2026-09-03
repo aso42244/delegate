@@ -245,3 +245,55 @@ test('a renamed bill is still found by what the bank calls it', async ({ signedI
   await signedIn.getByLabel('Search bills').fill('siouxfalls');
   await expect(signedIn.getByText('Water & Sewer')).toBeVisible();
 });
+
+/**
+ * Saying so by hand, for the case no threshold reaches.
+ *
+ * A merchant that renames itself between charges gets a new merchant key, so its
+ * old bill goes overdue for ever while the new one has too little history to be
+ * detected at all. Only the household knows they are the same bill.
+ *
+ * The sibling case — a charge that has arrived but is still *pending* — is
+ * covered in the integration tests, because a pending row cannot be created
+ * through the API a person uses.
+ */
+test('a charge can be attached to a bill, and detached again', async ({ signedIn, api }) => {
+  const accountId = await makeAccount('Frontier Checking', 'asset', 500000n);
+  await monthlyBill(api, accountId, overdueMonths(), '-3096', 'LINCOLN LIFE PREMIUM');
+
+  // The same bill under the insurer's new name — on its own, too little history
+  // to be detected as anything. Yesterday, so it is inside the window of charges
+  // the dialog offers around the date this bill was expected.
+  const yesterday = new Date();
+  yesterday.setUTCDate(yesterday.getUTCDate() - 1);
+  await charge(
+    api,
+    accountId,
+    yesterday.toISOString().slice(0, 10),
+    '-3096',
+    'PROTECTIVE LIFE PREMIUM',
+  );
+
+  await openBills(signedIn);
+  await expect(signedIn.getByText(/Overdue/)).toBeVisible();
+
+  await signedIn.getByRole('button', { name: 'Options for LINCOLN LIFE PREMIUM' }).click();
+  await signedIn.getByRole('menuitem', { name: /^The charge did arrive/ }).click();
+  await signedIn.getByRole('button', { name: /^Attach PROTECTIVE LIFE PREMIUM/ }).click();
+
+  /*
+   * Not overdue any more — and the bill keeps the merchant's own name rather
+   * than taking the name of the charge attached to it, which would rename the
+   * row to the thing that went wrong.
+   */
+  await expect(signedIn.getByText(/Overdue/)).toHaveCount(0);
+  await expect(signedIn.getByText('LINCOLN LIFE PREMIUM')).toBeVisible();
+
+  // And it comes back off.
+  await signedIn.getByRole('button', { name: 'Options for LINCOLN LIFE PREMIUM' }).click();
+  await signedIn.getByRole('menuitem', { name: /^The charge did arrive/ }).click();
+  await signedIn.getByRole('button', { name: /^Detach PROTECTIVE LIFE PREMIUM/ }).click();
+  await signedIn.getByRole('button', { name: 'Done' }).click();
+
+  await expect(signedIn.getByText(/Overdue/)).toBeVisible();
+});
