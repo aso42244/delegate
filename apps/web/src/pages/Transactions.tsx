@@ -284,6 +284,20 @@ export function Transactions(): ReactNode {
     onError,
   });
 
+  const bulkArchive = useMutation({
+    mutationFn: () => transactionsApi.bulkArchive([...selected]),
+    onSuccess: async (result) => {
+      setSelected(new Set());
+      if (result.failures.length > 0) {
+        setProblem(
+          `${result.archived} archived. ${result.failures.length} could not be: ${result.failures[0]?.reason ?? ''}`,
+        );
+      }
+      await refresh();
+    },
+    onError,
+  });
+
   const bulk = useMutation({
     mutationFn: (delegationId: string) =>
       transactionsApi.bulkCategorize([...selected], delegationId),
@@ -387,6 +401,13 @@ export function Transactions(): ReactNode {
               onChoose={(delegationId) => bulk.mutate(delegationId)}
             />
           </div>
+          {/* Archiving reverses whatever the rows moved and hides nothing —
+              ADR: nothing is ever hard-deleted. It sits beside the picker
+              rather than in a menu because clearing a fortnight of stand-in
+              rows one at a time is how somebody decides to leave them there. */}
+          <Button variant="ghost" onClick={() => bulkArchive.mutate()}>
+            Archive selection
+          </Button>
           <Button variant="ghost" onClick={() => setSelected(new Set())}>
             Clear
           </Button>

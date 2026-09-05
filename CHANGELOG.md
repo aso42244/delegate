@@ -22,13 +22,49 @@ phase (`v0.1.0-phase1`, and so on).
   only balance there is. Deriving it means no state to set, none to forget to
   clear, and no way for the two to disagree.
 
-  The row says so: a new **`a`** chip, *Adjusted by transactions entered by
-  hand*. Yellow rather than quiet, unlike `s` beside it — stale says a figure is
+  The row says so: a new **`a`** chip, _Adjusted by transactions entered by
+  hand_. Yellow rather than quiet, unlike `s` beside it — stale says a figure is
   old, which is nobody's fault; this says the figure is part bank and part
   household and there is something to do about it once the feed catches up.
 
   It settles itself. Archive the standby rows when the feed delivers the same
   charges and the adjustment goes with them.
+
+- **Coming out of standby.** When the feed catches up on a charge you entered by
+  hand, the duplicate panel proposes the pair and a pill on every page says how
+  many are waiting — *"3 rows to clear"*. Archive your copies and both go away.
+
+  It is announced because nothing else would say the outage was over: the
+  balances read correctly either way, so the only signal that a hand-entered row
+  has become a second copy is somebody noticing. The pill clears itself the
+  moment the rows it names are archived, which was the objection that removed
+  the duplicates pill in v0.48.
+
+  **The existing panel could not have found these.** It matches on `merchantKey`
+  — and must, since that is what stopped two different payees at one amount
+  reading as one charge twice — but a row somebody typed carries the words they
+  typed: `MANUAL - Pirate Ship Adah & Amron` keys to `manual pirate ship` against
+  `ach payment pirate` for the bank's own text. Nothing brings those together.
+  For a hand-entered row against a feed row **on the same account**, the match is
+  amount to the cent and within two days, with no merchant test. Safe here and
+  nowhere else: the false positive [ADR 049](docs/decisions/049-a-duplicate-is-proposed-never-archived.md)
+  was corrected for was two *feed* rows at one amount in a week, which is a
+  household paying two bills; a hand-entered row on a synced account exists only
+  because somebody was standing in for the feed.
+
+  A refusal still sticks for good, and the copy is never in doubt — it is the
+  hand-entered one, whatever the dates say.
+
+- **Archive selection**, on the register's existing multi-select bar beside
+  *assign all to*. A fortnight of standing in for a feed is twenty-odd rows to
+  clear, and twenty passes through a row menu is how somebody decides to leave
+  them there — at which point the register is double-counted for good. Nothing
+  new happens to a row: it is the same archive, so every envelope movement is
+  reversed and nothing is hard-deleted.
+
+  There is deliberately **no "archive every standby row"** that takes no
+  selection. A proposal is confirmed per pair; a button acting on a set the
+  server chose would be the one place here where a guess archives something.
 
 ### Fixed
 

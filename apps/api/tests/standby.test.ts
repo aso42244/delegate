@@ -4,6 +4,12 @@ import { categorizeTransaction } from '../src/domain/allocations.js';
 import { computeBudgetIdentity } from '../src/domain/identity.js';
 import { buildBudgetView } from '../src/domain/budget.js';
 import { standbyAdjustments } from '../src/domain/standby.js';
+import {
+  dismissDuplicate,
+  findDuplicates,
+  findStandbyDuplicates,
+} from '../src/domain/duplicates.js';
+import { buildNotifications } from '../src/domain/notifications.js';
 import { archiveTransaction, createManualTransaction } from '../src/domain/transactions.js';
 import { runSync } from '../src/domain/sync.js';
 import { accountBalance, makeDelegation, makeUser, resetDatabase } from './helpers.js';
@@ -223,5 +229,135 @@ describe('the identity while rows are in standby', () => {
     // Money has left the account and no envelope has accounted for it — the
     // same thing any uncategorized spending reads as until it is filed.
     expect((await computeBudgetIdentity(prisma)).differenceCents).toBe(-4000n);
+  });
+});
+
+/**
+ * Coming out of standby.
+ *
+ * The feed recovers and delivers the charges somebody stood in for. Nothing
+ * about the balances is wrong at that point — they are simply counted twice —
+ * and nothing on the page would say so, which is why this is announced.
+ */
+describe('when the feed delivers a charge that was entered by hand', () => {
+  async function standbyThenFeed(feedDescription: string, feedDayOffset = 0): Promise<string> {
+    const first = accountSet([
+      { id: 'acct-1', name: 'Checking', balance: '12733.23', balanceDate: EPOCH_2026_08_01 },
+    ]);
+    const client = new ScriptedSimpleFinClient([first]);
+    await runSync(prisma, { client, now: NOW });
+    const account = await prisma.account.findFirstOrThrow({ where: { externalId: 'acct-1' } });
+
+    await createManualTransaction(prisma, {
+      accountId: account.id,
+      amountCents: -583n,
+      description: 'MANUAL - Pirate Ship Adah & Amron',
+      postedAt: NOW,
+    });
+
+    // The feed catches up, with its own wording for the same charge.
+    client.push(
+      accountSet([
+        {
+          id: 'acct-1',
+          name: 'Checking',
+          balance: '12727.40',
+          balanceDate: EPOCH_2026_08_01,
+          transactions: [
+            {
+              id: 'txn-1',
+              amount: '-5.83',
+              description: feedDescription,
+              posted: Math.floor((NOW.getTime() + feedDayOffset * 86_400_000) / 1000),
+            },
+          ],
+        },
+      ]),
+    );
+    await runSync(prisma, { client, now: new Date(NOW.getTime() + 60 * 60 * 1000) });
+
+    return account.id;
+  }
+
+  /**
+   * The pair `merchantKey` cannot find, which is the whole reason this rule
+   * exists: `manual pirate ship` against `ach payment pirate`.
+   */
+  it('proposes the pair even though the descriptions share no merchant key', async () => {
+    await standbyThenFeed('ACH Payment Pirate Ship payment PLAID');
+
+    const standby = await findStandbyDuplicates(prisma);
+    expect(standby).toHaveLength(1);
+    expect(standby[0]!.reason).toBe('standby');
+    // The hand-entered one is the copy, whatever the dates say.
+    expect(standby[0]!.copy.description).toContain('MANUAL');
+    expect(standby[0]!.original.description).toContain('ACH Payment');
+
+    // And it reaches the panel, not only the narrow query.
+    const all = await findDuplicates(prisma);
+    expect(all.filter((pair) => pair.reason === 'standby')).toHaveLength(1);
+  });
+
+  it('says so on the Budget page, and stops once the copy is archived', async () => {
+    await standbyThenFeed('ACH Payment Pirate Ship payment PLAID');
+
+    const before = await buildNotifications(prisma, 'UTC', NOW);
+    const pill = before.find((entry) => entry.kind === 'standby_rows_covered');
+    expect(pill?.pill).toBe('1 row to clear');
+
+    const copy = await prisma.transaction.findFirstOrThrow({ where: { source: 'manual' } });
+    await archiveTransaction(prisma, copy.id, NOW);
+
+    const after = await buildNotifications(prisma, 'UTC', NOW);
+    expect(after.find((entry) => entry.kind === 'standby_rows_covered')).toBeUndefined();
+    // …and the balance is the bank's alone again, counted once.
+    expect((await standbyAdjustments(prisma)).size).toBe(0);
+    expect(await accountBalance((await prisma.account.findFirstOrThrow()).id)).toBe(1272740n);
+  });
+
+  it('still respects a refusal, permanently', async () => {
+    await standbyThenFeed('ACH Payment Pirate Ship payment PLAID');
+    const [pair] = await findStandbyDuplicates(prisma);
+
+    await dismissDuplicate(prisma, {
+      firstId: pair!.original.id,
+      secondId: pair!.copy.id,
+      userId: null,
+    });
+
+    expect(await findStandbyDuplicates(prisma)).toHaveLength(0);
+    expect(
+      (await buildNotifications(prisma, 'UTC', NOW)).find(
+        (entry) => entry.kind === 'standby_rows_covered',
+      ),
+    ).toBeUndefined();
+  });
+
+  it('does not pair a charge that is too far from the hand-entered one', async () => {
+    await standbyThenFeed('ACH Payment Pirate Ship payment PLAID', 5);
+    expect(await findStandbyDuplicates(prisma)).toHaveLength(0);
+  });
+
+  it('leaves an ordinary manual account alone', async () => {
+    const cash = await prisma.account.create({
+      data: {
+        name: 'Physical Cash',
+        type: 'asset',
+        source: 'manual',
+        balanceCents: 101200n,
+        balanceAsOf: NOW,
+      },
+      select: { id: true },
+    });
+    await createManualTransaction(prisma, {
+      accountId: cash.id,
+      amountCents: -2000n,
+      description: 'Farmers market',
+      postedAt: NOW,
+    });
+
+    // Nothing is ever going to report this account to us, so there is nothing
+    // for a hand-entered row here to be a stand-in for.
+    expect(await findStandbyDuplicates(prisma)).toHaveLength(0);
   });
 });
