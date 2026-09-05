@@ -30,6 +30,10 @@ phase (`v0.1.0-phase1`, and so on).
     would otherwise sit there uncloseable for as long as the budget exists. They
     stay in the register itself — it is the queue they leave, not the journal.
 
+  Those rows read `—` in the Delegation column, as income does. Without it the
+  cell renders empty, and empty reads as "not loaded" rather than "deliberately
+  nothing".
+
   Money leaving the budget for a retirement account is **spending**, not a
   transfer: it is no longer available to delegate, and the envelope it came out
   of is the household's record of it. The arrival on the other side is the same

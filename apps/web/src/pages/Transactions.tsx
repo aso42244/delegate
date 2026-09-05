@@ -38,9 +38,17 @@ import { PageHeader } from '../components/layout.jsx';
 const PAGE_SIZE = 50;
 
 function AllocationSummary({ transaction }: { transaction: TransactionDto }): ReactNode {
-  if (transaction.kind !== 'normal') {
-    // Income and confirmed transfers allocate to nothing by definition, so there
-    // is nothing to pick and no empty control to imply otherwise.
+  if (transaction.kind !== 'normal' || !transaction.account.inBudget) {
+    /*
+     * Income and confirmed transfers allocate to nothing by definition, so there
+     * is nothing to pick and no empty control to imply otherwise.
+     *
+     * An out-of-budget row is the same (ADR 050) and needs the em-dash for a
+     * sharper reason: without it the cell renders **empty**, because the branch
+     * below returns null for a row with no allocations. Empty reads as "not
+     * loaded yet" or "something is missing"; the em-dash reads as "deliberately
+     * nothing", which is the true answer for a row the budget does not track.
+     */
     return <span className="text-quiet text-muted">—</span>;
   }
   if (transaction.allocations.length <= 1) return null;
