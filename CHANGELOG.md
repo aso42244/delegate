@@ -6,6 +6,10 @@ phase (`v0.1.0-phase1`, and so on).
 
 ## [Unreleased]
 
+Nothing yet.
+
+## [0.53.0] — 2026-09-05
+
 ### Fixed
 
 - **The budget boundary is enforced, not just described.**
