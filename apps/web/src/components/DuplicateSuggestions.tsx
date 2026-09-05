@@ -4,6 +4,7 @@ import { useState, type ReactNode } from 'react';
 import { ApiError } from '../api/client.js';
 import { transactionsApi } from '../api/transactions.js';
 import { Alert, Button } from './ui.jsx';
+import { duplicateActionAriaLabel, duplicateActionLabels } from './duplicate-actions.js';
 
 /**
  * The same charge, in the register twice.
@@ -140,24 +141,45 @@ export function DuplicateSuggestions(): ReactNode {
 
             <div className="flex gap-2">
               {/*
-                The later row by default, because a re-import arrives after the
-                original — but both are offered, since the copy that carries the
-                categorization is sometimes the one worth keeping.
+                Each rule names its own sides, because "first" and "later" are
+                only meaningful for one of them.
+                
+                A re-import is two rows the bank sent, arriving months apart, and
+                which of them is the copy is a judgement about time — so the
+                later one is offered by default, and the earlier one is offered
+                too, because the copy carrying the categorization is sometimes
+                the one worth keeping.
+                
+                A standby pair is one charge from two sources on the same day.
+                Ordering them by date says nothing, and the row text above
+                already calls them what they are. Labelling the buttons "later"
+                and "first" described a rule this pair is not decided by — the
+                press did the right thing under a name for something else, which
+                is the sort of thing that reads as correct until somebody
+                depends on it.
               */}
               <Button
                 variant="primary"
                 onClick={() => archive.mutate(candidate.copy.id)}
                 disabled={archive.isPending}
-                aria-label={`Archive the later ${candidate.copy.description}`}
+                aria-label={duplicateActionAriaLabel(
+                  candidate.reason,
+                  'copy',
+                  candidate.copy.description,
+                )}
               >
-                Archive the later one
+                {duplicateActionLabels(candidate.reason).archiveCopy}
               </Button>
               <Button
                 onClick={() => archive.mutate(candidate.original.id)}
                 disabled={archive.isPending}
-                aria-label={`Archive the first ${candidate.original.description}`}
+                aria-label={duplicateActionAriaLabel(
+                  candidate.reason,
+                  'original',
+                  candidate.original.description,
+                )}
               >
-                Archive the first
+                {duplicateActionLabels(candidate.reason).archiveOriginal}
               </Button>
               {/*
                 Remembered, not waved off. Recorded against the pair, so both

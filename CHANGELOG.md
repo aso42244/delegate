@@ -8,6 +8,30 @@ phase (`v0.1.0-phase1`, and so on).
 
 Nothing yet.
 
+## [0.54.2] — 2026-09-05
+
+### Fixed
+
+- **A standby duplicate names its own sides.** The row text was taught to call
+  the two rows _from the bank_ and _entered by hand_, because "first" and
+  "later" say nothing about one charge arriving from two sources on the same
+  day. The buttons underneath were left describing the re-import rule —
+  **Archive the later one** and **Archive the first**. They pressed correctly,
+  since the copy on a standby pair is always the hand-entered row whatever the
+  dates say, but under the name of a rule the pair is not decided by. That reads
+  as right until somebody relies on it.
+
+  They read **Archive my copy** and **Archive the bank's** now. A re-import is
+  unchanged: two rows the bank sent, months apart, where which one is the copy
+  genuinely is a judgement about time.
+
+  The wording moved into `components/duplicate-actions.ts` with a test, the way
+  `chips.ts` holds the chip vocabulary — an end-to-end test cannot reach this,
+  because the fixtures can only create manual accounts and a standby pair needs
+  a synced one.
+
+  Found by drawing the screen rather than by running it.
+
 ## [0.54.0] — 2026-09-05
 
 ### Fixed
