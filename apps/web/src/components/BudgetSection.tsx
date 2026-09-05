@@ -120,6 +120,13 @@ function chipsFor(row: BudgetRowDto): ChipKind[] {
   ) {
     kinds.push('stale');
   }
+  // Part bank, part household: the figure includes charges typed in while the
+  // feed was behind. After `stale`, because an account is usually both and
+  // "old, and adjusted" is the order somebody would say it in.
+  // Parsed rather than compared as text. The first cut tested `!== '0'`, which
+  // is also true of `undefined` — so the day the field was added to the row type
+  // but not yet to the response, every row on the page grew the chip.
+  if ((parseCents(row.standbyCents ?? null) ?? 0n) !== 0n) kinds.push('standby');
   if (row.needsReview) kinds.push('review');
 
   return kinds;

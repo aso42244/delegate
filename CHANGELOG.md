@@ -6,6 +6,30 @@ phase (`v0.1.0-phase1`, and so on).
 
 ## [Unreleased]
 
+### Added
+
+- **Standby mode: what you type in while a feed is behind.** A hand-entered row
+  on a synced account now adjusts the balance you read without touching the
+  institution's own figure underneath it. Enter the charges your bank shows and
+  Delegate does not, and the account, the section total and the reconciliation
+  at the top of the Budget page all agree with your statement — through every
+  sync, for as long as the outage lasts.
+
+  **There is no tag and nothing to switch on.** A manual row on a synced account
+  is a standby row by construction; there is no other reason to enter one. A
+  manual row on a manual account — cash, Venmo, a wallet — is the ordinary case
+  and still moves the balance directly, because there the stored balance is the
+  only balance there is. Deriving it means no state to set, none to forget to
+  clear, and no way for the two to disagree.
+
+  The row says so: a new **`a`** chip, *Adjusted by transactions entered by
+  hand*. Yellow rather than quiet, unlike `s` beside it — stale says a figure is
+  old, which is nobody's fault; this says the figure is part bank and part
+  household and there is something to do about it once the feed catches up.
+
+  It settles itself. Archive the standby rows when the feed delivers the same
+  charges and the adjustment goes with them.
+
 ### Fixed
 
 - **A sync now asks back as far as the feed has been quiet.** The request window
@@ -32,6 +56,23 @@ phase (`v0.1.0-phase1`, and so on).
   for two months still gets a fresh balance date from the feed, which is what
   `feed_balance_as_of` was added to distinguish
   ([ADR 032](docs/decisions/032-a-feed-date-is-kept-apart-from-the-one-we-stamp.md)).
+
+- **A hand-entered row no longer writes a balance the next sync erases.**
+  `createManualTransaction` incremented `accounts.balance_cents` whatever kind of
+  account it was on, and `upsertAccount` assigns that column from the feed on
+  every run. On a synced account the two conflicted and the hourly job always
+  won: the entry worked, and then silently did not, up to an hour later. Nothing
+  covered it — 758 integration tests passed before and after the behaviour
+  changed. See standby mode above for where the row's effect went instead.
+
+- **The identity reads the same balances the page shows.** It summed the stored
+  columns, so with standby rows outstanding the reading at the top of the Budget
+  page would have disagreed with the figures underneath it by their total.
+
+- **A racy end-to-end assertion in the Bills spec.** It read the page while the
+  attach dialog was still open, and the dialog names the same bill — two matches,
+  strict-mode failure, only on a loaded machine. It now waits for the dialog to
+  close, per the convention in `handoff.md`.
 
 ## [0.51.0] — 2026-09-03
 

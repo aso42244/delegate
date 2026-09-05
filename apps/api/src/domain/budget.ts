@@ -8,6 +8,7 @@ import {
 } from '@budget/shared';
 import type { Db } from '../db/client.js';
 import { localDayKey } from './calendar.js';
+import { balanceWithStandby, standbyAdjustments } from './standby.js';
 import { computeBudgetIdentity } from './identity.js';
 import { getBudgetSettings } from './settings.js';
 
@@ -53,6 +54,16 @@ export interface BudgetRow {
   /** The date the feed put on this balance; null for a manual account. */
   readonly feedBalanceAsOf: Date | null;
   readonly stalenessIntervalDays: number | null;
+  /**
+   * How much of `balanceCents` is hand-entered activity the feed has not
+   * reported — see `domain/standby.ts`. Zero on almost every row, and on all of
+   * them when nothing is in standby.
+   *
+   * Carried so the row can say the figure is part institution and part
+   * household. A balance quietly holding both, with nothing on the row to say
+   * so, is the sort of number somebody trusts and should not.
+   */
+  readonly standbyCents: Cents;
   /** `check` rows are outstanding checks — see domain/checks.ts. */
   readonly kind: 'envelope' | 'check';
   /** Checks only: the number that identifies one among several outstanding. */
@@ -194,75 +205,85 @@ export async function buildBudgetView(
   db: Db,
   options: { readonly timeZone: string; readonly now?: Date },
 ): Promise<BudgetView> {
-  const [settings, accounts, delegations, groupings, identity, latestRun] = await Promise.all([
-    getBudgetSettings(db),
-    db.account.findMany({
-      // Off-budget accounts belong to net worth, not to this page.
-      where: { archivedAt: null, inBudget: true },
-      select: {
-        id: true,
-        name: true,
-        nickname: true,
-        type: true,
-        source: true,
-        balanceCents: true,
-        groupingId: true,
-        needsReview: true,
-        balanceAsOf: true,
-        feedBalanceAsOf: true,
-        stalenessIntervalDays: true,
-        position: true,
-        inBudget: true,
-        inNetWorth: true,
-        managedAs: true,
-      },
-    }),
-    db.delegation.findMany({
-      where: { archivedAt: null },
-      select: {
-        id: true,
-        name: true,
-        balanceCents: true,
-        amountToDelegateCents: true,
-        groupingId: true,
-        position: true,
-        isUtility: true,
-        notes: true,
-        kind: true,
-        checkNumber: true,
-        checkMemo: true,
-        checkIssuedAt: true,
-        targetCents: true,
-        targetDate: true,
-        targetIntervalMonths: true,
-      },
-    }),
-    db.grouping.findMany({
-      where: { archivedAt: null },
-      select: {
-        id: true,
-        name: true,
-        color: true,
-        collapsed: true,
-        section: true,
-        systemKey: true,
-        position: true,
-      },
-    }),
-    computeBudgetIdentity(db),
-    db.delegateRun.findFirst({
-      where: { undoneAt: null },
-      orderBy: { createdAt: 'desc' },
-      select: { createdAt: true },
-    }),
-  ]);
+  const [settings, accounts, delegations, groupings, identity, standby, latestRun] =
+    await Promise.all([
+      getBudgetSettings(db),
+      db.account.findMany({
+        // Off-budget accounts belong to net worth, not to this page.
+        where: { archivedAt: null, inBudget: true },
+        select: {
+          id: true,
+          name: true,
+          nickname: true,
+          type: true,
+          source: true,
+          balanceCents: true,
+          groupingId: true,
+          needsReview: true,
+          balanceAsOf: true,
+          feedBalanceAsOf: true,
+          stalenessIntervalDays: true,
+          position: true,
+          inBudget: true,
+          inNetWorth: true,
+          managedAs: true,
+        },
+      }),
+      db.delegation.findMany({
+        where: { archivedAt: null },
+        select: {
+          id: true,
+          name: true,
+          balanceCents: true,
+          amountToDelegateCents: true,
+          groupingId: true,
+          position: true,
+          isUtility: true,
+          notes: true,
+          kind: true,
+          checkNumber: true,
+          checkMemo: true,
+          checkIssuedAt: true,
+          targetCents: true,
+          targetDate: true,
+          targetIntervalMonths: true,
+        },
+      }),
+      db.grouping.findMany({
+        where: { archivedAt: null },
+        select: {
+          id: true,
+          name: true,
+          color: true,
+          collapsed: true,
+          section: true,
+          systemKey: true,
+          position: true,
+        },
+      }),
+      computeBudgetIdentity(db),
+      standbyAdjustments(db),
+      db.delegateRun.findFirst({
+        where: { undoneAt: null },
+        orderBy: { createdAt: 'desc' },
+        select: { createdAt: true },
+      }),
+    ]);
 
   const accountRow = (account: (typeof accounts)[number]): BudgetRow => ({
     id: account.id,
     // The nickname exists precisely for this page. The real name stays on
     // Settings → Accounts, where identifying the account is the point.
     name: account.nickname ?? account.name,
-    balanceCents: account.balanceCents,
+    // The institution's figure plus whatever was typed in while its feed was
+    // behind. Identical to the stored column whenever nothing is in standby,
+    // which is the ordinary case.
+    balanceCents: balanceWithStandby(
+      account.type,
+      account.balanceCents,
+      standby.get(account.id) ?? 0n,
+    ),
+    standbyCents: standby.get(account.id) ?? 0n,
     // Assets and debts have no amount to delegate; the column is empty for them.
     amountToDelegateCents: null,
     groupingId: account.groupingId,
@@ -297,6 +318,8 @@ export async function buildBudgetView(
     position: delegation.position,
     isUtility: delegation.isUtility,
     notes: delegation.notes,
+    // A delegation is not an account and has no feed to be behind.
+    standbyCents: 0n,
     source: null,
     type: null,
     // Delegations are not accounts; these are an account's business.

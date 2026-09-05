@@ -28,6 +28,11 @@ export interface BudgetRowDto {
   /** The date the feed put on this balance; null for a manual account. */
   readonly feedBalanceAsOf: string | null;
   readonly stalenessIntervalDays: number | null;
+  /**
+   * How much of `balanceCents` was typed in by hand while this account's feed
+   * was behind. `'0'` on every row when nothing is in standby.
+   */
+  readonly standbyCents: string;
   /** `check` rows are outstanding checks: money written but not yet cashed. */
   readonly kind: 'envelope' | 'check';
   readonly checkNumber: string | null;
