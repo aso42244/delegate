@@ -576,7 +576,14 @@ export function Transactions(): ReactNode {
                   </td>
 
                   <td className="row-cell pr-3">
-                    {transaction.kind === 'normal' ? (
+                    {/* An out-of-budget row is offered no field, for the same
+                        reason income is not: there is nothing it could be
+                        categorized to. The budget does not sum that account, so
+                        moving an envelope against it would put the reading out
+                        by the full amount — `setAllocations` refuses it. Money
+                        arriving in a Roth IRA was already spent from the
+                        account it left. */}
+                    {transaction.kind === 'normal' && transaction.account.inBudget ? (
                       <div className="flex items-center gap-2">
                         {/* Only while the row is still a question. A row already
                             filed has an answer, and offering a second one beside

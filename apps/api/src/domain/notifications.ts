@@ -113,11 +113,28 @@ export async function buildNotifications(
       where: { archivedAt: null },
       select: { name: true, balanceAsOf: true, stalenessIntervalDays: true, needsReview: true },
     }),
+    /*
+     * The same definition the register's queue filter uses, and it has to be:
+     * the pill's whole job is to lead somebody to that list, so a count taken
+     * any other way sends them to a page that disagrees with the number that
+     * sent them. `in_budget` is in here because a row on an account the budget
+     * does not sum cannot be categorized at all.
+     */
     db.transaction.count({
-      where: { archivedAt: null, allocations: { none: {} }, kind: 'normal' },
+      where: {
+        archivedAt: null,
+        allocations: { none: {} },
+        kind: 'normal',
+        account: { inBudget: true },
+      },
     }),
     db.transaction.findFirst({
-      where: { archivedAt: null, allocations: { none: {} }, kind: 'normal' },
+      where: {
+        archivedAt: null,
+        allocations: { none: {} },
+        kind: 'normal',
+        account: { inBudget: true },
+      },
       orderBy: { postedAt: 'asc' },
       select: { postedAt: true },
     }),

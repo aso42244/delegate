@@ -56,13 +56,30 @@ export function buildTransactionWhere(query: TransactionQuery): Prisma.Transacti
    * queue permanently: every payroll deposit and every confirmed credit card
    * payment, uncloseable, for as long as the budget exists.
    *
+   * **An out-of-budget account's rows are the same case**, and were missed when
+   * this was written. The identity sums `in_budget` accounts only, so a row on
+   * one it does not sum cannot be categorized at all — `setAllocations` refuses
+   * it, because moving a delegation while no balance moves with it puts the
+   * reading out by the full amount. A Roth IRA's purchases would therefore sit
+   * in the queue for ever, uncloseable, exactly as income did: five of them on
+   * one afternoon, against an account whose whole point is that the budget does
+   * not track it.
+   *
+   * They stay in the register, which is where somebody goes to see what an
+   * account did. It is the *queue* they leave — the list of decisions waiting
+   * to be made, none of which is one.
+   *
    * Added through `AND` rather than by assigning `kind`, so an explicit kind
    * filter is not silently overwritten. Asking for uncategorized income is a
    * contradiction under this definition and correctly returns nothing.
    */
   if (query.uncategorized === true) {
     where.allocations = { none: {} };
-    where.AND = [...(Array.isArray(where.AND) ? where.AND : []), { kind: 'normal' }];
+    where.AND = [
+      ...(Array.isArray(where.AND) ? where.AND : []),
+      { kind: 'normal' },
+      { account: { inBudget: true } },
+    ];
   }
   if (query.uncategorized === false) where.allocations = { some: {} };
 
@@ -126,7 +143,9 @@ export const TRANSACTION_LIST_SELECT = {
   // the id: the register shows a mark, and what a reader wants behind it is
   // "check 1062", not a uuid.
   settledCheck: { select: { checkNumber: true } },
-  account: { select: { id: true, name: true, nickname: true, type: true, archivedAt: true } },
+  account: {
+    select: { id: true, name: true, nickname: true, type: true, archivedAt: true, inBudget: true },
+  },
   allocations: {
     select: {
       id: true,

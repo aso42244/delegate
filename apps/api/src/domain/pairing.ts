@@ -70,7 +70,7 @@ export async function findPairCandidates(
       postedAt: true,
       amountCents: true,
       description: true,
-      account: { select: { name: true } },
+      account: { select: { name: true, inBudget: true } },
     },
     orderBy: { postedAt: 'asc' },
   });
@@ -87,6 +87,29 @@ export async function findPairCandidates(
         !claimed.has(inflow.id) &&
         // Both accounts are owned by definition — everything here is ours.
         inflow.accountId !== outflow.accountId &&
+        /*
+         * Both on the same side of the budget boundary.
+         *
+         * A transfer is money moving between two accounts the budget counts,
+         * and pairing removes both from every spending figure — which is right
+         * when the money is still inside the budget and wrong when it has left
+         * it. A contribution from a current account into a Roth IRA is a real
+         * outflow *from the budget*: the envelope it came out of is the
+         * household's record of it, and the arrival in the IRA is the same
+         * money seen from outside.
+         *
+         * This is not a heuristic that might misfire. `confirmPair` clears the
+         * allocations on both sides, so confirming one of these takes the money
+         * back out of the envelope it was spent from while the balance stays
+         * gone — measured at exactly $200.00 of drift on a $200 contribution.
+         * The suggestion was offering an action that could not be right.
+         *
+         * Two out-of-budget accounts still pair with each other. Neither is in
+         * the identity, nothing is cleared that mattered, and a transfer
+         * between two brokerage accounts is exactly as much "not spending" as
+         * one between two current accounts.
+         */
+        inflow.account.inBudget === outflow.account.inBudget &&
         inflow.amountCents === -outflow.amountCents &&
         Math.abs(inflow.postedAt.getTime() - outflow.postedAt.getTime()) <=
           PAIRING_WINDOW_DAYS * DAY_MS,
@@ -150,6 +173,7 @@ export async function confirmPair(db: Db, firstId: string, secondId: string): Pr
         amountCents: true,
         archivedAt: true,
         pairedTransactionId: true,
+        account: { select: { inBudget: true, name: true } },
       },
     }),
     db.transaction.findUnique({
@@ -160,6 +184,7 @@ export async function confirmPair(db: Db, firstId: string, secondId: string): Pr
         amountCents: true,
         archivedAt: true,
         pairedTransactionId: true,
+        account: { select: { inBudget: true, name: true } },
       },
     }),
   ]);
@@ -179,6 +204,16 @@ export async function confirmPair(db: Db, firstId: string, secondId: string): Pr
     throw new ConflictError(
       'pair_same_account',
       'A transfer moves between two accounts; both of these are on the same one.',
+    );
+  }
+  if (first.account.inBudget !== second.account.inBudget) {
+    // The route refuses it as well as the suggestion withholding it. A pair
+    // reached any other way — a stale page, a hand-written request — would clear
+    // the allocation that is the budget's only record of the money leaving.
+    const off = first.account.inBudget ? second.account : first.account;
+    throw new ConflictError(
+      'pair_crosses_budget_boundary',
+      `${off.name} is not in the budget, so this is money leaving the budget rather than moving inside it. Categorize the outgoing side instead.`,
     );
   }
   if (first.amountCents !== -second.amountCents) {

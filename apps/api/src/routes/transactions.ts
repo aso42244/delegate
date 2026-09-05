@@ -109,6 +109,9 @@ function present(transaction: TransactionRow): Record<string, unknown> {
       // bank name pushes everything else off the row.
       name: transaction.account.nickname ?? transaction.account.name,
       type: transaction.account.type,
+      // Whether the budget counts this account at all. A row on one it does not
+      // cannot be categorized, so the register offers no field for it.
+      inBudget: transaction.account.inBudget,
     },
     allocations: transaction.allocations.map((allocation) => ({
       id: allocation.id,
