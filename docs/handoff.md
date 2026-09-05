@@ -88,9 +88,17 @@ These are non-negotiable. Violating one is a build failure.
 
 ## Where things stand
 
-**`main` is at `v0.52.0`, and the NAS is running `v0.51.0`** — confirmed by the
-owner on 2026-09-04. There is no version anywhere in the application to read
-this from: `/health` is deliberately quiet about it and nothing in the UI shows
+**`main` is at `v0.53.0`, and the NAS is running `v0.52.0`** — deployed
+2026-09-05.
+
+**Assume a version you handed over is deployed.** The owner's instruction, given
+the same day: once the deploy command has been handed to him, treat the NAS as
+being on that version unless he says otherwise. He will say if he has not. Do not
+ask, and do not leave this paragraph carrying a stale figure with a question
+attached to it — which is exactly what it was doing when he corrected it.
+
+Should it ever genuinely need checking, there is no version anywhere in the
+application to read it from: `/health` is deliberately quiet about it and nothing in the UI shows
 it, so the two ways to answer the question are the running image
 (`docker ps` on the NAS, which reports the digest `deploy.sh` pinned) and a
 feature that only exists in one of the two candidates — `Rules` in the sidebar
