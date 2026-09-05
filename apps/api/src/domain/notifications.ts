@@ -1,5 +1,6 @@
 import { formatCents, isBalanceStale } from '@budget/shared';
 import type { Db } from '../db/client.js';
+import { findStandbyDuplicates } from './duplicates.js';
 import { latestPrice } from './bitcoin.js';
 import { newestBackupAt } from './backup.js';
 import { proposeCheckMatches } from './checks.js';
@@ -42,6 +43,7 @@ export interface Notification {
     | 'checks_awaiting_confirmation'
     | 'recurring_bill_overdue'
     | 'targets_behind'
+    | 'standby_rows_covered'
     | 'backup_failing';
   readonly severity: NotificationSeverity;
   /**
@@ -93,29 +95,40 @@ export async function buildNotifications(
   const notifications: Notification[] = [];
   const settings = await getBudgetSettings(db);
 
-  const [latestRun, accounts, uncategorized, oldestUncategorized, price, checkMatches, oldestUser] =
-    await Promise.all([
-      db.syncRun.findFirst({
-        orderBy: { startedAt: 'desc' },
-        select: { status: true, error: true, startedAt: true },
-      }),
-      db.account.findMany({
-        where: { archivedAt: null },
-        select: { name: true, balanceAsOf: true, stalenessIntervalDays: true, needsReview: true },
-      }),
-      db.transaction.count({
-        where: { archivedAt: null, allocations: { none: {} }, kind: 'normal' },
-      }),
-      db.transaction.findFirst({
-        where: { archivedAt: null, allocations: { none: {} }, kind: 'normal' },
-        orderBy: { postedAt: 'asc' },
-        select: { postedAt: true },
-      }),
-      latestPrice(db, timeZone, now),
-      proposeCheckMatches(db),
-      // The first account created, as a stand-in for when this deployment began.
-      db.user.findFirst({ orderBy: { createdAt: 'asc' }, select: { createdAt: true } }),
-    ]);
+  const [
+    latestRun,
+    accounts,
+    uncategorized,
+    oldestUncategorized,
+    price,
+    checkMatches,
+    oldestUser,
+    standbyCovered,
+  ] = await Promise.all([
+    db.syncRun.findFirst({
+      orderBy: { startedAt: 'desc' },
+      select: { status: true, error: true, startedAt: true },
+    }),
+    db.account.findMany({
+      where: { archivedAt: null },
+      select: { name: true, balanceAsOf: true, stalenessIntervalDays: true, needsReview: true },
+    }),
+    db.transaction.count({
+      where: { archivedAt: null, allocations: { none: {} }, kind: 'normal' },
+    }),
+    db.transaction.findFirst({
+      where: { archivedAt: null, allocations: { none: {} }, kind: 'normal' },
+      orderBy: { postedAt: 'asc' },
+      select: { postedAt: true },
+    }),
+    latestPrice(db, timeZone, now),
+    proposeCheckMatches(db),
+    // The first account created, as a stand-in for when this deployment began.
+    db.user.findFirst({ orderBy: { createdAt: 'asc' }, select: { createdAt: true } }),
+    // Cheap by construction: it reads only the standby rows, of which there
+    // are a handful during an outage and none the rest of the time.
+    findStandbyDuplicates(db).then((pairs) => pairs.length),
+  ]);
 
   /*
    * The backup, first, because it is the only condition here that can cost the
@@ -257,6 +270,33 @@ export async function buildNotifications(
             ? `Checks ${numbers} look like they have been cashed. Confirm each match to settle it.`
             : `${checkMatches.length} checks look like they have been cashed, including ${numbers}.`,
       actionPath: '/',
+    });
+  }
+
+  /*
+   * The feed has caught up on charges somebody typed in while it was behind.
+   *
+   * This is the one notification here that announces a **good** thing, and it
+   * exists because coming out of standby is a step nobody would otherwise know
+   * to take: the balances go on reading correctly whether or not the duplicates
+   * are cleared, so nothing on the page would ever say the outage was over.
+   *
+   * `handoff.md` records that a duplicates pill was built and removed within the
+   * hour in v0.48, because it went on announcing a proposal that had been waved
+   * away. That objection expired in v0.50 when a refusal became storable, and it
+   * would not apply here regardless: this one clears itself the moment the rows
+   * it names are archived, which is the whole action it is asking for.
+   */
+  if (standbyCovered > 0) {
+    notifications.push({
+      kind: 'standby_rows_covered',
+      pill: standbyCovered === 1 ? '1 row to clear' : `${standbyCovered} rows to clear`,
+      severity: 'confirm',
+      message:
+        standbyCovered === 1
+          ? 'The feed has delivered a charge you entered by hand while it was behind. Archive your copy to come out of standby.'
+          : `The feed has delivered ${standbyCovered} charges you entered by hand while it was behind. Archive your copies to come out of standby.`,
+      actionPath: '/transactions',
     });
   }
 

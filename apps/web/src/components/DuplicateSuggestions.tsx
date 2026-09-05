@@ -107,7 +107,16 @@ export function DuplicateSuggestions(): ReactNode {
                   {side.description}{' '}
                   <span className="text-muted">
                     — {side.accountName}, {new Date(side.postedAt).toLocaleDateString()}
-                    {index === 0 ? ' · first' : ''}
+                    {/* On a standby pair "first" is meaningless — the two are
+                        the same charge from two sources, not one before the
+                        other — so it names the source instead. */}
+                    {candidate.reason === 'standby'
+                      ? index === 0
+                        ? ' · from the bank'
+                        : ' · entered by hand'
+                      : index === 0
+                        ? ' · first'
+                        : ''}
                   </span>
                   {/* The one carrying a decision. Archiving it moves money back;
                       archiving the other one does not. */}
@@ -126,6 +135,7 @@ export function DuplicateSuggestions(): ReactNode {
                 ? 'same day'
                 : `${candidate.daysApart} day${candidate.daysApart === 1 ? '' : 's'} apart`}
               {candidate.differentExternalIds && ' · re-imported'}
+              {candidate.reason === 'standby' && ' · the feed caught up'}
             </span>
 
             <div className="flex gap-2">

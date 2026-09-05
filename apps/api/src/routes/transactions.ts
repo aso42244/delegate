@@ -83,6 +83,10 @@ const bulkCategorizeBodySchema = z.object({
   delegationId: z.string().uuid(),
 });
 
+const bulkArchiveBodySchema = z.object({
+  transactionIds: z.array(z.string().uuid()).min(1).max(500),
+});
+
 type TransactionRow = Awaited<ReturnType<typeof listTransactions>>['transactions'][number];
 
 function present(transaction: TransactionRow): Record<string, unknown> {
@@ -228,6 +232,47 @@ export const transactionRoutes: FastifyPluginCallback = (fastify, _options, done
     return { categorized, failures };
   });
 
+  /**
+   * Bulk archive: select rows, withdraw them all.
+   *
+   * Built for coming out of standby. A household that stood in for a broken feed
+   * for a fortnight has twenty-odd rows to clear the day it recovers, and
+   * twenty passes through a row menu is how somebody decides to leave them
+   * there instead — at which point the register is permanently double-counted.
+   *
+   * Nothing new happens to a row here: this is `archiveTransaction` in a loop,
+   * so every envelope movement is reversed exactly as it is for one row, and
+   * nothing is hard-deleted. As with bulk categorize, a row that cannot be
+   * archived is reported rather than failing the batch.
+   *
+   * There is deliberately no "archive every standby row" that takes no ids. The
+   * proposals are per pair and a person confirms them; a button that acts on a
+   * set the server chose would be the one place in this application where a
+   * guess archives something. See ADR 049.
+   */
+  fastify.post('/api/transactions/bulk-archive', async (request) => {
+    const body = bulkArchiveBodySchema.parse(request.body);
+    const actorId = request.currentUser?.id ?? null;
+
+    let archived = 0;
+    const failures: { transactionId: string; reason: string }[] = [];
+
+    for (const transactionId of body.transactionIds) {
+      try {
+        await archiveTransaction(prisma, transactionId);
+        archived += 1;
+      } catch (error) {
+        failures.push({
+          transactionId,
+          reason: error instanceof ValidationError ? error.message : 'Could not be archived',
+        });
+      }
+    }
+
+    request.log.info({ archived, failed: failures.length, actorId }, 'bulk archive applied');
+    return { archived, failures };
+  });
+
   // --- Pairing -----------------------------------------------------------
   //
   // A credit card payment and a mortgage payment each produce two transactions
@@ -273,6 +318,10 @@ export const transactionRoutes: FastifyPluginCallback = (fastify, _options, done
         copy: side(candidate.copy),
         daysApart: candidate.daysApart,
         differentExternalIds: candidate.differentExternalIds,
+        // Which situation this is. The panel words them differently, because a
+        // hand-entered row is one somebody meant to remove and a re-imported
+        // one is a judgement about two rows the bank sent.
+        reason: candidate.reason,
       })),
     };
   });

@@ -116,6 +116,12 @@ export interface DuplicateCandidateDto {
   readonly daysApart: number;
   /** The re-import signature: two feed rows for one charge, with different ids. */
   readonly differentExternalIds: boolean;
+  /**
+   * `reimport` — two rows the bank sent, after an institution was reconnected.
+   * `standby` — a row typed in while the feed was behind, against the feed's own
+   * row for the same charge now that it has arrived.
+   */
+  readonly reason: 'reimport' | 'standby';
 }
 
 export interface PairCandidateDto {
@@ -210,5 +216,10 @@ export const transactionsApi = {
     api.post<{ categorized: number; failures: { transactionId: string; reason: string }[] }>(
       '/api/transactions/bulk-categorize',
       { transactionIds, delegationId },
+    ),
+  bulkArchive: (transactionIds: readonly string[]) =>
+    api.post<{ archived: number; failures: { transactionId: string; reason: string }[] }>(
+      '/api/transactions/bulk-archive',
+      { transactionIds },
     ),
 };

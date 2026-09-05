@@ -49,6 +49,19 @@ export interface DuplicateCandidate {
    * the re-import signature rather than a coincidence.
    */
   readonly differentExternalIds: boolean;
+  /**
+   * Which of the two situations this pair is, because they are refused on
+   * different evidence and read differently on the page.
+   *
+   * `reimport` — two feed rows. The institution was reconnected and its history
+   * came back. Both rows are the bank's, and which is the copy is a judgement.
+   *
+   * `standby` — a row typed in by hand while the feed was behind, against the
+   * feed's own row for the same charge now that it has caught up. The copy is
+   * never in doubt: it is the hand-entered one, and archiving it is how a
+   * household comes out of standby.
+   */
+  readonly reason: 'reimport' | 'standby';
 }
 
 export interface DuplicateSide {
@@ -144,17 +157,7 @@ export async function findDuplicates(db: Db): Promise<DuplicateCandidate[]> {
 
   const transactions = await db.transaction.findMany({
     where: { archivedAt: null },
-    select: {
-      id: true,
-      accountId: true,
-      postedAt: true,
-      amountCents: true,
-      description: true,
-      externalId: true,
-      createdAt: true,
-      account: { select: { name: true, nickname: true } },
-      _count: { select: { allocations: true } },
-    },
+    select: registerSelect,
     orderBy: [{ postedAt: 'desc' }, { id: 'desc' }],
     take: HISTORY_LIMIT,
   });
@@ -225,10 +228,21 @@ export async function findDuplicates(db: Db): Promise<DuplicateCandidate[]> {
             original.externalId !== null &&
             copy.externalId !== null &&
             original.externalId !== copy.externalId,
+          reason: 'reimport',
         });
         break;
       }
     }
+  }
+
+  // The second rule, which does its own reading — see below. Rows already
+  // spent above are skipped so one row is never named in two proposals.
+  const spent2 = new Set(found.flatMap((pair) => [pair.original.id, pair.copy.id]));
+  for (const pair of await findStandbyDuplicates(db)) {
+    if (spent2.has(pair.original.id) || spent2.has(pair.copy.id)) continue;
+    spent2.add(pair.original.id);
+    spent2.add(pair.copy.id);
+    found.push(pair);
   }
 
   // Newest first: a re-import is noticed by what has just appeared.
@@ -260,3 +274,124 @@ function side(row: RegisterRow): DuplicateSide {
     categorized: row._count.allocations > 0,
   };
 }
+
+/**
+ * A standby row the feed has now delivered for itself.
+ *
+ * Everything in `findDuplicates` matches on `merchantKey`, and it has to — that
+ * is what stopped two different payees at one amount reading as one charge
+ * twice. It is also why it cannot find these. A charge somebody typed in carries
+ * the words they typed: `MANUAL - Pirate Ship Adah & Amron` keys to
+ * `manual pirate ship`, and the bank's own text for the same charge keys to
+ * `ach payment pirate`. Not close, and no tuning makes them close, because one
+ * of the two descriptions was never the bank's.
+ *
+ * **Dropping the merchant is safe here and nowhere else**, and the reason is the
+ * population rather than the rule. The false positive ADR 049 was corrected for
+ * was two *feed* rows at one amount within a week — a household paying two
+ * bills, which is common. This looks only at a hand-entered row on a synced
+ * account against a feed row on that same account, and a hand-entered row on a
+ * synced account exists precisely because somebody was standing in for the feed.
+ * The set is small, deliberate, and every member of it is a row whose whole
+ * purpose was to be temporary.
+ *
+ * **The copy is never in doubt**, so this does not order by date the way the
+ * re-import rule must. The hand-entered row is the copy whether it was entered
+ * before or after the feed's row arrived, because the feed's row carries the
+ * bank's own wording and the id every later sync will match on.
+ *
+ * Read separately from `findDuplicates` rather than filtered out of its 5,000
+ * rows, because the notification pill asks this question on every poll and there
+ * are only ever a handful of standby rows to ask it about.
+ */
+export async function findStandbyDuplicates(db: Db): Promise<DuplicateCandidate[]> {
+  const standbyRows = await db.transaction.findMany({
+    where: {
+      archivedAt: null,
+      source: 'manual',
+      account: { archivedAt: null, source: { not: 'manual' } },
+    },
+    select: registerSelect,
+    orderBy: { postedAt: 'desc' },
+  });
+  if (standbyRows.length === 0) return [];
+
+  const dismissed = new Set(
+    (
+      await db.duplicateDismissal.findMany({
+        select: { firstTransactionId: true, secondTransactionId: true },
+      })
+    ).map((row) => `${row.firstTransactionId}:${row.secondTransactionId}`),
+  );
+
+  // One query for every candidate window at once. Bounded by the number of
+  // standby rows, which is a handful during an outage and zero the rest of the
+  // time.
+  const feedRows = await db.transaction.findMany({
+    where: {
+      archivedAt: null,
+      source: { not: 'manual' },
+      OR: standbyRows.map((row) => ({
+        accountId: row.accountId,
+        amountCents: row.amountCents,
+        postedAt: {
+          gte: new Date(row.postedAt.getTime() - DUPLICATE_WINDOW_DAYS * DAY_MS),
+          lte: new Date(row.postedAt.getTime() + DUPLICATE_WINDOW_DAYS * DAY_MS),
+        },
+      })),
+    },
+    select: registerSelect,
+  });
+  if (feedRows.length === 0) return [];
+
+  const found: DuplicateCandidate[] = [];
+  const spent = new Set<string>();
+
+  for (const standbyRow of standbyRows) {
+    if (spent.has(standbyRow.id)) continue;
+
+    const match = feedRows.find((feedRow) => {
+      if (spent.has(feedRow.id)) return false;
+      if (feedRow.accountId !== standbyRow.accountId) return false;
+      if (feedRow.amountCents !== standbyRow.amountCents) return false;
+      if (daysBetween(feedRow.postedAt, standbyRow.postedAt) > DUPLICATE_WINDOW_DAYS) return false;
+
+      const pair = dismissalPair(feedRow.id, standbyRow.id);
+      return !dismissed.has(`${pair.firstTransactionId}:${pair.secondTransactionId}`);
+    });
+    if (!match) continue;
+
+    spent.add(standbyRow.id);
+    spent.add(match.id);
+
+    found.push({
+      original: side(match),
+      copy: side(standbyRow),
+      daysApart: daysBetween(match.postedAt, standbyRow.postedAt),
+      // Meaningless here — a hand-entered row has no external id at all — and
+      // false rather than absent so the field means one thing everywhere.
+      differentExternalIds: false,
+      reason: 'standby',
+    });
+  }
+
+  return found;
+}
+
+function daysBetween(a: Date, b: Date): number {
+  return Math.round(Math.abs(a.getTime() - b.getTime()) / DAY_MS);
+}
+
+/** The columns `side` reads, in one place so both rules select the same shape. */
+const registerSelect = {
+  id: true,
+  accountId: true,
+  postedAt: true,
+  amountCents: true,
+  description: true,
+  externalId: true,
+  createdAt: true,
+  source: true,
+  account: { select: { name: true, nickname: true, source: true } },
+  _count: { select: { allocations: true } },
+} as const;
