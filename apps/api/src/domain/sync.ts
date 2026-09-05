@@ -27,8 +27,24 @@ import {
  *     `pending.ts`, which owns that lifecycle.
  */
 
-/** Overlap re-requested on every incremental sync. */
+/**
+ * Overlap re-requested on top of whatever the evidence asks for.
+ *
+ * On a healthy account the evidence is today, so this is the whole window and
+ * the behaviour is what it has always been: seven days, enough for a
+ * transaction that posts late.
+ */
 const INCREMENTAL_OVERLAP_DAYS = 7;
+
+/**
+ * The furthest back an ordinary sync will reach on its own.
+ *
+ * The bridge caps a request at 90 days and says so only in `errlist` (ADR 009),
+ * so asking for more is asking to be silently truncated. An account that has
+ * been dark longer than this needs a person to look at it, not an hourly job
+ * quietly requesting a quarter of a year for ever.
+ */
+const MAX_LOOKBACK_DAYS = 90;
 
 /** A run still `running` after this long is assumed dead — the process was killed mid-sync. */
 const STALE_RUN_MINUTES = 30;
@@ -136,6 +152,132 @@ async function claimRunSlot(db: Db, now: Date, correlationId: string): Promise<s
   return run.id;
 }
 
+export interface SyncWindow {
+  readonly startDate: Date;
+  /** `backfill` when nothing is known yet, `evidence` when an account set it. */
+  readonly reason: 'backfill' | 'evidence';
+  /** The name of the account that reached furthest back, for the log line. */
+  readonly drivenBy?: string;
+}
+
+/**
+ * How far back this run asks, worked out from what is on disk.
+ *
+ * The window used to be measured from the last **successful run**, and that was
+ * wrong in a way that only appears during an outage. A run is recorded as
+ * `succeeded` when the bridge answers, even when it answers with an institution
+ * in `errlist` and no rows for it — which is correct, because five working
+ * connections should not be reported as a failure. But it meant `last_success`
+ * advanced every hour while an institution was dark, so the window stayed at
+ * seven days no matter how long the outage ran. On the day the connection came
+ * back, a ten-day gap was asked about for eight days and the rest was never
+ * requested again. The bridge still held those transactions; nothing ever asked.
+ *
+ * So the question is asked of the evidence instead: **for each account, when did
+ * we last hear anything from the feed about it?** That is the newest transaction
+ * the feed has given us, or the balance date the feed stamped on the account —
+ * whichever is later. The window reaches back to the oldest of those answers
+ * across every synced account, plus the ordinary overlap.
+ *
+ * The balance date is in there for the dormant account. A savings account with
+ * no activity for three months has no recent transaction and is perfectly
+ * healthy, and judging it on transactions alone would hold the window open at
+ * the maximum for ever. `feed_balance_as_of` is what the feed said about its own
+ * freshness (ADR 032) and answers exactly this: a healthy dormant account still
+ * gets a fresh balance date, a broken one does not.
+ *
+ * Bounded at both ends. The floor is the seven-day overlap, so a household where
+ * everything is working asks precisely what it asked before. The ceiling is 90
+ * days, because that is where the bridge silently truncates (ADR 009) — past
+ * that a person needs to intervene, and an hourly job should not be quietly
+ * requesting a quarter of a year for ever.
+ */
+export async function resolveWindowStart(
+  db: Db,
+  now: Date,
+  backfillMonths: number,
+): Promise<SyncWindow> {
+  const accounts = await db.account.findMany({
+    where: { archivedAt: null, source: 'simplefin' },
+    select: {
+      id: true,
+      name: true,
+      feedBalanceAsOf: true,
+      transactions: {
+        // Feed rows only. A row typed in by hand is evidence about the
+        // household, not about whether the connection is delivering — counting
+        // it would let manual entry during an outage narrow the very window
+        // that has to be wide to recover from it.
+        where: { archivedAt: null, source: 'simplefin' },
+        orderBy: { postedAt: 'desc' },
+        take: 1,
+        select: { postedAt: true },
+      },
+    },
+  });
+
+  /*
+   * No synced accounts at all, so there is no evidence to read and the run
+   * history is all there is.
+   *
+   * A first run backfills. A later one asks for the overlap and nothing more:
+   * with no accounts there is nothing to be behind on, and a household whose
+   * bridge is returning an empty set must not re-request twelve months every
+   * hour — that is eight windowed requests against a bridge that has already
+   * said it has nothing. An account that appears later has no transactions of
+   * its own, so the rule below backfills for it individually.
+   */
+  if (accounts.length === 0) {
+    const lastSuccess = await db.syncRun.findFirst({
+      where: { status: 'succeeded' },
+      orderBy: { startedAt: 'desc' },
+      select: { startedAt: true },
+    });
+    return lastSuccess
+      ? {
+          startDate: new Date(
+            lastSuccess.startedAt.getTime() - INCREMENTAL_OVERLAP_DAYS * MS_PER_DAY,
+          ),
+          reason: 'evidence',
+        }
+      : { startDate: subtractMonths(now, backfillMonths), reason: 'backfill' };
+  }
+
+  const floor = new Date(now.getTime() - INCREMENTAL_OVERLAP_DAYS * MS_PER_DAY);
+  const ceiling = new Date(now.getTime() - MAX_LOOKBACK_DAYS * MS_PER_DAY);
+
+  let startDate = floor;
+  let drivenBy: string | undefined;
+
+  for (const account of accounts) {
+    const newestTransaction = account.transactions[0]?.postedAt;
+    const lastHeard = latest(newestTransaction, account.feedBalanceAsOf);
+
+    // An account we have never heard anything about is one the feed has not
+    // delivered for yet — a discovery whose history has not arrived. Reaching
+    // back the full backfill for it is what the first run would have done.
+    const reach = lastHeard
+      ? new Date(lastHeard.getTime() - INCREMENTAL_OVERLAP_DAYS * MS_PER_DAY)
+      : subtractMonths(now, backfillMonths);
+
+    const bounded = reach < ceiling ? ceiling : reach;
+    if (bounded < startDate) {
+      startDate = bounded;
+      drivenBy = account.name;
+    }
+  }
+
+  return { startDate, reason: 'evidence', ...(drivenBy ? { drivenBy } : {}) };
+}
+
+function latest(...dates: readonly (Date | null | undefined)[]): Date | undefined {
+  let best: Date | undefined;
+  for (const date of dates) {
+    if (date && (!best || date > best)) best = date;
+  }
+  return best;
+}
+
 export async function runSync(db: Db, options: RunSyncOptions): Promise<SyncRunSummary> {
   const now = options.now ?? new Date();
   const logger = options.logger ?? SILENT_LOGGER;
@@ -144,16 +286,8 @@ export async function runSync(db: Db, options: RunSyncOptions): Promise<SyncRunS
 
   const syncRunId = await claimRunSlot(db, now, correlationId);
 
-  // First run backfills; later runs re-request a short overlap so a transaction
-  // that posts late, or a pending row that changes, is still inside the window.
-  const lastSuccess = await db.syncRun.findFirst({
-    where: { status: 'succeeded', id: { not: syncRunId } },
-    orderBy: { startedAt: 'desc' },
-    select: { startedAt: true },
-  });
-  const incrementalStart = lastSuccess
-    ? new Date(lastSuccess.startedAt.getTime() - INCREMENTAL_OVERLAP_DAYS * MS_PER_DAY)
-    : subtractMonths(now, backfillMonths);
+  const window = await resolveWindowStart(db, now, backfillMonths);
+  const incrementalStart = window.startDate;
 
   // The window must reach back far enough to cover every pending row we still
   // hold. Absence from the feed is how we detect that a pending transaction
@@ -173,7 +307,17 @@ export async function runSync(db: Db, options: RunSyncOptions): Promise<SyncRunS
     pendingStart && pendingStart < incrementalStart ? pendingStart : incrementalStart;
 
   logger.info(
-    { correlationId, syncRunId, startDate, backfill: lastSuccess === null },
+    {
+      correlationId,
+      syncRunId,
+      startDate,
+      backfill: window.reason === 'backfill',
+      // Which account set the window, and how far back it reached. A run that
+      // suddenly asks for six weeks should say which account asked for it.
+      windowReason: window.reason,
+      windowDays: Math.round((now.getTime() - startDate.getTime()) / MS_PER_DAY),
+      ...(window.drivenBy ? { windowDrivenBy: window.drivenBy } : {}),
+    },
     'sync started',
   );
 
