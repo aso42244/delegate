@@ -19,7 +19,6 @@ import { Alert, Button } from './ui.jsx';
 export function PairSuggestions(): ReactNode {
   const queryClient = useQueryClient();
   const [problem, setProblem] = useState<string | null>(null);
-  const [dismissed, setDismissed] = useState<Set<string>>(new Set());
 
   const candidates = useQuery({
     queryKey: ['pair-candidates'],
@@ -40,9 +39,26 @@ export function PairSuggestions(): ReactNode {
       setProblem(error instanceof ApiError ? error.message : 'Could not pair those.'),
   });
 
-  const shown = (candidates.data?.candidates ?? []).filter(
-    (candidate) => !dismissed.has(candidate.outflow.id),
-  );
+  /*
+   * A refusal is written down, not held here.
+   *
+   * This was a `Set` in component state, which meant it lasted until the page
+   * reloaded — and then the same wrong suggestion came back, for ever, because
+   * two settled transactions never change. Same defect `duplicate_dismissals`
+   * was created for, in the sibling panel.
+   */
+  const dismiss = useMutation({
+    mutationFn: ({ firstId, secondId }: { firstId: string; secondId: string }) =>
+      transactionsApi.dismissPair(firstId, secondId),
+    onSuccess: async () => {
+      setProblem(null);
+      await queryClient.invalidateQueries({ queryKey: ['pair-candidates'] });
+    },
+    onError: (error: unknown) =>
+      setProblem(error instanceof ApiError ? error.message : 'Could not dismiss that suggestion.'),
+  });
+
+  const shown = candidates.data?.candidates ?? [];
   if (shown.length === 0) return null;
 
   return (
@@ -111,8 +127,12 @@ export function PairSuggestions(): ReactNode {
               <Button
                 variant="ghost"
                 onClick={() =>
-                  setDismissed((previous) => new Set(previous).add(candidate.outflow.id))
+                  dismiss.mutate({
+                    firstId: candidate.outflow.id,
+                    secondId: candidate.inflow.id,
+                  })
                 }
+                disabled={dismiss.isPending}
                 aria-label={`Dismiss the suggestion for ${candidate.outflow.description}`}
               >
                 Not a pair

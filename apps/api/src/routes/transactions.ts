@@ -17,7 +17,7 @@ import {
   updateTransaction,
   DEFAULT_PAGE_SIZE,
 } from '../domain/transactions.js';
-import { confirmPair, findPairCandidates, unpair } from '../domain/pairing.js';
+import { confirmPair, dismissPair, findPairCandidates, unpair } from '../domain/pairing.js';
 import { dismissDuplicate, findDuplicates } from '../domain/duplicates.js';
 import { suggestDelegations } from '../domain/suggestions.js';
 import { booleanQuery, centsInLoose, centsOut, dateOut } from '../http/serialize.js';
@@ -403,6 +403,35 @@ export const transactionRoutes: FastifyPluginCallback = (fastify, _options, done
     request.log.info(
       { firstId: body.firstId, secondId: body.secondId, actorId: request.currentUser?.id },
       'transactions paired',
+    );
+    return { ok: true };
+  });
+
+  /**
+   * "These two are not a transfer."
+   *
+   * The other half of a proposal that is never acted on: one that can be
+   * refused for good. The refusal used to be state inside the component, so it
+   * lasted until the page reloaded and the same wrong suggestion came back for
+   * ever — two settled transactions never change, so neither does the proposal
+   * about them.
+   *
+   * Recorded against the pair, so both rows stay eligible against anything else.
+   */
+  fastify.post('/api/transactions/pairs/dismiss', async (request) => {
+    const body = z
+      .object({ firstId: z.string().uuid(), secondId: z.string().uuid() })
+      .parse(request.body);
+
+    await dismissPair(prisma, {
+      firstId: body.firstId,
+      secondId: body.secondId,
+      userId: request.currentUser?.id ?? null,
+    });
+
+    request.log.info(
+      { firstId: body.firstId, secondId: body.secondId, actorId: request.currentUser?.id },
+      'pair suggestion dismissed',
     );
     return { ok: true };
   });

@@ -223,6 +223,8 @@ export const transactionsApi = {
       '/api/transactions/bulk-categorize',
       { transactionIds, delegationId },
     ),
+  dismissPair: (firstId: string, secondId: string) =>
+    api.post<{ ok: true }>('/api/transactions/pairs/dismiss', { firstId, secondId }),
   bulkArchive: (transactionIds: readonly string[]) =>
     api.post<{ archived: number; failures: { transactionId: string; reason: string }[] }>(
       '/api/transactions/bulk-archive',

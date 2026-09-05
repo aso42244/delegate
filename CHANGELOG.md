@@ -6,7 +6,25 @@ phase (`v0.1.0-phase1`, and so on).
 
 ## [Unreleased]
 
-Nothing yet.
+### Fixed
+
+- **A refused transfer suggestion stays refused.** "Not a pair" was state inside
+  the component: it lasted until the page reloaded, and then the same wrong
+  suggestion came back — for ever, because the two settled transactions it is
+  about will never change.
+
+  This is the identical defect `duplicate_dismissals` was created for in
+  v0.50.0, in the sibling panel, and it was found the same way: by pressing the
+  button and watching the suggestion return. `handoff.md` had already written
+  down the rule that would have caught it — _before treating a refusal as not
+  worth keeping, check whether the thing being proposed about can expire on its
+  own._ A cleared check's proposal expires by itself; two settled transactions
+  cannot.
+
+  `pair_dismissals` stores it, **keyed on the pair rather than on a row**, so
+  both transactions stay eligible against anything else — a week with two $200
+  movements has one correct pairing and one wrong one, and refusing the wrong
+  one must not hide the right one.
 
 ## [0.53.0] — 2026-09-05
 
