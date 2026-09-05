@@ -88,8 +88,10 @@ These are non-negotiable. Violating one is a build failure.
 
 ## Where things stand
 
-**`main` is at `v0.53.0`, and the NAS is running `v0.52.0`** — deployed
-2026-09-05.
+**`main` is at `v0.54.0`, and the NAS is running `v0.52.0`** — deployed
+2026-09-05. **`v0.53.0` was skipped deliberately**: it was published and green,
+and the owner chose to wait for `v0.54.0` rather than deploy twice in an hour.
+Everything in it is in `v0.54.0`, so a deploy should name the later tag.
 
 **Assume a version you handed over is deployed.** The owner's instruction, given
 the same day: once the deploy command has been handed to him, treat the NAS as
@@ -780,6 +782,51 @@ did not. Neither was visible from a test fixture and neither had a test.
   The pill for it clears itself once the rows are archived, which is exactly the
   objection that removed the v0.48 duplicates pill. Before reaching for that
   precedent again, check whether the proposal's own action makes it go away.
+
+**Since v0.52.0 — the budget boundary, and a lesson that had already been written down (`v0.53.0`, `v0.54.0`)**
+
+Both releases came out of one screenshot: a $200 Roth contribution, the four ETF
+purchases it paid for, and a transfer suggestion offering to undo a correct
+categorization.
+
+- **The budget boundary is a wall now, not a description**
+  ([ADR 050](decisions/050-the-budget-boundary-is-a-wall.md)). `in_budget`
+  decides which accounts the identity sums, and nothing else knew that. Three
+  places crossed it. **Categorizing an off-budget row was permitted** and moved a
+  delegation while no summed balance moved with it — measured at exactly $200.00
+  of drift from a reading of zero. **A transfer was suggested across it**, and
+  `confirmPair` clears both sides' allocations, so confirming would have taken
+  the money back out of the envelope it was correctly spent from. **The queue
+  held rows that could never leave it** — the same case income and confirmed
+  transfers were excluded for, missed when that filter was written.
+
+  The judgement worth keeping: **money leaving the budget for a retirement
+  account is spending, not a transfer.** The envelope budget's subject is not net
+  worth but what is left to allocate, and money in an IRA is not. The envelope it
+  came out of is the record; the arrival is the same money seen from outside, and
+  counting that too would double it.
+
+- **A refused pair stays refused.** "Not a pair" was a `Set` in component state,
+  so it lasted until the page reloaded and the same wrong suggestion came back
+  for ever. `pair_dismissals` stores it now, keyed on the pair.
+
+  **This is the lesson to actually carry from these two releases.** It is the
+  identical defect `duplicate_dismissals` was created for in v0.50.0, in the
+  sibling panel — and the rule that catches it was already written in this
+  document, in the v0.50.0 section: _before treating a refusal as not worth
+  keeping, check whether the thing being proposed about can expire on its own._
+  Nobody applied it to pairing. A lesson recorded against the feature it came
+  from is a lesson that only fixes that feature. **When one of these rules is
+  written down, go and check every sibling it could apply to the same day** —
+  this application proposes in at least five places (duplicates, pairs, cleared
+  checks, categorization suggestions, inferred bills) and they do not share an
+  implementation.
+
+- Smaller, from the same review: an off-budget row reads `—` in the Delegation
+  column rather than an empty cell, because empty reads as "not loaded" and the
+  em-dash reads as "deliberately nothing". Caught by reading the render path
+  after the owner asked what those rows would look like — no test distinguishes
+  an empty cell from an em-dash one.
 
 ### Known gaps to fix
 
