@@ -2,6 +2,7 @@ import { ACCOUNT_TYPES, bitcoinValueCents } from '@budget/shared';
 import type { FastifyPluginCallback } from 'fastify';
 import { z } from 'zod';
 import { prisma } from '../db/client.js';
+import { balanceWithStandby, standbyAdjustments } from '../domain/standby.js';
 import { newestPrice } from '../domain/bitcoin.js';
 import { householdTimezone } from '../domain/settings.js';
 import {
@@ -113,8 +114,19 @@ export const accountRoutes: FastifyPluginCallback = (fastify, _options, done) =>
       ? await newestPrice(prisma)
       : null;
 
+    // Hand-entered activity on a synced account, which never wrote the stored
+    // column — see domain/standby.ts. The same figure the Budget page shows, so
+    // the two pages cannot disagree about one account's balance.
+    const standby = await standbyAdjustments(prisma);
+
     const worthOf = (account: (typeof accounts)[number]): bigint => {
-      if (account.bitcoinSats === null) return account.balanceCents;
+      if (account.bitcoinSats === null) {
+        return balanceWithStandby(
+          account.type,
+          account.balanceCents,
+          standby.get(account.id) ?? 0n,
+        );
+      }
       return price === null ? 0n : bitcoinValueCents(account.bitcoinSats, price.priceCents);
     };
 
@@ -126,6 +138,8 @@ export const accountRoutes: FastifyPluginCallback = (fastify, _options, done) =>
         type: account.type,
         source: account.source,
         balanceCents: centsOut(worthOf(account)),
+        // How much of that figure is hand-entered rather than the bank's.
+        standbyCents: centsOut(standby.get(account.id) ?? 0n),
         inBudget: account.inBudget,
         inNetWorth: account.inNetWorth,
         needsReview: account.needsReview,

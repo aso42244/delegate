@@ -174,12 +174,18 @@ export interface CreateTransactionInput {
 }
 
 /**
- * Records a transaction the owner entered by hand, and moves the account
- * balance to match.
+ * Records a transaction the owner entered by hand.
  *
  * Imported rows do not go through here: a sync stamps the balance the
- * institution reports, which is authoritative. A manual row has no such source,
- * so the balance is adjusted by the amount entered.
+ * institution reports, which is authoritative.
+ *
+ * **Whether the stored balance moves depends on the account, not on the row.**
+ * On a manual account — cash, Venmo, a wallet — the stored balance is the only
+ * balance there is, and the row moves it. On a synced account it must not: that
+ * column is the institution's figure and the next sync restamps it, so an
+ * increment here survived until the next run and then vanished, which read as
+ * the entry silently not working. Those rows are standby rows and are applied
+ * where they are read instead — see `standby.ts`.
  */
 export async function createManualTransaction(
   db: Db,
@@ -191,7 +197,7 @@ export async function createManualTransaction(
 
   const account = await db.account.findUnique({
     where: { id: input.accountId },
-    select: { id: true, archivedAt: true },
+    select: { id: true, archivedAt: true, source: true },
   });
   if (!account) throw new NotFoundError('Account', input.accountId);
   if (account.archivedAt) {
@@ -215,7 +221,9 @@ export async function createManualTransaction(
     select: { id: true },
   });
 
-  await applyTransactionToAccountBalance(db, input.accountId, input.amountCents, input.postedAt);
+  if (account.source === 'manual') {
+    await applyTransactionToAccountBalance(db, input.accountId, input.amountCents, input.postedAt);
+  }
 
   return created;
 }
@@ -272,9 +280,11 @@ export async function updateTransaction(
  *
  * Nothing is hard-deleted. The delegation events it caused are reversed rather
  * than removed, so the envelope returns to what it read before — and the account
- * balance is backed out for a manual row, whose balance effect we applied
- * ourselves. An imported row's balance comes from the institution, so it is left
- * for the next sync to correct.
+ * balance is backed out only where we applied it ourselves, which is a manual
+ * row on a manual account. An imported row's balance comes from the institution
+ * and is left for the next sync to correct; a standby row never wrote the stored
+ * balance in the first place, and archiving it simply removes it from the
+ * adjustment `standby.ts` computes on read.
  */
 export async function archiveTransaction(
   db: Db,
@@ -283,7 +293,14 @@ export async function archiveTransaction(
 ): Promise<void> {
   const existing = await db.transaction.findUnique({
     where: { id },
-    select: { id: true, accountId: true, amountCents: true, source: true, archivedAt: true },
+    select: {
+      id: true,
+      accountId: true,
+      amountCents: true,
+      source: true,
+      archivedAt: true,
+      account: { select: { source: true } },
+    },
   });
   if (!existing) throw new NotFoundError('Transaction', id);
   if (existing.archivedAt) return;
@@ -292,7 +309,7 @@ export async function archiveTransaction(
   await db.transactionAllocation.deleteMany({ where: { transactionId: id } });
   await db.transaction.update({ where: { id }, data: { archivedAt: now } });
 
-  if (existing.source === 'manual') {
+  if (existing.source === 'manual' && existing.account.source === 'manual') {
     await applyTransactionToAccountBalance(db, existing.accountId, -existing.amountCents, now);
   }
 }

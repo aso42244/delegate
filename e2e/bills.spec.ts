@@ -286,6 +286,11 @@ test('a charge can be attached to a bill, and detached again', async ({ signedIn
    * than taking the name of the charge attached to it, which would rename the
    * row to the thing that went wrong.
    */
+  // Wait for the dialog to go before reading the page underneath it. The
+  // dialog names the bill too, so a `getByText` that runs while it is still
+  // open matches twice and fails on strict mode — a race that only appears on a
+  // loaded machine, which is exactly the run that looks like a real bug.
+  await expect(signedIn.getByRole('dialog')).toHaveCount(0);
   await expect(signedIn.getByText(/Overdue/)).toHaveCount(0);
   await expect(signedIn.getByText('LINCOLN LIFE PREMIUM')).toBeVisible();
 

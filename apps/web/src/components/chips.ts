@@ -44,6 +44,16 @@ export const CHIPS = {
   /** Quiet, not yellow: this is a fact about how fresh a figure is, not
       something anybody can act on. Yellow is kept for a thing to do. */
   stale: { mark: 's', meaning: 'Balance may not be current', tone: 'quiet' },
+  /**
+   * Yellow, unlike `stale` beside it, and the difference is the whole point.
+   * Stale says a figure is old, which is nobody's fault and nothing to do.
+   * This says the figure on the row is **part bank and part household** — it
+   * includes charges typed in while the feed was behind — and the thing to do
+   * is archive those rows once the feed delivers them. A balance quietly
+   * carrying both with nothing to say so is a number somebody trusts and
+   * should not.
+   */
+  standby: { mark: 'a', meaning: 'Adjusted by transactions entered by hand', tone: 'warning' },
   review: { mark: 'r', meaning: 'Discovered by a sync — its type is a guess', tone: 'warning' },
   /** The only three-letter mark, because it is already read as a word. The
       figure on these rows is a quantity times a price and moves on its own once

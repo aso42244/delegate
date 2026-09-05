@@ -137,6 +137,9 @@ function presentRow(row: BudgetRow): Record<string, unknown> {
     id: row.id,
     name: row.name,
     balanceCents: centsOut(row.balanceCents),
+    // How much of that balance was typed in by hand while the feed was behind.
+    // `'0'` on every row that is not in standby, which is nearly all of them.
+    standbyCents: centsOut(row.standbyCents),
     amountToDelegateCents: centsOut(row.amountToDelegateCents),
     groupingId: row.groupingId,
     isUtility: row.isUtility,

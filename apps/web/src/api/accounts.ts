@@ -20,6 +20,8 @@ export interface AccountDto {
    */
   readonly feedBalanceAsOf: string | null;
   readonly stalenessIntervalDays: number | null;
+  /** Hand-entered activity included in `balanceCents`; `'0'` for most accounts. */
+  readonly standbyCents: string;
   readonly groupingId: string | null;
   /** The mortgage secured against this property, if it is one. */
   readonly mortgageAccountId: string | null;

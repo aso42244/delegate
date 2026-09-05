@@ -249,6 +249,7 @@ function AccountRow({ account }: { readonly account: AccountDto }): ReactNode {
               kinds={[
                 ...(account.source === 'manual' ? (['manual'] as const) : []),
                 ...(stale ? (['stale'] as const) : []),
+                ...(BigInt(account.standbyCents ?? '0') !== 0n ? (['standby'] as const) : []),
                 ...(account.needsReview ? (['review'] as const) : []),
               ]}
             />
