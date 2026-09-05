@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { prisma } from '../src/db/client.js';
 import { categorizeTransaction } from '../src/domain/allocations.js';
 import { buildSpending } from '../src/domain/insights.js';
-import { confirmPair, findPairCandidates, unpair } from '../src/domain/pairing.js';
+import { confirmPair, dismissPair, findPairCandidates, unpair } from '../src/domain/pairing.js';
 import {
   delegationBalance,
   makeAccount,
@@ -288,5 +288,118 @@ describe('unpairing', () => {
 
     await unpair(prisma, out.id);
     expect(await findPairCandidates(prisma, NOW)).toHaveLength(1);
+  });
+});
+
+/**
+ * Refusing a suggestion, permanently.
+ *
+ * "Not a pair" was state inside the component, so it lasted until the page
+ * reloaded and the same wrong suggestion came back — for ever, because the two
+ * transactions it is about are settled and never change. The identical defect
+ * `duplicate_dismissals` was created for, in the sibling panel, found the same
+ * way: by somebody pressing the button and watching it return.
+ */
+describe('refusing a pair suggestion', () => {
+  const NOW = new Date('2026-08-27T12:00:00Z');
+
+  async function twoAccounts(): Promise<{ a: string; b: string }> {
+    const a = await makeAccount({ name: 'Checking', type: 'asset', balanceCents: 100000n });
+    const b = await makeAccount({ name: 'Savings', type: 'asset', balanceCents: 100000n });
+    return { a: a.id, b: b.id };
+  }
+
+  it('survives a reload, which is the whole point', async () => {
+    const { a, b } = await twoAccounts();
+    const out = await makeTransaction({
+      accountId: a,
+      amountCents: -20000n,
+      description: 'ACH out',
+      postedAt: NOW,
+    });
+    const into = await makeTransaction({
+      accountId: b,
+      amountCents: 20000n,
+      description: 'ACH in',
+      postedAt: NOW,
+    });
+
+    expect(await findPairCandidates(prisma, NOW)).toHaveLength(1);
+
+    await dismissPair(prisma, { firstId: out.id, secondId: into.id, userId: null });
+
+    // Re-read from scratch, which is what a page load does.
+    expect(await findPairCandidates(prisma, NOW)).toHaveLength(0);
+  });
+
+  it('is written the same way round whichever way it is pressed', async () => {
+    const { a, b } = await twoAccounts();
+    const out = await makeTransaction({
+      accountId: a,
+      amountCents: -20000n,
+      description: 'ACH out',
+      postedAt: NOW,
+    });
+    const into = await makeTransaction({
+      accountId: b,
+      amountCents: 20000n,
+      description: 'ACH in',
+      postedAt: NOW,
+    });
+
+    await dismissPair(prisma, { firstId: out.id, secondId: into.id, userId: null });
+    // The same refusal, argued the other way round. The upsert must find it.
+    await dismissPair(prisma, { firstId: into.id, secondId: out.id, userId: null });
+
+    expect(await prisma.pairDismissal.count()).toBe(1);
+  });
+
+  /**
+   * The case that makes "keyed on the pair" the right choice. A week with two
+   * $200 movements has one correct pairing and one wrong one, and refusing the
+   * wrong one must not hide the right one.
+   */
+  it('leaves both rows eligible against anything else', async () => {
+    const { a, b } = await twoAccounts();
+    const c = await makeAccount({ name: 'Brokerage', type: 'asset', balanceCents: 100000n });
+
+    const out = await makeTransaction({
+      accountId: a,
+      amountCents: -20000n,
+      description: 'ACH out',
+      postedAt: NOW,
+    });
+    const wrong = await makeTransaction({
+      accountId: b,
+      amountCents: 20000n,
+      description: 'Unrelated deposit',
+      postedAt: NOW,
+    });
+    const right = await makeTransaction({
+      accountId: c.id,
+      amountCents: 20000n,
+      description: 'Transfer in',
+      postedAt: NOW,
+    });
+
+    await dismissPair(prisma, { firstId: out.id, secondId: wrong.id, userId: null });
+
+    const remaining = await findPairCandidates(prisma, NOW);
+    expect(remaining).toHaveLength(1);
+    expect(remaining[0]!.inflow.id).toBe(right.id);
+  });
+
+  it('refuses to dismiss a transaction against itself', async () => {
+    const { a } = await twoAccounts();
+    const row = await makeTransaction({
+      accountId: a,
+      amountCents: -20000n,
+      description: 'ACH out',
+      postedAt: NOW,
+    });
+
+    await expect(
+      dismissPair(prisma, { firstId: row.id, secondId: row.id, userId: null }),
+    ).rejects.toThrow(/cannot pair with itself/);
   });
 });

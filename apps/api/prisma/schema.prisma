@@ -219,6 +219,7 @@ model User {
   insightLayouts      InsightLayout[]
   recoveryCodes       RecoveryCode[]
   duplicateDismissals DuplicateDismissal[]
+  pairDismissals      PairDismissal[]
   billLinks           BillLink[]
   authEvents          AuthEvent[]           @relation("AuthEventSubject")
   authEventsPerformed AuthEvent[]           @relation("AuthEventActor")
@@ -743,6 +744,8 @@ model Transaction {
   // "These two are not the same charge", from either side of the pair.
   dismissedAgainst DuplicateDismissal[] @relation("dismissalFirst")
   dismissedBy      DuplicateDismissal[] @relation("dismissalSecond")
+  pairDismissedAgainst PairDismissal[] @relation("pairDismissalFirst")
+  pairDismissedBy      PairDismissal[] @relation("pairDismissalSecond")
 
   // "This charge is that bill", where the description does not say so.
   billLink BillLink?
@@ -875,6 +878,32 @@ model DuplicateDismissal {
 
   @@unique([firstTransactionId, secondTransactionId])
   @@map("duplicate_dismissals")
+}
+
+/// "These two are not a transfer", remembered.
+///
+/// The same table `duplicate_dismissals` is, for the sibling proposal, and it
+/// exists for the same reason: the refusal used to be component state, so a
+/// wrong suggestion returned on every page load for ever. Two settled
+/// transactions never change, so a proposal about them is permanent and the
+/// refusal has to be too.
+model PairDismissal {
+  id String @id @default(uuid()) @db.Uuid
+
+  /// Ordered by id, so one pair is one row whichever way it was read.
+  firstTransactionId  String @map("first_transaction_id") @db.Uuid
+  secondTransactionId String @map("second_transaction_id") @db.Uuid
+
+  first  Transaction @relation("pairDismissalFirst", fields: [firstTransactionId], references: [id], onDelete: Cascade)
+  second Transaction @relation("pairDismissalSecond", fields: [secondTransactionId], references: [id], onDelete: Cascade)
+
+  dismissedBy String? @map("dismissed_by") @db.Uuid
+  dismisser   User?   @relation(fields: [dismissedBy], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@unique([firstTransactionId, secondTransactionId])
+  @@map("pair_dismissals")
 }
 
 // ---------------------------------------------------------------------------

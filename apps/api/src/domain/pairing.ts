@@ -47,6 +47,43 @@ const DAY_MS = 24 * 60 * 60 * 1000;
  * movements or a fee, and both readings need a human. Guessing between them is
  * how a real expense disappears.
  */
+/**
+ * One pair, in the order the table stores it.
+ *
+ * Sorted by id so "A is not paired with B" and "B is not paired with A" are the
+ * same row. The check constraint enforces the same thing, so a row written any
+ * other way is refused rather than duplicated.
+ */
+export function pairKey(
+  first: string,
+  second: string,
+): { readonly firstTransactionId: string; readonly secondTransactionId: string } {
+  const [low, high] = [first, second].sort();
+  return { firstTransactionId: low!, secondTransactionId: high! };
+}
+
+/**
+ * Records that two transactions are not a transfer.
+ *
+ * An upsert, because pressing the button twice happens and the second press
+ * means what the first did.
+ */
+export async function dismissPair(
+  db: Db,
+  input: { readonly firstId: string; readonly secondId: string; readonly userId: string | null },
+): Promise<void> {
+  if (input.firstId === input.secondId) {
+    throw new ValidationError('pair_same_transaction', 'A transaction cannot pair with itself.');
+  }
+
+  const key = pairKey(input.firstId, input.secondId);
+  await db.pairDismissal.upsert({
+    where: { firstTransactionId_secondTransactionId: key },
+    create: { ...key, dismissedBy: input.userId },
+    update: {},
+  });
+}
+
 export async function findPairCandidates(
   db: Db,
   now: Date = new Date(),
@@ -74,6 +111,19 @@ export async function findPairCandidates(
     },
     orderBy: { postedAt: 'asc' },
   });
+
+  /*
+   * Refusals, read once and held as `a:b` keys. There are few by construction —
+   * a household refuses a handful of proposals, not thousands — and the
+   * alternative is a query per candidate inside the loop below.
+   */
+  const dismissed = new Set(
+    (
+      await db.pairDismissal.findMany({
+        select: { firstTransactionId: true, secondTransactionId: true },
+      })
+    ).map((row) => `${row.firstTransactionId}:${row.secondTransactionId}`),
+  );
 
   const outflows = transactions.filter((row) => row.amountCents < 0n);
   const inflows = transactions.filter((row) => row.amountCents > 0n);
@@ -112,7 +162,12 @@ export async function findPairCandidates(
         inflow.account.inBudget === outflow.account.inBudget &&
         inflow.amountCents === -outflow.amountCents &&
         Math.abs(inflow.postedAt.getTime() - outflow.postedAt.getTime()) <=
-          PAIRING_WINDOW_DAYS * DAY_MS,
+          PAIRING_WINDOW_DAYS * DAY_MS &&
+        // Already refused, and for good. Skipping only this pairing leaves both
+        // rows eligible against anything else — a week with two $200 movements
+        // has one correct pairing and one wrong one, and refusing the wrong one
+        // must not hide the right one.
+        !dismissed.has(dismissedKey(outflow.id, inflow.id)),
     );
     if (!match) continue;
 
@@ -267,4 +322,9 @@ export async function unpair(db: Db, transactionId: string): Promise<void> {
     where: { id: partnerId },
     data: { kind: 'normal', pairedTransactionId: null },
   });
+}
+
+function dismissedKey(first: string, second: string): string {
+  const key = pairKey(first, second);
+  return `${key.firstTransactionId}:${key.secondTransactionId}`;
 }
