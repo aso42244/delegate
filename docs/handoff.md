@@ -88,10 +88,12 @@ These are non-negotiable. Violating one is a build failure.
 
 ## Where things stand
 
-**`main` is at `v0.54.0`, and the NAS is running `v0.52.0`** — deployed
-2026-09-05. **`v0.53.0` was skipped deliberately**: it was published and green,
-and the owner chose to wait for `v0.54.0` rather than deploy twice in an hour.
-Everything in it is in `v0.54.0`, so a deploy should name the later tag.
+**`main` is at `v0.54.0`, and the NAS is running `v0.53.0`** — deployed
+2026-09-05.
+
+`v0.54.0` was tagged first and its publish workflow hung, so `v0.53.0` was
+deployed while that was still building. The only thing `v0.54.0` adds is the
+stored pair refusal (`pair_dismissals`) and its migration.
 
 **Assume a version you handed over is deployed.** The owner's instruction, given
 the same day: once the deploy command has been handed to him, treat the NAS as
