@@ -88,9 +88,13 @@ These are non-negotiable. Violating one is a build failure.
 
 ## Where things stand
 
-**`main` is at `v0.51.0`, and the NAS is running `v0.50.0`** — deployed
-2026-09-03, the release that narrowed duplicate detection and made a refusal
-stick.
+**`main` is at `v0.52.0`, and the NAS is running `v0.51.0`** — confirmed by the
+owner on 2026-09-04. There is no version anywhere in the application to read
+this from: `/health` is deliberately quiet about it and nothing in the UI shows
+it, so the two ways to answer the question are the running image
+(`docker ps` on the NAS, which reports the digest `deploy.sh` pinned) and a
+feature that only exists in one of the two candidates — `Rules` in the sidebar
+means `v0.51.0` or later. Worth a column one day; not worth guessing meanwhile.
 
 Note that **`v0.46.0` has no published image**. Its workflow run never produced
 one, so a deploy must name `v0.47.0` or later; everything `v0.46.0` contained is
@@ -712,6 +716,62 @@ against real data. Worth reading as a pair.
   232px it started at, and the gutter beside it is back to the 32px `design.md`
   §4 asks for. Both from the owner looking at it: the first width was right
   arithmetic and read as cramped
+
+**Since v0.51.0 — the feed broke, and two things about that were wrong (`v0.52.0`)**
+
+Both were found by the owner using Delegate through a real SimpleFIN outage on
+two of his institutions, entering by hand the charges his bank showed and this
+did not. Neither was visible from a test fixture and neither had a test.
+
+- **The request window was measured from the last successful run**, and a run
+  succeeds while one institution is dark — the bridge answers, lists the account,
+  and reports the problem in `errlist`, which is correctly not a failed sync. So
+  `last_success` advanced every hour through the outage and the window stayed at
+  seven days however long it ran. On the day the connection came back, a ten-day
+  gap was asked about for eight days and the rest was never requested again: the
+  bridge still held those transactions, and nothing ever asked.
+
+  It is read from the evidence now — per account, the newest transaction the feed
+  delivered or the balance date it stamped, whichever is later — and a backfill
+  button was scoped first and dropped, because it only works if somebody
+  remembers to press it on a day they may not know an outage happened.
+  [ADR 009](decisions/009-simplefin-sync-cadence-and-window.md) amended.
+
+  Two guards the shape needs. **A dormant account is not a broken one** — a
+  savings account with no activity for two months still gets a fresh balance
+  date, and judging on transactions alone would pin the window at its 90-day
+  ceiling for ever; `feed_balance_as_of` is the second time ADR 032's column has
+  paid for itself. And **manual rows are not evidence**, or entering the missing
+  charges by hand would silently close the window the recovery depends on.
+
+- **Standby mode**, which is the rest of it. A hand-entered row on a synced
+  account used to increment `accounts.balance_cents`, and `upsertAccount`
+  assigns that column from the feed on every run, so the entry worked and then
+  silently did not, up to an hour later. **758 integration tests passed before
+  and after the behaviour changed** — nothing had ever covered it.
+
+  The stored column is the institution's alone now, and the adjustment is
+  applied on read: the figure somebody sees is the bank's plus what has been
+  typed in since its feed went quiet. **There is no tag and nothing to switch
+  on** — a manual row on a synced account is a standby row by construction,
+  while one on a manual account is the ordinary case and still moves the balance
+  directly. New chip `a`, and the identity uses the adjusted balances too,
+  because a reconciliation computed from figures nobody can see is a reading
+  that cannot be checked.
+
+  **Coming out of standby is announced**, because nothing else would say the
+  outage was over — the balances read correctly either way. The existing
+  duplicate panel could not find these pairs: it matches on `merchantKey`, and
+  `manual pirate ship` against `ach payment pirate` is not a near miss. So a
+  second rule matches a hand-entered row against a feed row on the same account
+  by amount and date alone. **Safe there and nowhere else** — ADR 049's false
+  positive was two _feed_ rows at one amount in a week, which is a household
+  paying two bills, whereas a hand-entered row on a synced account exists only
+  because somebody was standing in for the feed.
+
+  The pill for it clears itself once the rows are archived, which is exactly the
+  objection that removed the v0.48 duplicates pill. Before reaching for that
+  precedent again, check whether the proposal's own action makes it go away.
 
 ### Known gaps to fix
 

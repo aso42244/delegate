@@ -6,6 +6,10 @@ phase (`v0.1.0-phase1`, and so on).
 
 ## [Unreleased]
 
+Nothing yet.
+
+## [0.52.0] — 2026-09-04
+
 ### Added
 
 - **Standby mode: what you type in while a feed is behind.** A hand-entered row
@@ -32,7 +36,7 @@ phase (`v0.1.0-phase1`, and so on).
 
 - **Coming out of standby.** When the feed catches up on a charge you entered by
   hand, the duplicate panel proposes the pair and a pill on every page says how
-  many are waiting — *"3 rows to clear"*. Archive your copies and both go away.
+  many are waiting — _"3 rows to clear"_. Archive your copies and both go away.
 
   It is announced because nothing else would say the outage was over: the
   balances read correctly either way, so the only signal that a hand-entered row
@@ -48,7 +52,7 @@ phase (`v0.1.0-phase1`, and so on).
   For a hand-entered row against a feed row **on the same account**, the match is
   amount to the cent and within two days, with no merchant test. Safe here and
   nowhere else: the false positive [ADR 049](docs/decisions/049-a-duplicate-is-proposed-never-archived.md)
-  was corrected for was two *feed* rows at one amount in a week, which is a
+  was corrected for was two _feed_ rows at one amount in a week, which is a
   household paying two bills; a hand-entered row on a synced account exists only
   because somebody was standing in for the feed.
 
@@ -56,7 +60,7 @@ phase (`v0.1.0-phase1`, and so on).
   hand-entered one, whatever the dates say.
 
 - **Archive selection**, on the register's existing multi-select bar beside
-  *assign all to*. A fortnight of standing in for a feed is twenty-odd rows to
+  _assign all to_. A fortnight of standing in for a feed is twenty-odd rows to
   clear, and twenty passes through a row menu is how somebody decides to leave
   them there — at which point the register is double-counted for good. Nothing
   new happens to a row: it is the same archive, so every envelope movement is
