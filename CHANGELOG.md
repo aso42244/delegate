@@ -6,7 +6,32 @@ phase (`v0.1.0-phase1`, and so on).
 
 ## [Unreleased]
 
-Nothing yet.
+### Fixed
+
+- **A sync now asks back as far as the feed has been quiet.** The request window
+  was measured from the last successful run, and a run succeeds while one
+  institution is dark — the bridge answers, lists the account, and reports the
+  problem in `errlist`, which is correctly not a failed sync. So `last_success`
+  advanced every hour through an outage and the window stayed at seven days
+  however long it ran. On the day the connection came back, a ten-day gap was
+  asked about for eight days and the remainder was never requested again: the
+  bridge still held those transactions and nothing ever asked for them.
+
+  The window is now read from the evidence on disk — for each account, the
+  newest transaction the feed has given us or the balance date the feed stamped
+  on it, whichever is later — and reaches back to the oldest of those across
+  every synced account, plus the usual overlap. A household where everything is
+  working asks for exactly the seven days it asked for before. Bounded at 90
+  days, where the bridge silently truncates.
+  [ADR 009](docs/decisions/009-simplefin-sync-cadence-and-window.md), amended.
+
+  Two things it deliberately does not count. A **manual transaction** is not
+  evidence the connection is delivering, so entering the missing charges by hand
+  during an outage cannot close the window that the recovery depends on. And a
+  **dormant account** is not a broken one — a savings account with no activity
+  for two months still gets a fresh balance date from the feed, which is what
+  `feed_balance_as_of` was added to distinguish
+  ([ADR 032](docs/decisions/032-a-feed-date-is-kept-apart-from-the-one-we-stamp.md)).
 
 ## [0.51.0] — 2026-09-03
 

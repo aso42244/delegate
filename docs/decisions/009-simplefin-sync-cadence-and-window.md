@@ -33,6 +33,60 @@ The first sync requests twelve months. Later syncs request from the last
 successful run minus a **seven-day overlap**, so a transaction that posts late is
 still inside the window.
 
+> **Amended 2026-09-04 — the window follows the evidence, not the run history.**
+>
+> Measuring from the last successful run was wrong in a way that only appears
+> during an outage, and it is the expensive kind of wrong: it loses transactions
+> permanently and says nothing.
+>
+> A run is recorded as `succeeded` when the bridge answers, even when it answers
+> with an institution in `errlist` and no rows for it. That is right — five
+> working connections must not be reported as a failed sync, and it is what
+> "reported and skipped" in the consequences below already established. But it
+> means `last_success` advanced every hour while an institution was dark, so the
+> window stayed at seven days however long the outage ran. On the day the
+> connection came back, a ten-day gap was asked about for eight days and days
+> nine and ten were never requested again. The bridge still held them — real
+> accounts carry roughly six months — and nothing ever asked.
+>
+> The question is now asked of what is on disk. For each synced account, **when
+> did we last hear anything from the feed about it?** — the newest transaction
+> the feed has given us, or the balance date the feed stamped on the account,
+> whichever is later. The window reaches back to the oldest of those answers
+> across every account, plus the same seven-day overlap.
+>
+> Three things bound it, and each one is a case that would otherwise misbehave:
+>
+> - **Floor: the seven-day overlap.** A household where everything is working
+>   asks for precisely what it asked before. This is not a wider window, it is
+>   the same window measured against something that cannot lie about an outage.
+> - **Ceiling: 90 days**, where the bridge silently truncates. Past that a person
+>   needs to look at the connection; an hourly job should not be quietly
+>   requesting a quarter of a year for ever.
+> - **The feed's balance date is consulted, not only transactions.** A dormant
+>   account has no recent transaction and is perfectly healthy. Judging it on
+>   transactions alone would hold the window at the ceiling permanently.
+>   `feed_balance_as_of` ([ADR 032](032-a-feed-date-is-kept-apart-from-the-one-we-stamp.md))
+>   answers exactly this, which is the second time that column has paid for
+>   itself: a healthy dormant account still gets a fresh balance date, a broken
+>   one does not.
+>
+> **Only feed rows count as evidence.** A transaction typed in by hand is a fact
+> about the household, not about whether the connection is delivering. Counting
+> it would let somebody entering the missing charges during an outage — which is
+> the natural thing to do — silently close the window their recovery depends on.
+>
+> There is deliberately **no backfill button**. One was scoped first, and it is
+> the worse design for the same reason a hand-kept list of bills is worse than
+> inferring them ([ADR 045](045-a-bill-is-inferred-not-entered.md)): it only
+> works if somebody remembers to press it, on a day they may not know an outage
+> happened. This closes its own gap.
+>
+> With no synced accounts at all there is no evidence to read, so the run history
+> is still used: a first run backfills, a later one asks for the overlap. An
+> account that appears afterwards has no transactions of its own and is
+> backfilled individually by the rule above.
+
 **A long range must be split into windows of 45 days.** This was found by running
 against the real bridge, and it could not have been found any other way. Asking
 for twelve months in one request returns `200 OK` with a plausible-looking set of

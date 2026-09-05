@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { prisma } from '../src/db/client.js';
 import { categorizeTransaction } from '../src/domain/allocations.js';
-import { guessAccountType, runSync } from '../src/domain/sync.js';
+import { guessAccountType, resolveWindowStart, runSync } from '../src/domain/sync.js';
 import { createRule } from '../src/domain/rules.js';
 import { parseFeedAmount } from '../src/simplefin/protocol.js';
 import {
@@ -878,5 +878,217 @@ describe("the feed's own balance date", () => {
 
     const account = await prisma.account.findFirstOrThrow({ where: { externalId: 'acct-1' } });
     expect(account.feedBalanceAsOf?.getTime()).toBe(frozen * 1000);
+  });
+});
+
+/**
+ * How far back a run asks.
+ *
+ * These exist because the window used to be measured from the last successful
+ * run, and a run succeeds while an institution is dark. The gap that opens is
+ * invisible until the connection comes back and the missing weeks are simply
+ * never requested — the bridge still has them, and nothing asks.
+ */
+describe('the request window', () => {
+  const DAY = 24 * 60 * 60 * 1000;
+
+  /** Seeds a synced account with whatever evidence the feed has left behind. */
+  async function syncedAccount(options: {
+    readonly name: string;
+    readonly externalId: string;
+    readonly newestTransaction?: Date | undefined;
+    readonly feedBalanceAsOf?: Date | undefined;
+    readonly manualTransaction?: Date | undefined;
+  }): Promise<void> {
+    const account = await prisma.account.create({
+      data: {
+        name: options.name,
+        type: 'asset',
+        source: 'simplefin',
+        externalId: options.externalId,
+        balanceCents: 100000n,
+        balanceAsOf: NOW,
+        feedBalanceAsOf: options.feedBalanceAsOf ?? null,
+      },
+      select: { id: true },
+    });
+
+    for (const [postedAt, source] of [
+      [options.newestTransaction, 'simplefin'],
+      [options.manualTransaction, 'manual'],
+    ] as const) {
+      if (!postedAt) continue;
+      await prisma.transaction.create({
+        data: {
+          accountId: account.id,
+          ...(source === 'simplefin' ? { externalId: `${options.externalId}-${+postedAt}` } : {}),
+          source,
+          amountCents: -1000n,
+          description: 'Something',
+          descriptionRaw: 'Something',
+          postedAt,
+          pending: false,
+        },
+      });
+    }
+  }
+
+  async function daysRequested(now: Date = NOW): Promise<number> {
+    const window = await resolveWindowStart(prisma, now, 12);
+    return Math.round((now.getTime() - window.startDate.getTime()) / DAY);
+  }
+
+  it('backfills when nothing has ever synced', async () => {
+    const window = await resolveWindowStart(prisma, NOW, 12);
+    expect(window.reason).toBe('backfill');
+    // Twelve months back, give or take the length of the months involved.
+    expect(await daysRequested()).toBeGreaterThan(360);
+  });
+
+  it('asks for the ordinary overlap when everything is current', async () => {
+    await syncedAccount({
+      name: 'Everyday Checking',
+      externalId: 'acct-1',
+      newestTransaction: new Date(NOW.getTime() - DAY),
+      feedBalanceAsOf: NOW,
+    });
+
+    // Unchanged from the behaviour this replaced: a healthy household asks for
+    // exactly the seven-day overlap and no more.
+    expect(await daysRequested()).toBe(7);
+  });
+
+  /**
+   * The failure this was written for. Ten days dark, and the run that follows
+   * has to reach past the whole outage rather than seven days into it.
+   */
+  it('reaches past an outage as long as the outage has run', async () => {
+    await syncedAccount({
+      name: 'Everyday Checking',
+      externalId: 'acct-1',
+      newestTransaction: new Date(NOW.getTime() - DAY),
+      feedBalanceAsOf: NOW,
+    });
+    await syncedAccount({
+      name: 'Broken Bank Checking',
+      externalId: 'acct-2',
+      newestTransaction: new Date(NOW.getTime() - 10 * DAY),
+      feedBalanceAsOf: new Date(NOW.getTime() - 10 * DAY),
+    });
+
+    // Ten days of silence plus the overlap, so the missed days are inside it.
+    expect(await daysRequested()).toBe(17);
+
+    const window = await resolveWindowStart(prisma, NOW, 12);
+    expect(window.drivenBy).toBe('Broken Bank Checking');
+  });
+
+  /**
+   * A savings account with no activity for two months is not broken, and
+   * judging it on transactions alone would hold the window open for ever. The
+   * feed's own balance date is what tells the two apart — ADR 032.
+   */
+  it('does not widen for a dormant account the feed still reports on', async () => {
+    await syncedAccount({
+      name: 'Savings',
+      externalId: 'acct-1',
+      newestTransaction: new Date(NOW.getTime() - 60 * DAY),
+      feedBalanceAsOf: NOW,
+    });
+
+    expect(await daysRequested()).toBe(7);
+  });
+
+  it('stops at ninety days, where the bridge truncates silently', async () => {
+    await syncedAccount({
+      name: 'Long Dark Checking',
+      externalId: 'acct-1',
+      newestTransaction: new Date(NOW.getTime() - 300 * DAY),
+      feedBalanceAsOf: new Date(NOW.getTime() - 300 * DAY),
+    });
+
+    expect(await daysRequested()).toBe(90);
+  });
+
+  /**
+   * Entering the missing charges by hand is what somebody does during an
+   * outage. It must not persuade the sync that the connection is delivering,
+   * because that would close the window the recovery depends on.
+   */
+  it('is not narrowed by transactions typed in during the outage', async () => {
+    await syncedAccount({
+      name: 'Broken Bank Checking',
+      externalId: 'acct-1',
+      newestTransaction: new Date(NOW.getTime() - 12 * DAY),
+      feedBalanceAsOf: new Date(NOW.getTime() - 12 * DAY),
+      manualTransaction: NOW,
+    });
+
+    expect(await daysRequested()).toBe(19);
+  });
+
+  it('ignores an archived account that has been dark for months', async () => {
+    await syncedAccount({
+      name: 'Closed Card',
+      externalId: 'acct-1',
+      newestTransaction: new Date(NOW.getTime() - 200 * DAY),
+      feedBalanceAsOf: new Date(NOW.getTime() - 200 * DAY),
+    });
+    await prisma.account.updateMany({ data: { archivedAt: NOW } });
+    await syncedAccount({
+      name: 'Everyday Checking',
+      externalId: 'acct-2',
+      newestTransaction: new Date(NOW.getTime() - DAY),
+      feedBalanceAsOf: NOW,
+    });
+
+    expect(await daysRequested()).toBe(7);
+  });
+});
+
+/**
+ * End to end over `runSync`, because the unit above proves the arithmetic and
+ * this proves the arithmetic is what the client is actually asked for.
+ */
+describe('recovering from an outage', () => {
+  const DAY = 24 * 60 * 60 * 1000;
+
+  it('requests the missed days once the institution comes back', async () => {
+    // The feed's balance date is the day the connection last worked, and it
+    // stops advancing the moment the institution goes dark — which is the
+    // signal the window is now read from.
+    const lastGoodDay = Math.floor(NOW.getTime() / 1000);
+    const healthy = accountSet([
+      { id: 'acct-1', name: 'Checking', balance: '100.00', balanceDate: lastGoodDay },
+    ]);
+    // The bridge answers, lists the account, and reports a problem against it,
+    // repeating the snapshot it already had. The run succeeds — five working
+    // connections are not a failed sync — and that is exactly what used to keep
+    // the window pinned at seven days however long the outage ran.
+    const broken = accountSet(
+      [{ id: 'acct-1', name: 'Checking', balance: '100.00', balanceDate: lastGoodDay }],
+      { errors: ['Connection to Test Bank needs attention.'] },
+    );
+
+    const client = new ScriptedSimpleFinClient([healthy]);
+    await sync(client);
+
+    for (let day = 1; day <= 10; day += 1) {
+      client.push(broken);
+      const summary = await sync(client, new Date(NOW.getTime() + day * DAY));
+      expect(summary.status).toBe('succeeded');
+    }
+
+    client.push(healthy);
+    client.calls.length = 0;
+    const recovery = new Date(NOW.getTime() + 11 * DAY);
+    await sync(client, recovery);
+
+    const requested = client.calls[0]?.startDate;
+    expect(requested).toBeDefined();
+    const daysBack = Math.round((recovery.getTime() - requested!.getTime()) / DAY);
+    // Eleven days since the feed last said anything, plus the overlap. Before
+    // this change it was eight, and days nine through eleven were lost.
+    expect(daysBack).toBe(18);
   });
 });
