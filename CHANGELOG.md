@@ -6,7 +6,34 @@ phase (`v0.1.0-phase1`, and so on).
 
 ## [Unreleased]
 
-Nothing yet.
+### Fixed
+
+- **The budget boundary is enforced, not just described.**
+  [ADR 050](docs/decisions/050-the-budget-boundary-is-a-wall.md). The identity
+  sums `in_budget` accounts only, and nothing else knew that. A $200 Roth
+  contribution and the four ETF purchases it paid for exposed all three places
+  that crossed it in one afternoon.
+
+  - **An out-of-budget row can no longer be categorized.** It moved a delegation
+    while no summed balance moved with it, putting the reading out by the full
+    amount — measured at exactly $200.00 from a reading of zero. Refused in
+    `setAllocations`, so every route through it refuses too, and the register
+    offers no field on such a row.
+  - **A transfer is no longer suggested across the boundary**, and the route
+    refuses one reached any other way. `confirmPair` clears the allocations on
+    both sides, so confirming would have taken $200 back out of the envelope it
+    was correctly spent from while the balance stayed gone. **Two out-of-budget
+    accounts still pair with each other.**
+  - **Those rows leave the uncategorized queue and the pill that counts them.**
+    Income and confirmed transfers were excluded from that filter long ago, for
+    the exact reason this needed to be: they allocate to nothing by design and
+    would otherwise sit there uncloseable for as long as the budget exists. They
+    stay in the register itself — it is the queue they leave, not the journal.
+
+  Money leaving the budget for a retirement account is **spending**, not a
+  transfer: it is no longer available to delegate, and the envelope it came out
+  of is the household's record of it. The arrival on the other side is the same
+  money seen from outside.
 
 ## [0.52.0] — 2026-09-04
 

@@ -736,17 +736,54 @@ describe('pending transactions', () => {
     expect((await computeBudgetIdentity(prisma)).pendingCents).toBe(0n);
     expect(await identityDifference()).toBe(0n);
 
-    // Off-budget: the first two terms never counted this account, so the third
-    // must not either.
+    /*
+     * Off-budget: the first two terms never counted this account, so the third
+     * must not either.
+     *
+     * Since [ADR 050](../../../docs/decisions/050-the-budget-boundary-is-a-wall.md)
+     * an off-budget row cannot be categorized at all, so this allocation is
+     * made while the account is still in the budget and the account is moved
+     * out afterwards — which is not a contrivance but the one way these rows
+     * exist in a real database. Moving an account out of the budget
+     * deliberately does not clear its allocations: doing so would move
+     * envelopes as a side effect of a settings toggle.
+     *
+     * So the filter on the fourth term still earns its place. It is what keeps
+     * a pre-existing allocation from being counted against balances that are
+     * no longer summed.
+     */
     const outside = await makeTransaction({
       accountId: offBudget.id,
       amountCents: -7_000n,
       pending: true,
     });
+    await prisma.account.update({ where: { id: offBudget.id }, data: { inBudget: true } });
     await prisma.$transaction((tx) =>
       categorizeTransaction(tx, outside.id, grocery.id, { actorId }),
     );
+    await prisma.account.update({ where: { id: offBudget.id }, data: { inBudget: false } });
+
     expect((await computeBudgetIdentity(prisma)).pendingCents).toBe(0n);
+  });
+
+  it('refuses to categorize an off-budget row in the first place', async () => {
+    const offBudget = await makeAccount({
+      name: 'Brokerage',
+      type: 'asset',
+      balanceCents: 0n,
+      inBudget: false,
+      inNetWorth: true,
+    });
+    const grocery = await makeDelegation({ name: 'Grocery' });
+    const outside = await makeTransaction({
+      accountId: offBudget.id,
+      amountCents: -7_000n,
+      pending: true,
+    });
+
+    await expect(
+      categorizeTransaction(prisma, outside.id, grocery.id, { actorId }),
+    ).rejects.toThrow(/not in the budget/);
   });
 
   it('back out completely when a pending row vanishes without posting', async () => {

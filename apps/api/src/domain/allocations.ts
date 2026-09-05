@@ -33,7 +33,13 @@ export async function setAllocations(
 ): Promise<SetAllocationsResult> {
   const transaction = await db.transaction.findUnique({
     where: { id: transactionId },
-    select: { id: true, amountCents: true, kind: true, archivedAt: true },
+    select: {
+      id: true,
+      amountCents: true,
+      kind: true,
+      archivedAt: true,
+      account: { select: { inBudget: true, name: true } },
+    },
   });
   if (!transaction) throw new NotFoundError('Transaction', transactionId);
   if (transaction.archivedAt !== null) {
@@ -50,6 +56,28 @@ export async function setAllocations(
       'allocations_not_allowed_for_kind',
       `A transaction of kind "${transaction.kind}" allocates to nothing`,
       { kind: transaction.kind },
+    );
+  }
+
+  /*
+   * An out-of-budget account's rows allocate to nothing, for the same reason
+   * income does — and this one is arithmetic rather than judgement.
+   *
+   * The identity sums `in_budget` accounts only. Categorizing a row on an
+   * account it does not sum moves a delegation while no balance moves with it,
+   * so the reading goes wrong by the full amount and stays wrong: measured at
+   * exactly −$200.00 on a $200 purchase inside a Roth IRA.
+   *
+   * What makes this worth refusing rather than warning about is that the money
+   * has usually *already* been accounted for. A contribution leaves a current
+   * account, and that outflow is the budget's record of it; the arrival in the
+   * IRA is the same money seen from outside the budget. Categorizing the
+   * arrival counts it twice.
+   */
+  if (!transaction.account.inBudget && allocations.length > 0) {
+    throw new ValidationError(
+      'allocations_not_allowed_off_budget',
+      `${transaction.account.name} is not in the budget, so its transactions are not categorized. Money moving into it is spending from the account it left.`,
     );
   }
 

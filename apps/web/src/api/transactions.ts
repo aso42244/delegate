@@ -28,7 +28,13 @@ export interface TransactionDto {
   readonly pairedTransactionId: string | null;
   /** The outstanding check this payment settled, if it settled one. */
   readonly settledCheckNumber: string | null;
-  readonly account: { readonly id: string; readonly name: string; readonly type: 'asset' | 'debt' };
+  readonly account: {
+    readonly id: string;
+    readonly name: string;
+    readonly type: 'asset' | 'debt';
+    /** False for an account that is in net worth only — an IRA, a brokerage. */
+    readonly inBudget: boolean;
+  };
   readonly allocations: readonly AllocationDto[];
 }
 
