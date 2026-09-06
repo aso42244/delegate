@@ -23,6 +23,28 @@ phase (`v0.1.0-phase1`, and so on).
   while the sync itself is failing, since a bridge that is down lists nothing and
   would set every account off at once saying what `sync_failing` already says.
 
+- **Insights says when it has stopped being recorded.** A card on Settings → Sync
+  beside Backups, and an `Insights stalled` pill once nothing has been written
+  for more than two days.
+
+  `GET /api/snapshots/status` has existed since the job did. It was written
+  _because of_ the backup failure — "check for the evidence a job leaves, not the
+  absence of an error" — and documented in `handoff.md` as the way to tell
+  whether the nightly snapshot ran. **Nothing called it**: one of three routes in
+  the tree with no caller. The lesson was implemented and then left somewhere the
+  failure it describes could happen to it.
+
+  What went wrong quietly is Insights itself. It gains a day a night and there is
+  no backfill ([ADR 035](docs/decisions/035-the-financial-picture-is-snapshotted-nightly.md)),
+  so a job that stopped firing in March draws a chart that simply ends — which
+  looks exactly like a chart nobody has looked at. The card leads with `days`
+  recorded rather than "the job ran", because a count of rows is evidence and the
+  other is an assertion about an attempt.
+
+  Silent on a deployment less than three days old, the same guard the backup card
+  uses: a fresh install genuinely has nothing recorded, and a warning that is
+  wrong on day one is not trusted on day ninety.
+
 - **`accounts.feed_last_seen_at`** — the third date in
   [ADR 032](docs/decisions/032-a-feed-date-is-kept-apart-from-the-one-we-stamp.md)'s
   family, amended. An account closed at the bank, or dropped when an institution
@@ -36,6 +58,16 @@ phase (`v0.1.0-phase1`, and so on).
 
   The row chip reads it too, so an account the pill names by name carries a mark
   of its own.
+
+### Removed
+
+- **`PATCH /api/accounts/:id/bitcoin`**, which set a holding's quantity and which
+  no interface ever called — the third of the three uncalled routes. Settings →
+  Bitcoin reaches the same `setHoldingQuantity` through `managed-accounts.ts`, so
+  nothing is lost. Removed rather than left, because a second way in that nobody
+  uses is a second way to drift: it took an absolute quantity while the interface
+  writes dated events ([ADR 023](docs/decisions/023-bitcoin-holdings-are-a-dated-ledger.md)),
+  and the two would only ever have been compared the day they disagreed.
 
 ## [0.54.2] — 2026-09-05
 

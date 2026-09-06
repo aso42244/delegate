@@ -22,7 +22,13 @@ const DAILY = /^(\d{1,2}) (\d{1,2}) \* \* \*$/;
 export function describeBackupSchedule(
   cron: string,
   timezone: string,
-  retentionDays: number,
+  /**
+   * Null where nothing is pruned, which is the snapshot card: the nightly
+   * record is kept for ever because there is no backfill, so a deleted night is
+   * a hole in Insights that cannot be refilled. Saying "kept 0 days" there
+   * would be false in the worst direction.
+   */
+  retentionDays: number | null,
 ): string {
   const daily = DAILY.exec(cron.trim());
 
@@ -31,6 +37,8 @@ export function describeBackupSchedule(
   const when = daily
     ? `Daily at ${daily[2]!.padStart(2, '0')}:${daily[1]!.padStart(2, '0')} ${timezone}`
     : `On the schedule ${cron} (${timezone})`;
+
+  if (retentionDays === null) return `${when}.`;
 
   const kept = retentionDays === 1 ? 'kept a day' : `kept ${retentionDays} days`;
 

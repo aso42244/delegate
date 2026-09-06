@@ -1190,6 +1190,18 @@ are not negotiable by a request, whoever wrote it.
   fails here while the NAS is fine, suspect that difference before suspecting the
   release.**
 
+- **`npm run verify` fills colima's disk, and it fails as something unrelated.**
+  Every run builds a container image, and nothing removes the one it replaces.
+  Ten runs in a day left 93 images and 60GB inside the VM, and the gate then
+  failed at the **tor** step — `Failed to parse/validate config`, from
+  `Error creating directory /var/lib/tor/.tor: No space left on device` five
+  lines earlier. Nothing about tor was wrong, and the host had 152GB free: the
+  VM has its own disk.
+
+  `docker image prune -f` reclaimed 13.8GB and the gate passed unchanged. Worth
+  knowing because the symptom names the wrong subsystem, and because it will
+  recur on any day with a lot of verifies. Seen 2026-09-05.
+
 - **Colima can wedge, and it looks exactly like flaky tests.** It has happened
   once, on 2026-08-20. End-to-end tests began timing out at about 42 seconds
   each, a _different_ one every run, and the suite took 9.2 minutes instead of

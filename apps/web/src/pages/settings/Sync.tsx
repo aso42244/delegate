@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState, type FormEvent, type ReactNode } from 'react';
 import { backupsApi } from '../../api/backups.js';
+import { snapshotsApi } from '../../api/snapshots.js';
 import { StatusLine } from '../../components/layout.jsx';
 import { describeBackupSchedule } from './backup-schedule.js';
 import { ApiError, syncApi, type SyncStatus } from '../../api/client.js';
@@ -137,6 +138,60 @@ function readableSize(bytes: number): string {
   if (bytes >= 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
   if (bytes >= 1024) return `${Math.round(bytes / 1024)} KB`;
   return `${bytes} bytes`;
+}
+
+/**
+ * Whether Insights is still being recorded.
+ *
+ * The sibling of the Backups card above, and it exists for the same reason —
+ * with the sharper detail that the endpoint it reads was written *because of*
+ * the backup failure, documented as the way to tell whether the job ran, and
+ * then called by nothing at all. A lesson implemented and left somewhere the
+ * failure it describes could happen to it.
+ *
+ * What goes wrong quietly: Insights gains a day a night and there is no
+ * backfill (ADR 035), so a job that stopped firing in March draws a chart that
+ * simply ends. That is indistinguishable from a chart nobody has looked at.
+ *
+ * `days` is the honest figure to lead with. "The job ran" is an assertion about
+ * an attempt; "there are 94 days on disk" is the evidence.
+ */
+function Snapshots(): ReactNode {
+  const snapshots = useQuery({ queryKey: ['snapshots-status'], queryFn: snapshotsApi.status });
+  const data = snapshots.data;
+
+  return (
+    <Card
+      span="third"
+      title="Insights history"
+      description={
+        data
+          ? describeBackupSchedule(data.cron, data.timezone, null)
+          : 'The nightly record behind the Insights page.'
+      }
+    >
+      {snapshots.isLoading ? (
+        <p className="text-quiet text-muted">Loading…</p>
+      ) : (
+        <>
+          <StatusLine tone={data?.stale ? 'warning' : 'positive'}>
+            {data === undefined || data.days === 0
+              ? 'No night has been recorded yet.'
+              : `${data.days} ${data.days === 1 ? 'day' : 'days'} recorded · newest ${data.latestDate}`}
+          </StatusLine>
+
+          {/* Said plainly rather than implied by a date, because the cost is
+              not obvious: a missed night is missed for good. */}
+          {data?.stale && (
+            <p className="mt-1 text-quiet text-muted">
+              Nothing has been recorded for more than two days. There is no backfill, so any night
+              missed while the job was not running stays missing.
+            </p>
+          )}
+        </>
+      )}
+    </Card>
+  );
 }
 
 /**
@@ -481,6 +536,10 @@ export function SyncSection(): ReactNode {
       </Card>
 
       <Backups />
+
+      {/* Beside Backups: both answer "is this job leaving evidence", which is
+          the only question about a nightly job worth asking from here. */}
+      <Snapshots />
 
       <Export />
 

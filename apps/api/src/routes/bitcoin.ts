@@ -13,12 +13,7 @@ import { householdTimezone } from '../domain/settings.js';
 import { checkNode, readNodeSettings, saveNodeSettings } from '../domain/bitcoin-node.js';
 import { addWallet, archiveWallet, listWallets, scanWallet } from '../domain/bitcoin-wallets.js';
 import { createHolding, updateHolding } from '../domain/managed-accounts.js';
-import {
-  costBasis,
-  recordHoldingEvent,
-  reverseHoldingEvent,
-  setHoldingQuantity,
-} from '../domain/bitcoin-holdings.js';
+import { costBasis, recordHoldingEvent, reverseHoldingEvent } from '../domain/bitcoin-holdings.js';
 import { centsInLoose, centsOut, dateOut } from '../http/serialize.js';
 import { AUTHENTICATED, requireSettingsManagement } from '../plugins/auth.js';
 
@@ -177,20 +172,19 @@ export const bitcoinRoutes: FastifyPluginCallback = (fastify, _options, done) =>
     return { ok: true };
   });
 
-  /** Sets the quantity held on an account. The quantity is the fact; value is derived. */
-  fastify.patch('/api/accounts/:id/bitcoin', async (request) => {
-    const { id } = idParamsSchema.parse(request.params);
-    const { sats } = z.object({ sats: z.union([satsIn, z.null()]) }).parse(request.body);
-
-    // Through the ledger: writing the column directly would put the cache and
-    // the events out of step, and the net worth chart would go back to guessing.
-    await prisma.$transaction((tx) =>
-      setHoldingQuantity(tx, id, sats ?? 0n, { actorId: request.currentUser?.id ?? null }),
-    );
-
-    request.log.info({ accountId: id, actorId: request.currentUser?.id }, 'Bitcoin holding set');
-    return { ok: true };
-  });
+  /*
+   * `PATCH /api/accounts/:id/bitcoin` was here and is gone.
+   *
+   * It set a holding's quantity absolutely, and no interface ever called it —
+   * one of three routes in the tree with no caller, found in a review. Settings
+   * → Bitcoin writes through `managed-accounts.ts`, which reaches the same
+   * `setHoldingQuantity`, so nothing is lost by removing it.
+   *
+   * Removed rather than left, because a second way in that nobody uses is a
+   * second way to drift: this one took an absolute quantity while the interface
+   * writes dated events (ADR 023), and the two would only ever have been
+   * compared the day they disagreed.
+   */
 
   // --- The holdings ledger ------------------------------------------------
 
