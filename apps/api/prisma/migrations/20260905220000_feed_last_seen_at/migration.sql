@@ -1,0 +1,34 @@
+-- When the feed last mentioned this account at all.
+--
+-- The third date in the family [ADR 032](../../../../docs/decisions/032-a-feed-date-is-kept-apart-from-the-one-we-stamp.md)
+-- started, and the one that was missing.
+--
+--   balance_as_of        when this figure was last confirmed, by anyone or anything
+--   feed_balance_as_of   what the feed said about the age of its own answer
+--   feed_last_seen_at    when the feed last listed this account
+--
+-- The gap it fills: an account closed at the bank, or dropped when an
+-- institution is re-linked, simply stops being listed. `upsertAccount` only
+-- touches accounts the feed mentions, so the row kept its last balance for ever
+-- and went on contributing it to the identity with nothing on screen to say so.
+--
+-- `feed_balance_as_of` was the near miss. It stops advancing in exactly that
+-- case — but it is null when a bridge says nothing about its own freshness, and
+-- `isFeedBalanceStale` returns false for null, deliberately, because
+-- manufacturing a warning out of silence is the mirror of the bug ADR 032 fixed.
+-- So a bridge that never sends a balance date froze an account silently and
+-- permanently, and the safeguard could not tell that case from a healthy one.
+--
+-- This column cannot have that ambiguity: the sync stamps it for every account
+-- the feed named, whatever else the feed did or did not say. Absence becomes a
+-- fact rather than an inference.
+--
+-- Null on every existing row, and null means "not yet asked" rather than
+-- "missing" — the first sync after this ships stamps every account the feed
+-- still knows about. Reading null as missing would raise an alarm about every
+-- account in the household on the morning of the upgrade.
+ALTER TABLE "accounts" ADD COLUMN "feed_last_seen_at" TIMESTAMP(3);
+
+-- The notification reads live synced accounts ordered by this, so it is worth
+-- the index even at one household's scale: it is asked on every page load.
+CREATE INDEX "accounts_feed_last_seen_at_idx" ON "accounts" ("feed_last_seen_at");

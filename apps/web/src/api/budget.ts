@@ -27,6 +27,8 @@ export interface BudgetRowDto {
   readonly balanceAsOf: string | null;
   /** The date the feed put on this balance; null for a manual account. */
   readonly feedBalanceAsOf: string | null;
+  /** When the feed last listed this account. Null means no sync has said yet. */
+  readonly feedLastSeenAt: string | null;
   readonly stalenessIntervalDays: number | null;
   /**
    * How much of `balanceCents` was typed in by hand while this account's feed

@@ -100,3 +100,51 @@ lives on the page somebody visits when they are already asking the question.
 **Nothing about the pending lifecycle changed**, because nothing about it was
 wrong. The charges in the report were left to settle on their own when the bridge
 catches up, which is the correct handling and was already the behaviour.
+
+---
+
+## Amendment, 2026-09-05 — a third date, and the pill that reads them
+
+Two dates were not enough, and the gap only showed up in a review.
+
+`feed_balance_as_of` answers "how old is the institution's own answer" and is
+**null when the bridge says nothing about its freshness**. `isFeedBalanceStale`
+returns false for null, deliberately — manufacturing a warning out of silence is
+the mirror of the bug this ADR fixed. But that leaves one case unreachable: an
+account the feed has stopped listing **at all**, whose bridge never sent a
+balance date. `upsertAccount` only touches accounts the feed mentions, so the row
+kept its last balance for ever, went on counting towards the identity, and
+nothing could tell it from a healthy account.
+
+So there is a third date, and it is a different kind of fact:
+
+| column               | question                                                   |
+| -------------------- | ---------------------------------------------------------- |
+| `balance_as_of`      | when was this figure last confirmed, by anyone or anything |
+| `feed_balance_as_of` | what did the feed say about the age of its own answer      |
+| `feed_last_seen_at`  | does the feed still know this account exists               |
+
+The third cannot be ambiguous the way the second is, because the sync stamps it
+**because the feed named the account**, whatever else the feed did or did not
+say. Absence becomes a fact rather than an inference. Null still means "not asked
+yet" rather than "missing", for the same reason as everywhere else here.
+
+### And the pill that was never possible
+
+The review found something worse than the missing column. The row chip checked
+both staleness rules; the **pill checked only `isBalanceStale`** — and
+`staleness_interval_days` is never set on a discovered account, so for every
+synced account that check was permanently false.
+
+**No notification could ever fire for a frozen feed balance.** The only signal
+was a one-letter chip on a page somebody had to already be looking at, which is
+exactly the "notice a number is wrong and work backwards" failure the pills were
+built to replace. `feed_not_reporting` is a separate pill from `stale_balances`
+with separate wording, because "you have not confirmed this lately" and "the bank
+has gone quiet" are different sentences and only one of them is about something
+the household did.
+
+It is **suppressed while the sync itself is failing**: a bridge that is down
+lists nothing, so every account would qualify at once and repeat what
+`sync_failing` already says. The condition worth raising is the other one — the
+sync is working and has forgotten an account.

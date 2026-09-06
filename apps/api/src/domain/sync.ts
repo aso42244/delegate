@@ -557,6 +557,11 @@ async function upsertAccount(
         balanceCents: storedBalance(existing.type, feedAccount.balanceCents),
         balanceAsOf: feedAccount.balanceAsOf ?? now,
         feedBalanceAsOf: feedAccount.balanceAsOf ?? null,
+        // Three dates, and this is the one that survives a silent feed: it is
+        // stamped because the feed named the account, whatever it did or did not
+        // say about freshness. Absence from a later run is then a fact rather
+        // than an inference.
+        feedLastSeenAt: now,
       },
     });
     return { accountId: existing.id, discovered: false };
@@ -609,6 +614,7 @@ async function upsertAccount(
         balanceCents: storedBalance(replaced.type, feedAccount.balanceCents),
         balanceAsOf: feedAccount.balanceAsOf ?? now,
         feedBalanceAsOf: feedAccount.balanceAsOf ?? null,
+        feedLastSeenAt: now,
       },
     });
 
@@ -636,6 +642,7 @@ async function upsertAccount(
       balanceCents: storedBalance(type, feedAccount.balanceCents),
       balanceAsOf: feedAccount.balanceAsOf ?? now,
       feedBalanceAsOf: feedAccount.balanceAsOf ?? null,
+      feedLastSeenAt: now,
       // Defaults per §7; `needsReview` prompts the owner to confirm the guess.
       inBudget: true,
       inNetWorth: true,

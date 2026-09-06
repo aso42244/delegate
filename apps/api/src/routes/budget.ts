@@ -152,6 +152,7 @@ function presentRow(row: BudgetRow): Record<string, unknown> {
     needsReview: row.needsReview,
     balanceAsOf: dateOut(row.balanceAsOf),
     feedBalanceAsOf: dateOut(row.feedBalanceAsOf),
+    feedLastSeenAt: dateOut(row.feedLastSeenAt),
     stalenessIntervalDays: row.stalenessIntervalDays,
     kind: row.kind,
     checkNumber: row.checkNumber,

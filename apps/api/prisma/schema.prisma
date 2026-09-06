@@ -460,6 +460,23 @@ model Account {
   /// be a reading of the market instead.
   bitcoinRevaluedAt DateTime? @map("bitcoin_revalued_at")
 
+  /// When the feed last listed this account at all.
+  ///
+  /// The third date in ADR 032's family and the one that was missing:
+  /// `balance_as_of` is when the figure was last confirmed, `feed_balance_as_of`
+  /// is what the feed said about its own freshness, and this is whether the feed
+  /// still knows the account exists.
+  ///
+  /// An account closed at the bank stops being listed, and `upsertAccount` only
+  /// touches what the feed mentions — so without this the row kept its balance
+  /// for ever and went on counting towards the identity. `feed_balance_as_of`
+  /// nearly answered it, but is null when a bridge says nothing about freshness,
+  /// and null cannot be read as stale without manufacturing warnings out of
+  /// silence. This is stamped whatever else the feed says, so absence is a fact.
+  ///
+  /// Null means "not asked yet", never "missing".
+  feedLastSeenAt DateTime? @map("feed_last_seen_at")
+
   archivedAt DateTime? @map("archived_at")
   createdAt  DateTime  @default(now()) @map("created_at")
   updatedAt  DateTime  @updatedAt @map("updated_at")
@@ -480,6 +497,7 @@ model Account {
   @@index([inBudget])
   @@index([inNetWorth])
   @@index([groupingId])
+  @@index([feedLastSeenAt])
   @@map("accounts")
 }
 

@@ -6,7 +6,36 @@ phase (`v0.1.0-phase1`, and so on).
 
 ## [Unreleased]
 
-Nothing yet.
+### Added
+
+- **The bank going quiet about an account now raises a pill.** Found in a review
+  of what Delegate assumes works, and it was worse than it looked: the row chip
+  checked both staleness rules, the pill checked only the manual-confirmation
+  one — and `staleness_interval_days` is never set on a discovered account, so
+  for every synced account that check was permanently false. **No notification
+  could ever fire for a frozen feed balance.** The only signal was a one-letter
+  chip on a page somebody had to already be looking at, which is the failure the
+  pills exist to replace.
+
+  `feed_not_reporting` is its own pill with its own wording, because "you have
+  not confirmed this lately" and "the bank has gone quiet" are different
+  sentences and only one is about something the household did. It is suppressed
+  while the sync itself is failing, since a bridge that is down lists nothing and
+  would set every account off at once saying what `sync_failing` already says.
+
+- **`accounts.feed_last_seen_at`** — the third date in
+  [ADR 032](docs/decisions/032-a-feed-date-is-kept-apart-from-the-one-we-stamp.md)'s
+  family, amended. An account closed at the bank, or dropped when an institution
+  is re-linked, simply stops being listed; `upsertAccount` only touches what the
+  feed mentions, so the row kept its balance for ever and went on counting
+  towards the identity. `feed_balance_as_of` nearly answered it but is null when
+  a bridge says nothing about freshness, and null cannot be read as stale without
+  manufacturing warnings out of silence. This is stamped because the feed _named_
+  the account, so absence is a fact rather than an inference. Null means "not
+  asked yet", never "missing".
+
+  The row chip reads it too, so an account the pill names by name carries a mark
+  of its own.
 
 ## [0.54.2] — 2026-09-05
 
