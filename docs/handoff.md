@@ -88,7 +88,7 @@ These are non-negotiable. Violating one is a build failure.
 
 ## Where things stand
 
-**`main` is at `v0.54.2`, and the NAS is running `v0.54.2`** — deployed
+**`main` is at `v0.55.0`, and the NAS is running `v0.54.2`** — deployed
 2026-09-05.
 
 **`v0.54.1` does not exist**, and neither does a `v0.53.x`. The owner named
@@ -835,6 +835,52 @@ categorization.
   em-dash reads as "deliberately nothing". Caught by reading the render path
   after the owner asked what those rows would look like — no test distinguishes
   an empty cell from an em-dash one.
+
+**Since v0.54.2 — a review of what the application assumes about itself (`v0.55.0`)**
+
+The owner asked for a sweep: machinery that exists but is wired to nothing, and
+failure modes the application would meet in silence. 103 routes against 110
+callers, 30 environment variables, 13 settings columns, four scheduled jobs.
+Four findings, all fixed here, and **three of the four are the same mistake** —
+a lesson learned, written down against the feature that taught it, and never
+carried to its siblings.
+
+- **No notification could ever fire for a frozen feed balance.** The row chip
+  checked both staleness rules; the pill checked only `isBalanceStale` — and
+  `staleness_interval_days` is never set on a discovered account, so for every
+  synced account that check was permanently false. The only signal a feed had
+  gone quiet was a one-letter chip on a page somebody had to already be looking
+  at, which is precisely the failure the pills exist to replace. This is what
+  happened to Plains Commerce during the September outage and it was found in
+  review rather than by anybody noticing.
+
+- **Nothing recorded whether the feed still listed an account at all.**
+  `accounts.feed_last_seen_at` is the third date in
+  [ADR 032](decisions/032-a-feed-date-is-kept-apart-from-the-one-we-stamp.md)'s
+  family, amended. `feed_balance_as_of` nearly answered it but is null when a
+  bridge says nothing about its own freshness, and null cannot be read as stale
+  without manufacturing warnings out of silence. The new column is stamped
+  because the feed _named_ the account, so absence is a fact rather than an
+  inference.
+
+- **`GET /api/snapshots/status` was read by nothing.** It was written because of
+  the backup failure — check for the evidence a job leaves, not the absence of an
+  error — and documented here as the way to tell whether the nightly snapshot
+  ran. It had no caller. **The lesson was implemented and then left in the exact
+  place the failure it describes could happen to it.** Insights is what fails
+  quietly: it gains a day a night with no backfill, so a job that stopped in
+  March draws a chart that simply ends, and nothing throws.
+
+- `PATCH /api/accounts/:id/bitcoin` was removed, the third route with no caller.
+
+**The habit worth keeping from this.** Delegate proposes, schedules or infers in
+at least nine places and they share no implementation. When a rule like "a
+refusal has to be storable" or "check for the evidence, not the error" gets
+written down, **go and check every sibling it could apply to the same day**. That
+is ten minutes; each of these findings was an afternoon. The review that found
+them was itself only possible because the routes, the env vars and the settings
+columns could each be diffed against their callers — worth repeating
+occasionally, and cheap.
 
 ### Known gaps to fix
 
