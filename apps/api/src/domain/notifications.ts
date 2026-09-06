@@ -4,6 +4,7 @@ import { findStandbyDuplicates } from './duplicates.js';
 import { latestPrice } from './bitcoin.js';
 import { newestBackupAt } from './backup.js';
 import { proposeCheckMatches } from './checks.js';
+import { snapshotStatus } from './snapshots.js';
 import { localDayKey } from './calendar.js';
 import { findRecurringBills, overdueBills } from './recurring.js';
 import { findBehindTargets } from './targets.js';
@@ -45,7 +46,8 @@ export interface Notification {
     | 'recurring_bill_overdue'
     | 'targets_behind'
     | 'standby_rows_covered'
-    | 'backup_failing';
+    | 'backup_failing'
+    | 'snapshot_stale';
   readonly severity: NotificationSeverity;
   /**
    * The whole of it, in a sentence. On a `danger` this is the bar's text; on
@@ -76,6 +78,18 @@ function daysBetween(from: Date, to: Date): number {
  * false alarm; set higher and a fortnight can pass unnoticed.
  */
 const BACKUP_STALE_HOURS = 48;
+
+/**
+ * How long a deployment has to have existed before a missing snapshot is a
+ * fault rather than a new install.
+ *
+ * Three days rather than the backup's two: a snapshot is written for the
+ * *previous* day, so the newest date is always a day behind even when
+ * everything is working, and `snapshotStatus` already allows two days for that.
+ * Raising before the grace period has cleared both would be raising about
+ * arithmetic.
+ */
+const SNAPSHOT_GRACE_MS = 3 * 24 * 60 * 60 * 1000;
 const STALE_MS = BACKUP_STALE_HOURS * 60 * 60 * 1000;
 
 export interface NotificationOptions {
@@ -104,6 +118,7 @@ export async function buildNotifications(
     price,
     checkMatches,
     oldestUser,
+    snapshots,
     standbyCovered,
   ] = await Promise.all([
     db.syncRun.findFirst({
@@ -151,6 +166,8 @@ export async function buildNotifications(
     proposeCheckMatches(db),
     // The first account created, as a stand-in for when this deployment began.
     db.user.findFirst({ orderBy: { createdAt: 'asc' }, select: { createdAt: true } }),
+    // Asked here rather than left to an endpoint nobody calls — see below.
+    snapshotStatus(db, timeZone, now),
     // Cheap by construction: it reads only the standby rows, of which there
     // are a handful during an outage and none the rest of the time.
     findStandbyDuplicates(db).then((pairs) => pairs.length),
@@ -384,6 +401,43 @@ export async function buildNotifications(
           ? 'The feed has delivered a charge you entered by hand while it was behind. Archive your copy to come out of standby.'
           : `The feed has delivered ${standbyCovered} charges you entered by hand while it was behind. Archive your copies to come out of standby.`,
       actionPath: '/transactions',
+    });
+  }
+
+  /*
+   * Did the nightly snapshot actually run.
+   *
+   * `GET /api/snapshots/status` was written to answer exactly this, and its own
+   * comment explains why: the nightly backup reported every failure correctly,
+   * into a log nobody read, and the question nobody thought to ask was whether a
+   * dump was on disk. **Nothing read the endpoint.** It was one of three routes
+   * in the tree with no caller, so the lesson was implemented and then left
+   * where the failure it describes could happen to it — a job whose evidence
+   * only exists if somebody goes looking.
+   *
+   * Insights is what quietly stops working: it gains a day a night and there is
+   * no backfill, so a job that stopped firing in March shows up as a chart that
+   * simply ends, which looks exactly like a chart nobody has looked at.
+   *
+   * The same young-deployment guard as the backup, for the same reason. A fresh
+   * install has no snapshots at all — `snapshotStatus` correctly reports `stale`
+   * — and a warning that is wrong on day one is not trusted on day ninety.
+   */
+  const settledIn =
+    oldestUser === null
+      ? false
+      : now.getTime() - oldestUser.createdAt.getTime() > SNAPSHOT_GRACE_MS;
+
+  if (settledIn && snapshots.stale) {
+    notifications.push({
+      kind: 'snapshot_stale',
+      pill: 'Insights stalled',
+      severity: 'warning',
+      message:
+        snapshots.latestDate === null
+          ? 'No nightly snapshot has ever been recorded, so Insights has no history to draw. The job runs at night and there is no backfill.'
+          : `The newest nightly snapshot is from ${snapshots.latestDate.toISOString().slice(0, 10)}. Insights gains a day a night and there is no backfill, so anything missed while the job was not running stays missing.`,
+      actionPath: '/settings/sync',
     });
   }
 

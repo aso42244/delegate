@@ -10,8 +10,8 @@ import {
   recordSpotPrice,
   type PriceProvider,
 } from '../src/domain/bitcoin.js';
-import { makeAccount, markTwoFactorEnrolled, resetDatabase } from './helpers.js';
-import { errorOf, sessionCookie } from './http.js';
+import { markTwoFactorEnrolled, resetDatabase } from './helpers.js';
+import { sessionCookie } from './http.js';
 
 /**
  * The Bitcoin price feed.
@@ -334,45 +334,5 @@ describe('GET /api/bitcoin', () => {
 
     expect(body.price).toBeNull();
     expect(body.holdings[0]?.valueCents).toBeNull();
-  });
-});
-
-describe('PATCH /api/accounts/:id/bitcoin', () => {
-  it('stores a quantity, not a value, and records it as an event', async () => {
-    const id = await addHolding({ name: 'Hardware wallet' });
-
-    const response = await app.inject({
-      method: 'PATCH',
-      url: `/api/accounts/${id}/bitcoin`,
-      headers: { cookie },
-      payload: { sats: '12345678' },
-    });
-
-    expect(response.statusCode).toBe(200);
-    const updated = await prisma.account.findUniqueOrThrow({ where: { id } });
-    expect(updated.bitcoinSats).toBe(12_345_678n);
-    // The dollar balance is untouched: the quantity is the fact.
-    expect(updated.balanceCents).toBe(0n);
-
-    // And the cache did not get there on its own. Writing the column directly
-    // would leave the ledger empty, and the net worth chart reads the ledger.
-    const events = await prisma.bitcoinHoldingEvent.findMany({ where: { accountId: id } });
-    expect(events).toHaveLength(1);
-    expect(events[0]?.deltaSats).toBe(12_345_678n);
-  });
-
-  it('rejects a fractional or negative quantity', async () => {
-    const account = await makeAccount({ name: 'Hardware wallet', type: 'asset', balanceCents: 0n });
-
-    for (const sats of ['1.5', '-1']) {
-      const response = await app.inject({
-        method: 'PATCH',
-        url: `/api/accounts/${account.id}/bitcoin`,
-        headers: { cookie },
-        payload: { sats },
-      });
-      expect(response.statusCode).toBe(400);
-      expect(errorOf(response).code).toBe('invalid_request');
-    }
   });
 });

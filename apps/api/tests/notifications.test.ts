@@ -474,3 +474,95 @@ describe('the route', () => {
     expect(body.notifications[0]?.actionPath).toBe('/settings/sync');
   });
 });
+
+/**
+ * Whether the nightly snapshot ran.
+ *
+ * The endpoint that answers this was written because of the backup failure —
+ * "check for the evidence a job leaves, not the absence of an error" — and was
+ * then called by nothing at all, which is that same failure happening to the
+ * fix for it. What goes wrong quietly is Insights: it gains a day a night and
+ * there is no backfill, so a job that stopped in March draws a chart that
+ * simply ends.
+ */
+describe('the nightly snapshot', () => {
+  const NOW = new Date('2026-08-08T12:00:00Z');
+  const DAY = 24 * 60 * 60 * 1000;
+
+  /**
+   * A deployment old enough that a missing snapshot is a fault, not newness.
+   *
+   * The suite's `beforeEach` already runs first-run setup, so the owner exists;
+   * this ages that account, which is what stands in for a deployment date.
+   */
+  async function settledDeployment(): Promise<void> {
+    await prisma.user.updateMany({ data: { createdAt: new Date(NOW.getTime() - 30 * DAY) } });
+  }
+
+  async function snapshotOn(daysAgo: number): Promise<void> {
+    const date = new Date(NOW.getTime() - daysAgo * DAY);
+    await prisma.aggregateSnapshot.create({
+      data: {
+        snapshotDate: new Date(
+          Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()),
+        ),
+        provenance: 'observed',
+        netWorthAssetsCents: 0n,
+        netWorthDebtsCents: 0n,
+        netWorthCents: 0n,
+        budgetAssetsCents: 0n,
+        budgetDebtsCents: 0n,
+        totalDelegationsCents: 0n,
+        pendingCategorizedCents: 0n,
+        identityValueCents: 0n,
+      },
+    });
+  }
+
+  function pillOf(list: Awaited<ReturnType<typeof buildNotifications>>): string | undefined {
+    return list.find((entry) => entry.kind === 'snapshot_stale')?.pill;
+  }
+
+  it('says nothing while last night was recorded', async () => {
+    await settledDeployment();
+    // A run is always for the previous day, so yesterday is what "current"
+    // looks like — not today.
+    await snapshotOn(1);
+
+    expect(pillOf(await buildNotifications(prisma, 'UTC', NOW))).toBeUndefined();
+  });
+
+  it('raises a pill once nothing has been recorded for days', async () => {
+    await settledDeployment();
+    await snapshotOn(9);
+
+    const entry = (await buildNotifications(prisma, 'UTC', NOW)).find(
+      (n) => n.kind === 'snapshot_stale',
+    );
+    expect(entry?.pill).toBe('Insights stalled');
+    expect(entry?.message).toContain('no backfill');
+  });
+
+  it('says so when no night has ever been recorded', async () => {
+    await settledDeployment();
+
+    const entry = (await buildNotifications(prisma, 'UTC', NOW)).find(
+      (n) => n.kind === 'snapshot_stale',
+    );
+    expect(entry?.message).toContain('No nightly snapshot has ever been recorded');
+  });
+
+  /**
+   * The guard the backup card taught. A fresh install has no snapshots at all
+   * and `snapshotStatus` correctly reports stale — raising on the first evening
+   * would be a warning that is wrong on day one, which is not trusted on day
+   * ninety.
+   */
+  it('is silent on a deployment too new to have recorded anything', async () => {
+    await prisma.user.updateMany({
+      data: { createdAt: new Date(NOW.getTime() - 6 * 60 * 60 * 1000) },
+    });
+
+    expect(pillOf(await buildNotifications(prisma, 'UTC', NOW))).toBeUndefined();
+  });
+});
