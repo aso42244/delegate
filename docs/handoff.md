@@ -88,8 +88,8 @@ These are non-negotiable. Violating one is a build failure.
 
 ## Where things stand
 
-**`main` is at `v0.55.0`, and the NAS is running `v0.54.2`** — deployed
-2026-09-05.
+**`main` is at `v0.55.0`, and the NAS is running `v0.55.0`** — deployed
+2026-09-06.
 
 **`v0.54.1` does not exist**, and neither does a `v0.53.x`. The owner named
 `v0.54.2` and the gap is deliberate, not a failed release — unlike `v0.46.0`,
