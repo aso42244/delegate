@@ -6,6 +6,10 @@ phase (`v0.1.0-phase1`, and so on).
 
 ## [Unreleased]
 
+Nothing yet.
+
+## [0.55.0] — 2026-09-06
+
 ### Added
 
 - **The bank going quiet about an account now raises a pill.** Found in a review
