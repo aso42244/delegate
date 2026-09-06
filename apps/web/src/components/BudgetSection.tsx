@@ -1,4 +1,10 @@
-import { formatCents, groupingTint, isBalanceStale, isFeedBalanceStale } from '@budget/shared';
+import {
+  formatCents,
+  groupingTint,
+  isBalanceStale,
+  isFeedBalanceStale,
+  isFeedUnseen,
+} from '@budget/shared';
 import {
   Fragment,
   useRef,
@@ -116,7 +122,11 @@ function chipsFor(row: BudgetRowDto): ChipKind[] {
       row.balanceAsOf === null ? null : new Date(row.balanceAsOf),
       row.stalenessIntervalDays,
     ) ||
-    isFeedBalanceStale(row.feedBalanceAsOf === null ? null : new Date(row.feedBalanceAsOf))
+    isFeedBalanceStale(row.feedBalanceAsOf === null ? null : new Date(row.feedBalanceAsOf)) ||
+    // Third way, and the one no date on the row can show: the feed has stopped
+    // listing this account at all. Without it a row the `not reporting` pill
+    // names by name would carry no mark of its own.
+    isFeedUnseen(row.feedLastSeenAt === null ? null : new Date(row.feedLastSeenAt))
   ) {
     kinds.push('stale');
   }

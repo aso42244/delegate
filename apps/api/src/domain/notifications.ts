@@ -1,4 +1,4 @@
-import { formatCents, isBalanceStale } from '@budget/shared';
+import { formatCents, isBalanceStale, isFeedBalanceStale, isFeedUnseen } from '@budget/shared';
 import type { Db } from '../db/client.js';
 import { findStandbyDuplicates } from './duplicates.js';
 import { latestPrice } from './bitcoin.js';
@@ -37,6 +37,7 @@ export interface Notification {
     | 'sync_failing'
     | 'sync_warning'
     | 'stale_balances'
+    | 'feed_not_reporting'
     | 'uncategorized_backlog'
     | 'bitcoin_price_stale'
     | 'accounts_need_review'
@@ -111,7 +112,15 @@ export async function buildNotifications(
     }),
     db.account.findMany({
       where: { archivedAt: null },
-      select: { name: true, balanceAsOf: true, stalenessIntervalDays: true, needsReview: true },
+      select: {
+        name: true,
+        source: true,
+        balanceAsOf: true,
+        feedBalanceAsOf: true,
+        feedLastSeenAt: true,
+        stalenessIntervalDays: true,
+        needsReview: true,
+      },
     }),
     /*
      * The same definition the register's queue filter uses, and it has to be:
@@ -246,6 +255,67 @@ export async function buildNotifications(
           ? `${names} ${stale.length === 1 ? 'has' : 'have'} not been confirmed recently.`
           : `${names} and ${stale.length - 3} more have not been confirmed recently.`,
       actionPath: '/settings/accounts',
+    });
+  }
+
+  /*
+   * The bank has gone quiet about an account it is still supposed to report.
+   *
+   * A separate pill from `stale_balances` above, and separate wording, because
+   * they are different sentences and only one of them is about something the
+   * household did. "You have not confirmed this lately" is a prompt to go and
+   * count the cash; this is "the bridge is not telling us about this account",
+   * which is a prompt to go and look at the connection.
+   *
+   * **Nothing here could raise a pill before.** The row carried an `s` chip that
+   * checked both this and the manual interval, while the pill checked only the
+   * manual interval — and `staleness_interval_days` is never set on a discovered
+   * account, so for every synced account that check was permanently false. The
+   * only signal a feed had frozen was a single letter on a page somebody had to
+   * already be looking at, which is the "notice a number is wrong and work
+   * backwards" failure the pills exist to replace.
+   *
+   * **Suppressed while the run itself is failing.** A bridge that is down lists
+   * nothing, so every account would qualify at once and say the same thing
+   * `sync_failing` is already saying, louder and less accurately. This condition
+   * is specifically the interesting one: the sync is working and has forgotten
+   * an account.
+   */
+  const syncHealthy = latestRun?.status === 'succeeded';
+  const notReporting = syncHealthy
+    ? accounts.filter(
+        (account) =>
+          account.source !== 'manual' &&
+          (isFeedUnseen(account.feedLastSeenAt, now) ||
+            isFeedBalanceStale(account.feedBalanceAsOf, now)),
+      )
+    : [];
+
+  if (notReporting.length > 0) {
+    const names = notReporting
+      .slice(0, 3)
+      .map((account) => account.name)
+      .join(', ');
+    // Named apart, because the two have different answers: one is the bridge
+    // repeating an old snapshot, the other is the bridge no longer mentioning
+    // the account at all, and only the second may mean it was closed.
+    const gone = notReporting.filter((account) => isFeedUnseen(account.feedLastSeenAt, now));
+
+    notifications.push({
+      kind: 'feed_not_reporting',
+      pill:
+        notReporting.length === 1
+          ? '1 account not reporting'
+          : `${notReporting.length} not reporting`,
+      severity: 'warning',
+      message:
+        `The bank has not sent anything new for ${
+          notReporting.length <= 3 ? names : `${names} and ${notReporting.length - 3} more`
+        }` +
+        (gone.length > 0
+          ? `. ${gone.length === 1 ? 'It is' : 'They are'} no longer listed by the feed at all, which can mean the account was closed or the connection needs re-linking.`
+          : `, though the connection itself is working. The figures shown are the last ones the bank gave.`),
+      actionPath: '/settings/sync',
     });
   }
 

@@ -183,6 +183,39 @@ export function isFeedBalanceStale(feedBalanceAsOf: Date | null, now: Date = new
   return now.getTime() - feedBalanceAsOf.getTime() > FEED_BALANCE_STALE_DAYS * 24 * 60 * 60 * 1000;
 }
 
+/**
+ * How long an account may go unmentioned by the feed before it is worth saying.
+ *
+ * The sync runs hourly, so absence is unambiguous quickly — but not instantly:
+ * a bridge having a bad morning omits accounts it cannot reach, and a threshold
+ * short enough to catch that is a threshold that fires on every wobble. Two
+ * days is roughly forty-eight refusals in a row, which is a condition rather
+ * than a hiccup.
+ */
+export const FEED_UNSEEN_DAYS = 2;
+
+/**
+ * The feed has stopped listing this account at all.
+ *
+ * Distinct from both staleness rules above, and the distinction is the point.
+ * `isBalanceStale` asks when a person last confirmed a figure.
+ * `isFeedBalanceStale` asks how old the institution's own answer is. This asks
+ * whether the feed still knows the account exists — the case where an account
+ * was closed at the bank, or dropped when an institution was re-linked, and the
+ * row would otherwise keep its last balance for ever while still counting
+ * towards the identity.
+ *
+ * **Null is not missing.** It means no sync has stamped this account since the
+ * column existed, which is true of every row on the morning it shipped and of a
+ * manual account for ever. Reading null as missing would raise an alarm about
+ * the entire household exactly once, which is the fastest way to teach somebody
+ * to ignore this.
+ */
+export function isFeedUnseen(feedLastSeenAt: Date | null, now: Date = new Date()): boolean {
+  if (feedLastSeenAt === null) return false;
+  return now.getTime() - feedLastSeenAt.getTime() > FEED_UNSEEN_DAYS * 24 * 60 * 60 * 1000;
+}
+
 /** An account is stale when its confirmed balance has aged past its own interval. */
 export function isBalanceStale(
   balanceAsOf: Date | null,

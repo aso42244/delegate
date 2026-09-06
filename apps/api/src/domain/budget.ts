@@ -53,6 +53,8 @@ export interface BudgetRow {
   readonly balanceAsOf: Date | null;
   /** The date the feed put on this balance; null for a manual account. */
   readonly feedBalanceAsOf: Date | null;
+  /** When the feed last listed this account at all. Null means not asked yet. */
+  readonly feedLastSeenAt: Date | null;
   readonly stalenessIntervalDays: number | null;
   /**
    * How much of `balanceCents` is hand-entered activity the feed has not
@@ -222,6 +224,7 @@ export async function buildBudgetView(
           needsReview: true,
           balanceAsOf: true,
           feedBalanceAsOf: true,
+          feedLastSeenAt: true,
           stalenessIntervalDays: true,
           position: true,
           inBudget: true,
@@ -298,6 +301,7 @@ export async function buildBudgetView(
     needsReview: account.needsReview,
     balanceAsOf: account.balanceAsOf,
     feedBalanceAsOf: account.feedBalanceAsOf,
+    feedLastSeenAt: account.feedLastSeenAt,
     stalenessIntervalDays: account.stalenessIntervalDays,
     kind: 'envelope',
     checkNumber: null,
@@ -329,6 +333,7 @@ export async function buildBudgetView(
     needsReview: false,
     balanceAsOf: null,
     feedBalanceAsOf: null,
+    feedLastSeenAt: null,
     stalenessIntervalDays: null,
     kind: delegation.kind,
     checkNumber: delegation.checkNumber,

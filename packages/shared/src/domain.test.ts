@@ -1,24 +1,26 @@
 import { describe, expect, it } from 'vitest';
 import {
   CYCLES_PER_YEAR,
+  FEED_UNSEEN_DAYS,
   PAY_CADENCES,
   PAY_CADENCE_LABELS,
-  isPayCadence,
-  type PayCadence,
+  PROVENANCE_NOTES,
+  SNAPSHOT_PROVENANCES,
   canManageUsers,
   canModifyUser,
+  groupingTint,
   isBalanceStale,
   isEstimated,
   isFeedBalanceStale,
-  isKnownTimeZone,
-  knownTimeZones,
-  PROVENANCE_NOTES,
-  SNAPSHOT_PROVENANCES,
-  weakestProvenance,
-  type SnapshotProvenance,
-  suggestedPerCycleCents,
-  groupingTint,
+  isFeedUnseen,
   isGroupingColor,
+  isKnownTimeZone,
+  isPayCadence,
+  knownTimeZones,
+  suggestedPerCycleCents,
+  type PayCadence,
+  type SnapshotProvenance,
+  weakestProvenance,
 } from './domain.js';
 
 describe('permissions', () => {
@@ -286,5 +288,32 @@ describe('time zones', () => {
     expect(zones).toContain('UTC');
     expect(zones.length).toBeGreaterThan(100);
     for (const zone of zones) expect(isKnownTimeZone(zone)).toBe(true);
+  });
+});
+
+describe('an account the feed has stopped listing', () => {
+  const now = new Date('2026-08-08T12:00:00Z');
+  const daysAgo = (n: number): Date => new Date(now.getTime() - n * 24 * 60 * 60 * 1000);
+
+  it('is not unseen while the feed is still listing it', () => {
+    expect(isFeedUnseen(daysAgo(1), now)).toBe(false);
+  });
+
+  it('is unseen once it has been absent longer than the threshold', () => {
+    expect(isFeedUnseen(daysAgo(3), now)).toBe(true);
+  });
+
+  it('is not unseen exactly on the boundary', () => {
+    expect(isFeedUnseen(daysAgo(FEED_UNSEEN_DAYS), now)).toBe(false);
+  });
+
+  /**
+   * Null is "no sync has stamped this yet", not "missing". It is true of every
+   * row on the morning the column shipped and of every manual account for ever,
+   * and reading it as missing would raise one enormous false alarm — which is
+   * the fastest way to teach somebody to ignore a warning.
+   */
+  it('treats never having been stamped as unknown rather than missing', () => {
+    expect(isFeedUnseen(null, now)).toBe(false);
   });
 });
