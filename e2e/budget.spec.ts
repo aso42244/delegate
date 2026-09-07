@@ -5,6 +5,7 @@ import {
   makeAccount,
   makeDelegation,
   makePendingSpend,
+  makeSucceededSyncRun,
   test,
 } from './fixtures.js';
 
@@ -568,4 +569,91 @@ test('the reading states itself, and shows its working on demand', async ({ sign
   await expect(working).toBeHidden();
   await reading.focus();
   await expect(signedIn.getByRole('tooltip')).toBeVisible();
+});
+
+/**
+ * A pill's detail has to stay on the screen.
+ *
+ * The "6 not reporting" message names every account it is about, and at
+ * `w-max` it ran roughly 1,500px on one line — off the right of the display,
+ * with the end of the sentence unreachable by any means. The cap it had could
+ * not have helped: `max-w-[calc(100vw-3rem)]` bounds the detail's *width*
+ * while its left edge already sits wherever the pill does.
+ *
+ * Measured rather than read, for the reason the settings-card overflow was:
+ * every assertion that only looks for words passes while the words are off the
+ * screen.
+ */
+test('every pill keeps its detail inside the viewport', async ({ signedIn, api }) => {
+  /*
+   * The owner's own case, reproduced: six synced accounts whose feed has gone
+   * quiet, which is the `feed_not_reporting` pill — and its message names every
+   * account it is about. At `w-max` that ran about 1,500px on one line.
+   *
+   * Long bank names on purpose. The detail is as wide as its content, so the
+   * bug only appears once there is enough content, and a short fixture would
+   * have passed against the broken code.
+   */
+  const stale = new Date(Date.now() - 9 * 24 * 60 * 60 * 1000);
+  for (const name of [
+    'Plains Commerce Bank (SD) PLAINS+ CHECKING (7173)',
+    'Frontier Bank Big Deal Cash Back (3088)',
+    'Frontier Bank Little Prairie Savings (4412)',
+    'Frontier Bank Everyday Checking (9080)',
+    'Costco Citi VISA Anywhere Card (6120)',
+    'Ally Bank Online Savings Account (7734)',
+  ]) {
+    await makeAccount(name, 'asset', 10_000n, 'simplefin', stale);
+  }
+  await makeSucceededSyncRun();
+  await makeDelegation(api, 'Grocery', '40000');
+
+  await signedIn.setViewportSize({ width: 1280, height: 800 });
+  await signedIn.goto('/');
+
+  // Notification pills are links and the budget's own reading is a status, so
+  // the thing they share is the detail they describe — not a role.
+  const pills = signedIn.locator('header [aria-describedby]');
+  // Waited for before counting: `count()` does not retry, and the reading is
+  // rendered from a query rather than being in the first paint.
+  await expect(pills.first()).toBeVisible();
+  const count = await pills.count();
+  expect(count).toBeGreaterThan(0);
+
+  for (let index = 0; index < count; index += 1) {
+    const pill = pills.nth(index);
+    await pill.hover();
+
+    const detail = signedIn.getByRole('tooltip');
+    await expect(detail).toBeVisible();
+
+    const box = await detail.boundingBox();
+    expect(box).not.toBeNull();
+    // Both edges, because the fix flips the detail to hang from the pill's
+    // right edge near the screen edge — and a flip that overshoots the other
+    // way is the same bug mirrored.
+    expect(box!.x).toBeGreaterThanOrEqual(0);
+    expect(box!.x + box!.width).toBeLessThanOrEqual(1280);
+
+    await signedIn.mouse.move(0, 0);
+  }
+});
+
+/** The same, on a phone, where there is far less room to be wrong in. */
+test('a pill keeps its detail inside a phone screen', async ({ signedIn, api }) => {
+  await makeAccount('Plains Commerce Bank (SD) PLAINS+ CHECKING (7173)', 'asset', 100_000n);
+  await makeDelegation(api, 'Grocery', '40000');
+
+  await signedIn.setViewportSize({ width: 390, height: 844 });
+  await signedIn.goto('/');
+
+  const pill = signedIn.locator('header [aria-describedby]').first();
+  await pill.hover();
+
+  const detail = signedIn.getByRole('tooltip');
+  await expect(detail).toBeVisible();
+
+  const box = await detail.boundingBox();
+  expect(box!.x).toBeGreaterThanOrEqual(0);
+  expect(box!.x + box!.width).toBeLessThanOrEqual(390);
 });

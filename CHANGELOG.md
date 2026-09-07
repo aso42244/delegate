@@ -6,7 +6,28 @@ phase (`v0.1.0-phase1`, and so on).
 
 ## [Unreleased]
 
-Nothing yet.
+### Fixed
+
+- **A pill's detail stays on the screen.** The `6 not reporting` message names
+  every account it is about, and at `w-max` it ran roughly 1,500px on one line —
+  off the right of the display, with the end of the sentence unreachable by any
+  means. The cap it carried could never have helped: `max-w-[calc(100vw-3rem)]`
+  bounds the detail's _width_ while its left edge already sits wherever the pill
+  happens to be, so the two added up to more than the screen.
+
+  It is a fixed `w-96` now — the width from `ui-system.md` §2 that holds prose —
+  and **deliberately tall rather than wide**: a detail is read once and dismissed
+  by moving the mouse, so wrapping costs nothing while running past the edge
+  costs whatever was cut off.
+
+  Its position **clamps rather than flips**. Hanging it from the pill's other
+  edge was tried first and is the same bug mirrored: on a phone the pill is
+  narrower than the detail, so anchoring right puts the left edge off the left of
+  the screen. It is measured from the **pill**, never the detail, because the
+  detail is `display: none` until revealed and a hidden element has no box.
+
+  One component, so this covers every pill in the application — the
+  notifications and the budget's own reading alike.
 
 ## [0.55.0] — 2026-09-06
 
