@@ -344,3 +344,18 @@ export async function ageLatestDelegateRun(hours: number): Promise<void> {
     data: { createdAt: new Date(latest.createdAt.getTime() - hours * 60 * 60 * 1000) },
   });
 }
+
+/**
+ * A sync run that succeeded, for the notifications that only speak when the
+ * feed itself is working.
+ *
+ * `feed_not_reporting` is suppressed while the latest run is a failure — a
+ * bridge that is down lists nothing, so every account would raise at once and
+ * repeat what `sync_failing` already says.
+ */
+export async function makeSucceededSyncRun(): Promise<void> {
+  const now = new Date();
+  await prisma.syncRun.create({
+    data: { status: 'succeeded', startedAt: now, finishedAt: now, correlationId: 'e2e' },
+  });
+}
