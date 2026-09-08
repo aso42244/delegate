@@ -1,4 +1,4 @@
-import { expect, test } from './fixtures.js';
+import { expect, makeAccount, test } from './fixtures.js';
 
 /**
  * Overview — the spine.
@@ -123,6 +123,67 @@ test('a tile shows its empty state when there is nothing in it', async ({ signed
    */
   await expect(signedIn.getByText('No cycle has been run yet.')).toBeVisible();
   await expect(signedIn.getByText('Nothing waiting.')).toBeVisible();
+});
+
+test('every Batch A tile can be added and draws something', async ({ signedIn }) => {
+  await signedIn.goto('/overview');
+  await signedIn.getByRole('button', { name: 'Arrange', exact: true }).click();
+
+  /*
+   * The five tiles that share one drawing primitive. Added in one pass rather
+   * than five tests, because what is being protected is that the catalogue and
+   * the renderer agree — a key the server offers and the page cannot draw is a
+   * tile that is on the page and blank, which reads as a fault rather than as an
+   * empty state.
+   */
+  const titles = [
+    'Spending by grouping',
+    'Spending by delegation',
+    'What it is all made of',
+    'Utilities against what they cost',
+    'What moved',
+  ];
+
+  for (const title of titles) {
+    await signedIn.getByRole('button', { name: title, exact: true }).click();
+    await expect(signedIn.getByRole('heading', { name: title })).toBeVisible();
+  }
+
+  await signedIn.getByRole('button', { name: 'Done' }).click();
+
+  // Every one of them says something. A blank body is the failure this catches.
+  for (const title of titles) {
+    const tile = signedIn.getByRole('heading', { name: title }).locator('../..');
+    await expect(tile).not.toBeEmpty();
+  }
+
+  await signedIn.reload();
+  await expect(signedIn.getByRole('heading', { level: 2 })).toHaveCount(titles.length);
+});
+
+test('a ranked bar states its figure as text, not only as a width', async ({ signedIn }) => {
+  // With no accounts at all the tile correctly shows its empty state instead,
+  // so there has to be something to compose.
+  await makeAccount('Checking', 'asset', 300_000n);
+  await makeAccount('Card', 'debt', 50_000n);
+
+  await signedIn.goto('/overview');
+  await signedIn.getByRole('button', { name: 'Arrange', exact: true }).click();
+  await signedIn.getByRole('button', { name: 'What it is all made of', exact: true }).click();
+  await expect(signedIn.getByRole('heading', { name: 'What it is all made of' })).toBeVisible();
+  await signedIn.getByRole('button', { name: 'Done' }).click();
+
+  /*
+   * §9: never convey state by colour alone — and never by length alone either.
+   * The bar is `aria-hidden` because the figure beside it already says the
+   * value, so the figure has to actually be there.
+   */
+  const tile = signedIn.getByRole('heading', { name: 'What it is all made of' }).locator('../..');
+  await expect(tile.getByText('Assets')).toBeVisible();
+  await expect(tile.getByText('Debts')).toBeVisible();
+  await expect(tile.getByText('Net')).toBeVisible();
+  // 300,000 cents of asset less 50,000 of debt, stated rather than implied.
+  await expect(tile.getByText('$2,500.00', { exact: true })).toBeVisible();
 });
 
 test('the arrange controls are hidden until asked for', async ({ signedIn }) => {

@@ -1,9 +1,4 @@
-import {
-  DEFAULT_OVERVIEW_SPAN,
-  formatCents,
-  nextOverviewSpan,
-  type OverviewSpan,
-} from '@budget/shared';
+import { DEFAULT_OVERVIEW_SPAN, nextOverviewSpan, type OverviewSpan } from '@budget/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useMemo, type ReactNode } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
@@ -14,6 +9,7 @@ import {
   type OverviewTileDto,
 } from '../api/overview.js';
 import { EmptyState, PageHeader, SegmentedControl } from '../components/layout.jsx';
+import { CompositionBars, RankedBars, type RankedRow } from '../components/RankedBars.jsx';
 import { Alert, Button } from '../components/ui.jsx';
 
 /**
@@ -58,6 +54,10 @@ function isWindow(value: string): value is WindowValue {
 /** What each tile is called on screen, and the one line under its title. */
 const TILE_COPY: Record<string, { readonly title: string; readonly description?: string }> = {
   spending_by_grouping: { title: 'Spending by grouping' },
+  spending_by_delegation: { title: 'Spending by delegation' },
+  asset_debt_composition: { title: 'What it is all made of' },
+  utilities_vs_delegated: { title: 'Utilities against what they cost' },
+  delegation_movers: { title: 'What moved' },
   uncategorized_backlog: { title: 'Waiting to be categorized' },
 };
 
@@ -158,55 +158,115 @@ function TileShell({
   );
 }
 
-/** Ranked bars in each grouping's own colour, so the chart and the budget agree. */
-function SpendingTile({ data }: { readonly data: OverviewDataDto }): ReactNode {
-  const spending = data.spending_by_grouping;
-  if (!spending) return null;
-
+/**
+ * Spending, ranked. The same component for grouping and for delegation, because
+ * they are the same picture of a different cut of the same rows.
+ */
+function SpendingTile({
+  spending,
+}: {
+  readonly spending: NonNullable<OverviewDataDto['spending_by_grouping']>;
+}): ReactNode {
   if (spending.cycleMissing) {
     return <EmptyState>No cycle has been run yet.</EmptyState>;
   }
-  if (spending.entries.length === 0) {
-    return <EmptyState>Nothing categorized in this window.</EmptyState>;
-  }
 
-  const amounts = spending.entries.map((entry) => BigInt(entry.spendCents));
-  const peak = amounts.reduce((max, value) => (value > max ? value : max), 0n);
+  const rows: RankedRow[] = spending.entries.map((entry) => ({
+    key: entry.key,
+    name: entry.name,
+    color: entry.color,
+    valueCents: BigInt(entry.spendCents),
+  }));
+
+  return <RankedBars rows={rows} emptyMessage="Nothing categorized in this window." />;
+}
+
+/** Assets over debts, and the figure that reconciles them. */
+function CompositionTile({
+  composition,
+}: {
+  readonly composition: NonNullable<OverviewDataDto['asset_debt_composition']>;
+}): ReactNode {
+  const toRow = (entry: (typeof composition.assets)[number]): RankedRow => ({
+    key: entry.name,
+    name: entry.name,
+    valueCents: BigInt(entry.balanceCents),
+  });
+
+  return (
+    <CompositionBars
+      assets={composition.assets.map(toRow)}
+      debts={composition.debts.map(toRow)}
+      netCents={BigInt(composition.netCents)}
+      emptyMessage="No accounts in net worth yet."
+    />
+  );
+}
+
+/**
+ * What each utility is funded at, against what it costs.
+ *
+ * Both figures are **per cycle**, which is the comparison — a monthly average
+ * beside a per-paycheck amount looks comparable and is not. The bar is the
+ * suggestion, because that is the figure being ranked; what the line is actually
+ * set to sits beside it as the thing to judge it against.
+ */
+function UtilitiesTile({
+  utilities,
+}: {
+  readonly utilities: NonNullable<OverviewDataDto['utilities_vs_delegated']>;
+}): ReactNode {
+  const rows: RankedRow[] = utilities.entries.map((entry) => ({
+    key: entry.delegationId,
+    name: entry.name,
+    color: entry.color,
+    valueCents: BigInt(entry.suggestedPerCycleCents),
+    compare: {
+      label: 'delegated per cycle',
+      valueCents: entry.amountToDelegateCents === null ? null : BigInt(entry.amountToDelegateCents),
+    },
+  }));
 
   return (
     <div className="flex flex-col gap-2">
-      {spending.entries.map((entry, index) => {
-        const value = amounts[index]!;
-        // Integer arithmetic throughout — the percentage is a width, and the
-        // only place a bigint becomes a number is after the division.
-        const share = peak === 0n ? 0 : Number((value * 1000n) / peak) / 10;
-        return (
-          <div key={entry.key} className="flex flex-col gap-1">
-            <div className="flex items-baseline justify-between gap-2">
-              <span className="truncate text-base text-ink">{entry.name}</span>
-              <span className="money shrink-0 font-semibold">{formatCents(value)}</span>
-            </div>
-            <div className="h-2 overflow-hidden rounded bg-surface-2">
-              <div
-                className="h-full rounded"
-                style={{
-                  width: `${Math.max(share, 1)}%`,
-                  background: entry.color ?? 'var(--color-group-grey)',
-                }}
-              />
-            </div>
-          </div>
-        );
-      })}
+      <RankedBars rows={rows} emptyMessage="No utilities tracked yet." />
+      {rows.length > 0 && (
+        <p className="text-quiet text-muted">
+          Suggested and delegated, per cycle, over {utilities.cyclesPerYear} a year.
+        </p>
+      )}
     </div>
   );
 }
 
-/** One figure, and the sentence that says what to do about it. */
-function BacklogTile({ data }: { readonly data: OverviewDataDto }): ReactNode {
-  const backlog = data.uncategorized_backlog;
-  if (!backlog) return null;
+/** Which lines moved over the window, in both directions from a centre line. */
+function MoversTile({
+  movers,
+}: {
+  readonly movers: NonNullable<OverviewDataDto['delegation_movers']>;
+}): ReactNode {
+  if (movers.cycleMissing) {
+    return <EmptyState>No cycle has been run yet.</EmptyState>;
+  }
 
+  const rows: RankedRow[] = movers.entries.map((entry) => ({
+    key: entry.delegationId,
+    name: entry.name,
+    color: entry.color,
+    valueCents: BigInt(entry.changeCents),
+  }));
+
+  return (
+    <RankedBars rows={rows} signed emptyMessage="No history yet — the first night records one." />
+  );
+}
+
+/** One figure, and the sentence that says what to do about it. */
+function BacklogTile({
+  backlog,
+}: {
+  readonly backlog: NonNullable<OverviewDataDto['uncategorized_backlog']>;
+}): ReactNode {
   if (backlog.count === 0) {
     return <EmptyState>Nothing waiting.</EmptyState>;
   }
@@ -233,6 +293,50 @@ function BacklogTile({ data }: { readonly data: OverviewDataDto }): ReactNode {
       </Link>
     </div>
   );
+}
+
+/**
+ * Which body a tile draws.
+ *
+ * A tile whose key is absent from the payload draws nothing at all, which is not
+ * the same as a tile with nothing in it — the server keeps those apart
+ * deliberately and this is the place that would otherwise collapse them.
+ */
+function TileBody({
+  tileKey,
+  data,
+}: {
+  readonly tileKey: string;
+  readonly data: OverviewDataDto | undefined;
+}): ReactNode {
+  if (!data) return null;
+
+  switch (tileKey) {
+    case 'spending_by_grouping':
+      return data.spending_by_grouping ? (
+        <SpendingTile spending={data.spending_by_grouping} />
+      ) : null;
+    case 'spending_by_delegation':
+      return data.spending_by_delegation ? (
+        <SpendingTile spending={data.spending_by_delegation} />
+      ) : null;
+    case 'asset_debt_composition':
+      return data.asset_debt_composition ? (
+        <CompositionTile composition={data.asset_debt_composition} />
+      ) : null;
+    case 'utilities_vs_delegated':
+      return data.utilities_vs_delegated ? (
+        <UtilitiesTile utilities={data.utilities_vs_delegated} />
+      ) : null;
+    case 'delegation_movers':
+      return data.delegation_movers ? <MoversTile movers={data.delegation_movers} /> : null;
+    case 'uncategorized_backlog':
+      return data.uncategorized_backlog ? (
+        <BacklogTile backlog={data.uncategorized_backlog} />
+      ) : null;
+    default:
+      return null;
+  }
 }
 
 export function Overview(): ReactNode {
@@ -408,12 +512,7 @@ export function Overview(): ReactNode {
               onResize={() => resize(index)}
               onRemove={() => remove(index)}
             >
-              {tile.key === 'spending_by_grouping' && data.data && (
-                <SpendingTile data={data.data} />
-              )}
-              {tile.key === 'uncategorized_backlog' && data.data && (
-                <BacklogTile data={data.data} />
-              )}
+              <TileBody tileKey={tile.key} data={data.data} />
             </TileShell>
           ))}
         </div>

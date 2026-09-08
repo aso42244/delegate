@@ -5,7 +5,7 @@ import { buildApp } from '../src/app.js';
 import { loadConfig } from '../src/config.js';
 import { prisma } from '../src/db/client.js';
 import { categorizeTransaction } from '../src/domain/allocations.js';
-import { buildOverview } from '../src/domain/overview.js';
+import { buildMovers, buildOverview } from '../src/domain/overview.js';
 import {
   makeAccount,
   makeDelegation,
@@ -67,6 +67,26 @@ interface DataBody {
   readonly window: string;
   readonly spending_by_grouping?: {
     readonly entries: readonly { readonly name: string; readonly spendCents: string }[];
+  };
+  readonly spending_by_delegation?: {
+    readonly entries: readonly { readonly name: string; readonly spendCents: string }[];
+  };
+  readonly asset_debt_composition?: {
+    readonly assets: readonly { readonly name: string; readonly balanceCents: string }[];
+    readonly debts: readonly { readonly name: string }[];
+    readonly netCents: string;
+  };
+  readonly utilities_vs_delegated?: {
+    readonly cyclesPerYear: number;
+    readonly entries: readonly {
+      readonly name: string;
+      readonly suggestedPerCycleCents: string;
+      readonly amountToDelegateCents: string | null;
+    }[];
+  };
+  readonly delegation_movers?: {
+    readonly cycleMissing: boolean;
+    readonly entries: readonly { readonly name: string; readonly changeCents: string }[];
   };
   readonly uncategorized_backlog?: { readonly count: number };
 }
@@ -267,6 +287,148 @@ describe('buildOverview', () => {
       timeZone: ZONE,
     });
     expect(Object.keys(data)).toEqual(['uncategorized_backlog']);
+  });
+});
+
+describe('batch A tiles', () => {
+  async function spendOn(name: string, cents: bigint): Promise<string> {
+    const account = await prisma.account.findFirstOrThrow();
+    const delegation = await makeDelegation({ name });
+    const transaction = await makeTransaction({
+      accountId: account.id,
+      amountCents: -cents,
+      postedAt: new Date(),
+    });
+    await categorizeTransaction(prisma, transaction.id, delegation.id);
+    return delegation.id;
+  }
+
+  it('ranks spending by delegation as well as by grouping', async () => {
+    await makeAccount({ name: 'Everyday', type: 'asset', balanceCents: 5_000_000n });
+    await spendOn('Grocery', 30_000n);
+    await spendOn('Fuel', 10_000n);
+
+    await putLayout([{ key: 'spending_by_delegation' }]);
+    const body = (await get('/api/overview?window=all')).json<DataBody>();
+
+    expect(body.spending_by_delegation?.entries.map((entry) => entry.name)).toEqual([
+      'Grocery',
+      'Fuel',
+    ]);
+    // Ranked largest first, and still by allocation — an `adjust` event is a
+    // correction to a balance, never money spent.
+    expect(body.spending_by_delegation?.entries[0]?.spendCents).toBe('30000');
+  });
+
+  it('splits assets from debts and states the net', async () => {
+    await makeAccount({ name: 'Checking', type: 'asset', balanceCents: 300_000n });
+    await makeAccount({ name: 'Card', type: 'debt', balanceCents: 50_000n });
+
+    await putLayout([{ key: 'asset_debt_composition' }]);
+    const body = (await get('/api/overview')).json<DataBody>();
+
+    expect(body.asset_debt_composition?.assets.map((entry) => entry.name)).toEqual(['Checking']);
+    expect(body.asset_debt_composition?.debts.map((entry) => entry.name)).toEqual(['Card']);
+    expect(body.asset_debt_composition?.netCents).toBe('250000');
+  });
+
+  it('names the cadence the utility suggestion was divided by', async () => {
+    await putLayout([{ key: 'utilities_vs_delegated' }]);
+    const body = (await get('/api/overview')).json<DataBody>();
+
+    // Returned rather than left for the interface to look up, so the figure and
+    // the sentence explaining it cannot disagree.
+    expect(body.utilities_vs_delegated?.cyclesPerYear).toBe(26);
+  });
+
+  it('does not compute a Batch A tile that is not on the page', async () => {
+    await makeAccount({ name: 'Checking', type: 'asset', balanceCents: 300_000n });
+    await putLayout([{ key: 'asset_debt_composition' }]);
+
+    const body = (await get('/api/overview')).json<DataBody>();
+    expect(body.asset_debt_composition).toBeDefined();
+    expect(body.spending_by_delegation).toBeUndefined();
+    expect(body.utilities_vs_delegated).toBeUndefined();
+    expect(body.delegation_movers).toBeUndefined();
+  });
+});
+
+describe('movers', () => {
+  async function snapshot(delegationId: string, date: string, balanceCents: bigint): Promise<void> {
+    await prisma.delegationSnapshot.create({
+      data: {
+        delegationId,
+        snapshotDate: new Date(date),
+        balanceCents,
+        provenance: 'observed',
+      },
+    });
+  }
+
+  it('reports the change across the window, not against today', async () => {
+    const grocery = await makeDelegation({ name: 'Grocery' });
+    await snapshot(grocery.id, '2026-08-01', 10_000n);
+    await snapshot(grocery.id, '2026-08-15', 25_000n);
+    await snapshot(grocery.id, '2026-09-01', 40_000n);
+
+    const { movers } = await buildMovers(prisma, { window: 'all', timeZone: ZONE });
+    // Last minus first, both inside the window.
+    expect(movers).toHaveLength(1);
+    expect(movers[0]?.changeCents).toBe(30_000n);
+  });
+
+  it('leaves out a line with no snapshot rather than reporting it as zero', async () => {
+    const grocery = await makeDelegation({ name: 'Grocery' });
+    await makeDelegation({ name: 'Never observed' });
+    await snapshot(grocery.id, '2026-08-01', 10_000n);
+    await snapshot(grocery.id, '2026-09-01', 12_000n);
+
+    const { movers } = await buildMovers(prisma, { window: 'all', timeZone: ZONE });
+    // No movement and no evidence are different answers, and only one is a fact.
+    expect(movers.map((mover) => mover.name)).toEqual(['Grocery']);
+  });
+
+  it('drops a line that did not move', async () => {
+    const still = await makeDelegation({ name: 'Unmoved' });
+    await snapshot(still.id, '2026-08-01', 10_000n);
+    await snapshot(still.id, '2026-09-01', 10_000n);
+
+    const { movers } = await buildMovers(prisma, { window: 'all', timeZone: ZONE });
+    expect(movers).toEqual([]);
+  });
+
+  it('ranks by size of movement, so an emptied line is not buried', async () => {
+    const filled = await makeDelegation({ name: 'Filled' });
+    const emptied = await makeDelegation({ name: 'Emptied' });
+    await snapshot(filled.id, '2026-08-01', 0n);
+    await snapshot(filled.id, '2026-09-01', 20_000n);
+    await snapshot(emptied.id, '2026-08-01', 90_000n);
+    await snapshot(emptied.id, '2026-09-01', 0n);
+
+    const { movers } = await buildMovers(prisma, { window: 'all', timeZone: ZONE });
+    // Sorting signed would put every emptied line at the bottom — which is the
+    // half somebody is usually looking for.
+    expect(movers.map((mover) => mover.name)).toEqual(['Emptied', 'Filled']);
+    expect(movers[0]?.changeCents).toBe(-90_000n);
+  });
+
+  it('excludes an archived delegation', async () => {
+    const gone = await makeDelegation({ name: 'Archived' });
+    await snapshot(gone.id, '2026-08-01', 0n);
+    await snapshot(gone.id, '2026-09-01', 50_000n);
+    await prisma.delegation.update({
+      where: { id: gone.id },
+      data: { archivedAt: new Date() },
+    });
+
+    const { movers } = await buildMovers(prisma, { window: 'all', timeZone: ZONE });
+    expect(movers).toEqual([]);
+  });
+
+  it('says the cycle is missing rather than reporting an empty list', async () => {
+    const result = await buildMovers(prisma, { window: 'cycle', timeZone: ZONE });
+    expect(result.cycleMissing).toBe(true);
+    expect(result.movers).toEqual([]);
   });
 });
 
