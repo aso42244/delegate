@@ -17,6 +17,12 @@ export interface OverviewTileDto {
   readonly position: number;
   /** Which chart this tile is drawn as; null means the tile's own default. */
   readonly display: string | null;
+  /**
+   * What the tile has been told about itself. Null means nothing configured,
+   * which is not the same as an empty selection — one invites a choice and the
+   * other is a choice.
+   */
+  readonly config: unknown;
 }
 
 export interface OverviewLayoutDto {
@@ -169,7 +175,26 @@ export interface BurnRateDto {
   readonly perCycleCents: string;
 }
 
+export interface FlowNodeDto {
+  readonly key: string;
+  readonly name: string;
+  readonly amountCents: string;
+}
+
+export interface CashflowDto {
+  readonly cycleMissing: boolean;
+  readonly inflows: readonly FlowNodeDto[];
+  readonly outflows: readonly FlowNodeDto[];
+  readonly uncategorizedInCents: string;
+  readonly uncategorizedOutCents: string;
+  readonly surplusCents: string;
+  readonly totalInCents: string;
+}
+
 export interface OverviewDataDto {
+  readonly cashflow?: CashflowDto;
+  /** The cashflow tile's own period, which is not the page's. */
+  readonly cashflowWindow?: string;
   /** One aggregate series feeding three tiles — see the domain's comment. */
   readonly aggregate?: AggregateDto;
   readonly change_per_cycle?: readonly CycleChangeDto[];
@@ -197,6 +222,7 @@ export type LayoutSaveResult =
   | { readonly ok: true }
   | { readonly ok: false; readonly unknown?: readonly string[] }
   | { readonly ok: false; readonly overfullRows?: readonly number[] }
+  | { readonly ok: false; readonly badConfig?: readonly string[] }
   | { readonly ok: false; readonly duplicates?: readonly string[] };
 
 export const overviewApi = {

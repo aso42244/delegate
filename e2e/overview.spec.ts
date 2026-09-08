@@ -1,4 +1,4 @@
-import { expect, makeAccount, test } from './fixtures.js';
+import { expect, makeAccount, makeDelegation, test } from './fixtures.js';
 
 /**
  * Overview — the spine.
@@ -318,6 +318,120 @@ test('tiles can be dragged into one row without entering Arrange', async ({ sign
   await expect(
     signedIn.getByRole('heading', { name: 'Spending by grouping', level: 2 }).locator('../..'),
   ).toHaveClass(/lg:col-span-6/);
+});
+
+test('the delegations tile picks its lines in a dialog on the tile', async ({ signedIn, api }) => {
+  await makeDelegation(api, 'Grocery');
+  await makeDelegation(api, 'Fuel');
+
+  await signedIn.goto('/overview');
+  await signedIn.getByRole('button', { name: 'Arrange', exact: true }).click();
+  await signedIn.getByRole('button', { name: 'Add Delegations' }).click();
+  await expect(signedIn.getByRole('heading', { name: 'Delegations', level: 2 })).toBeVisible();
+  await signedIn.getByRole('button', { name: 'Done' }).click();
+
+  // Added and never configured — which invites a choice rather than showing an
+  // empty table.
+  const tile = signedIn.getByRole('heading', { name: 'Delegations', level: 2 }).locator('../..');
+  await expect(tile.getByText('No delegations chosen yet.')).toBeVisible();
+
+  /*
+   * The choice is made on the tile, not in Settings. That also sidesteps a real
+   * permission problem: household settings are administrator-only, so a shared
+   * setting would be one a `user` account could not change.
+   */
+  await tile.getByRole('button', { name: 'Choose which delegations show →' }).click();
+  const dialog = signedIn.getByRole('dialog');
+  await expect(dialog).toBeVisible();
+
+  await dialog.getByRole('switch', { name: 'Show Grocery' }).click();
+  await dialog.getByRole('button', { name: 'Save' }).click();
+
+  await expect(dialog).toHaveCount(0);
+  await expect(tile.getByText('Grocery')).toBeVisible();
+  await expect(tile.getByText('Fuel')).toHaveCount(0);
+
+  // The risk an optimistic write introduces is one that never reaches the
+  // server: perfect on screen until the page is loaded again.
+  await signedIn.reload();
+  await expect(
+    signedIn.getByRole('heading', { name: 'Delegations', level: 2 }).locator('../..'),
+  ).toContainText('Grocery');
+});
+
+test('the picker lists delegations under their groupings, in the budget order', async ({
+  signedIn,
+  api,
+}) => {
+  // Named so alphabetical and positional order disagree: the owner's groupings
+  // are named "3 - Food" and "5 - Home" precisely because ordering was the
+  // thing missing, and a picker that sorted by name would undo that.
+  await makeDelegation(api, 'Zucchini');
+  await makeDelegation(api, 'Apples');
+
+  await signedIn.goto('/overview');
+  await signedIn.getByRole('button', { name: 'Arrange', exact: true }).click();
+  await signedIn.getByRole('button', { name: 'Add Delegations' }).click();
+  await signedIn.getByRole('button', { name: 'Done' }).click();
+
+  await signedIn.getByRole('button', { name: 'Choose which delegations show →' }).click();
+  const dialog = signedIn.getByRole('dialog');
+
+  // A 1:1 mirror because it reads `GET /api/budget` — the same call, the same
+  // cache entry and the same ordering the Budget page draws.
+  await expect(dialog.getByRole('switch', { name: 'Show Zucchini' })).toBeVisible();
+  await expect(dialog.getByRole('switch', { name: 'Show Apples' })).toBeVisible();
+  await expect(dialog.getByText('No grouping')).toBeVisible();
+});
+
+test('the cashflow chart carries its own period, separate from the page', async ({ signedIn }) => {
+  await signedIn.goto('/overview');
+  await signedIn.getByRole('button', { name: 'Arrange', exact: true }).click();
+  await signedIn.getByRole('button', { name: 'Add Cashflow' }).click();
+  await expect(signedIn.getByRole('heading', { name: 'Cashflow', level: 2 })).toBeVisible();
+  await signedIn.getByRole('button', { name: 'Done' }).click();
+
+  const tile = signedIn.getByRole('heading', { name: 'Cashflow', level: 2 }).locator('../..');
+
+  /*
+   * The page's control and the chart's are two different controls, and the
+   * chart's defaults to year-to-date — a fortnight of cashflow is mostly one
+   * paycheck and one rent payment.
+   */
+  await expect(tile.getByRole('radio', { name: 'YTD' })).toHaveAttribute('aria-checked', 'true');
+  await expect(signedIn.getByRole('radio', { name: 'Cycle' })).toHaveAttribute(
+    'aria-checked',
+    'true',
+  );
+
+  await tile.getByRole('radio', { name: '30D' }).click();
+  await expect(tile.getByRole('radio', { name: '30D' })).toHaveAttribute('aria-checked', 'true');
+
+  // The page's period is untouched by the chart's.
+  await expect(signedIn.getByRole('radio', { name: 'Cycle' })).toHaveAttribute(
+    'aria-checked',
+    'true',
+  );
+
+  await signedIn.reload();
+  await expect(
+    signedIn
+      .getByRole('heading', { name: 'Cashflow', level: 2 })
+      .locator('../..')
+      .getByRole('radio', { name: '30D' }),
+  ).toHaveAttribute('aria-checked', 'true');
+});
+
+test('the cashflow chart says nothing came in rather than drawing an empty flow', async ({
+  signedIn,
+}) => {
+  await signedIn.goto('/overview?window=ytd');
+  await signedIn.getByRole('button', { name: 'Arrange', exact: true }).click();
+  await signedIn.getByRole('button', { name: 'Add Cashflow' }).click();
+  await signedIn.getByRole('button', { name: 'Done' }).click();
+
+  const tile = signedIn.getByRole('heading', { name: 'Cashflow', level: 2 }).locator('../..');
+  await expect(tile.getByText('Nothing came in yet.')).toBeVisible();
 });
 
 test('the arrange controls are hidden until asked for', async ({ signedIn }) => {

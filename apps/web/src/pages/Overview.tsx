@@ -17,6 +17,9 @@ import {
   type OverviewTileDto,
 } from '../api/overview.js';
 import { EmptyState, PageHeader, SegmentedControl } from '../components/layout.jsx';
+import { budgetApi, type BudgetViewDto } from '../api/budget.js';
+import { DelegationPickerDialog } from '../components/DelegationPickerDialog.jsx';
+import { Sankey, type FlowNode } from '../components/Sankey.jsx';
 import { CompositionBars, RankedBars, type RankedRow } from '../components/RankedBars.jsx';
 import { TimeSeriesChart, type TimePoint } from '../components/TimeSeries.jsx';
 import { Alert, Button } from '../components/ui.jsx';
@@ -47,6 +50,15 @@ import { Alert, Button } from '../components/ui.jsx';
  * request follows; a failure puts it back and says so.
  */
 
+/** The cashflow chart's own options, defaulting to year-to-date. */
+const CASHFLOW_WINDOWS = [
+  { value: '30d', label: '30D' },
+  { value: '90d', label: '90D' },
+  { value: 'ytd', label: 'YTD' },
+  { value: '1yr', label: '1Y' },
+  { value: 'all', label: 'All' },
+] as const;
+
 const WINDOWS = [
   { value: 'cycle', label: 'Cycle' },
   { value: '30d', label: '30D' },
@@ -74,6 +86,8 @@ const TILE_COPY: Record<string, { readonly title: string; readonly description?:
   bitcoin_value_over_time: { title: 'Bitcoin over time' },
   home_equity_over_time: { title: 'Home equity' },
   debt_trajectory: { title: 'Debt trajectory' },
+  cashflow: { title: 'Cashflow', description: 'Where the money went' },
+  delegations: { title: 'Delegations' },
   delegations_negative: { title: 'Over-spent lines' },
   cycle_surplus: { title: 'This cycle' },
   income_vs_spending: { title: 'Income against spending' },
@@ -703,6 +717,208 @@ function BurnRateTile({
 }
 
 /**
+ * The lines somebody chose to watch.
+ *
+ * Drawn from the **budget's own read model** rather than anything computed for
+ * this page. Remaining and To delegate are live figures with no period in them,
+ * the Budget page already reads them, and a second query would be a second
+ * answer to a question already answered — which is how two places come to
+ * disagree about the same number.
+ *
+ * Remaining is the hero at `text-hero`; To delegate stays quiet at
+ * `--color-faint`, exactly as design.md specifies for that column.
+ */
+function DelegationsTile({
+  budget,
+  chosen,
+  onChoose,
+}: {
+  readonly budget: BudgetViewDto | undefined;
+  readonly chosen: readonly string[];
+  readonly onChoose: () => void;
+}): ReactNode {
+  const rows = (budget?.delegations.groupings ?? [])
+    .filter((grouping) => grouping.systemKey !== 'outstanding-checks')
+    .flatMap((grouping) => grouping.rows.map((row) => ({ row, color: grouping.color })))
+    .concat((budget?.delegations.ungrouped ?? []).map((row) => ({ row, color: null })))
+    .filter((entry) => chosen.includes(entry.row.id));
+
+  return (
+    <div className="flex flex-col gap-4">
+      {chosen.length === 0 ? (
+        <EmptyState>No delegations chosen yet.</EmptyState>
+      ) : rows.length === 0 ? (
+        // Chosen, but none of them resolve: every one has been archived since.
+        // Different from choosing none, and it should say so.
+        <EmptyState>The chosen delegations have been archived.</EmptyState>
+      ) : (
+        <table className="w-full border-collapse">
+          <thead>
+            <tr>
+              <th className="border-b-2 border-ink pb-1 text-left text-label uppercase tracking-[0.05em] text-muted">
+                Delegation
+              </th>
+              <th className="border-b-2 border-ink pb-1 text-right text-label uppercase tracking-[0.05em] text-muted">
+                Remaining
+              </th>
+              <th className="border-b-2 border-ink pb-1 text-right text-label uppercase tracking-[0.05em] text-muted">
+                To delegate
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map(({ row, color }) => {
+              const balance = BigInt(row.balanceCents);
+              return (
+                <tr key={row.id}>
+                  <td className="row-cell border-b border-line">
+                    <span className="flex min-w-0 items-center gap-2">
+                      <span
+                        aria-hidden="true"
+                        className="inline-block h-2.5 w-2.5 shrink-0 rounded-sm"
+                        style={{ background: color ?? 'var(--color-group-grey)' }}
+                      />
+                      <span className="truncate text-base text-ink">{row.name}</span>
+                    </span>
+                  </td>
+                  <td
+                    className={`money row-cell border-b border-line text-hero font-bold ${
+                      balance < 0n ? 'text-negative' : 'text-ink'
+                    }`}
+                  >
+                    {formatCents(balance)}
+                  </td>
+                  {/* Deliberately quiet — design.md makes this the de-emphasised
+                      column, and it is the one figure here nobody reads twice a
+                      day. */}
+                  <td className="money row-cell border-b border-line text-quiet text-faint">
+                    {row.amountToDelegateCents === null
+                      ? '—'
+                      : formatCents(BigInt(row.amountToDelegateCents))}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      )}
+      <div className="mt-auto flex items-center gap-2 border-t border-line pt-2">
+        <button type="button" className="linkish" onClick={onChoose}>
+          Choose which delegations show →
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * The cashflow chart, and its own period control.
+ *
+ * Its window is separate from the page's on purpose: this answers "where did it
+ * go", read as a retrospective, while everything around it answers "where do I
+ * stand". Year-to-date by default, because a fortnight of cashflow is mostly one
+ * paycheck and one rent payment.
+ */
+function CashflowTile({
+  cashflow,
+  window,
+  onWindow,
+}: {
+  readonly cashflow: NonNullable<OverviewDataDto['cashflow']>;
+  readonly window: string;
+  readonly onWindow: (next: string) => void;
+}): ReactNode {
+  const uncategorizedIn = BigInt(cashflow.uncategorizedInCents);
+  const uncategorizedOut = BigInt(cashflow.uncategorizedOutCents);
+  const surplus = BigInt(cashflow.surplusCents);
+
+  const inflows: FlowNode[] = [
+    ...cashflow.inflows.map((node) => ({
+      key: node.key,
+      name: node.name,
+      amountCents: BigInt(node.amountCents),
+      tone: 'income' as const,
+    })),
+    ...(uncategorizedIn > 0n
+      ? [
+          {
+            key: '__uncat_in',
+            name: 'Uncategorized',
+            amountCents: uncategorizedIn,
+            tone: 'uncategorized' as const,
+          },
+        ]
+      : []),
+  ];
+
+  const outflows: FlowNode[] = [
+    ...cashflow.outflows.map((node) => ({
+      key: node.key,
+      name: node.name,
+      amountCents: BigInt(node.amountCents),
+      tone: 'spending' as const,
+    })),
+    ...(uncategorizedOut > 0n
+      ? [
+          {
+            key: '__uncat_out',
+            name: 'Uncategorized',
+            amountCents: uncategorizedOut,
+            tone: 'uncategorized' as const,
+          },
+        ]
+      : []),
+    // Only when there is one. A negative surplus is money that came from
+    // somewhere this window cannot see — savings, or last cycle — and drawing it
+    // as a destination would say the household received it.
+    ...(surplus > 0n
+      ? [
+          {
+            key: '__surplus',
+            name: 'Surplus',
+            amountCents: surplus,
+            tone: 'surplus' as const,
+          },
+        ]
+      : []),
+  ];
+
+  return (
+    <div className="flex flex-col gap-4">
+      <div className="flex flex-wrap items-center gap-2">
+        <SegmentedControl
+          size="sm"
+          label="Cashflow period"
+          value={window}
+          options={CASHFLOW_WINDOWS}
+          onChange={onWindow}
+        />
+        <span className="text-quiet text-muted">This chart has its own period.</span>
+      </div>
+
+      {cashflow.cycleMissing ? (
+        <EmptyState>No cycle has been run yet.</EmptyState>
+      ) : (
+        <Sankey inflows={inflows} outflows={outflows} emptyMessage="Nothing came in yet." />
+      )}
+
+      {(uncategorizedIn > 0n || uncategorizedOut > 0n) && (
+        <div className="flex items-center gap-2 border-t border-line pt-2">
+          {/* Uncategorized is the one thing on this chart somebody can act on,
+              and until it is worked every other figure is wrong by that much. */}
+          <Link
+            to="/transactions?uncategorized=true"
+            className="text-quiet font-semibold text-accent hover:underline"
+          >
+            Categorize what is left →
+          </Link>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
  * Which body a tile draws.
  *
  * A tile whose key is absent from the payload draws nothing at all, which is not
@@ -712,10 +928,32 @@ function BurnRateTile({
 function TileBody({
   tileKey,
   data,
+  budget,
+  chosen,
+  onChoose,
+  cashflowWindow,
+  onCashflowWindow,
 }: {
   readonly tileKey: string;
   readonly data: OverviewDataDto | undefined;
+  readonly budget?: BudgetViewDto | undefined;
+  readonly chosen?: readonly string[];
+  readonly onChoose?: () => void;
+  readonly cashflowWindow?: string;
+  readonly onCashflowWindow?: (next: string) => void;
 }): ReactNode {
+  // The delegations tile reads the budget rather than this page's payload, so
+  // it draws before — and without — anything the overview endpoint computes.
+  if (tileKey === 'delegations') {
+    return (
+      <DelegationsTile
+        budget={budget}
+        chosen={chosen ?? []}
+        onChoose={onChoose ?? (() => undefined)}
+      />
+    );
+  }
+
   if (!data) return null;
 
   switch (tileKey) {
@@ -769,6 +1007,14 @@ function TileBody({
       ) : null;
     case 'delegation_burn_rate':
       return data.delegation_burn_rate ? <BurnRateTile burn={data.delegation_burn_rate} /> : null;
+    case 'cashflow':
+      return data.cashflow ? (
+        <CashflowTile
+          cashflow={data.cashflow}
+          window={cashflowWindow ?? 'ytd'}
+          onWindow={onCashflowWindow ?? (() => undefined)}
+        />
+      ) : null;
     case 'uncategorized_backlog':
       return data.uncategorized_backlog ? (
         <BacklogTile backlog={data.uncategorized_backlog} />
@@ -814,6 +1060,9 @@ export function Overview(): ReactNode {
    */
   const pointer = useMediaQuery('(hover: hover)');
 
+  /** Which tile's picker is open, by key. Null is closed. */
+  const [picking, setPicking] = useState<string | null>(null);
+
   const [dragging, setDragging] = useState<string | null>(null);
   const [over, setOver] = useState<{ key: string; side: 'left' | 'right' } | null>(null);
 
@@ -825,6 +1074,25 @@ export function Overview(): ReactNode {
   });
 
   const tiles = useMemo(() => layout.data?.tiles ?? [], [layout.data]);
+
+  /**
+   * The budget itself, for the Delegations tile and its picker.
+   *
+   * The same query key the Budget page uses, so the two share one cache entry
+   * and one answer — which is what makes "a 1:1 mirror" a property of the data
+   * rather than a claim about two orderings.
+   *
+   * Fetched only when a Delegations tile is actually on the page: this is the
+   * one tile whose data does not come from `/api/overview`, and asking for the
+   * whole budget on a page that does not show it would be the waste that
+   * endpoint exists to stop.
+   */
+  const wantsBudget = tiles.some((tile) => tile.key === 'delegations');
+  const budget = useQuery({
+    queryKey: ['budget'],
+    queryFn: () => budgetApi.view(),
+    enabled: wantsBudget || picking !== null,
+  });
 
   const save = useMutation({
     /*
@@ -870,9 +1138,25 @@ export function Overview(): ReactNode {
      * is on the page and empty. Found exactly that way.
      */
     onSuccess: (_result, next, context) => {
-      const before = (context?.previous?.tiles ?? []).map((tile) => tile.key).sort();
-      const after = next.map((tile) => tile.key).sort();
-      if (before.join(String.fromCharCode(0)) !== after.join(String.fromCharCode(0))) {
+      /*
+       * Two things change what the server would compute: which tiles are on the
+       * page, and what a tile has been told about itself — the cashflow chart's
+       * period is stored in its configuration, not in the URL.
+       *
+       * Reordering and resizing change neither, so those invalidate nothing.
+       * And this has to run **after** the write lands: `GET /api/overview` reads
+       * the stored layout to decide what to compute, so firing it alongside the
+       * mutation reads the old one. That was found once already, when adding a
+       * tile drew it empty; it recurred here, where changing the period silently
+       * kept the old one until a reload.
+       */
+      const signature = (tiles: readonly OverviewTileDto[]): string =>
+        tiles
+          .map((tile) => `${tile.key}:${JSON.stringify(tile.config ?? null)}`)
+          .sort()
+          .join('\u0000');
+
+      if (signature(context?.previous?.tiles ?? []) !== signature(next)) {
         void queryClient.invalidateQueries({ queryKey: ['overview', 'data'] });
       }
     },
@@ -980,7 +1264,7 @@ export function Overview(): ReactNode {
   function add(key: string): void {
     // A new tile takes a row of its own at the foot. The data refetch is in the
     // mutation's `onSuccess`, not here — see the comment on it.
-    save.mutate([...tiles, { key, row: rows.length, position: 0, display: null }]);
+    save.mutate([...tiles, { key, row: rows.length, position: 0, display: null, config: null }]);
   }
 
   /**
@@ -1011,6 +1295,32 @@ export function Overview(): ReactNode {
       ...destination.slice(side === 'left' ? at : at + 1),
     ];
     saveRows(next);
+  }
+
+  /** The delegation ids a tile has been told to show. */
+  function chosenFor(tile: OverviewTileDto): readonly string[] {
+    const config = tile.config;
+    if (config === null || typeof config !== 'object') return [];
+    const ids = (config as { delegationIds?: unknown }).delegationIds;
+    return Array.isArray(ids) ? ids.filter((id): id is string => typeof id === 'string') : [];
+  }
+
+  /** The cashflow tile's own period, stored on the tile rather than in the URL. */
+  function setCashflowWindow(next: string): void {
+    save.mutate(
+      tiles.map((tile) => (tile.key === 'cashflow' ? { ...tile, config: { window: next } } : tile)),
+    );
+    // The refetch is in the mutation's `onSuccess`, which compares
+    // configurations as well as keys — see the comment there.
+  }
+
+  function saveChoice(key: string, delegationIds: readonly string[]): void {
+    save.mutate(
+      tiles.map((tile) =>
+        tile.key === key ? { ...tile, config: { delegationIds: [...delegationIds] } } : tile,
+      ),
+    );
+    setPicking(null);
   }
 
   const available = (layout.data?.catalog ?? []).filter(
@@ -1088,13 +1398,22 @@ export function Overview(): ReactNode {
                   {preview.isPending ? (
                     <span className="block text-quiet text-muted">Loading…</span>
                   ) : (
-                    <TileBody tileKey={key} data={preview.data} />
+                    <TileBody tileKey={key} data={preview.data} budget={budget.data} />
                   )}
                 </span>
               </button>
             ))}
           </div>
         </section>
+      )}
+
+      {picking !== null && (
+        <DelegationPickerDialog
+          budget={budget.data}
+          selected={chosenFor(tiles.find((tile) => tile.key === picking) ?? tiles[0]!)}
+          onSave={(ids) => saveChoice(picking, ids)}
+          onClose={() => setPicking(null)}
+        />
       )}
 
       {layout.isPending || data.isPending ? null : tiles.length === 0 ? (
@@ -1134,7 +1453,15 @@ export function Overview(): ReactNode {
                   over: over?.key === tile.key ? over.side : null,
                 }}
               >
-                <TileBody tileKey={tile.key} data={data.data} />
+                <TileBody
+                  tileKey={tile.key}
+                  data={data.data}
+                  budget={budget.data}
+                  chosen={chosenFor(tile)}
+                  onChoose={() => setPicking(tile.key)}
+                  cashflowWindow={data.data?.cashflowWindow ?? 'ytd'}
+                  onCashflowWindow={(next) => setCashflowWindow(next)}
+                />
               </TileShell>
             )),
           )}

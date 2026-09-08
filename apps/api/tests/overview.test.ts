@@ -5,7 +5,12 @@ import { buildApp } from '../src/app.js';
 import { loadConfig } from '../src/config.js';
 import { prisma } from '../src/db/client.js';
 import { categorizeTransaction } from '../src/domain/allocations.js';
-import { buildBurnRates, buildMovers, buildOverview } from '../src/domain/overview.js';
+import {
+  buildBurnRates,
+  buildCashflow,
+  buildMovers,
+  buildOverview,
+} from '../src/domain/overview.js';
 import {
   makeAccount,
   makeDelegation,
@@ -65,6 +70,7 @@ interface LayoutBody {
     readonly key: string;
     readonly row: number;
     readonly position: number;
+    readonly config: unknown;
   }[];
 }
 
@@ -97,6 +103,7 @@ interface DataBody {
   readonly composition?: { readonly days: number };
   readonly home_equity_over_time?: { readonly name: string | null };
   readonly debt_trajectory?: { readonly hasEnoughHistory: boolean };
+  readonly cashflowWindow?: string;
   readonly cycles?: readonly { readonly surplusCents: string; readonly partial: boolean }[];
   readonly delegations_negative?: readonly { readonly name: string }[];
   readonly change_per_cycle?: readonly unknown[];
@@ -338,6 +345,70 @@ describe('buildOverview', () => {
       timeZone: ZONE,
     });
     expect(Object.keys(data)).toEqual(['uncategorized_backlog']);
+  });
+});
+
+describe("a tile's own configuration", () => {
+  it('stores which delegations a Delegations tile shows', async () => {
+    const grocery = await makeDelegation({ name: 'Grocery' });
+    const fuel = await makeDelegation({ name: 'Fuel' });
+
+    const saved = await putLayout([
+      {
+        key: 'delegations',
+        row: 0,
+        position: 0,
+        config: { delegationIds: [grocery.id, fuel.id] },
+      },
+    ]);
+    expect(saved.json<SaveBody>()).toEqual({ ok: true });
+
+    const body = (await get('/api/overview/layout')).json<LayoutBody>();
+    expect(body.tiles[0]?.config).toEqual({ delegationIds: [grocery.id, fuel.id] });
+  });
+
+  it('tells nothing configured apart from an empty choice', async () => {
+    await putLayout(rowed(['delegations']));
+    // Added and never configured: null, which is what invites a choice.
+    expect((await get('/api/overview/layout')).json<LayoutBody>().tiles[0]?.config).toBeNull();
+
+    await putLayout([{ key: 'delegations', row: 0, position: 0, config: { delegationIds: [] } }]);
+    // Deliberately deselected everything: a choice, and it must survive as one.
+    expect((await get('/api/overview/layout')).json<LayoutBody>().tiles[0]?.config).toEqual({
+      delegationIds: [],
+    });
+  });
+
+  it('refuses a shape the tile does not read', async () => {
+    /*
+     * The column stores JSON, which is not the same as storing anything. A
+     * value the renderer cannot use is a tile that draws nothing, and nothing
+     * reads as broken rather than as unconfigured.
+     */
+    const response = await putLayout([
+      { key: 'delegations', row: 0, position: 0, config: { delegationIds: ['not-a-uuid'] } },
+    ]);
+    expect(response.json<SaveBody>()).toMatchObject({ ok: false, badConfig: ['delegations'] });
+    expect((await get('/api/overview/layout')).json<LayoutBody>().tiles).toEqual([]);
+  });
+
+  it('refuses configuration on a tile that takes none', async () => {
+    const response = await putLayout([
+      { key: 'uncategorized_backlog', row: 0, position: 0, config: { delegationIds: [] } },
+    ]);
+    expect(response.json<SaveBody>()).toMatchObject({
+      ok: false,
+      badConfig: ['uncategorized_backlog'],
+    });
+  });
+
+  it('computes nothing for the Delegations tile', async () => {
+    // It reads the budget's own model instead — a second query ordering
+    // delegations by grouping would be a second answer to a question the Budget
+    // page already answers.
+    await putLayout(rowed(['delegations']));
+    const body = (await get('/api/overview')).json<DataBody>();
+    expect(Object.keys(body)).toEqual(['window']);
   });
 });
 
@@ -634,6 +705,119 @@ describe('burn rate', () => {
     const result = await buildBurnRates(prisma, { window: 'cycle', timeZone: ZONE });
     expect(result.cycleMissing).toBe(true);
     expect(result.rates).toEqual([]);
+  });
+});
+
+describe('cashflow', () => {
+  async function income(cents: bigint, description: string): Promise<void> {
+    const account = await prisma.account.findFirstOrThrow();
+    const transaction = await makeTransaction({
+      accountId: account.id,
+      amountCents: cents,
+      postedAt: new Date(),
+      description,
+    });
+    await prisma.transaction.update({
+      where: { id: transaction.id },
+      data: { kind: 'income' },
+    });
+  }
+
+  it('infers sources from the description, grouped the way bills are', async () => {
+    await makeAccount({ name: 'Everyday', type: 'asset', balanceCents: 5_000_000n });
+    await income(172_480n, 'ACH DEPOSIT ACME CORP 8817');
+    await income(172_480n, 'ACH DEPOSIT ACME CORP 9241');
+    await income(14_190n, 'ZELLE FROM A CLIENT');
+
+    const flow = await buildCashflow(prisma, { window: 'all', timeZone: ZONE });
+
+    // Two paychecks from one payer land on one node: the trailing reference
+    // changes every fortnight, which is exactly what `merchantKey` drops.
+    expect(flow.inflows).toHaveLength(2);
+    expect(flow.inflows[0]?.amountCents).toBe(344_960n);
+    expect(flow.totalInCents).toBe(359_150n);
+  });
+
+  it('separates a deposit nobody has marked from spending nobody has filed', async () => {
+    await makeAccount({ name: 'Everyday', type: 'asset', balanceCents: 5_000_000n });
+    const account = await prisma.account.findFirstOrThrow();
+    await makeTransaction({ accountId: account.id, amountCents: 50_000n, postedAt: new Date() });
+    await makeTransaction({ accountId: account.id, amountCents: -20_000n, postedAt: new Date() });
+
+    const flow = await buildCashflow(prisma, { window: 'all', timeZone: ZONE });
+
+    // Both are real money moving through, and they are opposite directions of
+    // the same omission — not one category called "Uncategorized".
+    expect(flow.uncategorizedInCents).toBe(50_000n);
+    expect(flow.uncategorizedOutCents).toBe(20_000n);
+  });
+
+  it('balances: the surplus is the remainder, never measured separately', async () => {
+    await makeAccount({ name: 'Everyday', type: 'asset', balanceCents: 5_000_000n });
+    await income(100_000n, 'PAYROLL');
+
+    const delegation = await makeDelegation({ name: 'Grocery' });
+    const account = await prisma.account.findFirstOrThrow();
+    const spend = await makeTransaction({
+      accountId: account.id,
+      amountCents: -30_000n,
+      postedAt: new Date(),
+    });
+    await categorizeTransaction(prisma, spend.id, delegation.id);
+    await makeTransaction({ accountId: account.id, amountCents: -5_000n, postedAt: new Date() });
+
+    const flow = await buildCashflow(prisma, { window: 'all', timeZone: ZONE });
+
+    /*
+     * A Sankey whose sides do not sum to the same figure cannot be drawn, so the
+     * surplus is defined as what is left rather than computed another way.
+     */
+    const out =
+      flow.outflows.reduce((sum, node) => sum + node.amountCents, 0n) +
+      flow.uncategorizedOutCents +
+      flow.surplusCents;
+    expect(out).toBe(flow.totalInCents);
+    expect(flow.surplusCents).toBe(65_000n);
+  });
+
+  it('agrees with the income figure the cycle tiles report', async () => {
+    await makeAccount({ name: 'Everyday', type: 'asset', balanceCents: 5_000_000n });
+    await income(100_000n, 'PAYROLL');
+
+    const flow = await buildCashflow(prisma, { window: 'all', timeZone: ZONE });
+    const inflowTotal = flow.inflows.reduce((sum, node) => sum + node.amountCents, 0n);
+
+    // Two figures for "what came in" that disagreed would be worse than either
+    // of them alone, so both read the same predicate.
+    expect(inflowTotal).toBe(100_000n);
+  });
+
+  it('keeps "no cycle yet" apart from "nothing came in"', async () => {
+    const missing = await buildCashflow(prisma, { window: 'cycle', timeZone: ZONE });
+    expect(missing.cycleMissing).toBe(true);
+
+    const empty = await buildCashflow(prisma, { window: 'all', timeZone: ZONE });
+    expect(empty.cycleMissing).toBe(false);
+    expect(empty.totalInCents).toBe(0n);
+  });
+
+  it('carries its own window, defaulting to year-to-date', async () => {
+    await putLayout(rowed(['cashflow']));
+    expect((await get('/api/overview')).json<DataBody>().cashflowWindow).toBe('ytd');
+
+    await putLayout([{ key: 'cashflow', row: 0, position: 0, config: { window: '30d' } }]);
+    const body = (await get('/api/overview?window=cycle')).json<DataBody>();
+
+    // The page is on `cycle` and the chart is on `30d`. That is the point of it.
+    expect(body.window).toBe('cycle');
+    expect(body.cashflowWindow).toBe('30d');
+  });
+
+  it('refuses a window it does not recognise', async () => {
+    const response = await putLayout([
+      { key: 'cashflow', row: 0, position: 0, config: { window: 'fortnight' } },
+    ]);
+    expect(response.json<SaveBody>()).toMatchObject({ ok: false, badConfig: ['cashflow'] });
   });
 });
 

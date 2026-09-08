@@ -6,7 +6,77 @@ phase (`v0.1.0-phase1`, and so on).
 
 ## [Unreleased]
 
-Nothing yet.
+### Added
+
+- **The Delegations tile, and its picker on the tile itself.** It shows the lines
+  somebody chose — Remaining as the hero, To delegate quiet — and the choice is
+  made in a dialog opened from the tile rather than in Settings.
+
+  **The dialog is a 1:1 mirror of the Budget page because it reads the same
+  data.** `GET /api/budget` already returns delegations grouped and ordered
+  exactly as that page draws them, and the tile shares its query key, so the
+  mirror is a property of where the figures come from rather than a claim two
+  orderings have to keep agreeing about. That matters here: the owner's
+  groupings are named "3 - Food" and "5 - Home" because ordering was the thing
+  missing before positions existed, and a picker that quietly sorted
+  alphabetically would undo a deliberate arrangement.
+
+  On the tile rather than in Settings also sidesteps a real permission problem:
+  household settings are administrator-only, so a shared setting would be one a
+  `user` account could not change.
+
+- **`overview_tiles.config`** — what a tile has been told about itself. JSON,
+  because the shape genuinely differs per tile and a table carrying
+  `delegation_ids`, `account_id` and a dozen nulls describes the union of every
+  tile rather than any one of them. Validated per tile key at the HTTP edge:
+  "differs" is not "anything", and a column that stores whatever arrives is one
+  whose every reader has to defend itself.
+
+  Null means nothing configured, which is not the same as an empty selection —
+  one invites a choice and the other is a choice.
+
+- **Cashflow: where the money came from and where it went**
+  ([ADR 052](docs/decisions/052-an-income-source-is-inferred-not-entered.md)).
+  Sources on the left, groupings on the right, one total between.
+
+  **The left-hand side had no stored answer.** Income allocates to nothing by
+  design — "waiting to be categorized" means waiting for a decision, and income
+  has none — so sources are **inferred**, grouped by `merchantKey` and named by
+  the newest transaction's own description. Deliberately the machinery bills
+  already use rather than a fifth idea of what makes two rows the same payer.
+  A source first appears as whatever the bank's descriptor says, which is the
+  honest starting point: naming it is a correction somebody makes, not a guess
+  this makes.
+
+  **Uncategorized appears on both sides and is not filler.** A deposit nobody has
+  marked as income and a charge nobody has filed are both real money moving
+  through; drawing them in a neutral grey would say the household spends a third
+  of its income on something called "Uncategorized". They take the warning tone,
+  and the tile links to the queue — until they are worked, every other figure on
+  the chart is wrong by that much.
+
+  **Anything under 1% of the flow rolls into `Other`**, named on hover. A ribbon
+  half a pixel tall cannot carry a label, and in the chart this was modelled on
+  its label sits on top of the two above it. Every node also gets a minimum
+  labelling _slot_: the ribbon's thickness stays proportional, and only the space
+  between nodes grows.
+
+  **The surplus is the remainder, never measured separately.** A Sankey whose
+  sides do not sum to the same figure cannot be drawn.
+
+  **It carries its own period**, defaulting to year-to-date, because it answers
+  "where did it go" at a different cadence from the figures around it. A
+  fortnight of cashflow is mostly one paycheck and one rent payment.
+
+### Fixed
+
+- **A tile's stored configuration did not survive being changed.** The figures
+  were refetched alongside the layout write rather than after it, so
+  `GET /api/overview` — which reads the stored layout to decide what to compute
+  — read the old configuration and returned the old period. It looked right
+  until a reload. **This is the second time that shape has appeared**: the first
+  drew a newly added tile empty. The refetch now compares configurations as well
+  as tile keys, and runs only on success.
 
 ## [0.57.0] — 2026-09-08
 
