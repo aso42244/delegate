@@ -6,7 +6,48 @@ phase (`v0.1.0-phase1`, and so on).
 
 ## [Unreleased]
 
-Nothing yet.
+### Added
+
+- **Overview's time-series batch: seven tiles on one chart.** Net worth, assets
+  against debts, identity drift, what net worth is made of, Bitcoin over time,
+  home equity and debt trajectory. `TimeSeries` keeps ADR 035's three rules —
+  an estimated stretch draws dashed and muted with the reason on hover, today is
+  a hollow marker on a dashed final segment because no night has recorded it
+  yet, and a tile with no history says so in a sentence rather than drawing an
+  axis through nothing.
+
+  SVG here rather than the boxes `RankedBars` uses, and the split is not
+  arbitrary: a ranked bar is a row of text and a filled rectangle, which HTML
+  lays out and hands to a screen reader correctly, while a line through time is
+  not expressible in boxes at all. The figures are repeated as text under every
+  chart, because a value carried only by a line's shape is carried to nobody.
+
+- **One aggregate series feeds three tiles, and one composition series feeds
+  two.** Every field net worth, assets-against-debts and identity drift need is
+  on every stored point, so the series is computed once per request rather than
+  once per tile — and not at all when none of them is on the page.
+
+### Fixed
+
+- **"Cycle" showed the entire history when no Delegate run existed.**
+  `rangeStart` returned `Date | null` and every one of its six callers wrote
+  `start ? { gte: start } : {}`, so a household that had never pressed Delegate
+  saw every stored day under Cycle instead of nothing.
+
+  **This is the sibling of a distinction already written down.** `windowStart`
+  was given three outcomes — `since`, `all`, `no_cycle` — precisely because
+  "everything stored" and "there is no cycle yet" are different answers that a
+  null cannot tell apart, and one should show every row while the other shows
+  none. That reasoning was recorded against `windowStart` and never carried
+  across to `rangeStart`, which is the shape of mistake this project keeps
+  meeting: a lesson recorded against the feature that taught it only ever fixes
+  that feature.
+
+  `rangeStart` now returns the same three outcomes, and each of the six callers
+  answers `no_cycle` for itself rather than through a shared clause — "show
+  nothing" is a different return value in every one of them, and a `where` that
+  matched no rows would quietly look like an empty history. Verified against the
+  previous build, where the regression test reports seven days instead of none.
 
 ## [0.56.0] — 2026-09-08
 

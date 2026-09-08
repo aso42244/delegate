@@ -6,8 +6,11 @@ import { prisma } from '../src/db/client.js';
 import {
   aggregateSeries,
   bucketFor,
+  compositionSeries,
+  dailyAggregateRows,
   delegationDrillDown,
   downsample,
+  equitySeries,
   type DailyRow,
 } from '../src/domain/snapshot-series.js';
 import { makeAccount, makeDelegation, markTwoFactorEnrolled, resetDatabase } from './helpers.js';
@@ -566,6 +569,48 @@ describe('however much history there is', () => {
       await storeAggregate(date, BigInt(days - back) * 1_000n);
     }
   }
+
+  /*
+   * "Everything stored" and "there is no cycle yet" must not be the same answer.
+   *
+   * `rangeStart` returned `Date | null` until v0.56.0 and every caller wrote
+   * `start ? { gte: start } : {}`, so a household that had never pressed
+   * Delegate saw its **entire** history under Cycle rather than nothing. The
+   * distinction was written down against `windowStart` and never carried to its
+   * sibling here.
+   *
+   * Verified against the previous build: this fails there, reporting 7.
+   */
+  it('shows nothing under Cycle when no Delegate run exists', async () => {
+    await history(7);
+
+    const everything = await aggregateSeries(prisma, 'all');
+    const cycle = await aggregateSeries(prisma, 'cycle');
+
+    expect(everything.days).toBe(7);
+    expect(cycle.days).toBe(0);
+    expect(cycle.points).toEqual([]);
+  });
+
+  it('carries that distinction to every series the range drives', async () => {
+    await history(7);
+    await makeDelegation({ name: 'Grocery' });
+
+    // Each of these reads `rangeStart`, and each answered "everything" for a
+    // cycle that does not exist. Checked together because they were fixed
+    // together — a sibling missed is how this defect existed at all.
+    const [composition, daily, equity, drill] = await Promise.all([
+      compositionSeries(prisma, 'cycle'),
+      dailyAggregateRows(prisma, 'cycle'),
+      equitySeries(prisma, 'cycle'),
+      delegationDrillDown(prisma, { range: 'cycle' }),
+    ]);
+
+    expect(composition.days).toBe(0);
+    expect(daily).toEqual([]);
+    expect(equity.days).toBe(0);
+    expect(drill.series).toEqual([]);
+  });
 
   it('renders one day as a single point rather than an error', async () => {
     await history(1);

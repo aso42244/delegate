@@ -8,6 +8,18 @@ import {
   type SpendingEntry,
   type SpendingWindow,
 } from './insights.js';
+import {
+  aggregateSeries,
+  bucketFor,
+  compositionSeries,
+  dailyAggregateRows,
+  debtTrajectory,
+  equitySeries,
+  type CompositionPoint,
+  type DebtTrajectory,
+  type Series,
+  type SnapshotRange,
+} from './snapshot-series.js';
 import { buildUtilities, type UtilitiesView } from './utilities.js';
 import type { Db } from '../db/client.js';
 
@@ -43,6 +55,18 @@ export const OVERVIEW_TILES = [
   'asset_debt_composition',
   'utilities_vs_delegated',
   'delegation_movers',
+
+  // Batch B: everything drawn as a line or a stack through the nightly
+  // snapshots (ADR 035). Three of these read one aggregate series and two read
+  // one composition series, so the shared work is done once per request rather
+  // than once per tile — see `buildOverview`.
+  'net_worth_over_time',
+  'assets_vs_debts',
+  'identity_drift',
+  'net_worth_composition',
+  'bitcoin_value_over_time',
+  'home_equity_over_time',
+  'debt_trajectory',
 
   'uncategorized_backlog',
 ] as const;
@@ -165,7 +189,37 @@ export async function buildMovers(
  * no data behind it should render its empty state. Collapsing the two would put
  * `No spending in this window.` on a page that was never asked to show spending.
  */
+/** Which tiles read which shared series. One computation serves all of them. */
+const AGGREGATE_TILES = ['net_worth_over_time', 'assets_vs_debts', 'identity_drift'] as const;
+const COMPOSITION_TILES = ['net_worth_composition', 'bitcoin_value_over_time'] as const;
+
+export interface OverviewComposition {
+  readonly points: readonly CompositionPoint[];
+  readonly days: number;
+}
+
 export interface OverviewData {
+  /**
+   * One aggregate series, not three.
+   *
+   * Net worth over time, assets against debts and identity drift are the same
+   * stored rows read differently — every field each of them needs is on every
+   * point. Sending it three times under three keys would be three copies of a
+   * year of history to say the same thing, and computing it three times would
+   * be the waste this endpoint exists to stop.
+   */
+  readonly aggregate?: Series;
+  readonly composition?: OverviewComposition;
+  readonly home_equity_over_time?: {
+    readonly name: string | null;
+    readonly points: readonly {
+      readonly date: Date;
+      readonly provenance: string;
+      readonly fields: Readonly<Record<string, bigint>>;
+    }[];
+    readonly days: number;
+  };
+  readonly debt_trajectory?: DebtTrajectory;
   readonly spending_by_grouping?: OverviewSpending;
   readonly spending_by_delegation?: OverviewSpending;
   readonly asset_debt_composition?: Composition;
@@ -191,7 +245,25 @@ export async function buildOverview(
   // from anywhere else must not cost the same query twice.
   const wanted = new Set<OverviewTileKey>(options.tiles);
 
-  const [byGrouping, byDelegation, composition, utilities, movers, backlog] = await Promise.all([
+  // The snapshot range vocabulary is the same list as the spending windows, so
+  // one selector drives every tile and nothing has to be mapped between them —
+  // TypeScript agrees, which is why this needs no cast.
+  const range: SnapshotRange = options.window;
+  const wantsAggregate = AGGREGATE_TILES.some((key) => wanted.has(key));
+  const wantsComposition = COMPOSITION_TILES.some((key) => wanted.has(key));
+
+  const [
+    byGrouping,
+    byDelegation,
+    accountComposition,
+    utilities,
+    movers,
+    backlog,
+    aggregate,
+    composition,
+    equity,
+    daily,
+  ] = await Promise.all([
     wanted.has('spending_by_grouping')
       ? buildSpending(
           db,
@@ -212,12 +284,23 @@ export async function buildOverview(
       ? buildMovers(db, { window: options.window, timeZone: options.timeZone }, now)
       : undefined,
     wanted.has('uncategorized_backlog') ? buildBacklog(db) : undefined,
+    wantsAggregate ? aggregateSeries(db, range, now) : undefined,
+    wantsComposition ? compositionSeries(db, range, now) : undefined,
+    wanted.has('home_equity_over_time') ? equitySeries(db, range, now) : undefined,
+    wanted.has('debt_trajectory') ? dailyAggregateRows(db, range, now) : undefined,
   ]);
 
   return {
     ...(byGrouping ? { spending_by_grouping: byGrouping } : {}),
     ...(byDelegation ? { spending_by_delegation: byDelegation } : {}),
-    ...(composition ? { asset_debt_composition: composition } : {}),
+    ...(accountComposition ? { asset_debt_composition: accountComposition } : {}),
+    ...(aggregate ? { aggregate } : {}),
+    ...(composition ? { composition: { points: composition.points, days: composition.days } } : {}),
+    ...(equity ? { home_equity_over_time: equity } : {}),
+    // The trajectory is derived from the daily rows rather than stored, and it
+    // needs the bucket the rest of the page is drawn at so the projection lines
+    // up with the history behind it.
+    ...(daily ? { debt_trajectory: debtTrajectory(daily, bucketFor(daily.length)) } : {}),
     ...(utilities ? { utilities_vs_delegated: utilities } : {}),
     ...(movers ? { delegation_movers: movers } : {}),
     ...(backlog ? { uncategorized_backlog: backlog } : {}),
