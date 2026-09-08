@@ -6,6 +6,10 @@ phase (`v0.1.0-phase1`, and so on).
 
 ## [Unreleased]
 
+Nothing yet.
+
+## [0.57.0] — 2026-09-08
+
 ### Added
 
 - **Batch C: the small tiles.** Over-spent lines, this cycle's surplus, income
