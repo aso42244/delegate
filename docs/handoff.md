@@ -88,8 +88,8 @@ These are non-negotiable. Violating one is a build failure.
 
 ## Where things stand
 
-**`main` is at `v0.55.1`, and the NAS is running `v0.55.1`** — deployed
-2026-09-06.
+**`main` is at `v0.58.0`, and the NAS is running `v0.58.0`** — deployed
+2026-09-08.
 
 **`v0.54.1` does not exist**, and neither does a `v0.53.x`. The owner named
 `v0.54.2` and the gap is deliberate, not a failed release — unlike `v0.46.0`,
@@ -608,10 +608,13 @@ and sending screenshots. None of it was visible from a test fixture.
 
 **Since v0.47.0 — three themes, and duplicates found rather than stumbled on (`v0.48.0`)**
 
-- **Six palettes now**: Light, Dark, System, plus **Ledger** (monospace on warm
-  paper), **Reading light** (dim parchment, for late on) and **High contrast**
-  ([ADR 048](decisions/048-a-theme-is-a-palette-that-is-measured.md)). A theme is
-  a token swap and nothing else — colours, `--font-sans`, `--tracking-label`
+- **Six palettes were built and are now two.** Light and Dark, plus System,
+  which follows the device. Ledger, Reading light and High contrast were removed
+  on 2026-09-08 at the owner's direction: the interface's look is settled by this
+  project's own system, and a palette nobody uses is one every future colour
+  still has to be measured against. A theme is still a token swap and nothing
+  else — ADR 048 is amended, not reversed. No migration was needed, because
+  `theme.ts` already fell back to the default for a value it did not recognise
 
 - **`theme-contrast.test.ts` measures every palette** against WCAG AA on the
   pairs that actually appear on screen. **It found six pairs in the shipped
@@ -652,10 +655,14 @@ and sending screenshots. None of it was visible from a test fixture.
 
 - **The three export links read on one line each**
 
-- **The Light palette's contrast exceptions are settled, not outstanding.** Asked
-  whether to tighten the six sub-AA pairs, the owner kept the palette as designed;
-  High contrast is the answer for anyone who needs more. ADR 048 and the test say
-  so, so this does not come back as a question
+- **The Light palette's contrast exceptions were settled on the strength of a
+  theme that no longer exists.** Asked whether to tighten the six sub-AA pairs,
+  the owner kept the palette as designed — partly because High contrast cleared
+  every bar and was there for anyone who needed more. **High contrast was removed
+  on 2026-09-08**, so the six now stand on their own. They are recorded at their
+  existing values rather than quietly adjusted, because changing a settled
+  specification as a side effect of deleting a theme is the drift ADR 048 exists
+  to catch. **This is open again**, and it is his call rather than a session's
 
 - **A GUI deploy button was scoped and then dropped**, deliberately. A container
   cannot replace itself with a different image, so the only two routes are a

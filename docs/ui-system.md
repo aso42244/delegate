@@ -391,12 +391,16 @@ different layout is not a theme.
 **Every theme is measured.** `theme-contrast.test.ts` reads `styles.css` and
 holds each palette to WCAG AA on the pairs that actually appear: body text on
 both grounds, each semantic colour on its own soft fill, `on-accent` on `accent`,
-and a negative amount on the canvas — 4.5:1 throughout. A seventh theme satisfies
-it or changes it deliberately.
+and a negative amount on the canvas — 4.5:1 throughout. **There are two palettes,
+Light and Dark**, plus System, which follows the device rather than being a third
+palette. A theme absent from that test's list is a theme nobody is checking, so a
+third one is added to both in the same change or not at all.
 
-**`--tracking-label` exists for one theme.** Monospace capitals are already wide,
-and 0.05em turns an 11px column header into a row of gaps. It is a token rather
-than a number written into nineteen `<th>` elements.
+**`--font-sans` and `--tracking-label` are still tokens** rather than values
+written into every heading, even though both palettes now set them the same. They
+were introduced for Ledger, which swapped the typeface; that theme is gone, and
+the tokens stay because the thing they buy — one place to change a face or a
+tracking value — is worth having whether or not a second palette uses it.
 
 ## 14. What this does not change
 

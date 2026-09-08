@@ -334,8 +334,10 @@ test.describe('theme', () => {
         getComputedStyle(document.documentElement).getPropertyValue('--color-ink').trim(),
       );
 
-    // `exact`: "Reading light" carries the word too, and an accessible name is
-    // matched as a substring.
+    // `exact` is kept though nothing else on the page now contains the word:
+    // "Reading light" did until the palettes were reduced to two, and an
+    // accessible name is matched as a substring — this is the locator that
+    // breaks first if a third theme is ever added.
     await page.getByLabel('Light', { exact: true }).check();
     await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
     const lightCanvas = await canvas();

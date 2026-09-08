@@ -1116,35 +1116,36 @@ platform decides. Collapsed, it joins the icon column — same size, same centre
 with a rule under it, because it acts on the sidebar itself rather than going
 anywhere.
 
-## Six palettes, and a number under each one
+## Two palettes, and a number under each one
 
 `design.md` §2 fixes the Light palette and ADR 034 added Dark as a second design
-rather than an inversion. Three more join them, and the rule that makes that a
-system rather than a pile is in
+rather than an inversion. **Those two, plus System, are the whole set**, and the
+rule that makes that a system rather than a pile is in
 [ADR 048](decisions/048-a-theme-is-a-palette-that-is-measured.md): **a theme is a
 token swap** — colours, the font stack, the label tracking — and nothing about
 layout is themeable.
 
-**Ledger** is monospace, everywhere. A page half in monospace reads as a mistake
-rather than a decision, and this application is a ledger: with the face swapped
-the whole grid lines up — names, dates and amounts — instead of only the money
-column. The rest gets quieter to pay for it. Warm paper, a burnt amber accent
-where blue would compete, ink-adjacent grouping presets because a saturated tint
-on paper reads as a highlighter, and `--tracking-label` at zero because a
-monospace capital is wide enough already. It costs about 15% width, so long
-merchant names truncate sooner here than anywhere else.
+**There were six.** Ledger (monospace on warm paper), Reading light (a dim
+parchment ground for late on) and High contrast were built alongside ADR 048 and
+removed on 2026-09-08 at the owner's direction. The reason is not that they were
+bad: the interface's look is settled by this project's own system, and a palette
+nobody uses is one every future colour still has to be measured against. That
+cost is paid on every change, by everybody, for a theme chosen by nobody.
 
-**Reading light** is the one with a use rather than a look: a parchment ground at
-reduced luminance with the blue taken out, for ten at night in a lit room. Its
-semantics are re-chosen against that ground — terracotta, moss — because a cool
-accent on a warm dim ground reads as a screen with the brightness turned down.
+Removing them needed no migration. `theme.ts` already fell back to the default
+for a stored value it did not recognise, so a device sitting on Ledger lands on
+System by a rule that was already there.
 
-**High contrast** is a setting, not a style. Pure black on pure white, every
-value at the far end, and `--color-line` at 5:1 so a hairline reads as a boundary
-rather than a suggestion.
-
-**§9 is now checked rather than asserted.** A test reads the stylesheet and
-measures every palette. It found six pairs in the shipped Light palette under
+**§9 is checked rather than asserted.** A test reads the stylesheet and measures
+every palette that ships. It found six pairs in the shipped Light palette under
 4.5:1 — the worst being positive green on its own green fill at 2.76:1 — and
 those are recorded at today's values rather than changed, because this document
 is settled and moving them is the owner's decision. They cannot get worse.
+
+**What removing High contrast changed.** Part of the answer when those six were
+put to the owner on 2026-09-02 was that High contrast cleared every bar and was
+there for anyone who needed more. It is gone, so the six now stand on their own.
+They are left at their existing values rather than quietly adjusted — changing a
+settled specification as a side effect of deleting a theme is the drift ADR 048
+exists to catch — and **whether to tighten them is an open question** rather than
+a closed one.

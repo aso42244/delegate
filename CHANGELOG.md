@@ -6,7 +6,40 @@ phase (`v0.1.0-phase1`, and so on).
 
 ## [Unreleased]
 
-Nothing yet.
+### Changed
+
+- **Two palettes, not six.** Light and Dark, plus System, which follows the
+  device. **Ledger, Reading light and High contrast are removed** at the owner's
+  direction — the interface's look is settled by this project's own system, and a
+  palette nobody uses is one every future colour still has to be measured
+  against. That cost is paid on every change, by everybody, for a theme chosen by
+  nobody.
+
+  [ADR 048](docs/decisions/048-a-theme-is-a-palette-that-is-measured.md) is
+  **amended, not reversed**: a theme is still a token swap and nothing else, and
+  every palette that ships is still measured — there are simply two of them.
+
+  **No migration was needed.** `theme.ts` already fell back to the default for a
+  stored value it did not recognise, so a device sitting on Ledger lands on
+  System by a rule that was already there.
+
+  **One consequence is worth knowing rather than discovering.** The six sub-AA
+  pairs in the Light palette were accepted on 2026-09-02 partly because High
+  contrast cleared every bar and was there for anyone who needed more. It is
+  gone, so those six now stand on their own. They are recorded at their existing
+  values rather than quietly adjusted — changing a settled specification as a
+  side effect of deleting a theme is the drift ADR 048 exists to catch — and
+  whether to tighten them is now an open question rather than a closed one.
+
+  `--font-sans` and `--tracking-label` stay as tokens even though both palettes
+  set them the same. They were introduced for Ledger, which swapped the typeface;
+  what they buy — one place to change a face or a tracking value — is worth
+  having whether or not a second palette uses it.
+
+### Fixed
+
+- `docs/handoff.md` said the NAS was on `v0.55.1`. It is on `v0.58.0`. That file
+  is explicit that a stale version line is its own kind of problem.
 
 ## [0.58.0] — 2026-09-08
 
