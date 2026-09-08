@@ -6,7 +6,80 @@ phase (`v0.1.0-phase1`, and so on).
 
 ## [Unreleased]
 
-Nothing yet.
+### Added
+
+- **Overview, the dashboard that will replace Insights — the spine of it.**
+  Reachable at `/overview` and **deliberately absent from the sidebar**: the
+  twenty-one tiles are ported in batches, and this way the page can be used
+  against real data through the whole build rather than only at the end of it.
+  The release that puts it in the navigation is the release that removes
+  Insights.
+
+  A tile states a width for the desktop grid — `third`, `half`, `two-thirds`,
+  `full` — and is always full width on a phone. That is **`SettingsCard`'s
+  vocabulary rather than a second scale**, deliberately: `ui-system.md` §11
+  already records that a field's `width` and a card's `span` were nearly given
+  one name, and two vocabularies under one idea is a trap for whoever reads it
+  next. Because the width belongs to the grid rather than to the tile, **one
+  stored arrangement serves both screens** — rearranging on a phone rearranges
+  the laptop too, and there is only ever one thing to keep in step.
+
+  Arranging is optimistic, and nothing else here would be: moving a tile moves
+  rows, and `design.md`'s rule is that those can be optimistic while a change
+  that moves money cannot. A failure puts the arrangement back and says so.
+
+- **`GET /api/overview` computes only the tiles the person actually has.** The
+  page this replaces asks `GET /api/insights`, which runs **seven builders on
+  every request** whether or not the caller has the widget they feed — and again
+  on every change of the time window. That is most of why Insights feels slow,
+  and no amount of redesign would have fixed it, because it was never a
+  rendering problem. The endpoint reads the caller's own layout server-side
+  rather than being told what to fetch, so the layout is the one source of truth
+  for what gets computed and a page of two tiles cannot pay for twenty-one.
+
+  An absent key means "not on the page" and is kept distinct from a key present
+  with nothing in it — the first draws nothing, the second draws its empty
+  state. Collapsing the two would put `Nothing categorized in this window.` on a
+  page that was never asked to show spending.
+
+- **The period is in the URL.** Insights kept its window in component state, so
+  it reset to thirty days every time somebody left the page — including when
+  they left it by pressing one of its own tiles. It survives navigation, the
+  back button and a reload now, and a particular view can be linked to. The
+  default is **the cycle**, which is Delegate's own unit of time.
+
+- `overview_tiles` is its own table rather than three columns on
+  `insight_layouts`, and the reason is the transition rather than the shape.
+  Both pages exist while the tiles are ported, and one shared table would mean
+  adding a tile on Insights silently added it to Overview — two pages editing
+  one list, each unaware of the other. `insight_layouts` goes when the Insights
+  page does.
+
+- Two tiles to prove the spine end to end: **Spending by grouping** (ranked bars
+  in each grouping's own colour) and **Waiting to be categorized**. The rest
+  arrive in batches, grouped by what has to be drawn rather than by subject.
+
+### Fixed
+
+- **A refused layout no longer fails silently.** The save returns a 200 with
+  `ok: false` when it refuses a tile or a width, which was indistinguishable
+  from success on the client: the optimistic arrangement stayed on screen, the
+  server kept the old one, and the two only disagreed after a reload.
+
+- **Every tile control names the tile it acts on.** A grid of tiles each
+  carrying `Move earlier` gives a screen reader a column of identical names with
+  nothing to tell them apart — and the arrows are glyphs, so the accessible name
+  is the only name there is. `Remove Assets and debts` is the convention
+  Insights already uses. Found by an end-to-end test refusing an ambiguous
+  locator, which is the same thing a person using a screen reader would have
+  hit.
+
+- **Adding a tile no longer draws it empty.** Because `GET /api/overview` reads
+  the stored layout to decide what to compute, refetching the figures alongside
+  the layout write read the _old_ layout and came back without the tile that had
+  just been added. The refetch waits for the write to land, and only happens
+  when the set of tiles changed — reordering and resizing invalidate nothing,
+  because no figure on the page can differ because a tile moved.
 
 ## [0.55.1] — 2026-09-06
 

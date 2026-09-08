@@ -19,6 +19,7 @@ import { SyncSection } from './pages/settings/Sync.jsx';
 import { Transactions } from './pages/Transactions.jsx';
 import { Bills } from './pages/Bills.jsx';
 import { Insights } from './pages/Insights.jsx';
+import { Overview } from './pages/Overview.jsx';
 import { Utilities } from './pages/Utilities.jsx';
 import { SignIn } from './pages/SignIn.jsx';
 
@@ -142,6 +143,9 @@ export function App(): ReactNode {
           <Route path="rules" element={<Rules />} />
           <Route path="utilities" element={<Utilities />} />
           <Route path="insights" element={<Insights />} />
+          {/* Reachable by URL only while the tiles are ported in batches. It
+              joins the sidebar in the release that removes Insights. */}
+          <Route path="overview" element={<Overview />} />
           <Route path="settings" element={<SettingsLayout />}>
             <Route index element={<SettingsLanding />} />
             <Route path="sync" element={<SyncSection />} />
