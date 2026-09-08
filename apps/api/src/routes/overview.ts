@@ -1,5 +1,6 @@
 import { MAX_TILES_PER_ROW, OVERVIEW_COLUMNS } from '@budget/shared';
 import type { FastifyPluginCallback } from 'fastify';
+import { Prisma } from '@prisma/client';
 import { z } from 'zod';
 import { prisma } from '../db/client.js';
 import { SPENDING_WINDOWS } from '../domain/insights.js';
@@ -39,6 +40,31 @@ const dataQuerySchema = z.object({
   window: z.enum(SPENDING_WINDOWS).default('cycle'),
 });
 
+/**
+ * The configuration each tile understands.
+ *
+ * A tile absent from here takes none, and sending one is refused — which keeps
+ * the column from becoming a place things are put and never read.
+ */
+const TILE_CONFIG: Partial<Record<string, z.ZodType>> = {
+  /**
+   * The cashflow chart's own period.
+   *
+   * It answers "where did it go" and is read as a retrospective, at a different
+   * cadence from the figures around it — so it carries its own control rather
+   * than following the page's.
+   */
+  cashflow: z.object({
+    window: z.enum(SPENDING_WINDOWS),
+  }),
+
+  delegations: z.object({
+    // The lines somebody chose to watch. Uuids because that is what they are,
+    // and capped because a tile showing every line is the Budget page.
+    delegationIds: z.array(z.string().uuid()).max(200),
+  }),
+};
+
 const layoutSchema = z.object({
   tiles: z
     .array(
@@ -53,6 +79,15 @@ const layoutSchema = z.object({
           .min(0)
           .max(MAX_TILES_PER_ROW - 1),
         display: z.string().nullish(),
+        /**
+         * What the tile has been told about itself.
+         *
+         * Checked per tile key below rather than accepted as free JSON: the
+         * shape genuinely differs per tile, but "differs" is not "anything", and
+         * a column that stores whatever arrives is one whose every reader has to
+         * defend itself.
+         */
+        config: z.unknown().nullish(),
       }),
     )
     .max(OVERVIEW_TILES.length),
@@ -69,7 +104,13 @@ export const overviewRoutes: FastifyPluginCallback = (fastify, _options, done) =
     const chosen = await prisma.overviewTile.findMany({
       where: { userId },
       orderBy: [{ row: 'asc' }, { position: 'asc' }],
-      select: { widgetKey: true, row: true, position: true, display: true },
+      select: {
+        widgetKey: true,
+        row: true,
+        position: true,
+        display: true,
+        config: true,
+      },
     });
 
     return {
@@ -93,6 +134,9 @@ export const overviewRoutes: FastifyPluginCallback = (fastify, _options, done) =
           row: tile.row,
           position: tile.position,
           display: tile.display ?? null,
+          // Null means nothing configured, which is not an empty selection: one
+          // invites a choice and the other is a choice.
+          config: tile.config ?? null,
         })),
     };
   });
@@ -132,6 +176,22 @@ export const overviewRoutes: FastifyPluginCallback = (fastify, _options, done) =
       return { ok: false as const, overfullRows: overfull };
     }
 
+    /*
+     * A tile's own configuration, checked against the shape that tile actually
+     * reads. Refused rather than stored, for the same reason an unknown key is:
+     * a stored value the renderer cannot use is a tile that draws nothing, and
+     * "nothing" reads as broken rather than as unconfigured.
+     */
+    const badConfig: string[] = [];
+    for (const tile of tiles) {
+      if (tile.config === null || tile.config === undefined) continue;
+      const parsed = TILE_CONFIG[tile.key]?.safeParse(tile.config);
+      if (parsed === undefined || !parsed.success) badConfig.push(tile.key);
+    }
+    if (badConfig.length > 0) {
+      return { ok: false as const, badConfig };
+    }
+
     const duplicates = tiles
       .map((tile) => tile.key)
       .filter((key, index, all) => all.indexOf(key) !== index);
@@ -149,6 +209,7 @@ export const overviewRoutes: FastifyPluginCallback = (fastify, _options, done) =
             row: tile.row,
             position: tile.position,
             display: tile.display ?? null,
+            config: tile.config ?? Prisma.JsonNull,
           },
         });
       }
@@ -165,7 +226,7 @@ export const overviewRoutes: FastifyPluginCallback = (fastify, _options, done) =
     const stored = await prisma.overviewTile.findMany({
       where: { userId },
       orderBy: { position: 'asc' },
-      select: { widgetKey: true },
+      select: { widgetKey: true, config: true },
     });
 
     const tiles = stored
@@ -180,10 +241,25 @@ export const overviewRoutes: FastifyPluginCallback = (fastify, _options, done) =
      */
     const timeZone = await householdTimezone(prisma, request.server.config.SCHEDULE_TIMEZONE);
 
-    const data = await buildOverview(prisma, { tiles, window, timeZone });
+    /*
+     * The cashflow tile's own window, read from its configuration. Defaults to
+     * year-to-date, which is the period that makes a flow chart worth drawing —
+     * a fortnight of it is mostly one paycheck and one rent payment.
+     */
+    const cashflowWindow = readCashflowWindow(
+      stored.find((tile) => tile.widgetKey === 'cashflow')?.config,
+    );
 
-    /** Every ranked tile serialises its rows the same way, because they are. */
-    return { window, ...serializeOverview(data) };
+    const data = await buildOverview(prisma, { tiles, window, timeZone, cashflowWindow });
+
+    return {
+      window,
+      // Only when that tile is on the page. The rest of this payload follows the
+      // rule that an absent key means "not asked for"; a period belonging to a
+      // tile nobody has would be the one field that did not.
+      ...(data.cashflow ? { cashflowWindow } : {}),
+      ...serializeOverview(data),
+    };
   });
 
   /**
@@ -248,6 +324,22 @@ function point(entry: {
       Object.entries(entry.fields).map(([name, value]) => [name, centsOut(value)]),
     ),
   };
+}
+
+/**
+ * The cashflow tile's stored window, or the default.
+ *
+ * Anything unrecognised falls back rather than throwing: a configuration written
+ * by a newer version must not stop the whole page rendering, and this is a
+ * period rather than a figure — the worst a wrong one does is show a different
+ * span of the same true numbers.
+ */
+function readCashflowWindow(config: unknown): (typeof SPENDING_WINDOWS)[number] {
+  if (config === null || typeof config !== 'object') return 'ytd';
+  const window = (config as { window?: unknown }).window;
+  return typeof window === 'string' && (SPENDING_WINDOWS as readonly string[]).includes(window)
+    ? (window as (typeof SPENDING_WINDOWS)[number])
+    : 'ytd';
 }
 
 function serializeOverview(data: OverviewData): Record<string, unknown> {
@@ -413,6 +505,27 @@ function serializeOverview(data: OverviewData): Record<string, unknown> {
               color: mover.color,
               changeCents: centsOut(mover.changeCents),
             })),
+          },
+        }
+      : {}),
+    ...(data.cashflow
+      ? {
+          cashflow: {
+            cycleMissing: data.cashflow.cycleMissing,
+            inflows: data.cashflow.inflows.map((node) => ({
+              key: node.key,
+              name: node.name,
+              amountCents: centsOut(node.amountCents),
+            })),
+            outflows: data.cashflow.outflows.map((node) => ({
+              key: node.key,
+              name: node.name,
+              amountCents: centsOut(node.amountCents),
+            })),
+            uncategorizedInCents: centsOut(data.cashflow.uncategorizedInCents),
+            uncategorizedOutCents: centsOut(data.cashflow.uncategorizedOutCents),
+            surplusCents: centsOut(data.cashflow.surplusCents),
+            totalInCents: centsOut(data.cashflow.totalInCents),
           },
         }
       : {}),

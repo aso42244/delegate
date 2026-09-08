@@ -1,4 +1,4 @@
-import { CYCLES_PER_YEAR, type Cents } from '@budget/shared';
+import { CYCLES_PER_YEAR, merchantKey, type Cents } from '@budget/shared';
 import {
   buildBacklog,
   buildComposition,
@@ -88,6 +88,24 @@ export const OVERVIEW_TILES = [
   'change_per_cycle',
   'thirty_day_momentum',
   'delegation_burn_rate',
+
+  /*
+   * The lines somebody chose to watch, drawn the way the Budget page draws them.
+   *
+   * Its data is the **budget's own read model** rather than anything computed
+   * here: the whole point is that it mirrors that page, and a second query
+   * ordering delegations by grouping is a second answer to a question already
+   * answered — which is how two places come to disagree. It is in the catalogue
+   * so it can be chosen; `buildOverview` computes nothing for it.
+   */
+  'delegations',
+
+  /*
+   * Where the money came from and where it went, as one picture. Its window is
+   * its own — see `cashflowWindow` — because it is read as a retrospective at a
+   * different cadence from the rest of the page.
+   */
+  'cashflow',
 
   'uncategorized_backlog',
 ] as const;
@@ -336,6 +354,144 @@ export interface OverviewComposition {
   readonly days: number;
 }
 
+export interface CashflowNode {
+  readonly key: string;
+  readonly name: string;
+  readonly amountCents: Cents;
+}
+
+export interface Cashflow {
+  /** Where money came from, largest first. */
+  readonly inflows: readonly CashflowNode[];
+  /** Where it went, by grouping, largest first. */
+  readonly outflows: readonly CashflowNode[];
+  /** Deposits nobody has marked as income yet. */
+  readonly uncategorizedInCents: Cents;
+  /** Spending nobody has filed yet. */
+  readonly uncategorizedOutCents: Cents;
+  /** What is left. Negative means more went out than came in. */
+  readonly surplusCents: Cents;
+  readonly totalInCents: Cents;
+  readonly cycleMissing: boolean;
+}
+
+/**
+ * Cashflow: sources on the left, destinations on the right, one total between.
+ *
+ * **The right-hand side already existed** as `spending_by_grouping`. The left
+ * did not, and could not, because income in Delegate allocates to nothing by
+ * design — "waiting to be categorized" means waiting for a decision, and income
+ * has no decision to make. So there is no stored answer to "which income is
+ * this", and the sources have to be inferred.
+ *
+ * They are inferred the way bills are: grouped by `merchantKey`, and named by
+ * the **newest transaction's own description**. That is deliberately the same
+ * machinery ADR 045 uses rather than a second one — `merchantKey` is already
+ * load-bearing in four places, and a fifth idea of what makes two rows the same
+ * payer would be a fifth thing to keep in step. It also means a source first
+ * appears as whatever the bank's descriptor says, which is the honest starting
+ * point: naming it is a correction somebody makes, not a guess this makes.
+ *
+ * **Uncategorized appears on both sides and is not filler.** A deposit nobody
+ * has marked as income and a charge nobody has filed are both real money moving
+ * through, and drawing them as a category would say the household spends a third
+ * of its income on something called "Uncategorized". They are the one thing on
+ * this chart somebody can act on, so they are drawn in the warning tone and the
+ * tile links to the queue.
+ *
+ * **The two sides sum to the same figure by construction**, because surplus is
+ * defined as the remainder rather than measured independently. A Sankey whose
+ * sides disagree is a Sankey that cannot be drawn, and computing the surplus
+ * some other way would eventually produce one.
+ */
+export async function buildCashflow(
+  db: Db,
+  options: { readonly window: SpendingWindow; readonly timeZone: string },
+  now: Date = new Date(),
+): Promise<Cashflow> {
+  const empty = {
+    inflows: [],
+    outflows: [],
+    uncategorizedInCents: 0n,
+    uncategorizedOutCents: 0n,
+    surplusCents: 0n,
+    totalInCents: 0n,
+  };
+
+  const start = await windowStart(db, options.window, options.timeZone, now);
+  if (start.kind === 'no_cycle') return { ...empty, cycleMissing: true };
+
+  const since = start.kind === 'since' ? { postedAt: { gte: start.date } } : {};
+
+  const [income, loose, spending] = await Promise.all([
+    // Income is the same predicate `buildCycles` uses. Two figures for "what
+    // came in" that disagreed would be worse than either of them alone.
+    db.transaction.findMany({
+      where: { archivedAt: null, kind: 'income', ...since },
+      orderBy: { postedAt: 'desc' },
+      select: { amountCents: true, description: true, descriptionRaw: true },
+    }),
+    // Ordinary rows nobody has filed. Positive is a deposit not yet marked as
+    // income; negative is spending not yet categorized.
+    db.transaction.findMany({
+      where: { archivedAt: null, kind: 'normal', allocations: { none: {} }, ...since },
+      select: { amountCents: true },
+    }),
+    buildSpending(db, { by: 'grouping', window: options.window, timeZone: options.timeZone }, now),
+  ]);
+
+  const sources = new Map<string, { name: string; amountCents: Cents }>();
+  for (const row of income) {
+    const key = merchantKey(row.descriptionRaw || row.description);
+    const existing = sources.get(key);
+    if (existing) {
+      existing.amountCents += row.amountCents;
+      continue;
+    }
+    // Rows arrive newest first, so the first one seen for a key is the newest —
+    // the same rule Bills names a merchant by.
+    sources.set(key, { name: row.description, amountCents: row.amountCents });
+  }
+
+  let uncategorizedInCents = 0n;
+  let uncategorizedOutCents = 0n;
+  for (const row of loose) {
+    if (row.amountCents > 0n) uncategorizedInCents += row.amountCents;
+    else uncategorizedOutCents += -row.amountCents;
+  }
+
+  const inflows = [...sources.entries()]
+    .map(([key, entry]) => ({ key, name: entry.name, amountCents: entry.amountCents }))
+    .filter((node) => node.amountCents > 0n)
+    .sort((a, b) =>
+      b.amountCents > a.amountCents
+        ? 1
+        : b.amountCents < a.amountCents
+          ? -1
+          : a.name.localeCompare(b.name),
+    );
+
+  const outflows = spending.entries
+    .filter((entry) => entry.spendCents > 0n)
+    .map((entry) => ({ key: entry.key, name: entry.name, amountCents: entry.spendCents }));
+
+  const totalInCents =
+    inflows.reduce((sum, node) => sum + node.amountCents, 0n) + uncategorizedInCents;
+  const spentCents = outflows.reduce((sum, node) => sum + node.amountCents, 0n);
+
+  return {
+    inflows,
+    outflows,
+    uncategorizedInCents,
+    uncategorizedOutCents,
+    // The remainder, never measured separately: the two sides of a Sankey have
+    // to sum to the same figure or it cannot be drawn.
+    surplusCents: totalInCents - spentCents - uncategorizedOutCents,
+    totalInCents,
+    cycleMissing: false,
+  };
+}
+
 export interface OverviewData {
   /**
    * One aggregate series, not three.
@@ -366,6 +522,7 @@ export interface OverviewData {
     readonly rates: readonly BurnRate[];
     readonly cycleMissing: boolean;
   };
+  readonly cashflow?: Cashflow;
   readonly spending_by_grouping?: OverviewSpending;
   readonly spending_by_delegation?: OverviewSpending;
   readonly asset_debt_composition?: Composition;
@@ -383,6 +540,14 @@ export async function buildOverview(
     readonly tiles: readonly OverviewTileKey[];
     readonly window: SpendingWindow;
     readonly timeZone: string;
+    /**
+     * The cashflow tile's own window, which is not the page's.
+     *
+     * It answers "where did it go", read as a retrospective at a different
+     * cadence from the figures around it — so it carries its own control and
+     * defaults to year-to-date. The page's period governs everything else.
+     */
+    readonly cashflowWindow?: SpendingWindow;
   },
   now: Date = new Date(),
 ): Promise<OverviewData> {
@@ -414,6 +579,7 @@ export async function buildOverview(
     negative,
     cycles,
     burnRates,
+    cashflow,
   ] = await Promise.all([
     wanted.has('spending_by_grouping')
       ? buildSpending(
@@ -444,6 +610,13 @@ export async function buildOverview(
     wanted.has('delegation_burn_rate')
       ? buildBurnRates(db, { window: options.window, timeZone: options.timeZone }, now)
       : undefined,
+    wanted.has('cashflow')
+      ? buildCashflow(
+          db,
+          { window: options.cashflowWindow ?? 'ytd', timeZone: options.timeZone },
+          now,
+        )
+      : undefined,
   ]);
 
   return {
@@ -472,6 +645,7 @@ export async function buildOverview(
     ...(negative ? { delegations_negative: negative } : {}),
     ...(cycles ? { cycles } : {}),
     ...(burnRates ? { delegation_burn_rate: burnRates } : {}),
+    ...(cashflow ? { cashflow } : {}),
     ...(utilities ? { utilities_vs_delegated: utilities } : {}),
     ...(movers ? { delegation_movers: movers } : {}),
     ...(backlog ? { uncategorized_backlog: backlog } : {}),

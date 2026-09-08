@@ -1044,6 +1044,13 @@ model OverviewTile {
 
   /// Which chart this tile is drawn as. Null means the widget's own default.
   display   String?
+
+  /// What this tile has been told about itself — which delegations to show,
+  /// which account to chart. The shape differs per tile and is validated at the
+  /// HTTP edge; null means nothing configured, which is not the same as an empty
+  /// selection.
+  config    Json?
+
   createdAt DateTime @default(now()) @map("created_at")
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
