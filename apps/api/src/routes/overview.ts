@@ -167,18 +167,74 @@ export const overviewRoutes: FastifyPluginCallback = (fastify, _options, done) =
 
     const data = await buildOverview(prisma, { tiles, window, timeZone });
 
+    /** Every ranked tile serialises its rows the same way, because they are. */
+    const spending = (
+      value: NonNullable<typeof data.spending_by_grouping>,
+    ): Record<string, unknown> => ({
+      since: dateOut(value.since),
+      cycleMissing: value.cycleMissing,
+      entries: value.entries.map((entry) => ({
+        key: entry.key,
+        name: entry.name,
+        color: entry.color,
+        spendCents: centsOut(entry.spendCents),
+      })),
+    });
+
     return {
       window,
       ...(data.spending_by_grouping
+        ? { spending_by_grouping: spending(data.spending_by_grouping) }
+        : {}),
+      ...(data.spending_by_delegation
+        ? { spending_by_delegation: spending(data.spending_by_delegation) }
+        : {}),
+      ...(data.asset_debt_composition
         ? {
-            spending_by_grouping: {
-              since: dateOut(data.spending_by_grouping.since),
-              cycleMissing: data.spending_by_grouping.cycleMissing,
-              entries: data.spending_by_grouping.entries.map((entry) => ({
-                key: entry.key,
+            asset_debt_composition: {
+              assets: data.asset_debt_composition.assets.map((entry) => ({
                 name: entry.name,
-                color: entry.color,
-                spendCents: centsOut(entry.spendCents),
+                balanceCents: centsOut(entry.balanceCents),
+                shareBasisPoints: entry.shareBasisPoints,
+              })),
+              debts: data.asset_debt_composition.debts.map((entry) => ({
+                name: entry.name,
+                balanceCents: centsOut(entry.balanceCents),
+                shareBasisPoints: entry.shareBasisPoints,
+              })),
+              totalAssetsCents: centsOut(data.asset_debt_composition.totalAssetsCents),
+              totalDebtsCents: centsOut(data.asset_debt_composition.totalDebtsCents),
+              netCents: centsOut(data.asset_debt_composition.netCents),
+            },
+          }
+        : {}),
+      ...(data.utilities_vs_delegated
+        ? {
+            utilities_vs_delegated: {
+              // Named rather than left for the interface to look up, so the
+              // figure and the sentence explaining it cannot disagree.
+              cyclesPerYear: data.utilities_vs_delegated.cyclesPerYear,
+              entries: data.utilities_vs_delegated.summaries.map((summary) => ({
+                delegationId: summary.delegationId,
+                name: summary.name,
+                color: summary.groupingColor,
+                suggestedPerCycleCents: centsOut(summary.suggestedPerCycleCents),
+                // Null is an ad-hoc line with no standing amount, which is not
+                // the same as one funded at zero.
+                amountToDelegateCents: centsOut(summary.amountToDelegateCents),
+              })),
+            },
+          }
+        : {}),
+      ...(data.delegation_movers
+        ? {
+            delegation_movers: {
+              cycleMissing: data.delegation_movers.cycleMissing,
+              entries: data.delegation_movers.movers.map((mover) => ({
+                delegationId: mover.delegationId,
+                name: mover.name,
+                color: mover.color,
+                changeCents: centsOut(mover.changeCents),
               })),
             },
           }

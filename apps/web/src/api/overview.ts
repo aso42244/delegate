@@ -43,6 +43,48 @@ export interface OverviewBacklogDto {
   readonly oldestPostedAt: string | null;
 }
 
+export interface CompositionEntryDto {
+  readonly name: string;
+  readonly balanceCents: string;
+  /** Basis points of the section total, so the split survives as an integer. */
+  readonly shareBasisPoints: number;
+}
+
+export interface CompositionDto {
+  readonly assets: readonly CompositionEntryDto[];
+  readonly debts: readonly CompositionEntryDto[];
+  readonly totalAssetsCents: string;
+  readonly totalDebtsCents: string;
+  readonly netCents: string;
+}
+
+export interface UtilityComparisonDto {
+  readonly delegationId: string;
+  readonly name: string;
+  readonly color: string | null;
+  readonly suggestedPerCycleCents: string;
+  /** Null is an ad-hoc line with no standing amount, not one funded at zero. */
+  readonly amountToDelegateCents: string | null;
+}
+
+export interface UtilitiesComparisonDto {
+  readonly cyclesPerYear: number;
+  readonly entries: readonly UtilityComparisonDto[];
+}
+
+export interface MoverDto {
+  readonly delegationId: string;
+  readonly name: string;
+  readonly color: string | null;
+  /** Signed: negative is a line that emptied over the window. */
+  readonly changeCents: string;
+}
+
+export interface MoversDto {
+  readonly cycleMissing: boolean;
+  readonly entries: readonly MoverDto[];
+}
+
 /**
  * A key is absent when the tile is not on the page, which is not the same as a
  * tile with nothing in it — the first draws nothing, the second draws its empty
@@ -51,6 +93,10 @@ export interface OverviewBacklogDto {
 export interface OverviewDataDto {
   readonly window: string;
   readonly spending_by_grouping?: OverviewSpendingDto;
+  readonly spending_by_delegation?: OverviewSpendingDto;
+  readonly asset_debt_composition?: CompositionDto;
+  readonly utilities_vs_delegated?: UtilitiesComparisonDto;
+  readonly delegation_movers?: MoversDto;
   readonly uncategorized_backlog?: OverviewBacklogDto;
 }
 

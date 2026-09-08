@@ -8,6 +8,42 @@ phase (`v0.1.0-phase1`, and so on).
 
 ### Added
 
+- **Overview's first batch of tiles: everything drawn as a ranked bar.**
+  Spending by grouping, spending by delegation, what it is all made of,
+  utilities against what they cost, and what moved. Batched by **what has to be
+  drawn rather than by subject**, so the primitive is built once and every tile
+  that needs it gets it — Insights drew five versions of one picture, which is
+  how one chart came to have three ways of showing a figure and two ideas about
+  where the label goes.
+
+  `RankedBars` is HTML rather than inline SVG, deliberately. A ranked bar is a
+  row of text and a filled box; the browser already lays that out, truncates it
+  and hands it to a screen reader correctly, and an SVG version would
+  reimplement all three. `SnapshotChart` is SVG because a line through time is
+  not expressible in boxes — this is.
+
+  Two rules the family follows. **The bar is scaled to the largest row, never to
+  the total**, or every row on a page with one dominant line is a stub against a
+  rail of empty space. And **the figure is always text**: the track is
+  `aria-hidden`, so a value conveyed only by length would be conveyed to nobody.
+
+- **What moved reads the nightly snapshots, and reads them leanly.** It is last
+  balance minus first **within the window**, not against today. Deliberately not
+  the drill-down the Insights page uses — that returns a full point series per
+  delegation so a chart can be drawn through it, and fetching a quarter of daily
+  history to display one difference is the waste this endpoint exists to stop.
+
+  A line with **no snapshot in the window is left out rather than reported as
+  zero**: no movement and no evidence are different answers, and only one of
+  them is a fact. Ranked by _size_ of movement rather than signed, because a
+  line that emptied by $400 is as interesting as one that filled by $400 and
+  sorting signed buries every emptied line at the bottom — which is the half
+  somebody is usually looking for.
+
+- **`net_worth_composition` moves to the time-series batch.** It is named like a
+  composition and is drawn as a stacked area over dates, so by this project's
+  own batching rule it belongs with the snapshot series rather than here.
+
 - **Overview, the dashboard that will replace Insights — the spine of it.**
   Reachable at `/overview` and **deliberately absent from the sidebar**: the
   twenty-one tiles are ported in batches, and this way the page can be used
