@@ -217,6 +217,7 @@ model User {
   delegationTransfers DelegationTransfer[]
   accountValuations   AccountValuation[]
   insightLayouts      InsightLayout[]
+  overviewTiles       OverviewTile[]
   recoveryCodes       RecoveryCode[]
   duplicateDismissals DuplicateDismissal[]
   pairDismissals      PairDismissal[]
@@ -1021,6 +1022,34 @@ model InsightLayout {
   @@unique([userId, widgetKey])
   @@index([userId, position])
   @@map("insight_layouts")
+}
+
+/// A tile on somebody's Overview page: which widget, where, and how wide.
+///
+/// Its own table rather than columns on `InsightLayout`, because Overview
+/// replaces Insights over several releases and both pages exist meanwhile. One
+/// shared table would have each page silently editing the other's arrangement.
+/// `insight_layouts` goes when the Insights page does.
+model OverviewTile {
+  id        String @id @default(uuid()) @db.Uuid
+  userId    String @map("user_id") @db.Uuid
+  widgetKey String @map("widget_key")
+  position  Int
+
+  /// Width on the desktop grid: `third`, `half`, `two-thirds` or `full` — the
+  /// six-column vocabulary `SettingsCard` already uses, deliberately not a
+  /// second scale. A phone ignores it; every tile is full width there.
+  span      String  @default("full")
+
+  /// Which chart this tile is drawn as. Null means the widget's own default.
+  display   String?
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, widgetKey])
+  @@index([userId, position])
+  @@map("overview_tiles")
 }
 
 /// A dated change in how much Bitcoin is held.
