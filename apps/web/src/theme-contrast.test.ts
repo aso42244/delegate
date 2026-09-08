@@ -65,18 +65,26 @@ function block(selector: string): Record<string, string> {
  * on both grounds, the accent and the positive green on their own soft fills,
  * white on the accent, and a negative amount. The worst is `positive` on
  * `positive-soft` at 2.76, which is the green status line on its green pill.
- * Dark clears every bar comfortably; the three palettes added alongside this
- * test clear them too.
+ * Dark clears every bar comfortably.
  *
  * Those six are **not** silently excused and **not** quietly changed. The exact
  * hexes are in `design.md` §2, which is the owner's specification and is marked
- * settled — moving them was his call, not a side effect of adding a theme.
+ * settled — moving them is his call, not a side effect of a change to the
+ * themes.
  *
- * It was put to him on 2026-09-02, with these numbers, and he kept the palette:
- * Light stays as designed, and High contrast — which clears every bar — is the
- * answer for anyone who needs more. So these are a decision rather than a
- * backlog. What they still buy is a ratchet: Light can never get *worse* without
- * this test failing.
+ * It was put to him on 2026-09-02, with these numbers, and he kept the palette.
+ *
+ * **What changed on 2026-09-08, and is worth knowing:** part of the answer then
+ * was that High contrast cleared every bar and was there for anyone who needed
+ * more. That palette has since been removed, along with Ledger and Reading
+ * light, so the escape hatch is gone and these six now stand on their own. The
+ * values are recorded unchanged rather than quietly adjusted, because changing
+ * a settled specification as a side effect of deleting a theme is exactly the
+ * kind of drift this file exists to catch. Whether they should now be tightened
+ * is a question for the owner.
+ *
+ * What they still buy either way is a ratchet: Light can never get *worse*
+ * without this test failing.
  */
 const RECORDED: Record<string, number> = {
   'light --color-muted on --color-canvas': 4.27,
@@ -92,12 +100,16 @@ function floorFor(theme: string, pair: string): number {
   return RECORDED[`${theme} ${pair}`] ?? 4.5;
 }
 
+/**
+ * Two palettes, and every one that ships is measured.
+ *
+ * A theme absent from here is a theme nobody is checking, which is the state
+ * this file was written to end — so adding one means adding it to this list in
+ * the same change.
+ */
 const THEMES = [
   ['@theme', 'light'],
   [":root[data-theme='dark']", 'dark'],
-  [":root[data-theme='ledger']", 'ledger'],
-  [":root[data-theme='reading']", 'reading'],
-  [":root[data-theme='contrast']", 'contrast'],
 ] as const;
 
 /**

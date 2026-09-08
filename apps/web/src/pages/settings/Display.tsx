@@ -31,18 +31,17 @@ const LAYOUTS: readonly { value: BudgetLayout; label: string; detail: string }[]
 ];
 
 /**
- * The three device-following states first, then the three that are a decision.
+ * Follow the device first, then the two that are a decision.
  *
- * Each of the last three gets a line, because a name alone does not say what it
- * is for — and one of them is a setting rather than a taste.
+ * Only System carries a line: Light and Dark say what they are. There were six
+ * palettes until the owner reduced them to these — the interface's look is set
+ * by this project's own system, and a palette nobody uses is one every future
+ * colour still has to be measured against.
  */
 const THEMES: readonly { value: ThemeChoice; label: string; detail: string }[] = [
   { value: 'system', label: 'System', detail: 'Follows this device' },
   { value: 'light', label: 'Light', detail: '' },
   { value: 'dark', label: 'Dark', detail: '' },
-  { value: 'ledger', label: 'Ledger', detail: 'Monospace, on paper' },
-  { value: 'reading', label: 'Reading light', detail: 'Warm and dim, for late on' },
-  { value: 'contrast', label: 'High contrast', detail: 'Every value at the far end' },
 ];
 
 /** One radio list, since both cards are exactly that. */

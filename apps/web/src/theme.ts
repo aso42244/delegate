@@ -16,24 +16,24 @@ import { useCallback, useSyncExternalStore } from 'react';
  * drift shows up as one screen in the wrong grey.
  *
  * **`system` is the only choice that resolves to something else.** It means
- * "follow the device", and the device has exactly two opinions. Every other
- * choice is stamped as itself: a theme is a palette somebody picked, and no
- * media query gets to overrule it.
+ * "follow the device", and the device has exactly two opinions. Light and dark
+ * are stamped as themselves: a palette somebody picked, which no media query
+ * gets to overrule.
+ *
+ * **Three choices, not six.** Ledger, Reading light and High contrast were built
+ * and then removed at the owner's direction — the interface is set by this
+ * project's own system now, and a palette nobody uses is a palette every future
+ * colour has to be checked against. A stored value naming one of them falls
+ * through `CHOICES` below to the default, which is why removing them needed no
+ * migration.
  */
 
-export type ThemeChoice = 'system' | 'light' | 'dark' | 'ledger' | 'reading' | 'contrast';
+export type ThemeChoice = 'system' | 'light' | 'dark';
 
 /** What actually reaches `data-theme`. `system` never does. */
 export type ThemeName = Exclude<ThemeChoice, 'system'>;
 
-const CHOICES: readonly ThemeChoice[] = [
-  'system',
-  'light',
-  'dark',
-  'ledger',
-  'reading',
-  'contrast',
-];
+const CHOICES: readonly ThemeChoice[] = ['system', 'light', 'dark'];
 
 /** What an unset or unrecognised stored value means. */
 const DEFAULT_CHOICE: ThemeChoice = 'system';

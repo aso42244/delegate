@@ -97,6 +97,33 @@ leave it: he likes the palette as it is, and High contrast — which clears ever
 bar — is the answer for anybody who needs more. So `design.md` §2 stands
 unchanged and the six entries stay. They are a decision now, not an oversight.
 
+## Amendment, 2026-09-08 — two palettes, not six
+
+**Ledger, Reading light and High contrast are removed**, at the owner's
+direction. Light, Dark and System are the whole set. The interface's look is
+settled by this project's own system, and a palette nobody uses is one every
+future colour still has to be measured against — the cost is paid on every
+change, by everybody, for a theme that is chosen by nobody.
+
+**The decision this ADR records is unchanged.** A theme is still a token swap
+and nothing else, and every palette that ships is still measured — there are
+simply two of them. The test's list is the enforcement, and a theme absent from
+it is a theme nobody is checking, which is the state this ADR was written to end.
+
+**One thing genuinely changed, and it is worth stating rather than leaving to be
+discovered.** Part of the answer on 2026-09-02 was that High contrast cleared
+every bar and existed for anyone who needed more. It no longer does, so Light's
+six sub-AA pairs now stand on their own. They are recorded at their existing
+values rather than quietly adjusted, because changing a settled specification as
+a side effect of deleting a theme is precisely the drift this ADR exists to
+catch. **Whether they should now be tightened is an open question for the
+owner** — and unlike the earlier version of this paragraph, it is open rather
+than answered.
+
+**No migration was needed.** `theme.ts` already fell back to the default for any
+stored value it did not recognise, so a device sitting on Ledger lands on System
+by the rule that was already there.
+
 What the recording still buys is a ratchet: Light cannot get _worse_ without the
 test failing. If the six are ever tightened, the entries come out and the floor
 returns to 4.5 on its own.
