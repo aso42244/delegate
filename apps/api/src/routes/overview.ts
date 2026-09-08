@@ -181,8 +181,80 @@ export const overviewRoutes: FastifyPluginCallback = (fastify, _options, done) =
       })),
     });
 
+    /** A point, with its money as strings and its provenance intact. */
+    const point = (entry: {
+      date: Date;
+      provenance: string;
+      days?: number;
+      fields: Readonly<Record<string, bigint>>;
+    }): Record<string, unknown> => ({
+      date: dateOut(entry.date),
+      provenance: entry.provenance,
+      ...(entry.days === undefined ? {} : { days: entry.days }),
+      ...Object.fromEntries(
+        Object.entries(entry.fields).map(([name, value]) => [name, centsOut(value)]),
+      ),
+    });
+
     return {
       window,
+      ...(data.aggregate
+        ? {
+            aggregate: {
+              bucket: data.aggregate.bucket,
+              days: data.aggregate.days,
+              earliest: dateOut(data.aggregate.earliest),
+              points: data.aggregate.points.map(point),
+              // Snapshots are labelled for the previous day, so without this
+              // every chart ends a day behind and reads as stale rather than
+              // current. The client draws it distinctly.
+              live:
+                data.aggregate.live === null
+                  ? null
+                  : Object.fromEntries(
+                      Object.entries(data.aggregate.live).map(([name, amount]) => [
+                        name,
+                        centsOut(amount),
+                      ]),
+                    ),
+            },
+          }
+        : {}),
+      ...(data.composition
+        ? {
+            composition: {
+              days: data.composition.days,
+              points: data.composition.points.map((entry) => ({
+                date: dateOut(entry.date),
+                provenance: entry.provenance,
+                bitcoinCents: centsOut(entry.bitcoinCents),
+                otherAssetsCents: centsOut(entry.otherAssetsCents),
+                debtsCents: centsOut(entry.debtsCents),
+              })),
+            },
+          }
+        : {}),
+      ...(data.home_equity_over_time
+        ? {
+            home_equity_over_time: {
+              name: data.home_equity_over_time.name,
+              days: data.home_equity_over_time.days,
+              points: data.home_equity_over_time.points.map(point),
+            },
+          }
+        : {}),
+      ...(data.debt_trajectory
+        ? {
+            debt_trajectory: {
+              points: data.debt_trajectory.points.map(point),
+              payoffDate: dateOut(data.debt_trajectory.payoffDate),
+              // Said rather than inferred from an empty list: "not enough
+              // history to project" and "projected to never pay off" are
+              // different answers.
+              hasEnoughHistory: data.debt_trajectory.hasEnoughHistory,
+            },
+          }
+        : {}),
       ...(data.spending_by_grouping
         ? { spending_by_grouping: spending(data.spending_by_grouping) }
         : {}),

@@ -39,14 +39,37 @@ export type SnapshotRange = (typeof SNAPSHOT_RANGES)[number];
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
-/** The first date a range includes. Null means "everything stored". */
+/**
+ * Where a range begins.
+ *
+ * **Three outcomes rather than a nullable date**, for the same reason
+ * `windowStart` has three: "everything stored" and "there is no cycle yet" are
+ * different answers that a null cannot tell apart, and one of them should show
+ * every day while the other should show none.
+ *
+ * This returned `Date | null` until now, and every caller wrote
+ * `start ? { gte: start } : {}` — so on a household that had never pressed
+ * Delegate, asking for **Cycle** showed the entire stored history rather than
+ * nothing. The distinction was written down against `windowStart` and never
+ * carried across to its sibling here, which is the shape of mistake this
+ * project keeps meeting: a lesson recorded against the feature that taught it
+ * only ever fixes that feature.
+ */
+export type RangeStart =
+  | { readonly kind: 'since'; readonly date: Date }
+  | { readonly kind: 'all' }
+  | { readonly kind: 'no_cycle' };
+
 export async function rangeStart(
   db: Db,
   range: SnapshotRange,
   now: Date = new Date(),
-): Promise<Date | null> {
+): Promise<RangeStart> {
   const today = asSnapshotDate(now);
-  const back = (days: number): Date => new Date(today.getTime() - days * DAY_MS);
+  const back = (days: number): RangeStart => ({
+    kind: 'since',
+    date: new Date(today.getTime() - days * DAY_MS),
+  });
 
   switch (range) {
     case '30d':
@@ -58,7 +81,7 @@ export async function rangeStart(
     case '1yr':
       return back(365);
     case 'ytd':
-      return new Date(Date.UTC(today.getUTCFullYear(), 0, 1));
+      return { kind: 'since', date: new Date(Date.UTC(today.getUTCFullYear(), 0, 1)) };
     case 'cycle': {
       const run = await db.delegateRun.findFirst({
         where: { undoneAt: null },
@@ -67,11 +90,22 @@ export async function rangeStart(
       });
       // Before the first Delegate press there is no cycle, and inventing one
       // would put a number on screen that means nothing.
-      return run ? asSnapshotDate(run.createdAt) : null;
+      return run ? { kind: 'since', date: asSnapshotDate(run.createdAt) } : { kind: 'no_cycle' };
     }
     case 'all':
-      return null;
+      return { kind: 'all' };
   }
+}
+
+/**
+ * The `where` clause a range implies, for the rows it selects.
+ *
+ * `no_cycle` never reaches this: a caller has to answer that case for itself,
+ * because "show nothing" is a different return value in every one of them and a
+ * clause that matched no rows would quietly look like an empty history.
+ */
+function sinceClause(start: RangeStart): { snapshotDate?: { gte: Date } } {
+  return start.kind === 'since' ? { snapshotDate: { gte: start.date } } : {};
 }
 
 // ---------------------------------------------------------------------------
@@ -201,10 +235,13 @@ export async function aggregateSeries(
   now: Date = new Date(),
 ): Promise<Series> {
   const start = await rangeStart(db, range, now);
+  if (start.kind === 'no_cycle') {
+    return { points: [], bucket: 'day', earliest: null, days: 0, live: null };
+  }
 
   const [rows, earliest] = await Promise.all([
     db.aggregateSnapshot.findMany({
-      where: start ? { snapshotDate: { gte: start } } : {},
+      where: sinceClause(start),
       orderBy: { snapshotDate: 'asc' },
     }),
     db.aggregateSnapshot.findFirst({
@@ -248,10 +285,13 @@ export async function accountSeries(
   now: Date = new Date(),
 ): Promise<Series> {
   const start = await rangeStart(db, range, now);
+  if (start.kind === 'no_cycle') {
+    return { points: [], bucket: 'day', earliest: null, days: 0, live: null };
+  }
 
   const [rows, earliest, account] = await Promise.all([
     db.accountSnapshot.findMany({
-      where: { accountId, ...(start ? { snapshotDate: { gte: start } } : {}) },
+      where: { accountId, ...sinceClause(start) },
       orderBy: { snapshotDate: 'asc' },
       select: { snapshotDate: true, provenance: true, balanceCents: true },
     }),
@@ -351,9 +391,21 @@ export async function delegationDrillDown(
       ? 'delegations'
       : 'groupings';
 
+  if (start.kind === 'no_cycle') {
+    return {
+      level,
+      bucket: 'day',
+      days: 0,
+      series: [],
+      cyclesPerYear,
+      groupingName: null,
+      delegationName: null,
+    };
+  }
+
   const rows = await db.delegationSnapshot.findMany({
     where: {
-      ...(start ? { snapshotDate: { gte: start } } : {}),
+      ...sinceClause(start),
       ...(options.delegationId ? { delegationId: options.delegationId } : {}),
       /*
        * `ungrouped` is a real level, not a placeholder. It appears as its own
@@ -664,11 +716,12 @@ export async function compositionSeries(
   now: Date = new Date(),
 ): Promise<{ points: CompositionPoint[]; bucket: Bucket; days: number }> {
   const start = await rangeStart(db, range, now);
+  if (start.kind === 'no_cycle') return { points: [], bucket: 'day', days: 0 };
 
   const rows = await db.accountSnapshot.findMany({
     where: {
       inNetWorth: true,
-      ...(start ? { snapshotDate: { gte: start } } : {}),
+      ...sinceClause(start),
     },
     orderBy: { snapshotDate: 'asc' },
     select: {
@@ -735,8 +788,10 @@ export async function dailyAggregateRows(
   now: Date = new Date(),
 ): Promise<DailyRow[]> {
   const start = await rangeStart(db, range, now);
+  if (start.kind === 'no_cycle') return [];
+
   const rows = await db.aggregateSnapshot.findMany({
-    where: start ? { snapshotDate: { gte: start } } : {},
+    where: sinceClause(start),
     orderBy: { snapshotDate: 'asc' },
   });
   return rows.map((row) => ({
@@ -768,7 +823,10 @@ export async function equitySeries(
   }
 
   const start = await rangeStart(db, range, now);
-  const where = start ? { snapshotDate: { gte: start } } : {};
+  if (start.kind === 'no_cycle') {
+    return { points: [], bucket: 'day', days: 0, name: null };
+  }
+  const where = sinceClause(start);
 
   const [values, owed] = await Promise.all([
     db.accountSnapshot.findMany({

@@ -85,12 +85,62 @@ export interface MoversDto {
   readonly entries: readonly MoverDto[];
 }
 
+export interface SeriesPointDto {
+  readonly date: string;
+  readonly provenance: string;
+  readonly days?: number;
+  /** Every other key is a money field, as a string of cents. */
+  readonly [field: string]: string | number | undefined;
+}
+
+export interface AggregateDto {
+  readonly bucket: string;
+  readonly days: number;
+  readonly earliest: string | null;
+  readonly points: readonly SeriesPointDto[];
+  /** Today, which no night has recorded yet. Drawn apart from the stored points. */
+  readonly live: Readonly<Record<string, string>> | null;
+}
+
+export interface CompositionPointDto {
+  readonly date: string;
+  readonly provenance: string;
+  readonly bitcoinCents: string;
+  readonly otherAssetsCents: string;
+  readonly debtsCents: string;
+  /** Named fields above; the index signature is what the chart reads them by. */
+  readonly [field: string]: string | number | undefined;
+}
+
+export interface CompositionSeriesDto {
+  readonly days: number;
+  readonly points: readonly CompositionPointDto[];
+}
+
+export interface EquityDto {
+  readonly name: string | null;
+  readonly days: number;
+  readonly points: readonly SeriesPointDto[];
+}
+
+export interface TrajectoryDto {
+  readonly points: readonly SeriesPointDto[];
+  readonly payoffDate: string | null;
+  /** "Not enough history" and "never pays off" are different answers. */
+  readonly hasEnoughHistory: boolean;
+}
+
 /**
  * A key is absent when the tile is not on the page, which is not the same as a
  * tile with nothing in it — the first draws nothing, the second draws its empty
  * state.
  */
 export interface OverviewDataDto {
+  /** One aggregate series feeding three tiles — see the domain's comment. */
+  readonly aggregate?: AggregateDto;
+  readonly composition?: CompositionSeriesDto;
+  readonly home_equity_over_time?: EquityDto;
+  readonly debt_trajectory?: TrajectoryDto;
   readonly window: string;
   readonly spending_by_grouping?: OverviewSpendingDto;
   readonly spending_by_delegation?: OverviewSpendingDto;

@@ -88,6 +88,10 @@ interface DataBody {
     readonly cycleMissing: boolean;
     readonly entries: readonly { readonly name: string; readonly changeCents: string }[];
   };
+  readonly aggregate?: { readonly days: number; readonly points: readonly unknown[] };
+  readonly composition?: { readonly days: number };
+  readonly home_equity_over_time?: { readonly name: string | null };
+  readonly debt_trajectory?: { readonly hasEnoughHistory: boolean };
   readonly uncategorized_backlog?: { readonly count: number };
 }
 
@@ -145,8 +149,13 @@ describe('the layout', () => {
     // Every Insights widget is a plausible key and most are not ported yet. One
     // stored here would reach the page as a tile that renders nothing, which
     // reads as a broken page rather than as work in progress.
-    const response = await putLayout([{ key: 'net_worth_over_time' }]);
-    expect(response.json<SaveBody>()).toEqual({ ok: false, unknown: ['net_worth_over_time'] });
+    // A key Insights still offers and this page cannot draw yet — the picker
+    // tiles are deferred, so this is exactly the case the guard is for.
+    const response = await putLayout([{ key: 'account_balance_history' }]);
+    expect(response.json<SaveBody>()).toEqual({
+      ok: false,
+      unknown: ['account_balance_history'],
+    });
 
     const body = (await get('/api/overview/layout')).json<LayoutBody>();
     expect(body.tiles).toEqual([]);
@@ -429,6 +438,63 @@ describe('movers', () => {
     const result = await buildMovers(prisma, { window: 'cycle', timeZone: ZONE });
     expect(result.cycleMissing).toBe(true);
     expect(result.movers).toEqual([]);
+  });
+});
+
+describe('batch B series', () => {
+  it('computes one aggregate series for the three tiles that read it', async () => {
+    await putLayout([
+      { key: 'net_worth_over_time' },
+      { key: 'assets_vs_debts' },
+      { key: 'identity_drift' },
+    ]);
+
+    const body = (await get('/api/overview?window=all')).json<DataBody>();
+
+    /*
+     * One key, not three. Every field each of those tiles needs is on every
+     * point, so sending it three times would be three copies of a year of
+     * history to say the same thing — and computing it three times is the waste
+     * this endpoint exists to stop.
+     */
+    expect(body.aggregate).toBeDefined();
+    expect(body.composition).toBeUndefined();
+  });
+
+  it('computes one composition series for both tiles that read it', async () => {
+    await putLayout([{ key: 'net_worth_composition' }, { key: 'bitcoin_value_over_time' }]);
+
+    const body = (await get('/api/overview?window=all')).json<DataBody>();
+    expect(body.composition).toBeDefined();
+    expect(body.aggregate).toBeUndefined();
+  });
+
+  it('asks for no series at all when no Batch B tile is on the page', async () => {
+    await putLayout([{ key: 'uncategorized_backlog' }]);
+
+    const body = (await get('/api/overview?window=all')).json<DataBody>();
+    expect(body.aggregate).toBeUndefined();
+    expect(body.composition).toBeUndefined();
+    expect(body.home_equity_over_time).toBeUndefined();
+    expect(body.debt_trajectory).toBeUndefined();
+  });
+
+  it('says whether a trajectory has enough history rather than sending an empty list', async () => {
+    await putLayout([{ key: 'debt_trajectory' }]);
+
+    const body = (await get('/api/overview?window=all')).json<DataBody>();
+    // "Not enough history to project" and "projected never to pay off" are
+    // different answers, and an empty list cannot tell them apart.
+    expect(body.debt_trajectory?.hasEnoughHistory).toBe(false);
+  });
+
+  it('shows nothing under Cycle when no Delegate run exists', async () => {
+    await putLayout([{ key: 'net_worth_over_time' }]);
+
+    // The sibling of the `windowStart` distinction, fixed in this release: a
+    // null start date cannot tell "everything stored" from "there is no cycle".
+    const body = (await get('/api/overview?window=cycle')).json<DataBody>();
+    expect(body.aggregate?.days).toBe(0);
   });
 });
 

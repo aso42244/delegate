@@ -186,6 +186,43 @@ test('a ranked bar states its figure as text, not only as a width', async ({ sig
   await expect(tile.getByText('$2,500.00', { exact: true })).toBeVisible();
 });
 
+test('every Batch B tile draws, and says it has no history yet', async ({ signedIn }) => {
+  await signedIn.goto('/overview');
+  await signedIn.getByRole('button', { name: 'Arrange', exact: true }).click();
+
+  const titles = [
+    'Net worth',
+    'Assets against debts',
+    'Identity drift',
+    'What net worth is made of',
+    'Bitcoin over time',
+    'Home equity',
+    'Debt trajectory',
+  ];
+
+  for (const title of titles) {
+    await signedIn.getByRole('button', { name: title, exact: true }).click();
+    await expect(signedIn.getByRole('heading', { name: title })).toBeVisible();
+  }
+
+  await signedIn.getByRole('button', { name: 'Done' }).click();
+
+  /*
+   * A fresh household has no snapshots, so every one of these must say so in a
+   * sentence rather than drawing an axis through nothing. Insights ships with no
+   * history at all and gains a day a night, so this is the state every one of
+   * them is first seen in — and a tile that draws an empty box here reads as
+   * broken rather than as new.
+   */
+  await expect(signedIn.getByText('No history yet — the first night records one.')).toHaveCount(4);
+  await expect(signedIn.getByText('No holding recorded yet.')).toBeVisible();
+  await expect(signedIn.getByText('No property with a mortgage against it.')).toBeVisible();
+  await expect(signedIn.getByText('Not enough history to project yet.')).toBeVisible();
+
+  await signedIn.reload();
+  await expect(signedIn.getByRole('heading', { level: 2 })).toHaveCount(titles.length);
+});
+
 test('the arrange controls are hidden until asked for', async ({ signedIn }) => {
   await signedIn.goto('/overview');
   await addBothTiles(signedIn);

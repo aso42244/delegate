@@ -5,11 +5,13 @@ import { Link, useSearchParams } from 'react-router-dom';
 import {
   overviewApi,
   type OverviewDataDto,
+  type SeriesPointDto,
   type OverviewLayoutDto,
   type OverviewTileDto,
 } from '../api/overview.js';
 import { EmptyState, PageHeader, SegmentedControl } from '../components/layout.jsx';
 import { CompositionBars, RankedBars, type RankedRow } from '../components/RankedBars.jsx';
+import { TimeSeriesChart, type TimePoint } from '../components/TimeSeries.jsx';
 import { Alert, Button } from '../components/ui.jsx';
 
 /**
@@ -58,8 +60,18 @@ const TILE_COPY: Record<string, { readonly title: string; readonly description?:
   asset_debt_composition: { title: 'What it is all made of' },
   utilities_vs_delegated: { title: 'Utilities against what they cost' },
   delegation_movers: { title: 'What moved' },
+  net_worth_over_time: { title: 'Net worth' },
+  assets_vs_debts: { title: 'Assets against debts' },
+  identity_drift: { title: 'Identity drift' },
+  net_worth_composition: { title: 'What net worth is made of' },
+  bitcoin_value_over_time: { title: 'Bitcoin over time' },
+  home_equity_over_time: { title: 'Home equity' },
+  debt_trajectory: { title: 'Debt trajectory' },
   uncategorized_backlog: { title: 'Waiting to be categorized' },
 };
+
+/** History starts at the first night and gains one a night — there is no backfill. */
+const NO_HISTORY = 'No history yet — the first night records one.';
 
 const SPAN_LABEL: Record<OverviewSpan, string> = {
   third: 'Third',
@@ -296,6 +308,178 @@ function BacklogTile({
 }
 
 /**
+ * Turns a serialised point into one the chart can draw.
+ *
+ * Money arrives as strings of cents (ADR 002) and becomes `bigint` exactly here,
+ * at the page edge — never a `number`, and never earlier than it has to.
+ */
+function toPoints(points: readonly SeriesPointDto[], fields: readonly string[]): TimePoint[] {
+  return points.map((raw) => ({
+    date: raw.date,
+    provenance: raw.provenance as TimePoint['provenance'],
+    values: Object.fromEntries(
+      fields.map((field) => {
+        const value = raw[field];
+        // A field the server did not send is absent, not zero — but a chart has
+        // to draw something, and zero is the only honest stand-in for a series
+        // this tile was told to read.
+        return [field, BigInt(typeof value === 'string' ? value : '0')];
+      }),
+    ),
+  }));
+}
+
+function toLive(
+  live: Readonly<Record<string, string>> | null | undefined,
+  fields: readonly string[],
+): Record<string, bigint> | null {
+  if (!live) return null;
+  return Object.fromEntries(fields.map((field) => [field, BigInt(live[field] ?? '0')]));
+}
+
+/** The three tiles that share one aggregate series, each reading its own fields. */
+function AggregateTile({
+  aggregate,
+  tileKey,
+}: {
+  readonly aggregate: NonNullable<OverviewDataDto['aggregate']>;
+  readonly tileKey: string;
+}): ReactNode {
+  const spec =
+    tileKey === 'assets_vs_debts'
+      ? {
+          fields: ['netWorthAssetsCents', 'netWorthDebtsCents'],
+          series: [
+            { key: 'netWorthAssetsCents', name: 'Assets' },
+            { key: 'netWorthDebtsCents', name: 'Debts' },
+          ],
+          includeZero: false,
+          label: 'Assets against debts over time',
+        }
+      : tileKey === 'identity_drift'
+        ? {
+            fields: ['identityValueCents'],
+            series: [{ key: 'identityValueCents', name: 'Drift' }],
+            // Drift is read against zero, so zero has to be on the chart even
+            // when every point sits above it.
+            includeZero: true,
+            label: 'How far the budget identity sat from zero',
+          }
+        : {
+            fields: ['netWorthCents'],
+            series: [{ key: 'netWorthCents', name: 'Net worth' }],
+            includeZero: false,
+            label: 'Net worth over time',
+          };
+
+  return (
+    <TimeSeriesChart
+      points={toPoints(aggregate.points, spec.fields)}
+      series={spec.series}
+      live={toLive(aggregate.live, spec.fields)}
+      includeZero={spec.includeZero}
+      emptyMessage={NO_HISTORY}
+      label={spec.label}
+    />
+  );
+}
+
+/**
+ * The composition series, read two ways.
+ *
+ * A holding is separated from every other asset by whether the stored row
+ * carried a quantity — which is the only split derivable from what was actually
+ * recorded, rather than one inferred afterwards from today's accounts.
+ */
+function CompositionSeriesTile({
+  composition,
+  tileKey,
+}: {
+  readonly composition: NonNullable<OverviewDataDto['composition']>;
+  readonly tileKey: string;
+}): ReactNode {
+  const bitcoinOnly = tileKey === 'bitcoin_value_over_time';
+  const fields = bitcoinOnly
+    ? ['bitcoinCents']
+    : ['otherAssetsCents', 'bitcoinCents', 'debtsCents'];
+
+  const points = toPoints(composition.points, fields);
+
+  if (bitcoinOnly && points.every((entry) => entry.values['bitcoinCents'] === 0n)) {
+    return <p className="text-quiet text-muted">No holding recorded yet.</p>;
+  }
+
+  return (
+    <TimeSeriesChart
+      points={points}
+      series={
+        bitcoinOnly
+          ? [{ key: 'bitcoinCents', name: 'Bitcoin' }]
+          : [
+              { key: 'otherAssetsCents', name: 'Other assets' },
+              { key: 'bitcoinCents', name: 'Bitcoin' },
+              { key: 'debtsCents', name: 'Debts' },
+            ]
+      }
+      emptyMessage={NO_HISTORY}
+      label={bitcoinOnly ? 'Bitcoin holdings over time' : 'What net worth is made of'}
+    />
+  );
+}
+
+/** The property less what is still owed on it. */
+function EquityTile({
+  equity,
+}: {
+  readonly equity: NonNullable<OverviewDataDto['home_equity_over_time']>;
+}): ReactNode {
+  if (equity.name === null) {
+    return <p className="text-quiet text-muted">No property with a mortgage against it.</p>;
+  }
+
+  return (
+    <TimeSeriesChart
+      points={toPoints(equity.points, ['equityCents'])}
+      series={[{ key: 'equityCents', name: equity.name }]}
+      emptyMessage={NO_HISTORY}
+      label={`Equity in ${equity.name} over time`}
+    />
+  );
+}
+
+/** Where the debts are heading, and when they reach zero if they do. */
+function TrajectoryTile({
+  trajectory,
+}: {
+  readonly trajectory: NonNullable<OverviewDataDto['debt_trajectory']>;
+}): ReactNode {
+  if (!trajectory.hasEnoughHistory) {
+    // Distinct from "never pays off", which is a projection rather than a gap.
+    return <p className="text-quiet text-muted">Not enough history to project yet.</p>;
+  }
+
+  return (
+    <div className="flex flex-col gap-2">
+      <TimeSeriesChart
+        points={toPoints(trajectory.points, ['debtsCents'])}
+        series={[{ key: 'debtsCents', name: 'Debts' }]}
+        includeZero
+        emptyMessage={NO_HISTORY}
+        label="Total debt over time"
+      />
+      <p className="text-quiet text-muted">
+        {trajectory.payoffDate === null
+          ? 'Not paying down at the current rate.'
+          : `Clear around ${new Date(trajectory.payoffDate).toLocaleDateString(undefined, {
+              month: 'long',
+              year: 'numeric',
+            })}.`}
+      </p>
+    </div>
+  );
+}
+
+/**
  * Which body a tile draws.
  *
  * A tile whose key is absent from the payload draws nothing at all, which is not
@@ -330,6 +514,19 @@ function TileBody({
       ) : null;
     case 'delegation_movers':
       return data.delegation_movers ? <MoversTile movers={data.delegation_movers} /> : null;
+    case 'net_worth_over_time':
+    case 'assets_vs_debts':
+    case 'identity_drift':
+      return data.aggregate ? <AggregateTile aggregate={data.aggregate} tileKey={tileKey} /> : null;
+    case 'net_worth_composition':
+    case 'bitcoin_value_over_time':
+      return data.composition ? (
+        <CompositionSeriesTile composition={data.composition} tileKey={tileKey} />
+      ) : null;
+    case 'home_equity_over_time':
+      return data.home_equity_over_time ? <EquityTile equity={data.home_equity_over_time} /> : null;
+    case 'debt_trajectory':
+      return data.debt_trajectory ? <TrajectoryTile trajectory={data.debt_trajectory} /> : null;
     case 'uncategorized_backlog':
       return data.uncategorized_backlog ? (
         <BacklogTile backlog={data.uncategorized_backlog} />
