@@ -6,6 +6,10 @@ phase (`v0.1.0-phase1`, and so on).
 
 ## [Unreleased]
 
+Nothing yet.
+
+## [0.55.1] — 2026-09-06
+
 ### Fixed
 
 - **A pill's detail stays on the screen.** The `6 not reporting` message names

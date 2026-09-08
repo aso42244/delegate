@@ -88,7 +88,7 @@ These are non-negotiable. Violating one is a build failure.
 
 ## Where things stand
 
-**`main` is at `v0.55.0`, and the NAS is running `v0.55.0`** — deployed
+**`main` is at `v0.55.1`, and the NAS is running `v0.55.1`** — deployed
 2026-09-06.
 
 **`v0.54.1` does not exist**, and neither does a `v0.53.x`. The owner named
@@ -881,6 +881,35 @@ is ten minutes; each of these findings was an afternoon. The review that found
 them was itself only possible because the routes, the env vars and the settings
 columns could each be diffed against their callers — worth repeating
 occasionally, and cheap.
+
+**Since v0.55.0 — a detail that ran off the screen (`v0.55.1`)**
+
+The `feed_not_reporting` pill from `v0.55.0` worked on its first real morning:
+six accounts, named in the message. And the message ran about 1,500px on one
+line, off the right of the display, with the end of the sentence unreachable.
+
+- **A pill's detail is `w-96` and wraps**, positioned so it is always wholly on
+  screen. The old `w-max max-w-[calc(100vw-3rem)] left-0` could never have
+  worked: the cap bounds the detail's _width_ while `left-0` puts its left edge
+  wherever the pill happens to sit, and the two were never compared against each
+  other. Tall rather than wide is the owner's stated preference and the right
+  trade — a detail is read once and dismissed by moving the mouse, so wrapping
+  costs nothing while overflowing costs whatever was cut off.
+
+- **It clamps rather than flips.** Anchoring to the pill's other edge was the
+  first attempt and is the same bug mirrored: on a phone the pill is narrower
+  than the detail, so right-anchoring puts the left edge off the _left_. Measured
+  from the **pill**, never the detail — the detail is `display: none` until
+  revealed and a hidden element has no box, while the pill is always on screen
+  and the detail's width is a constant.
+
+- Two end-to-end tests **measure boxes rather than read text**, the same reason
+  the settings-card overflow needed it in `v0.49.0`: every assertion that only
+  looks for words passes while the words are off the screen. Both were checked
+  against the previous build and fail there — and reproducing it needed the real
+  condition, six synced accounts with a stale feed date and a succeeded run,
+  because the detail is only as wide as its content and a short fixture passes
+  against the broken code.
 
 ### Known gaps to fix
 
