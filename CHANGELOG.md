@@ -6,6 +6,10 @@ phase (`v0.1.0-phase1`, and so on).
 
 ## [Unreleased]
 
+Nothing yet.
+
+## [0.56.0] — 2026-09-08
+
 ### Added
 
 - **Overview's first batch of tiles: everything drawn as a ranked bar.**
