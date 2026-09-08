@@ -8,6 +8,66 @@ phase (`v0.1.0-phase1`, and so on).
 
 ### Added
 
+- **Batch C: the small tiles.** Over-spent lines, this cycle's surplus, income
+  against spending, change per cycle, 30-day momentum, and what each line burns.
+  Mostly a single figure and the sentence that says what to do about it — the
+  tiles that make Overview a daily read rather than a weekly one, because a
+  chart answers "what happened" and a number answers "can I spend".
+
+  **Burn rate counts only what a line spends, never what refills it.** A
+  delegation is topped up every Delegate press, so netting the rises against the
+  falls would report a line funded exactly as fast as it is spent as burning
+  nothing at all — true of almost every healthy envelope and useless as an
+  answer.
+
+- **`text-figure`**, 24px: a tile's single number. The same size as a page title
+  and deliberately not larger — a dashboard where every tile shouts louder than
+  the page it sits on has spent the last of its hierarchy. A separate token from
+  `--text-page` because `ui-system.test.ts` holds that one to `PageHeader`
+  alone, and that rule is worth keeping.
+
+### Changed
+
+- **Tiles form rows, and a row divides its width evenly among its members.** One
+  tile is full width, two are halves, three thirds, four quarters. Dropping a
+  tile beside another puts them in the same row; the widths follow.
+
+  This **replaces the per-tile `span`** that shipped in v0.56.0. That vocabulary
+  — `third`, `half`, `two-thirds`, `full` — was `SettingsCard`'s, and borrowing
+  it was right for a page of independent cards and wrong for a dashboard: it
+  cannot express _these three share a row_. Two tiles each declaring `half` only
+  look like a row by coincidence, and inserting a third between them produces an
+  arrangement nobody asked for. The grid is **twelve** columns now rather than
+  six, because twelve divides by 1, 2, 3 and 4 with nothing left over.
+
+  Every existing tile is backfilled onto a row of its own, which is exactly what
+  a page of full-width tiles already looked like — so nothing rearranges on
+  upgrade.
+
+  **Dragging works on the page itself**, not only inside Arrange, on pointer
+  devices — a grip appears on hover to say the tile can be pulled, because
+  `design.md` is explicit that a card which moves when dragged with nothing to
+  suggest it would is a surprise rather than a feature.
+
+  **And it is never the only route.** Inside Arrange, ⤒ joins the row above, ⤓
+  takes a row of its own, and ◂ ▸ move along the reading order — the routes that
+  work from a keyboard and under a thumb.
+
+- **The Arrange panel draws each tile instead of naming it**, using the
+  household's own figures. A picker listing six titles as words asks people to
+  choose between things they cannot see. This needed a named exception:
+  `GET /api/overview` computes only the tiles somebody already has, which is
+  precisely what makes it unable to show them one they do not — so
+  `GET /api/overview/preview` computes the whole catalogue, and is requested
+  only while Arrange is open.
+
+### Fixed
+
+- **The page said it was empty twice.** The subtitle and the empty state both
+  read `No tiles yet.` — the text budget broken in the plainest way, and visible
+  in the first screenshot of the page in real use. The subtitle now states a
+  fact the body does not.
+
 - **Overview's time-series batch: seven tiles on one chart.** Net worth, assets
   against debts, identity drift, what net worth is made of, Bitcoin over time,
   home equity and debt trajectory. `TimeSeries` keeps ADR 035's three rules —

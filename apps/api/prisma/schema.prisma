@@ -1036,10 +1036,11 @@ model OverviewTile {
   widgetKey String @map("widget_key")
   position  Int
 
-  /// Width on the desktop grid: `third`, `half`, `two-thirds` or `full` — the
-  /// six-column vocabulary `SettingsCard` already uses, deliberately not a
-  /// second scale. A phone ignores it; every tile is full width there.
-  span      String  @default("full")
+  /// Which row this tile sits in. A row divides its width evenly among its
+  /// members — one is full width, two are halves, three thirds, four quarters —
+  /// so the width is derived from the relationship rather than declared per
+  /// tile. A phone ignores rows entirely and stacks everything full width.
+  row       Int     @default(0)
 
   /// Which chart this tile is drawn as. Null means the widget's own default.
   display   String?
@@ -1048,7 +1049,7 @@ model OverviewTile {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([userId, widgetKey])
-  @@index([userId, position])
+  @@index([userId, row, position])
   @@map("overview_tiles")
 }
 

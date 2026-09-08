@@ -68,6 +68,61 @@ the figure it replaces was sitting.
 moves the caret and the rows beside it while somebody is typing. That is the
 convention for a column of editable figures and the reason for it.
 
+### Overview's grid
+
+**Tiles form rows, and a row divides its width evenly among its members.** One
+tile is full width, two are halves, three thirds, four quarters. A tile does not
+declare a width — it belongs to a row, and the width falls out of that.
+
+This replaced a per-tile `span` borrowed from `SettingsCard`. That vocabulary is
+right for a page of independent cards and wrong for a dashboard, because it
+cannot express _these three share a row_: two tiles each declaring `half` only
+look like a row by coincidence, and inserting a third between them produces an
+arrangement nobody asked for. Stating the relationship and deriving the width
+means the two can never disagree.
+
+**Twelve columns, not the six Settings uses.** Twelve divides by 1, 2, 3 and 4
+with nothing left over; six cannot express a quarter without half a column.
+
+**Four to a row at most.** A quarter of a 1200px page is 300px, and a ranked bar
+with a name and a figure stops being readable below about that. The arithmetic
+says the same thing — a fifth would not divide.
+
+**A phone ignores rows entirely** and stacks every tile full width in row order.
+That is what lets one stored arrangement serve both screens: rearranging on a
+phone rearranges the laptop too, because the thing being stored is the order and
+the grouping rather than a width that only means something on one of them.
+
+**Dragging works on the page itself**, not only inside Arrange — pointer devices
+only, since HTML5 drag fires no events under a thumb and a phone has no rows to
+rearrange. A grip appears on hover to say so: `design.md` is explicit that a card
+which moves when dragged, with nothing to suggest it would, is a surprise rather
+than a feature.
+
+**And it is never the only route.** Inside Arrange a tile carries ⤒ to join the
+row above, ⤓ to take a row of its own, and ◂ ▸ to move along the reading order —
+the routes that work from a keyboard. ◂ ▸ reorder within a row and step **out**
+onto a new row at its edge, never merging: merging is what ⤒ is for, and a
+reorder button that silently changed two tiles' widths would be doing something
+nobody pressed it for.
+
+### A tile's figure
+
+A figure tile — one number and the sentence that says what to do about it —
+takes **`text-figure`**, which is 24px: the same size as a page title, and
+deliberately not larger.
+
+The scale had no size for this because the context did not exist until Overview
+did. Everything above `text-hero` was a heading, and a dashboard tile's single
+number is not a heading — it is the content. It gets the top of the scale rather
+than a new size above it, because a dashboard where every tile shouts louder
+than the page it sits on has spent the last of its hierarchy.
+
+It is a separate token from `--text-page` rather than a reuse, because
+`ui-system.test.ts` holds `text-page` to `PageHeader` alone and that rule is
+worth keeping: one component decides how far below the title a page starts. Two
+names for one value, each saying where it belongs.
+
 ## 3. The text budget
 
 The rule the owner asked for, made countable. **Fewer words wherever a word is

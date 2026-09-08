@@ -27,10 +27,12 @@ import { expect, makeAccount, test } from './fixtures.js';
 /** Both proof tiles, so the grid has something in it to arrange. */
 async function addBothTiles(page: import('@playwright/test').Page): Promise<void> {
   await page.getByRole('button', { name: 'Arrange', exact: true }).click();
-  await page.getByRole('button', { name: 'Spending by grouping' }).click();
-  await expect(page.getByRole('heading', { name: 'Spending by grouping' })).toBeVisible();
-  await page.getByRole('button', { name: 'Waiting to be categorized' }).click();
-  await expect(page.getByRole('heading', { name: 'Waiting to be categorized' })).toBeVisible();
+  await page.getByRole('button', { name: 'Add Spending by grouping' }).click();
+  await expect(page.getByRole('heading', { name: 'Spending by grouping', level: 2 })).toBeVisible();
+  await page.getByRole('button', { name: 'Add Waiting to be categorized' }).click();
+  await expect(
+    page.getByRole('heading', { name: 'Waiting to be categorized', level: 2 }),
+  ).toBeVisible();
 }
 
 test('starts empty and says so in one sentence', async ({ signedIn }) => {
@@ -39,7 +41,7 @@ test('starts empty and says so in one sentence', async ({ signedIn }) => {
   await expect(signedIn.getByRole('heading', { name: 'Overview' })).toBeVisible();
   // The text budget: one short sentence, no instructions. Where to go next is on
   // the control that goes there.
-  await expect(signedIn.getByText('No tiles yet.').first()).toBeVisible();
+  await expect(signedIn.getByText('No tiles yet.')).toBeVisible();
 });
 
 test('a tile added stays across a reload', async ({ signedIn }) => {
@@ -58,7 +60,9 @@ test('the order a person chooses survives a reload', async ({ signedIn }) => {
   await signedIn.goto('/overview');
   await addBothTiles(signedIn);
 
-  const headings = signedIn.getByRole('heading', { level: 2 });
+  // Scoped to the tiles: the Arrange panel's own heading is an h2 as well, and
+  // it belongs at that level — it is a section of the page, not part of a tile.
+  const headings = signedIn.locator('section[data-tile] h2');
   await expect(headings).toHaveText(['Spending by grouping', 'Waiting to be categorized']);
 
   // Addressed by name rather than by index: every tile's controls name the tile
@@ -70,21 +74,46 @@ test('the order a person chooses survives a reload', async ({ signedIn }) => {
   await expect(headings).toHaveText(['Waiting to be categorized', 'Spending by grouping']);
 });
 
-test('a width is stored, and it is the grid that changes', async ({ signedIn }) => {
+test('two tiles in one row each take half the grid', async ({ signedIn }) => {
   await signedIn.goto('/overview');
   await addBothTiles(signedIn);
 
-  const tile = signedIn.getByRole('heading', { name: 'Spending by grouping' }).locator('../..');
-  // A tile that has not been sized is full width — the width every card here has
-  // always had.
+  const first = signedIn.getByRole('heading', { name: 'Spending by grouping', level: 2 });
+  const tile = first.locator('../..');
+
+  // Each on its own row to begin with, so each is the full twelve columns.
+  await expect(tile).toHaveClass(/lg:col-span-12/);
+
+  /*
+   * Measured as a class rather than read as text, the same reason the
+   * settings-card overflow needed in v0.49.0: an assertion that only looks for
+   * words passes just as happily while the layout is wrong.
+   */
+  await signedIn
+    .getByRole('button', { name: 'Move Waiting to be categorized into the row above' })
+    .click();
   await expect(tile).toHaveClass(/lg:col-span-6/);
 
-  // Cycling from full wraps to the first width rather than stopping.
-  await signedIn.getByRole('button', { name: 'Width of Spending by grouping: Full' }).click();
-  await expect(tile).toHaveClass(/lg:col-span-2/);
-
   await signedIn.reload();
-  await expect(tile).toHaveClass(/lg:col-span-2/);
+  await expect(tile).toHaveClass(/lg:col-span-6/);
+});
+
+test('a tile can be given a row of its own again', async ({ signedIn }) => {
+  await signedIn.goto('/overview');
+  await addBothTiles(signedIn);
+
+  await signedIn
+    .getByRole('button', { name: 'Move Waiting to be categorized into the row above' })
+    .click();
+  const tile = signedIn
+    .getByRole('heading', { name: 'Spending by grouping', level: 2 })
+    .locator('../..');
+  await expect(tile).toHaveClass(/lg:col-span-6/);
+
+  await signedIn
+    .getByRole('button', { name: 'Give Waiting to be categorized a row of its own' })
+    .click();
+  await expect(tile).toHaveClass(/lg:col-span-12/);
 });
 
 test('the period is in the URL and survives leaving the page', async ({ signedIn }) => {
@@ -121,8 +150,12 @@ test('a tile shows its empty state when there is nothing in it', async ({ signed
    * nothing spent in it. One of those should show every transaction and the
    * other should show none, so a null start date alone could never carry both.
    */
-  await expect(signedIn.getByText('No cycle has been run yet.')).toBeVisible();
-  await expect(signedIn.getByText('Nothing waiting.')).toBeVisible();
+  // Scoped to the tiles: the Arrange panel draws a preview of every tile that
+  // could be added, and several of those say the same sentence — which is the
+  // picker working, not a duplicate.
+  const tiles = signedIn.locator('section[data-tile]');
+  await expect(tiles.getByText('No cycle has been run yet.')).toBeVisible();
+  await expect(tiles.getByText('Nothing waiting.')).toBeVisible();
 });
 
 test('every Batch A tile can be added and draws something', async ({ signedIn }) => {
@@ -145,8 +178,8 @@ test('every Batch A tile can be added and draws something', async ({ signedIn })
   ];
 
   for (const title of titles) {
-    await signedIn.getByRole('button', { name: title, exact: true }).click();
-    await expect(signedIn.getByRole('heading', { name: title })).toBeVisible();
+    await signedIn.getByRole('button', { name: `Add ${title}` }).click();
+    await expect(signedIn.getByRole('heading', { name: title, level: 2 })).toBeVisible();
   }
 
   await signedIn.getByRole('button', { name: 'Done' }).click();
@@ -158,7 +191,7 @@ test('every Batch A tile can be added and draws something', async ({ signedIn })
   }
 
   await signedIn.reload();
-  await expect(signedIn.getByRole('heading', { level: 2 })).toHaveCount(titles.length);
+  await expect(signedIn.locator('section[data-tile] h2')).toHaveCount(titles.length);
 });
 
 test('a ranked bar states its figure as text, not only as a width', async ({ signedIn }) => {
@@ -169,8 +202,10 @@ test('a ranked bar states its figure as text, not only as a width', async ({ sig
 
   await signedIn.goto('/overview');
   await signedIn.getByRole('button', { name: 'Arrange', exact: true }).click();
-  await signedIn.getByRole('button', { name: 'What it is all made of', exact: true }).click();
-  await expect(signedIn.getByRole('heading', { name: 'What it is all made of' })).toBeVisible();
+  await signedIn.getByRole('button', { name: 'Add What it is all made of' }).click();
+  await expect(
+    signedIn.getByRole('heading', { name: 'What it is all made of', level: 2 }),
+  ).toBeVisible();
   await signedIn.getByRole('button', { name: 'Done' }).click();
 
   /*
@@ -201,8 +236,8 @@ test('every Batch B tile draws, and says it has no history yet', async ({ signed
   ];
 
   for (const title of titles) {
-    await signedIn.getByRole('button', { name: title, exact: true }).click();
-    await expect(signedIn.getByRole('heading', { name: title })).toBeVisible();
+    await signedIn.getByRole('button', { name: `Add ${title}` }).click();
+    await expect(signedIn.getByRole('heading', { name: title, level: 2 })).toBeVisible();
   }
 
   await signedIn.getByRole('button', { name: 'Done' }).click();
@@ -214,13 +249,75 @@ test('every Batch B tile draws, and says it has no history yet', async ({ signed
    * them is first seen in — and a tile that draws an empty box here reads as
    * broken rather than as new.
    */
-  await expect(signedIn.getByText('No history yet — the first night records one.')).toHaveCount(4);
-  await expect(signedIn.getByText('No holding recorded yet.')).toBeVisible();
-  await expect(signedIn.getByText('No property with a mortgage against it.')).toBeVisible();
-  await expect(signedIn.getByText('Not enough history to project yet.')).toBeVisible();
+  const tiles = signedIn.locator('section[data-tile]');
+  await expect(tiles.getByText('No history yet — the first night records one.')).toHaveCount(4);
+  await expect(tiles.getByText('No holding recorded yet.')).toBeVisible();
+  await expect(tiles.getByText('No property with a mortgage against it.')).toBeVisible();
+  await expect(tiles.getByText('Not enough history to project yet.')).toBeVisible();
 
   await signedIn.reload();
-  await expect(signedIn.getByRole('heading', { level: 2 })).toHaveCount(titles.length);
+  await expect(signedIn.locator('section[data-tile] h2')).toHaveCount(titles.length);
+});
+
+test('the picker draws each tile rather than naming it', async ({ signedIn }) => {
+  await makeAccount('Checking', 'asset', 300_000n);
+  await makeAccount('Card', 'debt', 50_000n);
+
+  await signedIn.goto('/overview');
+  await signedIn.getByRole('button', { name: 'Arrange', exact: true }).click();
+
+  /*
+   * A picker listing titles as words asks people to choose between things they
+   * cannot see. The composition card is the clearest case: its figures come from
+   * `/api/overview/preview`, which is the one deliberate exception to the
+   * endpoint's "only what you have" rule — by definition nobody has a tile they
+   * are deciding whether to add.
+   */
+  const card = signedIn.getByRole('button', { name: 'Add What it is all made of' });
+  await expect(card).toBeVisible();
+  await expect(card.getByText('$2,500.00', { exact: true })).toBeVisible();
+});
+
+test('the page says it is empty once, not twice', async ({ signedIn }) => {
+  await signedIn.goto('/overview');
+
+  // The subtitle and the empty state both read "No tiles yet." on the first
+  // real screenshot of this page — the text budget broken in the plainest way.
+  await expect(signedIn.getByText('No tiles yet.')).toHaveCount(1);
+});
+
+test('tiles can be dragged into one row without entering Arrange', async ({ signedIn }) => {
+  await signedIn.goto('/overview');
+  await addBothTiles(signedIn);
+  await signedIn.getByRole('button', { name: 'Done' }).click();
+
+  const spending = signedIn
+    .getByRole('heading', { name: 'Spending by grouping', level: 2 })
+    .locator('../..');
+  const backlog = signedIn
+    .getByRole('heading', { name: 'Waiting to be categorized', level: 2 })
+    .locator('../..');
+
+  // Each on its own row, so each is the full twelve columns.
+  await expect(spending).toHaveClass(/lg:col-span-12/);
+
+  /*
+   * Dragging works on the page itself, not only inside Arrange. The buttons
+   * stay the route that always works — this is the fast one, and it is the
+   * reason a grip is drawn on hover: a card that moves when dragged with
+   * nothing to suggest it would is a surprise rather than a feature.
+   */
+  await backlog.dragTo(spending, { targetPosition: { x: 20, y: 20 } });
+
+  await expect(spending).toHaveClass(/lg:col-span-6/);
+  await expect(backlog).toHaveClass(/lg:col-span-6/);
+
+  // The risk an optimistic write introduces is one that never reaches the
+  // server: perfect on screen until the page is loaded again.
+  await signedIn.reload();
+  await expect(
+    signedIn.getByRole('heading', { name: 'Spending by grouping', level: 2 }).locator('../..'),
+  ).toHaveClass(/lg:col-span-6/);
 });
 
 test('the arrange controls are hidden until asked for', async ({ signedIn }) => {

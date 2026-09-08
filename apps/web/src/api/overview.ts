@@ -1,4 +1,3 @@
-import type { OverviewSpan } from '@budget/shared';
 import { api } from './client.js';
 
 /**
@@ -12,7 +11,10 @@ import { api } from './client.js';
 
 export interface OverviewTileDto {
   readonly key: string;
-  readonly span: OverviewSpan;
+  /** Which row. A row divides its width evenly among its members. */
+  readonly row: number;
+  /** Order within that row. */
+  readonly position: number;
   /** Which chart this tile is drawn as; null means the tile's own default. */
   readonly display: string | null;
 }
@@ -20,7 +22,8 @@ export interface OverviewTileDto {
 export interface OverviewLayoutDto {
   /** Every tile this page can draw today. It grows a batch at a time. */
   readonly catalog: readonly string[];
-  readonly spans: readonly OverviewSpan[];
+  readonly columns: number;
+  readonly maxPerRow: number;
   readonly tiles: readonly OverviewTileDto[];
 }
 
@@ -135,9 +138,49 @@ export interface TrajectoryDto {
  * tile with nothing in it — the first draws nothing, the second draws its empty
  * state.
  */
+export interface CycleChangeDto {
+  readonly startedAt: string;
+  readonly endedAt: string | null;
+  readonly changeCents: string;
+  readonly provenance: string;
+  /** The cycle in progress is not a short cycle. */
+  readonly partial: boolean;
+}
+
+export interface CycleSummaryDto {
+  readonly startedAt: string;
+  readonly endedAt: string | null;
+  readonly incomeCents: string;
+  readonly spendingCents: string;
+  readonly surplusCents: string;
+  readonly partial: boolean;
+}
+
+export interface NegativeLineDto {
+  readonly id: string;
+  readonly name: string;
+  readonly balanceCents: string;
+}
+
+export interface BurnRateDto {
+  readonly delegationId: string;
+  readonly name: string;
+  readonly color: string | null;
+  readonly perCycleCents: string;
+}
+
 export interface OverviewDataDto {
   /** One aggregate series feeding three tiles — see the domain's comment. */
   readonly aggregate?: AggregateDto;
+  readonly change_per_cycle?: readonly CycleChangeDto[];
+  readonly thirty_day_momentum?: { readonly points: readonly SeriesPointDto[] };
+  readonly delegations_negative?: readonly NegativeLineDto[];
+  /** One reading of the cycle summaries, feeding two tiles. */
+  readonly cycles?: readonly CycleSummaryDto[];
+  readonly delegation_burn_rate?: {
+    readonly cycleMissing: boolean;
+    readonly entries: readonly BurnRateDto[];
+  };
   readonly composition?: CompositionSeriesDto;
   readonly home_equity_over_time?: EquityDto;
   readonly debt_trajectory?: TrajectoryDto;
@@ -153,13 +196,22 @@ export interface OverviewDataDto {
 export type LayoutSaveResult =
   | { readonly ok: true }
   | { readonly ok: false; readonly unknown?: readonly string[] }
-  | { readonly ok: false; readonly badSpans?: readonly string[] }
+  | { readonly ok: false; readonly overfullRows?: readonly number[] }
   | { readonly ok: false; readonly duplicates?: readonly string[] };
 
 export const overviewApi = {
   layout: () => api.get<OverviewLayoutDto>('/api/overview/layout'),
 
   data: (window: string) => api.get<OverviewDataDto>(`/api/overview?window=${window}`),
+
+  /**
+   * Every tile's data, for the picker.
+   *
+   * The one deliberate exception to "only what you have": showing somebody what
+   * a tile would look like needs that tile's figures, and by definition they do
+   * not have it yet. Fetched only while Arrange is open.
+   */
+  preview: (window: string) => api.get<OverviewDataDto>(`/api/overview/preview?window=${window}`),
 
   /** The whole arrangement, never a partial one — see the route's comment. */
   saveLayout: (tiles: readonly OverviewTileDto[]) =>

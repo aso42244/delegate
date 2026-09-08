@@ -1,47 +1,82 @@
 /**
- * The Overview grid's width vocabulary.
+ * The Overview grid: rows, and the widths they imply.
  *
- * Four words, and they are `SettingsCard`'s four words rather than a second
- * scale invented for tiles — docs/ui-system.md §11 records why: a field's
- * `width` and a card's `span` were nearly given one name, and two vocabularies
- * under one idea is a trap for whoever reads it next. Six columns because three
- * cannot express "two side by side", and a half is not a whole number of thirds.
+ * A tile does not declare a width. It belongs to a **row**, and a row divides
+ * itself evenly among its members — one tile is full width, two are halves,
+ * three are thirds, four are quarters.
  *
- * Here in `@budget/shared` rather than on either side alone: the server refuses
- * a span it does not recognise and the client turns one into a column count, and
- * a list that lives in two places is a list that disagrees with itself.
+ * This replaced a per-tile `span` borrowed from `SettingsCard`
+ * (`third`/`half`/`two-thirds`/`full`). That vocabulary is right for a page of
+ * independent cards and wrong for a dashboard, because it cannot express *these
+ * three share a row*: two tiles each declaring `half` only look like a row by
+ * coincidence, and inserting a third between them produces an arrangement
+ * nobody asked for. Stating the relationship and deriving the width means the
+ * two can never disagree.
  *
- * A phone has one column and ignores all of this. That is deliberate — the span
- * is a fact about the desktop grid, not about the tile, which is what lets one
- * stored arrangement serve both screens.
+ * **Twelve columns, not six.** Twelve divides by 1, 2, 3 and 4 with nothing left
+ * over; six cannot express a quarter without half a column.
+ *
+ * A phone ignores every bit of this and stacks tiles full width in row order —
+ * which is what lets one stored arrangement serve both screens.
  */
 
-export const OVERVIEW_SPANS = ['third', 'half', 'two-thirds', 'full'] as const;
+/** Columns in the desktop grid. */
+export const OVERVIEW_COLUMNS = 12;
 
-export type OverviewSpan = (typeof OVERVIEW_SPANS)[number];
+/**
+ * The most tiles one row can hold.
+ *
+ * Four, because a quarter of a 1200px page is 300px and a ranked bar with a name
+ * and a figure stops being readable below about that. A fifth would divide
+ * unevenly as well, which is the arithmetic saying the same thing.
+ */
+export const MAX_TILES_PER_ROW = 4;
 
-/** What a tile that has never been sized is. The width every card always had. */
-export const DEFAULT_OVERVIEW_SPAN: OverviewSpan = 'full';
+/** How many columns each tile in a row of `size` takes. */
+export function columnsForRow(size: number): number {
+  const clamped = Math.min(Math.max(size, 1), MAX_TILES_PER_ROW);
+  return OVERVIEW_COLUMNS / clamped;
+}
 
-export function isOverviewSpan(value: string): value is OverviewSpan {
-  return (OVERVIEW_SPANS as readonly string[]).includes(value);
+export interface RowMember<T> {
+  readonly row: number;
+  readonly tile: T;
 }
 
 /**
- * How many of the grid's six columns a span takes.
+ * Groups tiles into their rows, in order, renumbering as it goes.
  *
- * The grid is six wide, so the mapping is exact and there is no rounding to
- * argue about: a third is two columns, a half is three, two-thirds is four.
+ * Renumbering rather than trusting the stored numbers: a row emptied by removing
+ * its last tile leaves a gap, and a gap is not a row. The stored value orders
+ * rows; it does not name them.
  */
-export const OVERVIEW_SPAN_COLUMNS: Record<OverviewSpan, number> = {
-  third: 2,
-  half: 3,
-  'two-thirds': 4,
-  full: 6,
-};
+export function groupIntoRows<T extends { readonly row: number }>(tiles: readonly T[]): T[][] {
+  const rows = new Map<number, T[]>();
+  for (const tile of tiles) {
+    const existing = rows.get(tile.row);
+    if (existing) existing.push(tile);
+    else rows.set(tile.row, [tile]);
+  }
+  return [...rows.entries()].sort(([a], [b]) => a - b).map(([, group]) => group);
+}
 
-/** What the size control cycles through, in the order a person would grow a tile. */
-export function nextOverviewSpan(span: OverviewSpan): OverviewSpan {
-  const index = OVERVIEW_SPANS.indexOf(span);
-  return OVERVIEW_SPANS[(index + 1) % OVERVIEW_SPANS.length]!;
+/**
+ * Flattens rows back into storable tiles, numbering rows from zero and each
+ * tile's position from zero within its row.
+ *
+ * The whole arrangement is written at once — see the route — so this is the one
+ * place the numbers are decided, and nothing else needs to know how they work.
+ */
+export function flattenRows<T>(
+  rows: readonly (readonly T[])[],
+): { row: number; position: number; tile: T }[] {
+  const flat: { row: number; position: number; tile: T }[] = [];
+  rows
+    .filter((row) => row.length > 0)
+    .forEach((row, rowIndex) => {
+      row.slice(0, MAX_TILES_PER_ROW).forEach((tile, position) => {
+        flat.push({ row: rowIndex, position, tile });
+      });
+    });
+  return flat;
 }
