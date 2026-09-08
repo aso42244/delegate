@@ -1,47 +1,69 @@
 import { describe, expect, it } from 'vitest';
 import {
-  DEFAULT_OVERVIEW_SPAN,
-  isOverviewSpan,
-  nextOverviewSpan,
-  OVERVIEW_SPAN_COLUMNS,
-  OVERVIEW_SPANS,
+  columnsForRow,
+  flattenRows,
+  groupIntoRows,
+  MAX_TILES_PER_ROW,
+  OVERVIEW_COLUMNS,
 } from './overview.js';
 
-describe('overview spans', () => {
-  it('recognises exactly the four widths', () => {
-    for (const span of OVERVIEW_SPANS) expect(isOverviewSpan(span)).toBe(true);
-    // The names a second scale would have used, refused rather than coerced.
-    for (const wrong of ['sm', 'md', 'lg', 'quarter', 'FULL', '']) {
-      expect(isOverviewSpan(wrong)).toBe(false);
-    }
-  });
-
-  it('defaults to the width every card always had', () => {
-    expect(DEFAULT_OVERVIEW_SPAN).toBe('full');
-    expect(OVERVIEW_SPAN_COLUMNS[DEFAULT_OVERVIEW_SPAN]).toBe(6);
-  });
-
-  it('divides the six columns exactly, so no span needs rounding', () => {
-    for (const span of OVERVIEW_SPANS) {
-      const columns = OVERVIEW_SPAN_COLUMNS[span];
+describe('the overview grid', () => {
+  it('divides evenly for every row size it allows', () => {
+    // Twelve columns exist so that 1, 2, 3 and 4 all divide with nothing left
+    // over. Six could not express a quarter without half a column.
+    for (let size = 1; size <= MAX_TILES_PER_ROW; size += 1) {
+      const columns = columnsForRow(size);
       expect(Number.isInteger(columns)).toBe(true);
-      expect(columns).toBeGreaterThan(0);
-      expect(columns).toBeLessThanOrEqual(6);
+      expect(columns * size).toBe(OVERVIEW_COLUMNS);
     }
-    // Three columns could not express "two side by side"; six can.
-    expect(OVERVIEW_SPAN_COLUMNS.half * 2).toBe(6);
-    expect(OVERVIEW_SPAN_COLUMNS.third * 3).toBe(6);
-    expect(OVERVIEW_SPAN_COLUMNS.third + OVERVIEW_SPAN_COLUMNS['two-thirds']).toBe(6);
   });
 
-  it('cycles through every width and returns to the start', () => {
-    let span = DEFAULT_OVERVIEW_SPAN;
-    const seen = new Set([span]);
-    for (let step = 0; step < OVERVIEW_SPANS.length - 1; step += 1) {
-      span = nextOverviewSpan(span);
-      seen.add(span);
-    }
-    expect(seen.size).toBe(OVERVIEW_SPANS.length);
-    expect(nextOverviewSpan(span)).toBe(DEFAULT_OVERVIEW_SPAN);
+  it('clamps a row that somehow holds more than it should', () => {
+    // A stored arrangement outlives the rule that made it. Five in a row must
+    // still draw as something rather than as a division by a number the grid
+    // cannot express.
+    expect(columnsForRow(5)).toBe(columnsForRow(MAX_TILES_PER_ROW));
+    expect(columnsForRow(0)).toBe(OVERVIEW_COLUMNS);
+  });
+
+  it('groups tiles into rows in row order', () => {
+    const rows = groupIntoRows([
+      { row: 1, key: 'c' },
+      { row: 0, key: 'a' },
+      { row: 0, key: 'b' },
+    ]);
+    expect(rows.map((row) => row.map((tile) => tile.key))).toEqual([['a', 'b'], ['c']]);
+  });
+
+  it('closes a gap left by an emptied row', () => {
+    // Removing a row's last tile leaves a hole in the numbering, and a hole is
+    // not a row. The stored value orders rows; it does not name them.
+    const rows = groupIntoRows([
+      { row: 0, key: 'a' },
+      { row: 7, key: 'b' },
+    ]);
+    expect(rows).toHaveLength(2);
+
+    const flat = flattenRows(rows);
+    expect(flat.map((entry) => entry.row)).toEqual([0, 1]);
+  });
+
+  it('numbers each tile from zero within its own row', () => {
+    const flat = flattenRows([['a', 'b'], ['c']]);
+    expect(flat).toEqual([
+      { row: 0, position: 0, tile: 'a' },
+      { row: 0, position: 1, tile: 'b' },
+      { row: 1, position: 0, tile: 'c' },
+    ]);
+  });
+
+  it('drops an empty row rather than numbering it', () => {
+    const flat = flattenRows([['a'], [], ['b']]);
+    expect(flat.map((entry) => entry.row)).toEqual([0, 1]);
+  });
+
+  it('refuses to put more than four in one row', () => {
+    const flat = flattenRows([['a', 'b', 'c', 'd', 'e']]);
+    expect(flat).toHaveLength(MAX_TILES_PER_ROW);
   });
 });

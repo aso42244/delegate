@@ -1,7 +1,14 @@
-import { DEFAULT_OVERVIEW_SPAN, nextOverviewSpan, type OverviewSpan } from '@budget/shared';
+import {
+  columnsForRow,
+  flattenRows,
+  formatCents,
+  groupIntoRows,
+  MAX_TILES_PER_ROW,
+} from '@budget/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useMemo, type ReactNode } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
+import { useMediaQuery } from '../useMediaQuery.js';
 import {
   overviewApi,
   type OverviewDataDto,
@@ -67,83 +74,136 @@ const TILE_COPY: Record<string, { readonly title: string; readonly description?:
   bitcoin_value_over_time: { title: 'Bitcoin over time' },
   home_equity_over_time: { title: 'Home equity' },
   debt_trajectory: { title: 'Debt trajectory' },
+  delegations_negative: { title: 'Over-spent lines' },
+  cycle_surplus: { title: 'This cycle' },
+  income_vs_spending: { title: 'Income against spending' },
+  change_per_cycle: { title: 'Change per cycle' },
+  thirty_day_momentum: { title: '30-day momentum' },
+  delegation_burn_rate: { title: 'What each line burns' },
   uncategorized_backlog: { title: 'Waiting to be categorized' },
 };
 
 /** History starts at the first night and gains one a night — there is no backfill. */
 const NO_HISTORY = 'No history yet — the first night records one.';
 
-const SPAN_LABEL: Record<OverviewSpan, string> = {
-  third: 'Third',
-  half: 'Half',
-  'two-thirds': 'Two-thirds',
-  full: 'Full',
-};
-
 /**
- * The grid column count for a span.
+ * Column spans as whole class names.
  *
- * Written as whole class names rather than built from the number, because
- * Tailwind reads the source for the classes it emits and an interpolated one is
- * a class that exists in the browser's stylesheet nowhere.
+ * Tailwind reads the source for the classes it emits, so an interpolated one is
+ * a class that exists in the browser's stylesheet nowhere. Four entries because
+ * a row holds at most four tiles — see `MAX_TILES_PER_ROW` and the arithmetic
+ * behind it.
  */
-const SPAN_CLASS: Record<OverviewSpan, string> = {
-  third: 'lg:col-span-2',
-  half: 'lg:col-span-3',
-  'two-thirds': 'lg:col-span-4',
-  full: 'lg:col-span-6',
+const COLUMN_CLASS: Record<number, string> = {
+  12: 'lg:col-span-12',
+  6: 'lg:col-span-6',
+  4: 'lg:col-span-4',
+  3: 'lg:col-span-3',
 };
 
 function TileShell({
   tile,
+  columns,
   arranging,
+  draggable,
+  rowSize,
   onMove,
-  onResize,
   onRemove,
+  onSplit,
+  onJoin,
+  drag,
   children,
 }: {
   readonly tile: OverviewTileDto;
+  readonly columns: number;
   readonly arranging: boolean;
+  /** Pointer devices only — HTML5 drag fires no events under a thumb. */
+  readonly draggable: boolean;
+  readonly rowSize: number;
   readonly onMove: (step: -1 | 1) => void;
-  readonly onResize: () => void;
   readonly onRemove: () => void;
+  readonly onSplit: () => void;
+  readonly onJoin: () => void;
+  readonly drag: {
+    readonly onDragStart: () => void;
+    readonly onDragOver: (event: React.DragEvent) => void;
+    readonly onDrop: (event: React.DragEvent) => void;
+    readonly over: 'left' | 'right' | null;
+  };
   readonly children: ReactNode;
 }): ReactNode {
   const copy = TILE_COPY[tile.key] ?? { title: tile.key };
 
   return (
     <section
-      className={`col-span-1 flex min-w-0 flex-col gap-4 rounded-lg border border-line bg-canvas p-4 ${
-        SPAN_CLASS[tile.span]
-      }`}
+      className={`group relative col-span-1 flex min-w-0 flex-col gap-4 rounded-lg border border-line bg-canvas p-4 ${
+        COLUMN_CLASS[columns] ?? 'lg:col-span-12'
+      } ${draggable ? 'cursor-grab' : ''}`}
+      draggable={draggable}
+      onDragStart={drag.onDragStart}
+      onDragOver={drag.onDragOver}
+      onDrop={drag.onDrop}
+      data-tile={tile.key}
     >
+      {/* The edge a drop would land on. Drawn on the tile rather than between
+          tiles, because a gap is a target nobody can hit at 24px. */}
+      {drag.over !== null && (
+        <span
+          aria-hidden="true"
+          className={`absolute inset-y-0 w-1 rounded bg-accent ${
+            drag.over === 'left' ? '-left-1' : '-right-1'
+          }`}
+        />
+      )}
+
       <div className="flex min-w-0 items-baseline gap-2">
-        <h2 className="truncate text-section font-semibold text-ink">{copy.title}</h2>
+        {/*
+          Says the tile can be pulled. Revealed on hover rather than drawn
+          permanently, because it is an affordance for an occasional act on a
+          page of figures — and it keeps its width either way, since an
+          `opacity-0` control still occupies its box and a header that reflows on
+          hover is worse than one carrying a faint glyph.
+        */}
+        {draggable && (
+          <span
+            aria-hidden="true"
+            className="shrink-0 text-quiet text-faint opacity-0 transition-opacity group-hover:opacity-100"
+          >
+            ⠿
+          </span>
+        )}
+        <h2 className="min-w-0 truncate text-section font-semibold text-ink">{copy.title}</h2>
         {copy.description !== undefined && (
           <p className="truncate text-quiet text-muted">{copy.description}</p>
         )}
         {arranging && (
           /*
-           * Every control names the tile it acts on.
+           * Every control names the tile it acts on. A grid of tiles each
+           * carrying "Move earlier" gives a screen reader a column of identical
+           * names, and the arrows are glyphs, so the accessible name is the only
+           * name there is.
            *
-           * A grid of tiles each carrying "Move earlier" gives a screen reader a
-           * column of identical names with nothing to tell them apart, and the
-           * arrows are glyphs, so the accessible name is the only name there is.
-           * `Remove Assets and debts` is the convention Insights already uses.
-           * The width button keeps its visible label inside its accessible name,
-           * so what is read matches what is on it.
+           * These exist because **dragging is never the only route** — it is not
+           * reachable by keyboard and does nothing under a thumb. Drag is the
+           * fast way; this is the way that always works.
            */
           <div className="ml-auto flex shrink-0 items-center gap-2">
-            {/* The width control is meaningless on a phone, where every tile is
-                full width — hidden rather than disabled, because a control that
-                cannot do anything on this screen is not a state to explain. */}
             <Button
               variant="ghost"
-              onClick={onResize}
-              aria-label={`Width of ${copy.title}: ${SPAN_LABEL[tile.span]}`}
+              onClick={onJoin}
+              aria-label={`Move ${copy.title} into the row above`}
               className="hidden lg:inline-flex"
             >
-              {SPAN_LABEL[tile.span]}
+              ⤒
+            </Button>
+            <Button
+              variant="ghost"
+              onClick={onSplit}
+              aria-label={`Give ${copy.title} a row of its own`}
+              className="hidden lg:inline-flex"
+              disabled={rowSize === 1}
+            >
+              ⤓
             </Button>
             <Button
               variant="ghost"
@@ -290,19 +350,59 @@ function BacklogTile({
       : Math.floor((Date.now() - new Date(oldest).getTime()) / (24 * 60 * 60 * 1000));
 
   return (
+    <Figure
+      value={String(backlog.count)}
+      note={days === null ? 'Waiting to be categorized.' : `Waiting, oldest ${days}d.`}
+      tone="warning"
+      action={
+        <Link
+          to="/transactions?uncategorized=true"
+          className="text-quiet font-semibold text-accent hover:underline"
+        >
+          Open the queue →
+        </Link>
+      }
+    />
+  );
+}
+
+/**
+ * One number, and the sentence that says what to do about it.
+ *
+ * `text-figure` is the top of the scale and the same size as a page title,
+ * deliberately not larger — a dashboard where every tile shouts louder than the
+ * page it sits on has spent the last of its hierarchy. See ui-system.md §2.
+ *
+ * The tone is carried by the words as well as the colour, the rule every other
+ * state in this application follows.
+ */
+function Figure({
+  value,
+  note,
+  tone = 'neutral',
+  action,
+}: {
+  readonly value: string;
+  readonly note: string;
+  readonly tone?: 'neutral' | 'positive' | 'negative' | 'warning';
+  readonly action?: ReactNode;
+}): ReactNode {
+  const colour =
+    tone === 'positive'
+      ? 'text-positive'
+      : tone === 'negative'
+        ? 'text-negative'
+        : tone === 'warning'
+          ? 'text-warning'
+          : 'text-ink';
+
+  return (
     <div className="flex flex-col gap-4">
       <div className="flex flex-col gap-1">
-        <span className="text-hero font-bold text-warning tabular-nums">{backlog.count}</span>
-        <span className="text-quiet text-muted">
-          {days === null ? 'Waiting to be categorized.' : `Waiting, oldest ${days}d.`}
-        </span>
+        <span className={`money text-figure font-bold ${colour}`}>{value}</span>
+        <span className="text-quiet text-muted">{note}</span>
       </div>
-      <Link
-        to="/transactions?uncategorized=true"
-        className="text-quiet font-semibold text-accent hover:underline"
-      >
-        Open the queue →
-      </Link>
+      {action}
     </div>
   );
 }
@@ -479,6 +579,129 @@ function TrajectoryTile({
   );
 }
 
+/** The lines that are over-spent — the only red on the budget, per §11. */
+function NegativeTile({
+  lines,
+}: {
+  readonly lines: NonNullable<OverviewDataDto['delegations_negative']>;
+}): ReactNode {
+  if (lines.length === 0) {
+    return <p className="text-quiet text-muted">Nothing over-spent.</p>;
+  }
+
+  return (
+    <RankedBars
+      rows={lines.map((line) => ({
+        key: line.id,
+        name: line.name,
+        valueCents: BigInt(line.balanceCents),
+        color: 'var(--color-negative)',
+      }))}
+      emptyMessage="Nothing over-spent."
+    />
+  );
+}
+
+/** The cycle in progress: what came in, what went out, what is left. */
+function CycleTile({
+  cycles,
+  tileKey,
+}: {
+  readonly cycles: NonNullable<OverviewDataDto['cycles']>;
+  readonly tileKey: string;
+}): ReactNode {
+  const current = cycles[cycles.length - 1];
+  if (!current) {
+    return <p className="text-quiet text-muted">No cycle has been run yet.</p>;
+  }
+
+  if (tileKey === 'cycle_surplus') {
+    const surplus = BigInt(current.surplusCents);
+    return (
+      <Figure
+        value={formatCents(surplus, { explicitPlus: true })}
+        note={
+          current.partial ? 'Surplus so far this cycle.' : 'Surplus over the last complete cycle.'
+        }
+        tone={surplus < 0n ? 'negative' : 'positive'}
+      />
+    );
+  }
+
+  /*
+   * Income and spending across every cycle, as a pair of bars per cycle rather
+   * than two lines. A cycle is a discrete thing — one Delegate press to the
+   * next — and a line drawn between two of them implies values in between that
+   * nobody recorded and that do not exist.
+   */
+  return (
+    <RankedBars
+      rows={cycles
+        .slice()
+        .reverse()
+        .map((cycle) => ({
+          key: cycle.startedAt,
+          name: new Date(cycle.startedAt).toLocaleDateString(undefined, {
+            month: 'short',
+            day: 'numeric',
+          }),
+          valueCents: BigInt(cycle.incomeCents),
+          compare: { label: 'spent', valueCents: BigInt(cycle.spendingCents) },
+          ...(cycle.partial ? { note: `${formatCents(BigInt(cycle.incomeCents))} so far` } : {}),
+        }))}
+      emptyMessage="No cycle has been run yet."
+    />
+  );
+}
+
+/** Net worth change per pay cycle, aligned to actual paydays. */
+function ChangePerCycleTile({
+  cycles,
+}: {
+  readonly cycles: NonNullable<OverviewDataDto['change_per_cycle']>;
+}): ReactNode {
+  return (
+    <RankedBars
+      signed
+      rows={cycles
+        .slice()
+        .reverse()
+        .map((cycle) => ({
+          key: cycle.startedAt,
+          name: new Date(cycle.startedAt).toLocaleDateString(undefined, {
+            month: 'short',
+            day: 'numeric',
+          }),
+          valueCents: BigInt(cycle.changeCents),
+        }))}
+      emptyMessage={NO_HISTORY}
+    />
+  );
+}
+
+/** What each line spends in one pay cycle, at the rate observed. */
+function BurnRateTile({
+  burn,
+}: {
+  readonly burn: NonNullable<OverviewDataDto['delegation_burn_rate']>;
+}): ReactNode {
+  if (burn.cycleMissing) {
+    return <EmptyState>No cycle has been run yet.</EmptyState>;
+  }
+
+  return (
+    <RankedBars
+      rows={burn.entries.map((entry) => ({
+        key: entry.delegationId,
+        name: entry.name,
+        color: entry.color,
+        valueCents: BigInt(entry.perCycleCents),
+      }))}
+      emptyMessage={NO_HISTORY}
+    />
+  );
+}
+
 /**
  * Which body a tile draws.
  *
@@ -527,6 +750,25 @@ function TileBody({
       return data.home_equity_over_time ? <EquityTile equity={data.home_equity_over_time} /> : null;
     case 'debt_trajectory':
       return data.debt_trajectory ? <TrajectoryTile trajectory={data.debt_trajectory} /> : null;
+    case 'delegations_negative':
+      return data.delegations_negative ? <NegativeTile lines={data.delegations_negative} /> : null;
+    case 'cycle_surplus':
+    case 'income_vs_spending':
+      return data.cycles ? <CycleTile cycles={data.cycles} tileKey={tileKey} /> : null;
+    case 'change_per_cycle':
+      return data.change_per_cycle ? <ChangePerCycleTile cycles={data.change_per_cycle} /> : null;
+    case 'thirty_day_momentum':
+      return data.thirty_day_momentum ? (
+        <TimeSeriesChart
+          points={toPoints(data.thirty_day_momentum.points, ['netWorthCents'])}
+          series={[{ key: 'netWorthCents', name: 'Change over 30 days' }]}
+          includeZero
+          emptyMessage={NO_HISTORY}
+          label="Rolling thirty-day change in net worth"
+        />
+      ) : null;
+    case 'delegation_burn_rate':
+      return data.delegation_burn_rate ? <BurnRateTile burn={data.delegation_burn_rate} /> : null;
     case 'uncategorized_backlog':
       return data.uncategorized_backlog ? (
         <BacklogTile backlog={data.uncategorized_backlog} />
@@ -554,6 +796,33 @@ export function Overview(): ReactNode {
   });
 
   const arranging = params.get('arrange') === 'true';
+
+  /*
+   * What is being dragged, and where a drop would land.
+   *
+   * Kept in state rather than read from the event: `dataTransfer` is empty
+   * during `dragover` in every browser, and which edge the drop lands on has to
+   * be decided while the pointer is still moving. The Budget page's account
+   * reordering learned this first.
+   */
+  /*
+   * Dragging is available on the page itself, not only inside Arrange.
+   *
+   * Pointer devices only: HTML5 drag fires no events under a thumb, and a phone
+   * stacks every tile full width anyway, so there are no rows there to
+   * rearrange. The buttons inside Arrange remain the route that always works.
+   */
+  const pointer = useMediaQuery('(hover: hover)');
+
+  const [dragging, setDragging] = useState<string | null>(null);
+  const [over, setOver] = useState<{ key: string; side: 'left' | 'right' } | null>(null);
+
+  /** Every tile's figures, fetched only while the picker is open. */
+  const preview = useQuery({
+    queryKey: ['overview', 'preview', window],
+    queryFn: () => overviewApi.preview(window),
+    enabled: arranging,
+  });
 
   const tiles = useMemo(() => layout.data?.tiles ?? [], [layout.data]);
 
@@ -622,42 +891,144 @@ export function Overview(): ReactNode {
     setParams(updated, { replace: true });
   }
 
-  function move(index: number, step: -1 | 1): void {
-    const target = index + step;
-    if (target < 0 || target >= tiles.length) return;
-    const next = [...tiles];
-    const [moved] = next.splice(index, 1);
-    next.splice(target, 0, moved!);
-    save.mutate(next);
+  /** The arrangement as rows, which is what every edit below works on. */
+  const rows = useMemo(() => groupIntoRows([...tiles]), [tiles]);
+
+  /** Writes rows back as tiles, renumbering so a gap left by a row closes. */
+  function saveRows(next: readonly (readonly OverviewTileDto[])[]): void {
+    save.mutate(flattenRows(next).map(({ row, position, tile }) => ({ ...tile, row, position })));
   }
 
-  function resize(index: number): void {
-    const next = tiles.map((tile, position) =>
-      position === index ? { ...tile, span: nextOverviewSpan(tile.span) } : tile,
-    );
-    save.mutate(next);
+  function locate(key: string): { row: number; index: number } | null {
+    for (const [row, group] of rows.entries()) {
+      const index = group.findIndex((tile) => tile.key === key);
+      if (index !== -1) return { row, index };
+    }
+    return null;
   }
 
-  function remove(index: number): void {
-    save.mutate(tiles.filter((_tile, position) => position !== index));
+  /** Lifts a tile out, leaving its row possibly empty for `flattenRows` to drop. */
+  function without(key: string): OverviewTileDto[][] {
+    return rows.map((group) => group.filter((tile) => tile.key !== key));
+  }
+
+  /**
+   * Moves a tile one place along the reading order.
+   *
+   * Within its row first. At the row's edge it steps **out** onto a row of its
+   * own rather than merging into the neighbouring one — merging is what `⤒`
+   * is for, and a reorder button that silently changed two tiles' widths would
+   * be doing something nobody pressed it for.
+   *
+   * The route that always works: dragging is not reachable by keyboard and does
+   * nothing under a thumb, so it is the fast way rather than the only one.
+   */
+  function move(key: string, step: -1 | 1): void {
+    const at = locate(key);
+    if (!at) return;
+
+    const group = rows[at.row]!;
+    const target = at.index + step;
+
+    if (target >= 0 && target < group.length) {
+      const next = rows.map((entry) => [...entry]);
+      const moving = next[at.row]!;
+      const [moved] = moving.splice(at.index, 1);
+      moving.splice(target, 0, moved!);
+      saveRows(next);
+      return;
+    }
+
+    /*
+     * Off the end of its row. Only the source row can be emptied by the removal,
+     * and only when it held this tile alone — which is what decides where the
+     * new row lands once the empty one is gone.
+     */
+    const alone = group.length === 1;
+    const compact = without(key).filter((entry) => entry.length > 0);
+    const insertAt = alone ? at.row + step : step < 0 ? at.row : at.row + 1;
+    if (insertAt < 0 || insertAt > compact.length) return;
+
+    compact.splice(insertAt, 0, [group[at.index]!]);
+    saveRows(compact);
+  }
+
+  /** Gives a tile a row of its own, directly below the one it was sharing. */
+  function split(key: string): void {
+    const at = locate(key);
+    if (!at || rows[at.row]!.length === 1) return;
+    const next = without(key);
+    next.splice(at.row + 1, 0, [rows[at.row]![at.index]!]);
+    saveRows(next);
+  }
+
+  /** Moves a tile up into the row above, if that row has room for it. */
+  function join(key: string): void {
+    const at = locate(key);
+    if (!at || at.row === 0) return;
+    if ((rows[at.row - 1]?.length ?? 0) >= MAX_TILES_PER_ROW) return;
+    const tile = rows[at.row]![at.index]!;
+    const next = without(key);
+    next[at.row - 1] = [...next[at.row - 1]!, tile];
+    saveRows(next);
+  }
+
+  function remove(key: string): void {
+    saveRows(without(key));
   }
 
   function add(key: string): void {
-    // The data refetch is in `onSuccess`, not here — see the mutation.
-    save.mutate([...tiles, { key, span: DEFAULT_OVERVIEW_SPAN, display: null }]);
+    // A new tile takes a row of its own at the foot. The data refetch is in the
+    // mutation's `onSuccess`, not here — see the comment on it.
+    save.mutate([...tiles, { key, row: rows.length, position: 0, display: null }]);
+  }
+
+  /**
+   * Dropping one tile beside another puts them in the same row, and the row
+   * divides itself between them — two halves, then thirds, then quarters.
+   *
+   * The pointer's half of the target decides which side it lands on, the same
+   * rule the Budget page's account reordering follows: dropping always-before
+   * leaves no gesture meaning "after this one", so the last place in a row
+   * cannot be reached at all.
+   */
+  function drop(targetKey: string, side: 'left' | 'right'): void {
+    if (dragging === null || dragging === targetKey) return;
+    const target = locate(targetKey);
+    const source = locate(dragging);
+    if (!target || !source) return;
+
+    const tile = rows[source.row]![source.index]!;
+    const next = without(dragging);
+    const destination = next[target.row]!;
+
+    if (destination.length >= MAX_TILES_PER_ROW) return;
+
+    const at = destination.findIndex((entry) => entry.key === targetKey);
+    next[target.row] = [
+      ...destination.slice(0, side === 'left' ? at : at + 1),
+      tile,
+      ...destination.slice(side === 'left' ? at : at + 1),
+    ];
+    saveRows(next);
   }
 
   const available = (layout.data?.catalog ?? []).filter(
     (key) => !tiles.some((tile) => tile.key === key),
   );
-
   return (
     <>
       <PageHeader
         title="Overview"
+        /*
+         * The subtitle states a fact the body does not already state. It said
+         * "No tiles yet." while the empty state below said exactly the same
+         * words — the text budget broken in the plainest way, and visible in the
+         * first screenshot of the page in real use.
+         */
         subtitle={
           tiles.length === 0
-            ? 'No tiles yet.'
+            ? undefined
             : `${tiles.length} ${tiles.length === 1 ? 'tile' : 'tiles'}.`
         }
         actions={
@@ -686,32 +1057,87 @@ export function Overview(): ReactNode {
       )}
 
       {arranging && available.length > 0 && (
-        <div className="mb-6 flex flex-wrap items-center gap-2">
-          <span className="text-quiet text-muted">Add a tile:</span>
-          {available.map((key) => (
-            <Button key={key} variant="ghost" onClick={() => add(key)}>
-              {TILE_COPY[key]?.title ?? key}
-            </Button>
-          ))}
-        </div>
+        <section className="mb-6 flex flex-col gap-4">
+          <h2 className="text-section font-semibold text-ink">Add a tile</h2>
+          {/*
+            Each one drawn with the household's own figures rather than named in
+            words. A picker listing six titles asks people to choose between
+            things they cannot see; this shows what they would be adding. The
+            data comes from `/api/overview/preview`, which is the one deliberate
+            exception to this endpoint's "only what you have" rule.
+          */}
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
+            {available.map((key) => (
+              <button
+                key={key}
+                type="button"
+                onClick={() => add(key)}
+                className="flex flex-col gap-2 rounded-lg border border-line bg-canvas p-4 text-left transition-colors hover:border-accent hover:bg-surface-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
+                aria-label={`Add ${TILE_COPY[key]?.title ?? key}`}
+              >
+                <span className="flex items-baseline gap-2">
+                  <span className="truncate text-section font-semibold text-ink">
+                    {TILE_COPY[key]?.title ?? key}
+                  </span>
+                  <span className="ml-auto shrink-0 text-quiet font-semibold text-accent">Add</span>
+                </span>
+                {/* Not interactive, and not reachable: it is a picture of the
+                    tile inside a button, and a control inside a control is a
+                    target nobody can aim at. */}
+                <span aria-hidden="true" className="pointer-events-none block">
+                  {preview.isPending ? (
+                    <span className="block text-quiet text-muted">Loading…</span>
+                  ) : (
+                    <TileBody tileKey={key} data={preview.data} />
+                  )}
+                </span>
+              </button>
+            ))}
+          </div>
+        </section>
       )}
 
       {layout.isPending || data.isPending ? null : tiles.length === 0 ? (
         <EmptyState>No tiles yet.</EmptyState>
       ) : (
-        <div className="grid grid-cols-1 gap-6 lg:grid-cols-6">
-          {tiles.map((tile, index) => (
-            <TileShell
-              key={tile.key}
-              tile={tile}
-              arranging={arranging}
-              onMove={(step) => move(index, step)}
-              onResize={() => resize(index)}
-              onRemove={() => remove(index)}
-            >
-              <TileBody tileKey={tile.key} data={data.data} />
-            </TileShell>
-          ))}
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
+          {rows.map((group) =>
+            group.map((tile) => (
+              <TileShell
+                key={tile.key}
+                tile={tile}
+                columns={columnsForRow(group.length)}
+                rowSize={group.length}
+                arranging={arranging}
+                draggable={pointer}
+                onMove={(step) => move(tile.key, step)}
+                onRemove={() => remove(tile.key)}
+                onSplit={() => split(tile.key)}
+                onJoin={() => join(tile.key)}
+                drag={{
+                  onDragStart: () => setDragging(tile.key),
+                  onDragOver: (event) => {
+                    if (dragging === null || dragging === tile.key) return;
+                    // Without this the browser refuses the drop outright.
+                    event.preventDefault();
+                    const box = event.currentTarget.getBoundingClientRect();
+                    const side = event.clientX < box.left + box.width / 2 ? 'left' : 'right';
+                    setOver({ key: tile.key, side });
+                  },
+                  onDrop: (event) => {
+                    event.preventDefault();
+                    const side = over?.key === tile.key ? over.side : 'right';
+                    drop(tile.key, side);
+                    setDragging(null);
+                    setOver(null);
+                  },
+                  over: over?.key === tile.key ? over.side : null,
+                }}
+              >
+                <TileBody tileKey={tile.key} data={data.data} />
+              </TileShell>
+            )),
+          )}
         </div>
       )}
     </>

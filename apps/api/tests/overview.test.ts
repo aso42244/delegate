@@ -5,7 +5,7 @@ import { buildApp } from '../src/app.js';
 import { loadConfig } from '../src/config.js';
 import { prisma } from '../src/db/client.js';
 import { categorizeTransaction } from '../src/domain/allocations.js';
-import { buildMovers, buildOverview } from '../src/domain/overview.js';
+import { buildBurnRates, buildMovers, buildOverview } from '../src/domain/overview.js';
 import {
   makeAccount,
   makeDelegation,
@@ -59,8 +59,13 @@ beforeEach(async () => {
 
 interface LayoutBody {
   readonly catalog: readonly string[];
-  readonly spans: readonly string[];
-  readonly tiles: readonly { readonly key: string; readonly span: string }[];
+  readonly columns: number;
+  readonly maxPerRow: number;
+  readonly tiles: readonly {
+    readonly key: string;
+    readonly row: number;
+    readonly position: number;
+  }[];
 }
 
 interface DataBody {
@@ -92,6 +97,14 @@ interface DataBody {
   readonly composition?: { readonly days: number };
   readonly home_equity_over_time?: { readonly name: string | null };
   readonly debt_trajectory?: { readonly hasEnoughHistory: boolean };
+  readonly cycles?: readonly { readonly surplusCents: string; readonly partial: boolean }[];
+  readonly delegations_negative?: readonly { readonly name: string }[];
+  readonly change_per_cycle?: readonly unknown[];
+  readonly thirty_day_momentum?: { readonly points: readonly unknown[] };
+  readonly delegation_burn_rate?: {
+    readonly cycleMissing: boolean;
+    readonly entries: readonly { readonly name: string; readonly perCycleCents: string }[];
+  };
   readonly uncategorized_backlog?: { readonly count: number };
 }
 
@@ -99,6 +112,11 @@ type SaveBody = { readonly ok: true } | ({ readonly ok: false } & Record<string,
 
 async function get(url: string): Promise<LightMyRequestResponse> {
   return app.inject({ method: 'GET', url, headers: { cookie } });
+}
+
+/** Each tile on a row of its own unless the test says otherwise. */
+function rowed(keys: readonly string[]): { key: string; row: number; position: number }[] {
+  return keys.map((key, row) => ({ key, row, position: 0 }));
 }
 
 async function putLayout(tiles: unknown): Promise<LightMyRequestResponse> {
@@ -118,40 +136,47 @@ describe('the layout', () => {
     const body = response.json<LayoutBody>();
     expect(body.tiles).toEqual([]);
     expect(body.catalog).toContain('spending_by_grouping');
-    expect(body.spans).toEqual(['third', 'half', 'two-thirds', 'full']);
+    // Twelve columns so a row of 1, 2, 3 or 4 divides with nothing left over.
+    expect(body.columns).toBe(12);
+    expect(body.maxPerRow).toBe(4);
   });
 
-  it('stores the order and the width, and reads them back', async () => {
+  it('stores which row each tile is in, and its place within it', async () => {
     const saved = await putLayout([
-      { key: 'uncategorized_backlog', span: 'third' },
-      { key: 'spending_by_grouping', span: 'half' },
+      { key: 'uncategorized_backlog', row: 0, position: 0 },
+      { key: 'spending_by_grouping', row: 0, position: 1 },
+      { key: 'delegations_negative', row: 1, position: 0 },
     ]);
     expect(saved.json<SaveBody>()).toEqual({ ok: true });
 
     const body = (await get('/api/overview/layout')).json<LayoutBody>();
-    // Order is part of what was saved, so it comes back in the order it went in
-    // rather than in whatever order the database felt like.
+
+    // Two tiles sharing row 0 is the arrangement — the width falls out of it
+    // rather than being stored beside it, so the two can never disagree.
+    expect(body.tiles.map((tile) => [tile.key, tile.row, tile.position])).toEqual([
+      ['uncategorized_backlog', 0, 0],
+      ['spending_by_grouping', 0, 1],
+      ['delegations_negative', 1, 0],
+    ]);
+  });
+
+  it('comes back in row and position order', async () => {
+    await putLayout([
+      { key: 'spending_by_grouping', row: 1, position: 0 },
+      { key: 'uncategorized_backlog', row: 0, position: 0 },
+    ]);
+
+    const body = (await get('/api/overview/layout')).json<LayoutBody>();
     expect(body.tiles.map((tile) => tile.key)).toEqual([
       'uncategorized_backlog',
       'spending_by_grouping',
     ]);
-    expect(body.tiles[0]?.span).toBe('third');
-    expect(body.tiles[1]?.span).toBe('half');
-  });
-
-  it('defaults a tile with no width to full', async () => {
-    await putLayout([{ key: 'spending_by_grouping' }]);
-    const body = (await get('/api/overview/layout')).json<LayoutBody>();
-    expect(body.tiles[0]?.span).toBe('full');
   });
 
   it('refuses a tile it cannot draw rather than storing it', async () => {
-    // Every Insights widget is a plausible key and most are not ported yet. One
-    // stored here would reach the page as a tile that renders nothing, which
-    // reads as a broken page rather than as work in progress.
     // A key Insights still offers and this page cannot draw yet — the picker
     // tiles are deferred, so this is exactly the case the guard is for.
-    const response = await putLayout([{ key: 'account_balance_history' }]);
+    const response = await putLayout(rowed(['account_balance_history']));
     expect(response.json<SaveBody>()).toEqual({
       ok: false,
       unknown: ['account_balance_history'],
@@ -161,35 +186,48 @@ describe('the layout', () => {
     expect(body.tiles).toEqual([]);
   });
 
-  it('refuses a width it does not recognise rather than quietly defaulting it', async () => {
-    // Storing it and defaulting at render time would mean the arrangement
-    // somebody chose and the one they get back differ, with nothing saying so.
-    const response = await putLayout([{ key: 'spending_by_grouping', span: 'quarter' }]);
-    expect(response.json<SaveBody>()).toEqual({
-      ok: false,
-      badSpans: ['spending_by_grouping:quarter'],
-    });
+  it('refuses a row holding more than it can divide', async () => {
+    /*
+     * Refused rather than trimmed. Trimming would drop a tile somebody placed
+     * and say nothing about it, and the width a fifth tile implies is one the
+     * twelve-column grid cannot express anyway.
+     */
+    const response = await putLayout([
+      { key: 'spending_by_grouping', row: 0, position: 0 },
+      { key: 'spending_by_delegation', row: 0, position: 1 },
+      { key: 'asset_debt_composition', row: 0, position: 2 },
+      { key: 'utilities_vs_delegated', row: 0, position: 3 },
+      { key: 'delegation_movers', row: 0, position: 0 },
+    ]);
+    expect(response.json<SaveBody>()).toMatchObject({ ok: false, overfullRows: [0] });
     expect((await get('/api/overview/layout')).json<LayoutBody>().tiles).toEqual([]);
   });
 
-  it('refuses the same tile twice', async () => {
+  it('allows exactly four in one row', async () => {
     const response = await putLayout([
-      { key: 'spending_by_grouping' },
-      { key: 'spending_by_grouping' },
+      { key: 'spending_by_grouping', row: 0, position: 0 },
+      { key: 'spending_by_delegation', row: 0, position: 1 },
+      { key: 'asset_debt_composition', row: 0, position: 2 },
+      { key: 'utilities_vs_delegated', row: 0, position: 3 },
     ]);
+    expect(response.json<SaveBody>()).toEqual({ ok: true });
+  });
+
+  it('refuses the same tile twice', async () => {
+    const response = await putLayout(rowed(['spending_by_grouping', 'spending_by_grouping']));
     expect(response.json<SaveBody>()).toEqual({ ok: false, duplicates: ['spending_by_grouping'] });
   });
 
   it('replaces the whole arrangement rather than merging into it', async () => {
-    await putLayout([{ key: 'spending_by_grouping' }, { key: 'uncategorized_backlog' }]);
-    await putLayout([{ key: 'uncategorized_backlog' }]);
+    await putLayout(rowed(['spending_by_grouping', 'uncategorized_backlog']));
+    await putLayout(rowed(['uncategorized_backlog']));
 
     const body = (await get('/api/overview/layout')).json<LayoutBody>();
     expect(body.tiles.map((tile) => tile.key)).toEqual(['uncategorized_backlog']);
   });
 
   it("is one person's own, not the household's", async () => {
-    await putLayout([{ key: 'spending_by_grouping' }]);
+    await putLayout(rowed(['spending_by_grouping']));
 
     // A second account with its own session. Two people looking at one budget
     // can reasonably want different things from it — the same reasoning the
@@ -198,7 +236,11 @@ describe('the layout', () => {
       method: 'POST',
       url: '/api/users',
       headers: { cookie },
-      payload: { username: 'partner', temporaryPassword: 'another-correct-horse', role: 'user' },
+      payload: {
+        username: 'partner',
+        temporaryPassword: 'another-correct-horse',
+        role: 'user',
+      },
     });
     expect(other.statusCode).toBeLessThan(300);
 
@@ -211,7 +253,7 @@ describe('the layout', () => {
   it('does not touch the Insights layout', async () => {
     // The two pages exist side by side while the tiles are ported. One shared
     // table would have each silently editing the other's arrangement.
-    await putLayout([{ key: 'spending_by_grouping' }]);
+    await putLayout(rowed(['spending_by_grouping']));
     expect(await prisma.insightLayout.count()).toBe(0);
   });
 });
@@ -232,7 +274,7 @@ describe('the data', () => {
     await makeAccount({ name: 'Everyday', type: 'asset', balanceCents: 5_000_000n });
     await spend(30_000n, 'Grocery');
 
-    await putLayout([{ key: 'uncategorized_backlog' }]);
+    await putLayout(rowed(['uncategorized_backlog']));
 
     const body = (await get('/api/overview?window=all')).json<DataBody>();
     expect(body.uncategorized_backlog).toBeDefined();
@@ -261,7 +303,7 @@ describe('the data', () => {
   it('carries cents as a string, never a JSON number', async () => {
     await makeAccount({ name: 'Everyday', type: 'asset', balanceCents: 5_000_000n });
     await spend(30_000n, 'Grocery');
-    await putLayout([{ key: 'spending_by_grouping' }]);
+    await putLayout(rowed(['spending_by_grouping']));
 
     const body = (await get('/api/overview?window=all')).json<DataBody>();
     // ADR 002: integer cents, and over HTTP a string rather than a JSON
@@ -273,7 +315,7 @@ describe('the data', () => {
   });
 
   it('tells an unchosen tile apart from an empty one', async () => {
-    await putLayout([{ key: 'spending_by_grouping' }]);
+    await putLayout(rowed(['spending_by_grouping']));
     const body = (await get('/api/overview?window=all')).json<DataBody>();
 
     // Chosen, and there is nothing in it: the key is present with no entries,
@@ -317,7 +359,7 @@ describe('batch A tiles', () => {
     await spendOn('Grocery', 30_000n);
     await spendOn('Fuel', 10_000n);
 
-    await putLayout([{ key: 'spending_by_delegation' }]);
+    await putLayout(rowed(['spending_by_delegation']));
     const body = (await get('/api/overview?window=all')).json<DataBody>();
 
     expect(body.spending_by_delegation?.entries.map((entry) => entry.name)).toEqual([
@@ -333,7 +375,7 @@ describe('batch A tiles', () => {
     await makeAccount({ name: 'Checking', type: 'asset', balanceCents: 300_000n });
     await makeAccount({ name: 'Card', type: 'debt', balanceCents: 50_000n });
 
-    await putLayout([{ key: 'asset_debt_composition' }]);
+    await putLayout(rowed(['asset_debt_composition']));
     const body = (await get('/api/overview')).json<DataBody>();
 
     expect(body.asset_debt_composition?.assets.map((entry) => entry.name)).toEqual(['Checking']);
@@ -342,7 +384,7 @@ describe('batch A tiles', () => {
   });
 
   it('names the cadence the utility suggestion was divided by', async () => {
-    await putLayout([{ key: 'utilities_vs_delegated' }]);
+    await putLayout(rowed(['utilities_vs_delegated']));
     const body = (await get('/api/overview')).json<DataBody>();
 
     // Returned rather than left for the interface to look up, so the figure and
@@ -352,7 +394,7 @@ describe('batch A tiles', () => {
 
   it('does not compute a Batch A tile that is not on the page', async () => {
     await makeAccount({ name: 'Checking', type: 'asset', balanceCents: 300_000n });
-    await putLayout([{ key: 'asset_debt_composition' }]);
+    await putLayout(rowed(['asset_debt_composition']));
 
     const body = (await get('/api/overview')).json<DataBody>();
     expect(body.asset_debt_composition).toBeDefined();
@@ -443,11 +485,7 @@ describe('movers', () => {
 
 describe('batch B series', () => {
   it('computes one aggregate series for the three tiles that read it', async () => {
-    await putLayout([
-      { key: 'net_worth_over_time' },
-      { key: 'assets_vs_debts' },
-      { key: 'identity_drift' },
-    ]);
+    await putLayout(rowed(['net_worth_over_time', 'assets_vs_debts', 'identity_drift']));
 
     const body = (await get('/api/overview?window=all')).json<DataBody>();
 
@@ -462,7 +500,7 @@ describe('batch B series', () => {
   });
 
   it('computes one composition series for both tiles that read it', async () => {
-    await putLayout([{ key: 'net_worth_composition' }, { key: 'bitcoin_value_over_time' }]);
+    await putLayout(rowed(['net_worth_composition', 'bitcoin_value_over_time']));
 
     const body = (await get('/api/overview?window=all')).json<DataBody>();
     expect(body.composition).toBeDefined();
@@ -470,7 +508,7 @@ describe('batch B series', () => {
   });
 
   it('asks for no series at all when no Batch B tile is on the page', async () => {
-    await putLayout([{ key: 'uncategorized_backlog' }]);
+    await putLayout(rowed(['uncategorized_backlog']));
 
     const body = (await get('/api/overview?window=all')).json<DataBody>();
     expect(body.aggregate).toBeUndefined();
@@ -480,7 +518,7 @@ describe('batch B series', () => {
   });
 
   it('says whether a trajectory has enough history rather than sending an empty list', async () => {
-    await putLayout([{ key: 'debt_trajectory' }]);
+    await putLayout(rowed(['debt_trajectory']));
 
     const body = (await get('/api/overview?window=all')).json<DataBody>();
     // "Not enough history to project" and "projected never to pay off" are
@@ -489,12 +527,113 @@ describe('batch B series', () => {
   });
 
   it('shows nothing under Cycle when no Delegate run exists', async () => {
-    await putLayout([{ key: 'net_worth_over_time' }]);
+    await putLayout(rowed(['net_worth_over_time']));
 
     // The sibling of the `windowStart` distinction, fixed in this release: a
     // null start date cannot tell "everything stored" from "there is no cycle".
     const body = (await get('/api/overview?window=cycle')).json<DataBody>();
     expect(body.aggregate?.days).toBe(0);
+  });
+});
+
+describe('batch C figures', () => {
+  it('reads one set of cycle summaries for both tiles that use them', async () => {
+    await putLayout(rowed(['cycle_surplus', 'income_vs_spending']));
+
+    const body = (await get('/api/overview?window=all')).json<DataBody>();
+    // One key, two tiles. Surplus is a reading of the same summaries income
+    // against spending is drawn from.
+    expect(body.cycles).toBeDefined();
+  });
+
+  it('lists the over-spent lines and nothing else', async () => {
+    await makeAccount({ name: 'Everyday', type: 'asset', balanceCents: 5_000_000n });
+    const over = await makeDelegation({ name: 'Household' });
+    await makeDelegation({ name: 'Healthy' });
+    await prisma.delegation.update({
+      where: { id: over.id },
+      data: { balanceCents: -2_655n },
+    });
+
+    await putLayout(rowed(['delegations_negative']));
+    const body = (await get('/api/overview')).json<DataBody>();
+
+    // The only red on the budget, per §11 — a line at zero is not over-spent.
+    expect(body.delegations_negative?.map((line) => line.name)).toEqual(['Household']);
+  });
+
+  it('reads the daily rows once for the three views derived from them', async () => {
+    await putLayout(rowed(['debt_trajectory', 'change_per_cycle', 'thirty_day_momentum']));
+
+    const body = (await get('/api/overview?window=all')).json<DataBody>();
+    expect(body.debt_trajectory).toBeDefined();
+    expect(body.change_per_cycle).toBeDefined();
+    expect(body.thirty_day_momentum).toBeDefined();
+  });
+
+  it('asks for none of them when none is on the page', async () => {
+    await putLayout(rowed(['uncategorized_backlog']));
+
+    const body = (await get('/api/overview?window=all')).json<DataBody>();
+    expect(body.cycles).toBeUndefined();
+    expect(body.delegations_negative).toBeUndefined();
+    expect(body.change_per_cycle).toBeUndefined();
+    expect(body.thirty_day_momentum).toBeUndefined();
+    expect(body.delegation_burn_rate).toBeUndefined();
+  });
+});
+
+describe('burn rate', () => {
+  async function snapshot(delegationId: string, date: string, balanceCents: bigint): Promise<void> {
+    await prisma.delegationSnapshot.create({
+      data: { delegationId, snapshotDate: new Date(date), balanceCents, provenance: 'observed' },
+    });
+  }
+
+  it('counts only what a line spends, never what refills it', async () => {
+    const grocery = await makeDelegation({ name: 'Grocery' });
+    // Filled to 400, spent to 100, refilled to 400, spent to 250.
+    await snapshot(grocery.id, '2026-08-01', 40_000n);
+    await snapshot(grocery.id, '2026-08-02', 10_000n);
+    await snapshot(grocery.id, '2026-08-03', 40_000n);
+    await snapshot(grocery.id, '2026-08-04', 25_000n);
+
+    const { rates } = await buildBurnRates(prisma, { window: 'all', timeZone: ZONE });
+
+    /*
+     * $300 down then $150 down is $450 spent over four days. Netting the rise
+     * against the falls would report this line as burning nothing at all —
+     * which is true of almost every healthy envelope and useless as an answer.
+     *
+     * Scaled to one cycle: $450 over four days, at 26 cycles a year. A cycle is
+     * 365/26 = 14.04 days, carried as hundredths so the scaling stays integer
+     * throughout — 45,000 x 1,404 / 400.
+     */
+    expect(rates).toHaveLength(1);
+    expect(rates[0]?.perCycleCents).toBe(157_950n);
+  });
+
+  it('leaves out a line that never went down', async () => {
+    const saving = await makeDelegation({ name: 'Only ever filled' });
+    await snapshot(saving.id, '2026-08-01', 10_000n);
+    await snapshot(saving.id, '2026-08-02', 20_000n);
+
+    const { rates } = await buildBurnRates(prisma, { window: 'all', timeZone: ZONE });
+    expect(rates).toEqual([]);
+  });
+
+  it('needs two observations before it will report a rate', async () => {
+    const once = await makeDelegation({ name: 'Seen once' });
+    await snapshot(once.id, '2026-08-01', 10_000n);
+
+    const { rates } = await buildBurnRates(prisma, { window: 'all', timeZone: ZONE });
+    expect(rates).toEqual([]);
+  });
+
+  it('says the cycle is missing rather than reporting an empty list', async () => {
+    const result = await buildBurnRates(prisma, { window: 'cycle', timeZone: ZONE });
+    expect(result.cycleMissing).toBe(true);
+    expect(result.rates).toEqual([]);
   });
 });
 

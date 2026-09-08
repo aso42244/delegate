@@ -1,9 +1,13 @@
-import type { Cents } from '@budget/shared';
+import { CYCLES_PER_YEAR, type Cents } from '@budget/shared';
 import {
   buildBacklog,
   buildComposition,
+  buildCycles,
+  buildNegativeDelegations,
   buildSpending,
   windowStart,
+  type CycleSummary,
+  type NegativeDelegation,
   type Composition,
   type SpendingEntry,
   type SpendingWindow,
@@ -12,14 +16,20 @@ import {
   aggregateSeries,
   bucketFor,
   compositionSeries,
+  changePerCycle,
   dailyAggregateRows,
   debtTrajectory,
+  downsample,
   equitySeries,
+  momentum,
   type CompositionPoint,
+  type CycleChange,
   type DebtTrajectory,
+  type SeriesPoint,
   type Series,
   type SnapshotRange,
 } from './snapshot-series.js';
+import { getBudgetSettings } from './settings.js';
 import { buildUtilities, type UtilitiesView } from './utilities.js';
 import type { Db } from '../db/client.js';
 
@@ -67,6 +77,17 @@ export const OVERVIEW_TILES = [
   'bitcoin_value_over_time',
   'home_equity_over_time',
   'debt_trajectory',
+
+  // Batch C: the small ones. Mostly a single figure and the sentence that says
+  // what to do about it — the tiles that make this a daily read rather than a
+  // weekly one, since a chart answers "what happened" and a number answers
+  // "can I spend".
+  'delegations_negative',
+  'cycle_surplus',
+  'income_vs_spending',
+  'change_per_cycle',
+  'thirty_day_momentum',
+  'delegation_burn_rate',
 
   'uncategorized_backlog',
 ] as const;
@@ -119,14 +140,26 @@ export interface Mover {
  * rather than reported as zero — no movement and no evidence are different
  * answers, and only one of them is a fact.
  */
-export async function buildMovers(
-  db: Db,
-  options: { readonly window: SpendingWindow; readonly timeZone: string },
-  now: Date = new Date(),
-): Promise<{ movers: Mover[]; cycleMissing: boolean }> {
-  const start = await windowStart(db, options.window, options.timeZone, now);
-  if (start.kind === 'no_cycle') return { movers: [], cycleMissing: true };
+interface WindowedDelegation {
+  readonly name: string;
+  readonly color: string | null;
+  /** Balances in date order across the window. */
+  readonly balances: Cents[];
+}
 
+/**
+ * Every delegation's balances across the window, read once.
+ *
+ * Both delegation tiles need exactly this and nothing more — movers reduces it
+ * to last-minus-first, burn rate to the sum of its downward steps. Reading it
+ * twice would be the waste this endpoint exists to stop, and reading the
+ * drill-down instead would fetch a full point series per line so a chart could
+ * be drawn through it, which neither tile draws.
+ */
+async function windowedDelegations(
+  db: Db,
+  start: Awaited<ReturnType<typeof windowStart>>,
+): Promise<Map<string, WindowedDelegation>> {
   const rows = await db.delegationSnapshot.findMany({
     where: {
       ...(start.kind === 'since' ? { snapshotDate: { gte: start.date } } : {}),
@@ -140,27 +173,49 @@ export async function buildMovers(
     },
   });
 
-  // First and last per delegation, in one pass over rows already in date order.
-  const seen = new Map<string, { first: Cents; last: Cents; name: string; color: string | null }>();
+  const byDelegation = new Map<string, WindowedDelegation>();
   for (const row of rows) {
-    const existing = seen.get(row.delegationId);
-    if (existing === undefined) {
-      seen.set(row.delegationId, {
-        first: row.balanceCents,
-        last: row.balanceCents,
-        name: row.delegation.name,
-        color: row.delegation.grouping?.color ?? null,
-      });
+    const existing = byDelegation.get(row.delegationId);
+    if (existing) {
+      existing.balances.push(row.balanceCents);
       continue;
     }
-    existing.last = row.balanceCents;
+    byDelegation.set(row.delegationId, {
+      name: row.delegation.name,
+      color: row.delegation.grouping?.color ?? null,
+      balances: [row.balanceCents],
+    });
   }
+  return byDelegation;
+}
 
-  const movers = [...seen.entries()].map(([delegationId, entry]) => ({
+/**
+ * Which lines moved most over the window, and in which direction.
+ *
+ * Read from the nightly snapshots rather than from the ledger, because the
+ * question is what a balance *was* on a past date — and that is exactly what
+ * ADR 035 records nightly so it never has to be reconstructed again.
+ *
+ * The change is last minus first **within the window**, not against today. A
+ * line with no snapshot in the window has not been observed and is left out
+ * rather than reported as zero — no movement and no evidence are different
+ * answers, and only one of them is a fact.
+ */
+export async function buildMovers(
+  db: Db,
+  options: { readonly window: SpendingWindow; readonly timeZone: string },
+  now: Date = new Date(),
+): Promise<{ movers: Mover[]; cycleMissing: boolean }> {
+  const start = await windowStart(db, options.window, options.timeZone, now);
+  if (start.kind === 'no_cycle') return { movers: [], cycleMissing: true };
+
+  const byDelegation = await windowedDelegations(db, start);
+
+  const movers = [...byDelegation.entries()].map(([delegationId, entry]) => ({
     delegationId,
     name: entry.name,
     color: entry.color,
-    changeCents: entry.last - entry.first,
+    changeCents: (entry.balances[entry.balances.length - 1] ?? 0n) - (entry.balances[0] ?? 0n),
   }));
 
   /*
@@ -180,6 +235,73 @@ export async function buildMovers(
   return { movers: movers.filter((mover) => mover.changeCents !== 0n), cycleMissing: false };
 }
 
+export interface BurnRate {
+  readonly delegationId: string;
+  readonly name: string;
+  readonly color: string | null;
+  /** What this line spends in one pay cycle, at the rate observed. */
+  readonly perCycleCents: Cents;
+}
+
+/**
+ * How fast each line empties, per pay cycle.
+ *
+ * Only the **downward** steps count. A delegation is refilled every Delegate
+ * press, so netting the rises against the falls would report a line that is
+ * funded exactly as fast as it is spent as burning nothing at all — which is
+ * true of almost every healthy envelope and useless as an answer.
+ *
+ * Scaled from the days actually covered to the length of one cycle, so a
+ * thirty-day window and a year-to-date one are read against the same unit.
+ */
+export async function buildBurnRates(
+  db: Db,
+  options: { readonly window: SpendingWindow; readonly timeZone: string },
+  now: Date = new Date(),
+): Promise<{ rates: BurnRate[]; cycleMissing: boolean }> {
+  const start = await windowStart(db, options.window, options.timeZone, now);
+  if (start.kind === 'no_cycle') return { rates: [], cycleMissing: true };
+
+  const [byDelegation, settings] = await Promise.all([
+    windowedDelegations(db, start),
+    getBudgetSettings(db),
+  ]);
+  const cyclesPerYear = CYCLES_PER_YEAR[settings.payCadence];
+  // Hundredths of a day, so the scaling stays in integers throughout.
+  const cycleDays = BigInt(Math.round((365 / cyclesPerYear) * 100));
+
+  const rates: BurnRate[] = [];
+  for (const [delegationId, entry] of byDelegation) {
+    if (entry.balances.length < 2) continue;
+
+    let spent = 0n;
+    for (let index = 1; index < entry.balances.length; index += 1) {
+      const previous = entry.balances[index - 1] ?? 0n;
+      const current = entry.balances[index] ?? 0n;
+      if (current < previous) spent += previous - current;
+    }
+    if (spent === 0n) continue;
+
+    const days = BigInt(entry.balances.length);
+    rates.push({
+      delegationId,
+      name: entry.name,
+      color: entry.color,
+      perCycleCents: (spent * cycleDays) / (days * 100n),
+    });
+  }
+
+  rates.sort((a, b) =>
+    b.perCycleCents > a.perCycleCents
+      ? 1
+      : b.perCycleCents < a.perCycleCents
+        ? -1
+        : a.name.localeCompare(b.name),
+  );
+
+  return { rates, cycleMissing: false };
+}
+
 /**
  * Every key is optional, and an absent key means "not asked for" rather than
  * "empty".
@@ -192,6 +314,22 @@ export async function buildMovers(
 /** Which tiles read which shared series. One computation serves all of them. */
 const AGGREGATE_TILES = ['net_worth_over_time', 'assets_vs_debts', 'identity_drift'] as const;
 const COMPOSITION_TILES = ['net_worth_composition', 'bitcoin_value_over_time'] as const;
+/** Three derived views over one set of daily rows, so the rows are read once. */
+const DAILY_TILES = ['debt_trajectory', 'change_per_cycle', 'thirty_day_momentum'] as const;
+/*
+ * Movers and burn rate read the same delegation balances, and each fetches them
+ * for itself rather than sharing one read.
+ *
+ * Deliberate, and the cheaper trade of the two: the duplication is one indexed
+ * query over one household's snapshots, and it only happens when both tiles are
+ * on the same page. Sharing it would mean threading a pre-fetched map through
+ * two exported functions that are otherwise independently callable and
+ * independently tested — complexity paid on every read of the code to save a
+ * query on some of the requests. `windowedDelegations` is the shared piece, and
+ * that is the part worth sharing.
+ */
+/** Both are a reading of the same cycle summaries. */
+const CYCLE_TILES = ['cycle_surplus', 'income_vs_spending'] as const;
 
 export interface OverviewComposition {
   readonly points: readonly CompositionPoint[];
@@ -220,6 +358,14 @@ export interface OverviewData {
     readonly days: number;
   };
   readonly debt_trajectory?: DebtTrajectory;
+  readonly change_per_cycle?: readonly CycleChange[];
+  readonly thirty_day_momentum?: readonly SeriesPoint[];
+  readonly delegations_negative?: readonly NegativeDelegation[];
+  readonly cycles?: readonly CycleSummary[];
+  readonly delegation_burn_rate?: {
+    readonly rates: readonly BurnRate[];
+    readonly cycleMissing: boolean;
+  };
   readonly spending_by_grouping?: OverviewSpending;
   readonly spending_by_delegation?: OverviewSpending;
   readonly asset_debt_composition?: Composition;
@@ -251,6 +397,8 @@ export async function buildOverview(
   const range: SnapshotRange = options.window;
   const wantsAggregate = AGGREGATE_TILES.some((key) => wanted.has(key));
   const wantsComposition = COMPOSITION_TILES.some((key) => wanted.has(key));
+  const wantsDaily = DAILY_TILES.some((key) => wanted.has(key));
+  const wantsCycles = CYCLE_TILES.some((key) => wanted.has(key));
 
   const [
     byGrouping,
@@ -263,6 +411,9 @@ export async function buildOverview(
     composition,
     equity,
     daily,
+    negative,
+    cycles,
+    burnRates,
   ] = await Promise.all([
     wanted.has('spending_by_grouping')
       ? buildSpending(
@@ -287,7 +438,12 @@ export async function buildOverview(
     wantsAggregate ? aggregateSeries(db, range, now) : undefined,
     wantsComposition ? compositionSeries(db, range, now) : undefined,
     wanted.has('home_equity_over_time') ? equitySeries(db, range, now) : undefined,
-    wanted.has('debt_trajectory') ? dailyAggregateRows(db, range, now) : undefined,
+    wantsDaily ? dailyAggregateRows(db, range, now) : undefined,
+    wanted.has('delegations_negative') ? buildNegativeDelegations(db) : undefined,
+    wantsCycles ? buildCycles(db) : undefined,
+    wanted.has('delegation_burn_rate')
+      ? buildBurnRates(db, { window: options.window, timeZone: options.timeZone }, now)
+      : undefined,
   ]);
 
   return {
@@ -300,7 +456,22 @@ export async function buildOverview(
     // The trajectory is derived from the daily rows rather than stored, and it
     // needs the bucket the rest of the page is drawn at so the projection lines
     // up with the history behind it.
-    ...(daily ? { debt_trajectory: debtTrajectory(daily, bucketFor(daily.length)) } : {}),
+    ...(daily && wanted.has('debt_trajectory')
+      ? { debt_trajectory: debtTrajectory(daily, bucketFor(daily.length)) }
+      : {}),
+    ...(daily && wanted.has('change_per_cycle')
+      ? { change_per_cycle: await changePerCycle(db, daily) }
+      : {}),
+    ...(daily && wanted.has('thirty_day_momentum')
+      ? {
+          // Computed on the daily rows before bucketing: a rolling window over
+          // weekly averages is a different and much blunter thing.
+          thirty_day_momentum: downsample(momentum(daily), bucketFor(daily.length)),
+        }
+      : {}),
+    ...(negative ? { delegations_negative: negative } : {}),
+    ...(cycles ? { cycles } : {}),
+    ...(burnRates ? { delegation_burn_rate: burnRates } : {}),
     ...(utilities ? { utilities_vs_delegated: utilities } : {}),
     ...(movers ? { delegation_movers: movers } : {}),
     ...(backlog ? { uncategorized_backlog: backlog } : {}),

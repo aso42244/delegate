@@ -90,6 +90,21 @@
   --text-hero: 0.9375rem; /* 15px the Remaining column */
   --text-section: 1rem; /* 16px section titles */
   --text-page: 1.5rem; /* 24px page titles */
+  /*
+   * 24px, the same size as a page title and a different role.
+   *
+   * A figure tile exists to show one number, and that number is the content of
+   * the tile the way a title is the content of a header — so it takes the top of
+   * the scale rather than a size invented for it. Deliberately **not** larger
+   * than the page title: a dashboard where every tile shouts louder than the
+   * page it sits on has no hierarchy left to spend.
+   *
+   * It is a second token rather than a reuse of `--text-page` because
+   * `ui-system.test.ts` holds `text-page` to the page header alone, and that
+   * rule is worth keeping — one component decides how far below the title a page
+   * starts. Two names for one value, each saying where it belongs.
+   */
+  --text-figure: 1.5rem; /* 24px a tile's single figure */
 
   /*
    * The expanded sidebar is as wide as its longest label needs and no wider.
