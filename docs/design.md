@@ -705,18 +705,27 @@ width is scarcest.
 | `sp`  | Split across more than one delegation      | Transactions     |
 | `m`   | Kept by hand                               | Budget, Settings |
 | `s`   | Balance may not be current                 | Budget, Settings |
+| `a`   | Adjusted by transactions entered by hand   | Budget, Settings |
 | `r`   | Discovered by a sync — its type is a guess | Budget, Settings |
 | `btc` | Bitcoin holding — quantity × price         | Budget           |
 | `h`   | Property — a valuation, not a balance      | Budget           |
 | `u`   | Utility — tracked on the Utilities page    | Budget, Settings |
 | `n`   | Has a note                                 | Budget           |
+| `tg`  | Saving towards a target                    | Budget           |
 
-`p` and `r` take the yellow; the rest are the quiet grey. Yellow means
+`p`, `r` and `a` take the yellow; the rest are the quiet grey. Yellow means
 something is worth noticing, not that something is broken.
 
 `s` was yellow until v0.34.0 and is grey now. Yellow is for something to do,
 and how fresh a figure is is not something anybody can act on — where `p` and
 `r` both are. The owner asked for it and the distinction is better for it.
+
+`a` is yellow where `s` beside it is grey, and the pair is the clearest example
+of what the colour means. `s` says a figure is old, which is nobody's fault and
+nothing to do. `a` says the figure is **part bank and part household** — it
+includes charges typed in while a feed was behind — and the thing to do is
+archive those rows once the feed delivers them. A balance quietly carrying both
+with nothing on the row to say so is a number somebody trusts and should not.
 
 `s` read "Not confirmed recently" until v0.30.0, which was written for a manual
 balance nobody had checked. It now covers a synced one too, where the bridge

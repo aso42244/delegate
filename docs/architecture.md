@@ -68,6 +68,51 @@ false`. A credit card is both.
 `type` is `asset` or `debt`; on SimpleFIN import it is guessed from the account
 type and sign and the owner can override it. `source` is `simplefin` or `manual`.
 
+**`in_budget` is a wall, not a description** — [ADR 050](decisions/050-the-budget-boundary-is-a-wall.md).
+The identity sums `in_budget` accounts only, so a transaction on one it does not
+sum cannot be categorized: moving a delegation while no summed balance moves with
+it puts the reading out by the full amount. `setAllocations` refuses it, a
+transfer cannot be paired across the boundary, and those rows leave the
+uncategorized queue. Money leaving the budget for a retirement account is
+**spending** — it is no longer available to delegate, and the envelope it came
+out of is the record of it.
+
+### Three dates on a synced account
+
+They answer different questions and conflating any two of them has cost time
+([ADR 032](decisions/032-a-feed-date-is-kept-apart-from-the-one-we-stamp.md)):
+
+| Column               | Question                                          |
+| -------------------- | ------------------------------------------------- |
+| `balance_as_of`      | when was this figure last confirmed, by anyone    |
+| `feed_balance_as_of` | what did the feed say about the age of its answer |
+| `feed_last_seen_at`  | does the feed still know this account exists      |
+
+The first falls back to now when the feed says nothing, so it cannot tell a fresh
+answer from an absent one. The second is null when the bridge says nothing about
+freshness, and null is never read as stale — manufacturing a warning out of
+silence is the mirror of the bug that column fixed. The third is stamped because
+the feed **named** the account, whatever else it said, so absence is a fact
+rather than an inference. Null there means "not asked yet", never "missing".
+
+### Standby rows
+
+A synced account's `balance_cents` is the institution's figure, restamped on
+every sync. A manual transaction on such an account therefore **must not write
+it** — it did, and the next run erased it within the hour, which read as the
+entry silently not working.
+
+The correction is applied on the way out instead: `balanceWithStandby` adds the
+sum of hand-entered rows to the stored figure, and both the read model and
+`computeBudgetIdentity` go through it so a page and the reconciliation above it
+cannot disagree. A manual row on a **manual** account is the ordinary case and
+still moves the balance directly, because there the stored balance is the only
+one there is.
+
+There is no flag: a manual row on a synced account is a standby row by
+construction. No state to set, none to forget to clear, and no way for the two to
+disagree.
+
 Manual accounts carry `balance_as_of` and a nullable, per-account
 `staleness_interval_days`. When `now() − balance_as_of` exceeds the interval, the
 account is flagged stale in the UI. **One mechanism serves physical cash, the

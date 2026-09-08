@@ -221,6 +221,24 @@ is not asked to say it a third time.
 that is the tooltip, one hover or one focus away, and it is where the whole
 sentence goes.
 
+**The detail is `w-96`, it wraps, and it stays on the screen.** Tall rather than
+wide, deliberately: a detail is read once and dismissed by moving the mouse, so
+wrapping costs nothing while running past the edge costs whatever was cut off.
+`w-96` is the prose width from §2 rather than a number invented here.
+
+It was `w-max` with a viewport-width cap until v0.55.1, and that cap could never
+have worked — it bounds the detail's _width_ while `left-0` puts its left edge
+wherever the pill happens to sit, and the two were never compared against each
+other. The `6 not reporting` message ran about 1,500px on one line, off the right
+of a wide display, with the end of the sentence unreachable by any means.
+
+Its position **clamps rather than flips**. Hanging it from the pill's other edge
+was tried first and is the same defect mirrored: on a phone the pill is narrower
+than the detail, so right-anchoring puts the left edge off the left. And it is
+measured from the **pill**, never from the detail — the detail is `display: none`
+until revealed and a hidden element has no box, while the pill is always on
+screen and the detail's width is a constant.
+
 Order: the page's own reading first, then whatever the application is reporting,
 in the severity order the server sends.
 
