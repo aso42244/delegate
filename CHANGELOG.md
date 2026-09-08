@@ -6,6 +6,10 @@ phase (`v0.1.0-phase1`, and so on).
 
 ## [Unreleased]
 
+Nothing yet.
+
+## [0.58.0] — 2026-09-08
+
 ### Added
 
 - **The Delegations tile, and its picker on the tile itself.** It shows the lines
