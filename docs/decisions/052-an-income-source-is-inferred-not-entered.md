@@ -81,3 +81,39 @@ some other way would eventually produce one.
   than an empty chart. `cycleMissing` is kept distinct from "nothing came in",
   because one means the window does not exist yet and the other means it does and
   held nothing.
+
+## Amendment, 2026-09-09 — two nodes, by origin
+
+**The decision above is reversed on its central point.** Income sources are no
+longer inferred per payer. There are two nodes: `Income` and `Income (manual)`.
+
+The reasoning held right up to the moment real data was drawn. A year of the
+owner's income produced a left column of bank strings — `ACH Deposit 12208 ELO
+PROF L PAYROLL 13977925` — about 420px of text in a 448px gap, and the same
+employer drawn **twice**, because the rows he typed during the SimpleFIN outage
+carry a `MANUAL - ` prefix and `merchantKey` reads the first three usable words.
+
+Both problems were foreseen here and judged acceptable: "a source first appears
+as whatever the bank's descriptor says, which is the honest starting point". What
+that missed is that **naming them is work with no end.** A bill is renamed once
+and stays renamed because it recurs under one descriptor; a payroll descriptor
+carries a reference number that changes, and an employer that renames itself
+starts a new source. The correction never finishes.
+
+The grouping is now `transactions.source` — a fact the database records rather
+than a convention in somebody's typing. Two nodes, each named for what it is:
+money the bank reported, and money entered while its feed was behind.
+
+**The second node is a signal rather than a category.** It says the figures are
+part bank and part household, which is the same thing the `a` chip says on an
+account row, and it disappears on its own once the feed catches up and those rows
+are archived. The owner asked for it kept for exactly that reason.
+
+What this gives up is real: a household with several genuinely different income
+streams sees one node where it might want three. That is a worse chart for them
+and a better one here, and it is reversible — `merchantKey` grouping is four
+lines away if it is ever wanted, and it would need the renaming this ADR
+originally deferred.
+
+**Renaming is therefore not built, and now has no reason to be.** There is
+nothing left to rename.

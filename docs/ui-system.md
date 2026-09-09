@@ -133,6 +133,16 @@ three tabs are promoted onto the page and Overview becomes the fourth — there 
 no room to dock 398px beside anything at 390px wide, and the answer somebody
 opens the application for should not be behind a button.
 
+**The sidebar is a region tiles can be dragged into.** The budget panel is
+pinned at its top and is not a tile; everything below it is, one to a row.
+
+**Everything on Overview is cycle-shaped except the outflow band**, which draws
+the calendar month. That is the deliberate exception rather than a drift: the
+rest answer "how am I doing against this cycle's plan" and need the cycle, while
+a band of days answers "what did each day cost" — and days belong to months. It
+names its month, so there is nothing to remember, and it is the one such tile
+that needs no payday anchor.
+
 **A row holds two tiles**, not four. The cap is arithmetic and it moved when the
 panel took the right of the page: a quarter of the ~1000px left on a 1440px
 window is 250px, and a ranked bar with a name and a figure stops being readable

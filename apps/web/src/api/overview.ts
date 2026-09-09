@@ -11,6 +11,8 @@ import { api } from './client.js';
 
 export interface OverviewTileDto {
   readonly key: string;
+  /** Which side of the page: the main grid, or the column under the panel. */
+  readonly region: 'main' | 'sidebar';
   /** Which row. A row divides its width evenly among its members. */
   readonly row: number;
   /** Order within that row. */
@@ -247,7 +249,24 @@ export interface UpcomingBillDto {
   readonly delegationName: string | null;
 }
 
+export interface PickableDto {
+  readonly id: string;
+  readonly name: string;
+}
+
+export interface BalanceHistoryDto {
+  readonly name: string | null;
+  readonly points: readonly SeriesPointDto[];
+}
+
 export interface OverviewDataDto {
+  readonly account_balance_history?: BalanceHistoryDto;
+  readonly delegation_balance_history?: BalanceHistoryDto;
+  /** Only things that actually have history, so a picker never offers a blank. */
+  readonly pickable?: {
+    readonly accounts: readonly PickableDto[];
+    readonly delegations: readonly PickableDto[];
+  };
   readonly figures?: readonly FigureDto[];
   readonly daily_outflow?: readonly OutflowDayDto[];
   readonly income_vs_spending_pace?: readonly PacePointDto[];

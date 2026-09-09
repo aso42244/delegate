@@ -135,6 +135,16 @@ export interface FormatMoneyOptions {
   readonly accountingNegative?: boolean;
   /** Always show a leading `+` on positive values. Default false. */
   readonly explicitPlus?: boolean;
+  /**
+   * Show the cents. Default true.
+   *
+   * False rounds to the nearest dollar for display — for a dense comparison
+   * where the cents are noise rather than information, like "$566 spent of
+   * $725". It never touches a balance somebody reconciles against a statement,
+   * and it rounds rather than truncates: $0.99 shown as $0 would understate
+   * every figure it touched.
+   */
+  readonly cents?: boolean;
 }
 
 /** USD only, by constraint — there is no locale or currency parameter. */
@@ -144,17 +154,24 @@ export function formatCents(value: Cents, options: FormatMoneyOptions = {}): str
     grouping = true,
     accountingNegative = false,
     explicitPlus = false,
+    cents = true,
   } = options;
 
   const isNegative = value < 0n;
   const magnitude = isNegative ? -value : value;
-  const whole = magnitude / 100n;
-  const fraction = magnitude % 100n;
+
+  // Rounded, never truncated, and in integer arithmetic throughout — half a
+  // cent of float would be a strange way to lose a hard constraint.
+  const rounded = cents ? magnitude : ((magnitude + 50n) / 100n) * 100n;
+  const whole = rounded / 100n;
+  const fraction = rounded % 100n;
 
   const wholeText = grouping
     ? whole.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',')
     : whole.toString();
-  const body = `${currencySymbol ? '$' : ''}${wholeText}.${fraction.toString().padStart(2, '0')}`;
+  const body = `${currencySymbol ? '$' : ''}${wholeText}${
+    cents ? `.${fraction.toString().padStart(2, '0')}` : ''
+  }`;
 
   if (isNegative) return accountingNegative ? `(${body})` : `-${body}`;
   return explicitPlus && value > 0n ? `+${body}` : body;

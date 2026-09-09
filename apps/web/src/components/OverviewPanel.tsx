@@ -178,10 +178,17 @@ function DelegationsTab({
       <CycleStrip cycle={data?.payCycle ?? null} />
 
       {lines.length > 0 && (
-        <div className="flex border-b border-line">
-          <Stat label="Planned" value={formatCents(planned)} />
+        /* Budgeted, spent, remaining — the words the household uses. "Held" was
+           mine and read as jargon, and "planned" said something the amount to
+           delegate does not quite mean. */
+        <div className="grid grid-cols-3 border-b border-line">
+          <Stat label="Budgeted" value={formatCents(planned)} />
           <Stat label="Spent" value={formatCents(spent)} />
-          <Stat label="Held" value={formatCents(held)} tone={held < 0n ? 'negative' : undefined} />
+          <Stat
+            label="Remaining"
+            value={formatCents(held)}
+            tone={held < 0n ? 'negative' : undefined}
+          />
         </div>
       )}
 
@@ -224,14 +231,23 @@ function Stat({
   readonly value: string;
   readonly tone?: 'negative' | undefined;
 }): ReactNode {
+  /*
+   * Both lines right-aligned, so the label sits over its own figure.
+   *
+   * They were a left-aligned label above a right-aligned number in a flexed
+   * cell, which put "BUDGETED" at one end of the column and $2,499.06 at the
+   * other — three pairs that each read as two unrelated things.
+   */
   return (
-    <div className="flex-1 p-3">
-      <div className="text-micro font-semibold tracking-[0.07em] text-muted uppercase">{label}</div>
-      <div
-        className={`money mt-1 text-base font-semibold ${tone === 'negative' ? 'text-negative' : 'text-ink'}`}
+    <div className="flex flex-col items-end gap-1 p-3">
+      <span className="text-micro font-semibold tracking-[0.07em] text-muted uppercase">
+        {label}
+      </span>
+      <span
+        className={`money text-base font-semibold ${tone === 'negative' ? 'text-negative' : 'text-ink'}`}
       >
         {value}
-      </div>
+      </span>
     </div>
   );
 }
@@ -249,26 +265,36 @@ function Row({
 
   return (
     <li className="row-cell flex items-center gap-2 px-3 hover:bg-surface">
-      <span className="w-24 shrink-0 truncate text-quiet font-medium text-ink" title={line.name}>
+      <span className="w-32 shrink-0 truncate text-quiet font-medium text-ink" title={line.name}>
         {line.name}
       </span>
-      <PaceBar
-        spentCents={spent}
-        plannedCents={planned}
-        balanceCents={balance}
-        color={line.color}
-        cycleProgressBasisPoints={tick}
-        label={`${line.name}: ${formatCents(spent)} spent of ${formatCents(planned)} planned`}
-      />
-      {/* Spent and planned, then what the line actually holds. The figures are
-          the reason the bar can carry a fixed-width reserve zone: the bar says
-          there is reserve, and this says how much. */}
-      <span className="money w-20 shrink-0 text-micro text-muted">
-        <b className="font-semibold text-ink">{formatCents(spent, { currencySymbol: false })}</b>/
-        {planned === 0n ? '—' : formatCents(planned, { currencySymbol: false })}
+      {/*
+        Spent-against-budgeted lives on the bar rather than beside it.
+        
+        Three money columns on a 400px panel left the name truncated to about ten
+        characters — "Kenzie Perso…", "Medical Spen…" — to make room for a pair
+        of figures that is the bar's own subject. The bar says the ratio; hovering
+        it says the amounts, rounded to the dollar because cents are noise in a
+        comparison. What stays in the column is the one figure somebody reads to
+        decide anything: what is left.
+      */}
+      <span
+        className="min-w-0 flex-1"
+        title={`${formatCents(spent, { cents: false })} spent of ${
+          planned === 0n ? 'no budget' : formatCents(planned, { cents: false })
+        }`}
+      >
+        <PaceBar
+          spentCents={spent}
+          plannedCents={planned}
+          balanceCents={balance}
+          color={line.color}
+          cycleProgressBasisPoints={tick}
+          label={`${line.name}: ${formatCents(spent)} spent of ${formatCents(planned)} budgeted`}
+        />
       </span>
       <span
-        className={`money w-16 shrink-0 text-quiet font-semibold ${balance < 0n ? 'text-negative' : 'text-ink'}`}
+        className={`money w-20 shrink-0 text-quiet font-semibold ${balance < 0n ? 'text-negative' : 'text-ink'}`}
       >
         {formatCents(balance)}
       </span>

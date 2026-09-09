@@ -20,6 +20,25 @@
  * which is what lets one stored arrangement serve both screens.
  */
 
+/**
+ * Where a tile lives.
+ *
+ * Two regions of different shapes: the main grid takes up to two tiles a row,
+ * and the sidebar is a single column beneath the budget panel — one tile a row,
+ * always, because it is about 400px wide and two tiles in that is neither.
+ */
+export const OVERVIEW_REGIONS = ['main', 'sidebar'] as const;
+export type OverviewRegion = (typeof OVERVIEW_REGIONS)[number];
+
+export function isOverviewRegion(value: string): value is OverviewRegion {
+  return (OVERVIEW_REGIONS as readonly string[]).includes(value);
+}
+
+/** How many tiles a row of each region can hold. */
+export function maxPerRowIn(region: OverviewRegion): number {
+  return region === 'sidebar' ? 1 : MAX_TILES_PER_ROW;
+}
+
 /** Columns in the desktop grid. */
 export const OVERVIEW_COLUMNS = 12;
 

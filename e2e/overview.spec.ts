@@ -306,12 +306,35 @@ test('tiles can be dragged into one row without entering Arrange', async ({ sign
   await expect(spending).toHaveClass(/lg:col-span-12/);
 
   /*
+   * Both bodies present before anything is measured.
+   *
+   * The headings appear as soon as a tile is added; the bodies arrive with the
+   * next data fetch and change the tile's height when they do. Measuring a box
+   * before that lands, then dragging to a point inside it, gives Playwright a
+   * target that moves out from under the pointer — which it waits on until the
+   * test times out rather than failing at the assertion. The rule this follows
+   * is the suite's own: after an action that triggers a write, assert on the
+   * resulting state before the next action.
+   */
+  await expect(spending.getByText('No cycle has been run yet.')).toBeVisible();
+  await expect(backlog.getByText('Nothing waiting.')).toBeVisible();
+
+  /*
    * Dragging works on the page itself, not only inside Arrange. The buttons
    * stay the route that always works — this is the fast one, and it is the
    * reason a grip is drawn on hover: a card that moves when dragged with
    * nothing to suggest it would is a surprise rather than a feature.
    */
-  await backlog.dragTo(spending, { targetPosition: { x: 20, y: 20 } });
+  /*
+   * Dropped on the left half, vertically centred. The top and bottom quarters
+   * now mean "a row of its own", so a drop meant to *join* a row has to land in
+   * the middle band — which is the larger target precisely because joining is
+   * the commoner act.
+   */
+  const box = (await spending.boundingBox())!;
+  await backlog.dragTo(spending, {
+    targetPosition: { x: 20, y: box.height / 2 },
+  });
 
   await expect(spending).toHaveClass(/lg:col-span-6/);
   await expect(backlog).toHaveClass(/lg:col-span-6/);
@@ -529,18 +552,20 @@ test('the cycle-shaped tiles say they need a payday rather than guessing one', a
 }) => {
   await signedIn.goto('/overview');
   await signedIn.getByRole('button', { name: 'Arrange', exact: true }).click();
-  await signedIn.getByRole('button', { name: 'Add Daily outflow' }).click();
   await signedIn.getByRole('button', { name: 'Add In against out' }).click();
   await signedIn.getByRole('button', { name: 'Done' }).click();
 
   /*
-   * Both are measured from payday, and there is no anchor. A band of days drawn
-   * from a guessed payday would be a picture of the wrong fortnight, so they
-   * draw nothing at all rather than something plausible.
+   * Measured from payday, and there is no anchor. A pace line drawn from a
+   * guessed payday would be a picture of the wrong fortnight, so it draws
+   * nothing at all rather than something plausible.
+   *
+   * The outflow band is deliberately not in this test: it is the calendar month
+   * and needs no anchor.
    */
   await expect(
     signedIn.getByText('Set your next payday on Settings → Budget to see this cycle.'),
-  ).toHaveCount(2);
+  ).toHaveCount(1);
 });
 
 test('the donut switches between the plan and the position', async ({ signedIn }) => {
@@ -585,18 +610,20 @@ test('upcoming says nothing is scheduled rather than drawing an empty list', asy
 test('setting a payday turns the cycle on across the page', async ({ signedIn }) => {
   await signedIn.goto('/overview');
   await signedIn.getByRole('button', { name: 'Arrange', exact: true }).click();
-  await signedIn.getByRole('button', { name: 'Add Daily outflow' }).click();
+  await signedIn.getByRole('button', { name: 'Add In against out' }).click();
   await signedIn.getByRole('button', { name: 'Done' }).click();
 
   /*
    * Nothing to draw yet: the cadence says how many paychecks a year arrive and
-   * nothing about when, so there is no cycle to measure a band of days against.
+   * nothing about when, so there is no cycle to measure a pace against. The
+   * outflow band is deliberately not here — it is the calendar month and needs
+   * no anchor.
    *
    * Scoped to the tile and the panel rather than the page: the Arrange picker
    * draws previews of the other cycle-shaped tiles, which say the same thing for
    * the same reason, so an unscoped locator matches whatever happens to be open.
    */
-  const band = signedIn.getByRole('heading', { name: 'Daily outflow', level: 2 }).locator('../..');
+  const band = signedIn.getByRole('heading', { name: 'In against out', level: 2 }).locator('../..');
   await expect(
     band.getByText('Set your next payday on Settings → Budget to see this cycle.'),
   ).toBeVisible();
@@ -620,7 +647,7 @@ test('setting a payday turns the cycle on across the page', async ({ signedIn })
   await expect(signedIn.getByText(/day \d+ of 14/)).toBeVisible();
   await expect(
     signedIn
-      .getByRole('heading', { name: 'Daily outflow', level: 2 })
+      .getByRole('heading', { name: 'In against out', level: 2 })
       .locator('../..')
       .getByText('Set your next payday on Settings → Budget to see this cycle.'),
   ).toHaveCount(0);
@@ -643,6 +670,131 @@ test('the panel lists only accounts the budget counts', async ({ signedIn }) => 
   // And the total says what it counted, because a figure that silently excluded
   // a house is one somebody trusts and should not.
   await expect(panel.getByText('Accounts in the budget')).toBeVisible();
+});
+
+test('a tile can be dropped onto its own row, and at the very top', async ({ signedIn }) => {
+  await signedIn.goto('/overview');
+  await addBothTiles(signedIn);
+  await signedIn.getByRole('button', { name: 'Done' }).click();
+
+  const spending = signedIn
+    .getByRole('heading', { name: 'Spending by grouping', level: 2 })
+    .locator('../..');
+  const backlog = signedIn
+    .getByRole('heading', { name: 'Waiting to be categorized', level: 2 })
+    .locator('../..');
+
+  // Both bodies present before anything is measured — see the note in the drag
+  // test above; a tile whose height is still settling is a target that moves.
+  await expect(spending.getByText('No cycle has been run yet.')).toBeVisible();
+  await expect(backlog.getByText('Nothing waiting.')).toBeVisible();
+
+  // Join first, so there is a row to be split by dragging rather than by ⤓.
+  const box = (await spending.boundingBox())!;
+  await backlog.dragTo(spending, { targetPosition: { x: 20, y: box.height / 2 } });
+  await expect(spending).toHaveClass(/lg:col-span-6/);
+
+  /*
+   * Now the top quarter, which means a row of its own. Before this there was no
+   * drag gesture for it at all — every drop joined a row, and the only way to
+   * separate two tiles was the ⤓ button inside Arrange.
+   */
+  const joined = (await spending.boundingBox())!;
+  await backlog.dragTo(spending, { targetPosition: { x: joined.width / 2, y: 4 } });
+  await expect(spending).toHaveClass(/lg:col-span-12/);
+  await expect(backlog).toHaveClass(/lg:col-span-12/);
+
+  await signedIn.reload();
+  await expect(
+    signedIn.getByRole('heading', { name: 'Spending by grouping', level: 2 }).locator('../..'),
+  ).toHaveClass(/lg:col-span-12/);
+});
+
+test('the panel keeps its delegations when tiles are rearranged', async ({ signedIn, api }) => {
+  await makeDelegation(api, 'Grocery');
+
+  await signedIn.goto('/overview');
+  const panel = signedIn.getByRole('complementary', { name: 'Budget' });
+  await panel.getByRole('button', { name: 'Choose which delegations show →' }).click();
+  const dialog = signedIn.getByRole('dialog');
+  await dialog.getByRole('switch', { name: 'Show Grocery' }).click();
+  await dialog.getByRole('button', { name: 'Save' }).click();
+  await expect(panel.getByText('Grocery')).toBeVisible();
+
+  // Add a tile, which rewrites the whole layout.
+  await signedIn.getByRole('button', { name: 'Arrange', exact: true }).click();
+  await signedIn.getByRole('button', { name: 'Add Cashflow' }).click();
+  await signedIn.getByRole('button', { name: 'Done' }).click();
+
+  /*
+   * The panel's row is filtered out of the grid because the panel draws it, so
+   * every arrange operation used to write a layout without it — silently
+   * deleting the chosen delegations the moment anybody moved a tile. Nothing
+   * failed and nothing said so, which is the worst kind of loss.
+   */
+  await expect(panel.getByText('Grocery')).toBeVisible();
+  await signedIn.reload();
+  await expect(
+    signedIn.getByRole('complementary', { name: 'Budget' }).getByText('Grocery'),
+  ).toBeVisible();
+});
+
+test('the panel summary says budgeted, spent and remaining', async ({ signedIn, api }) => {
+  await makeDelegation(api, 'Grocery');
+
+  await signedIn.goto('/overview');
+  const panel = signedIn.getByRole('complementary', { name: 'Budget' });
+  await panel.getByRole('button', { name: 'Choose which delegations show →' }).click();
+  const dialog = signedIn.getByRole('dialog');
+  await dialog.getByRole('switch', { name: 'Show Grocery' }).click();
+  await dialog.getByRole('button', { name: 'Save' }).click();
+
+  // The household's words. "Held" was jargon and "planned" said something the
+  // amount to delegate does not quite mean.
+  await expect(panel.getByText('Budgeted')).toBeVisible();
+  await expect(panel.getByText('Spent')).toBeVisible();
+  await expect(panel.getByText('Remaining')).toBeVisible();
+
+  // Spent-against-budgeted is on the bar's own tooltip rather than beside it,
+  // so the name gets the width those two figures were taking.
+  await expect(panel.getByTitle(/spent of/)).toBeVisible();
+});
+
+test('the outflow band draws the calendar month with no payday set', async ({ signedIn }) => {
+  await signedIn.goto('/overview');
+  await signedIn.getByRole('button', { name: 'Arrange', exact: true }).click();
+  await signedIn.getByRole('button', { name: 'Add Daily outflow' }).click();
+  await signedIn.getByRole('button', { name: 'Done' }).click();
+
+  /*
+   * The one reading here that is not cycle-shaped. Days belong to months — bills
+   * arrive on dates and statements close on dates — so this works on a household
+   * that has never set a payday, unlike everything else measured from one.
+   */
+  const tile = signedIn.getByRole('heading', { name: 'Daily outflow', level: 2 }).locator('../..');
+  await expect(tile.getByText('This month')).toBeVisible();
+  await expect(tile.getByText(/out · avg/)).toBeVisible();
+  await expect(
+    tile.getByText('Set your next payday on Settings → Budget to see this cycle.'),
+  ).toHaveCount(0);
+});
+
+test('a balance-history tile asks which one before it draws anything', async ({ signedIn }) => {
+  await signedIn.goto('/overview');
+  await signedIn.getByRole('button', { name: 'Arrange', exact: true }).click();
+  await signedIn.getByRole('button', { name: 'Add Account balance' }).click();
+  await signedIn.getByRole('button', { name: 'Done' }).click();
+
+  /*
+   * The picker offers only accounts that have history, so it can never point at
+   * something that draws an empty box. On a household whose snapshots start at
+   * the first night that means it offers nothing at all — and says so, rather
+   * than showing an empty control somebody would fiddle with.
+   */
+  const tile = signedIn
+    .getByRole('heading', { name: 'Account balance', level: 2 })
+    .locator('../..');
+  await expect(tile.getByText('No account has history yet.')).toBeVisible();
 });
 
 test('the arrange controls are hidden until asked for', async ({ signedIn }) => {

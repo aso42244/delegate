@@ -118,6 +118,11 @@ interface DataBody {
   }[];
   readonly allocation?: readonly { readonly name: string; readonly amountCents: string }[];
   readonly upcoming_bills?: readonly { readonly name: string }[];
+  readonly account_balance_history?: { readonly name: string | null };
+  readonly pickable?: {
+    readonly accounts: readonly { readonly id: string }[];
+    readonly delegations: readonly { readonly id: string }[];
+  };
   readonly figures?: readonly {
     readonly key: string;
     readonly valueCents: string | null;
@@ -207,12 +212,16 @@ describe('the layout', () => {
   });
 
   it('refuses a tile it cannot draw rather than storing it', async () => {
-    // A key Insights still offers and this page cannot draw yet — the picker
-    // tiles are deferred, so this is exactly the case the guard is for.
-    const response = await putLayout(rowed(['account_balance_history']));
+    /*
+     * `credit_card_trend` was a real widget, retired when the balance-history
+     * tile gained a picker. A stored layout outlives the widget it names, so
+     * this guard is not hypothetical — that key is the one that made the
+     * Insights layout need the same filter.
+     */
+    const response = await putLayout(rowed(['credit_card_trend']));
     expect(response.json<SaveBody>()).toEqual({
       ok: false,
-      unknown: ['account_balance_history'],
+      unknown: ['credit_card_trend'],
     });
 
     const body = (await get('/api/overview/layout')).json<LayoutBody>();
@@ -738,6 +747,7 @@ describe('burn rate', () => {
 });
 
 describe('cashflow', () => {
+  /** Income the feed delivered. `makeTransaction` creates manual rows. */
   async function income(cents: bigint, description: string): Promise<void> {
     const account = await prisma.account.findFirstOrThrow();
     const transaction = await makeTransaction({
@@ -748,11 +758,11 @@ describe('cashflow', () => {
     });
     await prisma.transaction.update({
       where: { id: transaction.id },
-      data: { kind: 'income' },
+      data: { kind: 'income', source: 'simplefin', externalId: `feed-${transaction.id}` },
     });
   }
 
-  it('infers sources from the description, grouped the way bills are', async () => {
+  it('draws income as one node whatever the bank called it', async () => {
     await makeAccount({ name: 'Everyday', type: 'asset', balanceCents: 5_000_000n });
     await income(172_480n, 'ACH DEPOSIT ACME CORP 8817');
     await income(172_480n, 'ACH DEPOSIT ACME CORP 9241');
@@ -760,11 +770,38 @@ describe('cashflow', () => {
 
     const flow = await buildCashflow(prisma, { window: 'all', timeZone: ZONE });
 
-    // Two paychecks from one payer land on one node: the trailing reference
-    // changes every fortnight, which is exactly what `merchantKey` drops.
-    expect(flow.inflows).toHaveLength(2);
-    expect(flow.inflows[0]?.amountCents).toBe(344_960n);
-    expect(flow.totalInCents).toBe(359_150n);
+    /*
+     * ADR 052 originally inferred a source per payer from `merchantKey`. On real
+     * data that drew a column of bank strings 420px wide, and the same employer
+     * twice. Grouped by origin instead — a fact the database records rather than
+     * a convention in somebody's typing.
+     */
+    expect(flow.inflows).toHaveLength(1);
+    expect(flow.inflows[0]?.name).toBe('Income');
+    expect(flow.inflows[0]?.amountCents).toBe(359_150n);
+  });
+
+  it('keeps what was typed by hand apart from what the feed delivered', async () => {
+    await makeAccount({ name: 'Everyday', type: 'asset', balanceCents: 5_000_000n });
+    await income(100_000n, 'PAYROLL');
+
+    // A row entered while the feed was behind. It is a standing signal that the
+    // figures are part bank and part household, and it goes on its own once the
+    // feed catches up and the row is archived.
+    const account = await prisma.account.findFirstOrThrow();
+    const typed = await makeTransaction({
+      accountId: account.id,
+      amountCents: 25_000n,
+      postedAt: new Date(),
+      description: 'MANUAL - PAYROLL',
+    });
+    await prisma.transaction.update({
+      where: { id: typed.id },
+      data: { kind: 'income', source: 'manual' },
+    });
+
+    const flow = await buildCashflow(prisma, { window: 'all', timeZone: ZONE });
+    expect(flow.inflows.map((node) => node.name).sort()).toEqual(['Income', 'Income (manual)']);
   });
 
   it('separates a deposit nobody has marked from spending nobody has filed', async () => {
@@ -996,25 +1033,33 @@ describe('the cycle-shaped tiles', () => {
     });
   }
 
-  it('draws nothing at all without a payday, rather than guessing one', async () => {
-    await putLayout(rowed(['daily_outflow', 'income_vs_spending_pace']));
+  it('draws the pace chart only with a payday, never from a guess', async () => {
+    await putLayout(rowed(['income_vs_spending_pace']));
     const body = (await get('/api/overview')).json<DataBody>();
 
-    // A band of days measured from a guessed payday is a picture of the wrong
+    // A pace line measured from a guessed payday is a picture of the wrong
     // fortnight. Absent is the honest answer.
-    expect(body.daily_outflow).toBeUndefined();
     expect(body.income_vs_spending_pace).toBeUndefined();
   });
 
-  it('gives every day of the cycle a cell, including the empty ones', async () => {
-    await anchorPayday('2099-01-15');
+  it('draws the outflow band without a payday, because it is the calendar month', async () => {
     await putLayout(rowed(['daily_outflow']));
-
     const body = (await get('/api/overview')).json<DataBody>();
-    // Fourteen days, whatever happened on them. Skipping the quiet ones would
+
+    /*
+     * The one reading on this page that is not cycle-shaped. Days belong to
+     * months — bills arrive on dates and statements close on dates — so it needs
+     * no anchor and works on a household that has never set one.
+     */
+    const days = body.daily_outflow ?? [];
+    const now = new Date();
+    const inMonth = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 0)).getUTCDate();
+    expect(days.length).toBe(inMonth);
+
+    // Every day gets a cell, including the empty ones: skipping them would
     // compress a quiet fortnight into the width of a busy one.
-    expect(body.daily_outflow).toHaveLength(14);
-    expect(body.daily_outflow?.every((day) => typeof day.spentCents === 'string')).toBe(true);
+    expect(days.every((day) => typeof day.spentCents === 'string')).toBe(true);
+    expect(days[0]?.date.slice(8, 10)).toBe('01');
   });
 
   it('stops the pace lines at today rather than carrying them flat', async () => {
@@ -1128,6 +1173,44 @@ describe('a layout stored under an older cap', () => {
     // Reading order preserved exactly: a row of three becomes two rows in the
     // order they were in, not a different arrangement.
     expect(tiles.map((tile) => tile.key)).toEqual(['figures', 'cashflow', 'allocation']);
+  });
+});
+
+describe('the picker tiles', () => {
+  it('draws nothing until it has been pointed at something', async () => {
+    await putLayout(rowed(['account_balance_history']));
+    const body = (await get('/api/overview')).json<DataBody>();
+
+    // Unset means nothing to draw. Picking one on somebody's behalf would put a
+    // chart of an account nobody chose in front of them.
+    expect(body.account_balance_history).toBeUndefined();
+    expect(body.pickable).toBeDefined();
+  });
+
+  it('offers only things that actually have history', async () => {
+    await makeAccount({ name: 'Everyday', type: 'asset', balanceCents: 100n });
+    await makeDelegation({ name: 'Grocery' });
+
+    await putLayout(rowed(['account_balance_history', 'delegation_balance_history']));
+    const body = (await get('/api/overview')).json<DataBody>();
+
+    /*
+     * Both exist and neither has a snapshot yet. A picker listing everything
+     * would make choosing wrong the default experience on a household whose
+     * history starts at the first night.
+     */
+    expect(body.pickable?.accounts).toEqual([]);
+    expect(body.pickable?.delegations).toEqual([]);
+  });
+
+  it('refuses a target that is not an id', async () => {
+    const response = await putLayout([
+      { key: 'account_balance_history', row: 0, position: 0, config: { accountId: 'Everyday' } },
+    ]);
+    expect(response.json<SaveBody>()).toMatchObject({
+      ok: false,
+      badConfig: ['account_balance_history'],
+    });
   });
 });
 

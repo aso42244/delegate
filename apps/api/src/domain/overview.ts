@@ -1,4 +1,4 @@
-import { CYCLES_PER_YEAR, merchantKey, type Cents } from '@budget/shared';
+import { CYCLES_PER_YEAR, type Cents } from '@budget/shared';
 import {
   buildBacklog,
   buildComposition,
@@ -30,7 +30,7 @@ import {
   type SnapshotRange,
 } from './snapshot-series.js';
 import { getBudgetSettings } from './settings.js';
-import { localDayKey, startOfLocalDay } from './calendar.js';
+import { addMonthsToKey, localDayKey, localMonthKey, startOfLocalDay } from './calendar.js';
 import { buildUtilities, type UtilitiesView } from './utilities.js';
 import type { Db } from '../db/client.js';
 
@@ -116,6 +116,10 @@ export const OVERVIEW_TILES = [
   'income_vs_spending_pace',
   'allocation',
   'upcoming_bills',
+
+  /* The two that ask "which one", and carry a picker to answer it. */
+  'account_balance_history',
+  'delegation_balance_history',
 
   'uncategorized_backlog',
 ] as const;
@@ -436,10 +440,10 @@ export async function buildCashflow(
   const [income, loose, spending] = await Promise.all([
     // Income is the same predicate `buildCycles` uses. Two figures for "what
     // came in" that disagreed would be worse than either of them alone.
-    db.transaction.findMany({
+    db.transaction.groupBy({
+      by: ['source'],
       where: { archivedAt: null, kind: 'income', ...since },
-      orderBy: { postedAt: 'desc' },
-      select: { amountCents: true, description: true, descriptionRaw: true },
+      _sum: { amountCents: true },
     }),
     // Ordinary rows nobody has filed. Positive is a deposit not yet marked as
     // income; negative is spending not yet categorized.
@@ -450,17 +454,33 @@ export async function buildCashflow(
     buildSpending(db, { by: 'grouping', window: options.window, timeZone: options.timeZone }, now),
   ]);
 
+  /*
+   * Two nodes at most: what the feed delivered, and what was typed by hand.
+   *
+   * ADR 052 inferred a source per payer from `merchantKey` and named it by the
+   * newest description. On real data that produced a left column of bank
+   * strings — `ACH Deposit 12208 ELO PROF L PAYROLL 13977925` — about 420px of
+   * text in a 448px gap, and the same employer drawn twice because the
+   * hand-entered rows carried a prefix the key split on.
+   *
+   * The grouping is `source` instead, which is a fact the database records
+   * rather than a convention in somebody's typing. Two nodes, both named for
+   * what they are: money the bank reported, and money entered while its feed was
+   * behind. The second is a standing signal that the balances are part bank and
+   * part household — the same thing the `a` chip says on an account row — and it
+   * disappears on its own once the feed catches up and those rows are archived.
+   */
   const sources = new Map<string, { name: string; amountCents: Cents }>();
   for (const row of income) {
-    const key = merchantKey(row.descriptionRaw || row.description);
+    const manual = row.source === 'manual';
+    const key = manual ? 'manual' : 'feed';
     const existing = sources.get(key);
+    const amount = row._sum.amountCents ?? 0n;
     if (existing) {
-      existing.amountCents += row.amountCents;
+      existing.amountCents += amount;
       continue;
     }
-    // Rows arrive newest first, so the first one seen for a key is the newest —
-    // the same rule Bills names a merchant by.
-    sources.set(key, { name: row.description, amountCents: row.amountCents });
+    sources.set(key, { name: manual ? 'Income (manual)' : 'Income', amountCents: amount });
   }
 
   let uncategorizedInCents = 0n;
@@ -538,6 +558,20 @@ export interface OverviewData {
   readonly income_vs_spending_pace?: readonly PacePoint[];
   readonly allocation?: readonly AllocationSlice[];
   readonly upcoming_bills?: readonly UpcomingBill[];
+  readonly account_balance_history?: {
+    readonly name: string | null;
+    readonly points: readonly {
+      date: Date;
+      provenance: string;
+      fields: Readonly<Record<string, Cents>>;
+    }[];
+  };
+  readonly delegation_balance_history?: {
+    readonly name: string | null;
+    readonly points: readonly { date: Date; provenance: string; balanceCents: Cents }[];
+  };
+  /** What the two picker tiles can be pointed at. Only things with history. */
+  readonly pickable?: { accounts: readonly PickableThing[]; delegations: readonly PickableThing[] };
   readonly spending_by_grouping?: OverviewSpending;
   readonly spending_by_delegation?: OverviewSpending;
   readonly asset_debt_composition?: Composition;
@@ -915,19 +949,36 @@ export interface OutflowDay {
   readonly spentCents: Cents;
 }
 
+/** The calendar month `now` falls in, in the household's own zone. */
+export function monthBounds(
+  now: Date,
+  timeZone: string,
+): { readonly start: Date; readonly end: Date } {
+  const start = localMonthKey(now, timeZone);
+  return { start, end: addMonthsToKey(start, 1) };
+}
+
 /**
- * What went out on each day of the cycle.
+ * What went out on each day of the **calendar month**.
  *
- * **Cycle-shaped, not month-shaped.** The design this came from draws thirty
- * cells for a calendar month; every other figure on this page is measured from
- * payday, and one calendar-shaped band among them would be the reading somebody
- * has to remember is different.
+ * The one reading on this page that is not cycle-shaped, and deliberately so.
+ * Everything else here answers "how am I doing against this cycle's plan", which
+ * needs the cycle; this answers "what did each day cost", and days belong to
+ * months — bills arrive on dates, statements close on dates, and "the 1st was
+ * the big one" is how anybody describes their own spending.
  *
- * Every day in the range gets a cell, including the ones nothing happened on. A
- * band that skipped empty days would compress a quiet fortnight into the same
- * width as a busy one and say something false about the shape of the month —
- * the same mistake the utility charts avoid by keeping an empty month between
- * two bills.
+ * It was built cycle-shaped first, on the argument that one calendar-shaped
+ * figure among cycle-shaped ones is the reading somebody has to remember is
+ * different. The owner overruled it, and the tile says which month it is drawing
+ * so there is nothing to remember.
+ *
+ * It also needs no payday anchor, which makes it the one cycle-adjacent tile
+ * that works on a household that has never set one.
+ *
+ * Every day in the month gets a cell, including the ones nothing happened on. A
+ * band that skipped empty days would compress a quiet fortnight into the width
+ * of a busy one and say something false about the shape of the month — the same
+ * mistake the utility charts avoid by keeping an empty month between two bills.
  */
 export async function buildOutflow(
   db: Db,
@@ -1086,4 +1137,84 @@ export async function buildAllocation(
   return [...totals.values()]
     .sort((a, b) => (b.amountCents > a.amountCents ? 1 : b.amountCents < a.amountCents ? -1 : 0))
     .map(({ position: _position, ...slice }) => slice);
+}
+
+export interface PickableThing {
+  readonly id: string;
+  readonly name: string;
+}
+
+/**
+ * One delegation's balance over time.
+ *
+ * A lean read rather than `delegationDrillDown`, which returns every line of a
+ * grouping with a burn rate apiece so a three-level chart can be drawn through
+ * it. This tile draws one line, and fetching a quarter's history for
+ * twenty-four delegations to show one of them is the waste this endpoint exists
+ * to stop.
+ */
+export async function delegationSeries(
+  db: Db,
+  delegationId: string,
+  since: Date | null,
+): Promise<{
+  points: { date: Date; provenance: string; balanceCents: Cents }[];
+  name: string | null;
+}> {
+  const [line, rows] = await Promise.all([
+    db.delegation.findUnique({ where: { id: delegationId }, select: { name: true } }),
+    db.delegationSnapshot.findMany({
+      where: { delegationId, ...(since ? { snapshotDate: { gte: since } } : {}) },
+      orderBy: { snapshotDate: 'asc' },
+      select: { snapshotDate: true, provenance: true, balanceCents: true },
+    }),
+  ]);
+
+  return {
+    name: line?.name ?? null,
+    points: rows.map((row) => ({
+      date: row.snapshotDate,
+      provenance: row.provenance,
+      balanceCents: row.balanceCents,
+    })),
+  };
+}
+
+/**
+ * What the two picker tiles can be pointed at.
+ *
+ * **Only things with history**, so the picker never offers something that draws
+ * an empty box. A list of everything would make choosing wrong the default
+ * experience on a household whose snapshots start at the first night.
+ */
+export async function pickableSeries(
+  db: Db,
+): Promise<{ accounts: PickableThing[]; delegations: PickableThing[] }> {
+  const [accountIds, delegationIds] = await Promise.all([
+    db.accountSnapshot.groupBy({ by: ['accountId'] }),
+    db.delegationSnapshot.groupBy({ by: ['delegationId'] }),
+  ]);
+
+  const [accounts, delegations] = await Promise.all([
+    db.account.findMany({
+      where: { id: { in: accountIds.map((row) => row.accountId) }, archivedAt: null },
+      select: { id: true, name: true, nickname: true },
+      orderBy: { name: 'asc' },
+    }),
+    db.delegation.findMany({
+      where: { id: { in: delegationIds.map((row) => row.delegationId) }, archivedAt: null },
+      select: { id: true, name: true },
+      orderBy: { name: 'asc' },
+    }),
+  ]);
+
+  return {
+    // The nickname where there is one: "Citibank Costco VISA Costco Anywhere
+    // Visa® Card by Citi-7459" is not a thing to choose from a list.
+    accounts: accounts.map((account) => ({
+      id: account.id,
+      name: account.nickname ?? account.name,
+    })),
+    delegations,
+  };
 }

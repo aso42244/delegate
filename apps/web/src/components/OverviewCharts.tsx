@@ -38,6 +38,21 @@ export function OutflowBand({
   const peak = amounts.reduce((max, value) => (value > max ? value : max), 0n);
   const total = amounts.reduce((sum, value) => sum + value, 0n);
 
+  /*
+   * The average is over the days **elapsed**, not the days in the month.
+   *
+   * Dividing a month's spending by thirty on the 8th reports a figure nobody
+   * has spent at — it would read as comfortably low all month and correct
+   * itself only on the last day, which is the shape of a number that teaches
+   * people to ignore it.
+   */
+  const today = todayIso.slice(0, 10);
+  const elapsed = Math.max(days.filter((day) => day.date.slice(0, 10) <= today).length, 1);
+  const average = total / BigInt(elapsed);
+
+  const peakIndex = amounts.findIndex((value) => value === peak && value > 0n);
+  const peakDay = peakIndex >= 0 ? days[peakIndex] : undefined;
+
   return (
     <div className="flex flex-col gap-2">
       <div
@@ -50,13 +65,15 @@ export function OutflowBand({
           // Opacity carries the amount; a zero day keeps the plain track so it
           // reads as "nothing" rather than as "a very small something".
           const share = peak > 0n && value > 0n ? Number((value * 100n) / peak) / 100 : 0;
-          const today = day.date.slice(0, 10) === todayIso.slice(0, 10);
+          const isToday = day.date.slice(0, 10) === today;
 
           return (
             <span
               key={day.date}
               title={`${dayLabel(day.date)}: ${formatCents(value)}`}
-              className={`h-4 flex-1 rounded-sm ${today ? 'outline outline-2 outline-offset-1 outline-accent' : ''}`}
+              className={`h-4 flex-1 rounded-sm ${
+                isToday ? 'outline outline-2 outline-offset-1 outline-accent' : ''
+              }`}
               style={{
                 background:
                   value > 0n
@@ -67,11 +84,33 @@ export function OutflowBand({
           );
         })}
       </div>
+
+      {/* Dates under the ends, so the band says which month it is drawing
+          without the header having to carry it — the header is two lines at
+          sidebar width and this is a third thing it would have to hold. */}
       <div className="flex justify-between text-micro text-axis">
         <span>{days[0] ? dayLabel(days[0].date) : ''}</span>
-        <span className="money">{formatCents(total)} out</span>
         <span>{days.length > 0 ? dayLabel(days[days.length - 1]!.date) : ''}</span>
       </div>
+
+      {/*
+        The rollups, under the band rather than beside the title.
+        
+        In the mock they sit on the header line, which works at full width and
+        wraps into three ragged lines in a 400px sidebar. Here they take a line
+        of their own and wrap predictably.
+      */}
+      <p className="text-quiet text-muted">
+        <span className="money font-semibold text-ink">{formatCents(total, { cents: false })}</span>{' '}
+        out · avg <span className="money">{formatCents(average, { cents: false })}</span>/day
+        {peakDay ? (
+          <>
+            {' '}
+            · peak <span className="money">{formatCents(peak, { cents: false })}</span> on{' '}
+            {dayLabel(peakDay.date)}
+          </>
+        ) : null}
+      </p>
     </div>
   );
 }

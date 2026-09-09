@@ -6,7 +6,137 @@ phase (`v0.1.0-phase1`, and so on).
 
 ## [Unreleased]
 
-Nothing yet.
+### Added
+
+- **Account balance and Delegation balance**, the last two tiles from the
+  Insights catalogue. Each charts one thing over time and carries a picker to
+  say which — stored on the tile, like the cashflow period.
+
+  **The picker offers only things that have history**, so it can never point at
+  something that draws an empty box. On a household whose snapshots start at the
+  first night that means it offers nothing at all, and says so — a list of
+  everything would make choosing wrong the default. Until one is chosen the tile
+  draws nothing rather than picking on somebody's behalf.
+
+  `delegationSeries` is a lean read rather than the drill-down the Insights page
+  uses: that returns every line of a grouping with a burn rate apiece so a
+  three-level chart can be drawn through it, and fetching a quarter's history for
+  twenty-four delegations to show one of them is the waste this endpoint exists
+  to stop.
+
+- **Tiles can live in the sidebar.** The budget panel is pinned to the top right
+  and whatever tiles are dragged in sit beneath it, one to a row — it is about
+  400px wide, and two tiles across that is neither. A `region` column says which
+  side of the page a tile is on; every existing tile keeps the arrangement it
+  has.
+
+- **A drop can mean "a row of its own".** Four edges rather than two: left and
+  right join the row, top and bottom make a new one above or below. Quarters
+  vertically, because joining is the commoner act and deserves the larger
+  target. Before this there was no drag gesture for separating two tiles at all
+  — the only route was the ⤓ button inside Arrange.
+
+- **A strip above each region** takes a drop at the very top, which no tile's own
+  edge can reach. It reserves its 8px whether or not a drag is running:
+  appearing mid-drag pushed everything below it down by 32px at the moment
+  somebody picked a tile up, so the tile they were aiming at moved out from under
+  the pointer.
+
+### Changed
+
+- **The panel's rows are name, bar, remaining.** Spent-against-budgeted moved
+  onto the bar's own tooltip and rounds to the dollar there. Three money columns
+  on a 400px panel truncated names to about ten characters — `Kenzie Perso…`,
+  `Medical Spen…` — to make room for a pair of figures that is the bar's own
+  subject. What stays is the one figure somebody reads to decide anything.
+
+- **Budgeted, Spent, Remaining**, and each label sits over its own figure. They
+  were `Planned · Spent · Held`, left-aligned labels above right-aligned numbers,
+  which read as three pairs of unrelated things.
+
+- **`formatCents` can round to whole dollars.** Rounds rather than truncates —
+  $0.99 shown as $0 would understate every figure it touched — and stays in
+  integer arithmetic throughout.
+
+### Changed
+
+- **Daily outflow draws the calendar month**, not the pay cycle. It is the one
+  reading on this page that is not cycle-shaped, and deliberately so: everything
+  else answers "how am I doing against this cycle's plan", while this answers
+  "what did each day cost" — and days belong to months. Bills arrive on dates,
+  statements close on dates, and "the 1st was the big one" is how anybody
+  describes their own spending.
+
+  It was built cycle-shaped first, on the argument that one calendar-shaped
+  figure among cycle-shaped ones is the reading somebody has to remember is
+  different. The tile says which month it is drawing, so there is nothing to
+  remember. It also needs **no payday anchor**, which makes it the one
+  cycle-adjacent tile that works on a household that has never set one.
+
+  Its rollups moved under the band — total out, average per day, and the peak
+  day. The average is over the days **elapsed**, not the days in the month:
+  dividing a month's spending by thirty on the 8th reports a figure nobody has
+  spent at, reads as comfortably low all month, and corrects itself only on the
+  last day.
+
+- **The cashflow chart's income is two nodes, not a payer each**
+  ([ADR 052](docs/decisions/052-an-income-source-is-inferred-not-entered.md),
+  amended). `Income` and `Income (manual)`, grouped by where a row came from
+  rather than by what the bank called it.
+
+  Inferring a source per payer held right up to the moment real data was drawn: a
+  year of income produced a left column of bank strings —
+  `ACH Deposit 12208 ELO PROF L PAYROLL 13977925` — about 420px of text in a
+  448px gap, with the same employer drawn **twice** because the rows typed during
+  the SimpleFIN outage carry their own prefix. Both were foreseen in that ADR and
+  judged acceptable; what it missed is that naming them is work with no end. A
+  bill recurs under one descriptor and is renamed once; a payroll descriptor
+  carries a reference number that changes.
+
+  **The second node is a signal rather than a category.** It says the figures are
+  part bank and part household — the same thing the `a` chip says on an account
+  row — and it disappears on its own once the feed catches up and those rows are
+  archived.
+
+### Fixed
+
+- **Uncategorized could vanish into `Other` on the cashflow chart.** It is the
+  one node there anybody can act on, and until it is worked every other figure on
+  the chart is wrong by whatever it holds — so rolling it up because it happened
+  to be small was precisely backwards. Found with $1,048 of a real year's
+  uncategorized income filed under `Other (8)`.
+
+- **Long node names ran across the ribbons.** Truncated with the whole name on
+  hover, the way the register handles a bank description.
+
+- **Rearranging tiles silently deleted the chosen delegations.** The panel's
+  layout row is filtered out of the grid because the panel draws it, and every
+  arrange operation wrote the grid back without it. Nothing failed and nothing
+  said so, which is the worst kind of data loss. The panel's row is carried
+  through explicitly now.
+
+- **The backlog counted work nobody could do.** `buildBacklog` filtered
+  uncategorized rows by kind but not by `account.inBudget`, so it counted charges
+  on off-budget accounts — which
+  [ADR 050](docs/decisions/050-the-budget-boundary-is-a-wall.md) makes
+  impossible to categorize. The tile read 5 against a queue showing none, and the
+  same figure feeds the notification pill, so it was wrong in two places. The
+  queue's own filter has had this since ADR 050; this is the sibling that never
+  got it.
+
+- **A drag test could hang for its whole timeout rather than fail.** The tile
+  headings appear as soon as a tile is added; the bodies arrive with the next
+  fetch and change the tile's height when they do, so measuring a box before that
+  landed gave the drag a target that moved out from under the pointer —
+  Playwright waits on that until the test times out. The tests assert both bodies
+  are present first, which is the suite's own rule: after an action that triggers
+  a write, assert on the resulting state before the next action.
+
+- **The test settings row is reset from the schema's defaults** rather than by
+  listing every column. That row is pinned and survives the truncate, and a
+  column left off the list leaked from one test into the next — the pay cadence
+  once, the recurring-alerts flag once, and the payday anchor a third time. A
+  column added tomorrow is now reset without anybody remembering.
 
 ## [0.59.1] — 2026-09-09
 
