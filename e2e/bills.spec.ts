@@ -57,9 +57,15 @@ function overdueMonths(): string[] {
   return days;
 }
 
+/**
+ * Bills is the Due view of Recurring now, so the sidebar entry is one and the
+ * heading names the page rather than the half. Reached by pressing the link the
+ * household presses, which is what makes this the navigation test as well.
+ */
 async function openBills(page: Page): Promise<void> {
-  await page.getByRole('link', { name: 'Bills', exact: true }).click();
-  await expect(page.getByRole('heading', { name: 'Bills' })).toBeVisible();
+  await page.getByRole('link', { name: 'Recurring', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Recurring' })).toBeVisible();
+  await expect(page.getByRole('radio', { name: 'Due' })).toHaveAttribute('aria-checked', 'true');
 }
 
 test('says plainly when nothing has arrived three times yet', async ({ signedIn, api }) => {

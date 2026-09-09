@@ -17,10 +17,10 @@ import { AccessSection, BudgetGroupSection, HoldingsSection } from './pages/sett
 import { SettingsLayout } from './pages/settings/SettingsLayout.jsx';
 import { SyncSection } from './pages/settings/Sync.jsx';
 import { Transactions } from './pages/Transactions.jsx';
-import { Bills } from './pages/Bills.jsx';
+import { Recurring } from './pages/Recurring.jsx';
 import { Insights } from './pages/Insights.jsx';
 import { Overview } from './pages/Overview.jsx';
-import { Utilities } from './pages/Utilities.jsx';
+
 import { SignIn } from './pages/SignIn.jsx';
 
 /**
@@ -139,9 +139,12 @@ export function App(): ReactNode {
         <Route element={<AppShell appName={appName} />}>
           <Route index element={<MainBudget />} />
           <Route path="transactions" element={<Transactions />} />
-          <Route path="bills" element={<Bills />} />
+          <Route path="recurring" element={<Recurring />} />
+          {/* Both old entries land on the half they named. A bookmark is a
+              promise, and the page it pointed at still exists — as a view. */}
+          <Route path="bills" element={<Navigate to="/recurring" replace />} />
+          <Route path="utilities" element={<Navigate to="/recurring?view=cost" replace />} />
           <Route path="rules" element={<Rules />} />
-          <Route path="utilities" element={<Utilities />} />
           <Route path="insights" element={<Insights />} />
           {/* Reachable by URL only while the tiles are ported in batches. It
               joins the sidebar in the release that removes Insights. */}

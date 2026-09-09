@@ -21,12 +21,17 @@ import {
 import { EmptyState, PageHeader, SegmentedControl } from '../components/layout.jsx';
 import { budgetApi, type BudgetViewDto } from '../api/budget.js';
 import { transactionsApi } from '../api/transactions.js';
+import { recurringApi } from '../api/recurring.js';
 import { DelegationPickerDialog } from '../components/DelegationPickerDialog.jsx';
 import {
   AllocationDonut,
+  BillAttentionList,
+  BillsThisCycle,
   OutflowBand,
   PaceChart,
   UpcomingList,
+  UtilitiesToAdjust,
+  UtilityTrends,
 } from '../components/OverviewCharts.jsx';
 import { OverviewPanel, type PanelTab } from '../components/OverviewPanel.jsx';
 import { Sankey, type FlowNode } from '../components/Sankey.jsx';
@@ -115,7 +120,11 @@ const TILE_COPY: Record<string, { readonly title: string; readonly description?:
   daily_outflow: { title: 'Daily outflow' },
   income_vs_spending_pace: { title: 'In against out', description: 'Running totals' },
   allocation: { title: 'Allocation' },
-  upcoming_bills: { title: 'Upcoming', description: 'From Bills' },
+  upcoming_bills: { title: 'Coming up', description: 'Next 14 days' },
+  bills_attention: { title: 'Needs a look' },
+  bills_this_cycle: { title: 'Recurring this cycle' },
+  utilities_trend: { title: 'Which way they’re going', description: '12 months' },
+  utilities_adjust: { title: 'Worth adjusting' },
   account_balance_history: { title: 'Account balance' },
   delegation_balance_history: { title: 'Delegation balance' },
   /* No description. The chart says where the money went by being a picture of
@@ -448,6 +457,77 @@ function DayDialog({
       )}
     </Modal>
   );
+}
+
+/**
+ * Every bill, in the middle of the page.
+ *
+ * A dialog rather than a link away, because the tiles it opens from are a
+ * glance: somebody reading "three bills need a look" wants the other twenty in
+ * front of them, not a page change and a way back. Changing a bill — renaming
+ * it, attaching a charge, dismissing it — is still Recurring's job, and the
+ * footer goes there.
+ */
+function AllBillsDialog({ onClose }: { readonly onClose: () => void }): ReactNode {
+  const bills = useQuery({ queryKey: ['bills'], queryFn: () => recurringApi.list() });
+  const rows = bills.data?.bills ?? [];
+
+  return (
+    <Modal label="Every recurring bill" title="All bills" onClose={onClose} width="lg">
+      {bills.isPending ? (
+        <p className="text-quiet text-muted">Loading…</p>
+      ) : rows.length === 0 ? (
+        <EmptyState>No bill has arrived three times yet.</EmptyState>
+      ) : (
+        <ul className="list-none border-t border-line p-0">
+          {rows.map((bill) => (
+            <li
+              key={bill.key}
+              className="row-cell flex items-center gap-3 border-b border-line"
+              title={`${bill.name} · ${bill.cadence} · next ${shortDate(bill.expectedNextAt)}`}
+            >
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-quiet text-ink">{bill.name}</span>
+                <span className="block truncate text-micro text-muted">
+                  {bill.cadence}
+                  {bill.delegationName !== null && ` · ${bill.delegationName}`}
+                </span>
+              </span>
+              <span className="w-20 shrink-0 text-right text-micro text-muted">
+                {shortDate(bill.expectedNextAt)}
+              </span>
+              <span className="money w-20 shrink-0 text-right text-quiet font-semibold text-ink">
+                {formatCents(BigInt(bill.typicalAmountCents))}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {/* Outside the list, because the way out belongs here whether or not there
+          is anything to show — a household with no bills yet is exactly the one
+          that might want to look at the page. */}
+      {!bills.isPending && (
+        <div className="mt-3 flex items-center justify-between gap-2 text-quiet">
+          <span className="text-muted">
+            {rows.length} {rows.length === 1 ? 'recurring bill' : 'recurring'}
+          </span>
+          <Link to="/recurring" className="linkish">
+            Open Recurring →
+          </Link>
+        </div>
+      )}
+    </Modal>
+  );
+}
+
+/** A bill's next date, read as a calendar date rather than an instant. */
+function shortDate(iso: string): string {
+  const [year, month, day] = iso.slice(0, 10).split('-').map(Number);
+  return new Date(year!, month! - 1, day).toLocaleDateString(undefined, {
+    month: 'short',
+    day: 'numeric',
+  });
 }
 
 /**
@@ -1480,6 +1560,7 @@ function TileBody({
   onChoose,
   onChooseFigures,
   onPickDay,
+  onOpenAllBills,
   allocationMode,
   onAllocationMode,
   accountId,
@@ -1496,6 +1577,8 @@ function TileBody({
   readonly onChooseFigures?: () => void;
   /** Opens what was spent on one day of the outflow band. */
   readonly onPickDay?: ((dayIso: string) => void) | undefined;
+  /** Opens every recurring bill, in the middle of the page. */
+  readonly onOpenAllBills?: (() => void) | undefined;
   readonly allocationMode?: 'plan' | 'position';
   readonly onAllocationMode?: (next: 'plan' | 'position') => void;
   readonly accountId?: string | undefined;
@@ -1637,7 +1720,30 @@ function TileBody({
         />
       );
     case 'upcoming_bills':
-      return data.upcoming_bills ? <UpcomingList bills={data.upcoming_bills} /> : null;
+      return data.upcoming_bills ? (
+        <UpcomingList bills={data.upcoming_bills} onOpenAll={onOpenAllBills ?? (() => undefined)} />
+      ) : null;
+    case 'bills_attention':
+      return data.bills_attention ? (
+        <BillAttentionList
+          bills={data.bills_attention}
+          onOpenAll={onOpenAllBills ?? (() => undefined)}
+        />
+      ) : null;
+    case 'bills_this_cycle':
+      return data.bills_this_cycle ? (
+        <BillsThisCycle summary={data.bills_this_cycle} />
+      ) : (
+        <EmptyState>Set your next payday on Settings → Budget to see this cycle.</EmptyState>
+      );
+    case 'utilities_trend':
+      return data.utilities_vs_delegated ? (
+        <UtilityTrends entries={data.utilities_vs_delegated.entries} />
+      ) : null;
+    case 'utilities_adjust':
+      return data.utilities_vs_delegated ? (
+        <UtilitiesToAdjust entries={data.utilities_vs_delegated.entries} />
+      ) : null;
     case 'cashflow':
       return data.cashflow ? <CashflowTile cashflow={data.cashflow} /> : null;
     case 'uncategorized_backlog':
@@ -1699,6 +1805,8 @@ export function Overview(): ReactNode {
   const [pickingFigures, setPickingFigures] = useState(false);
   /** Which day of the outflow band is open, if any. */
   const [pickedDay, setPickedDay] = useState<string | null>(null);
+  /** Whether every bill is showing, opened from one of the bill tiles. */
+  const [showingBills, setShowingBills] = useState(false);
 
   const [tab, setTab] = useState<PanelTab>('delegations');
 
@@ -2238,6 +2346,8 @@ export function Overview(): ReactNode {
 
       {pickedDay !== null && <DayDialog dayIso={pickedDay} onClose={() => setPickedDay(null)} />}
 
+      {showingBills && <AllBillsDialog onClose={() => setShowingBills(false)} />}
+
       {pickingFigures && (
         <FigurePickerDialog
           /*
@@ -2353,6 +2463,7 @@ export function Overview(): ReactNode {
                       onChoose={() => setPicking(tile.key)}
                       onChooseFigures={() => setPickingFigures(true)}
                       onPickDay={setPickedDay}
+                      onOpenAllBills={() => setShowingBills(true)}
                       allocationMode={allocationMode}
                       onAllocationMode={setAllocationMode}
                       accountId={pickedId('account_balance_history', 'accountId')}
@@ -2450,6 +2561,7 @@ export function Overview(): ReactNode {
                 onChoose={() => setPicking(tile.key)}
                 onChooseFigures={() => setPickingFigures(true)}
                 onPickDay={setPickedDay}
+                onOpenAllBills={() => setShowingBills(true)}
                 allocationMode={allocationMode}
                 onAllocationMode={setAllocationMode}
                 accountId={pickedId('account_balance_history', 'accountId')}

@@ -207,7 +207,7 @@ test.describe('at 390px, on every screen', () => {
   const ROUTES = [
     '/',
     '/transactions',
-    '/utilities',
+    '/recurring?view=cost',
     '/insights',
     '/settings/sync',
     '/settings/accounts',

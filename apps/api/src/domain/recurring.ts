@@ -132,6 +132,8 @@ export interface RecurringBill {
   /** Where charges from this merchant are usually filed, if they are. */
   readonly delegationId: string | null;
   readonly delegationName: string | null;
+  /** The grouping colour of where it is filed, so it matches the rest of the page. */
+  readonly color: string | null;
   readonly accountName: string | null;
 }
 
@@ -234,7 +236,18 @@ export async function findRecurringBills(
       pending: true,
       account: { select: { name: true, nickname: true } },
       allocations: {
-        select: { delegationId: true, delegation: { select: { name: true, archivedAt: true } } },
+        select: {
+          delegationId: true,
+          delegation: {
+            select: {
+              name: true,
+              archivedAt: true,
+              // The grouping's colour, so a bill on Overview is the same colour
+              // as the same money everywhere else on the page.
+              grouping: { select: { color: true } },
+            },
+          },
+        },
       },
     },
     orderBy: [{ postedAt: 'desc' }, { id: 'desc' }],
@@ -368,23 +381,26 @@ export async function findRecurringBills(
 
     // Where it is usually filed. A split says the charge was several things, so
     // it names no single envelope and is not counted here.
-    const tally = new Map<string, { name: string; count: number }>();
+    const tally = new Map<string, { name: string; color: string | null; count: number }>();
     for (const charge of group) {
       const allocation = charge.allocations.length === 1 ? charge.allocations[0] : undefined;
       if (!allocation || allocation.delegation.archivedAt) continue;
       const seen = tally.get(allocation.delegationId);
       tally.set(allocation.delegationId, {
         name: allocation.delegation.name,
+        color: allocation.delegation.grouping?.color ?? null,
         count: (seen?.count ?? 0) + 1,
       });
     }
     let filedId: string | null = null;
     let filedName: string | null = null;
+    let filedColor: string | null = null;
     let filedCount = 0;
     for (const [delegationId, entry] of tally) {
       if (entry.count > filedCount) {
         filedId = delegationId;
         filedName = entry.name;
+        filedColor = entry.color;
         filedCount = entry.count;
       }
     }
@@ -423,6 +439,7 @@ export async function findRecurringBills(
         (pendingByMerchant.get(key) ?? []).filter((charge) => linkedTo.has(charge.id)).length,
       delegationId: filedId,
       delegationName: filedName,
+      color: filedColor,
       accountName: newest.account.nickname ?? newest.account.name,
     });
   }

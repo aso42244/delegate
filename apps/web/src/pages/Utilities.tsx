@@ -3,7 +3,7 @@ import { formatCents } from '@budget/shared';
 import { useQuery } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
 import { api } from '../api/client.js';
-import { PageHeader, EmptyState } from '../components/layout.jsx';
+import { EmptyState } from '../components/layout.jsx';
 import { Alert } from '../components/ui.jsx';
 
 /**
@@ -185,7 +185,11 @@ function UtilityCard({ utility }: { readonly utility: UtilityDto }): ReactNode {
   );
 }
 
-export function Utilities(): ReactNode {
+/**
+ * The Cost half of Recurring: what each utility averages, and what a paycheck's
+ * share of that is. Suggests only — nothing here writes an amount to delegate.
+ */
+export function UtilitiesView(): ReactNode {
   const query = useQuery({
     queryKey: ['utilities'],
     queryFn: () =>
@@ -197,8 +201,6 @@ export function Utilities(): ReactNode {
 
   return (
     <div>
-      <PageHeader title="Utilities" />
-
       {query.isLoading ? (
         <EmptyState>Loading…</EmptyState>
       ) : utilities.length === 0 ? (

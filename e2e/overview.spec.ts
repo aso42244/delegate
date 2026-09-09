@@ -627,10 +627,10 @@ test('upcoming says nothing is scheduled rather than drawing an empty list', asy
 }) => {
   await signedIn.goto('/overview');
   await signedIn.getByRole('button', { name: 'Arrange', exact: true }).click();
-  await signedIn.getByRole('button', { name: 'Add Upcoming' }).click();
+  await signedIn.getByRole('button', { name: 'Add Coming up' }).click();
   await signedIn.getByRole('button', { name: 'Done' }).click();
 
-  const tile = signedIn.getByRole('heading', { name: 'Upcoming', level: 2 }).locator('../..');
+  const tile = signedIn.getByRole('heading', { name: 'Coming up', level: 2 }).locator('../..');
   await expect(tile.getByText('Nothing scheduled.')).toBeVisible();
 });
 
@@ -895,6 +895,62 @@ test('a tile dragged by its body does not move', async ({ signedIn }) => {
 
   await expect(spending).toHaveClass(/lg:col-span-12/);
   await expect(backlog).toHaveClass(/lg:col-span-12/);
+});
+
+test('the bill tiles open every bill in the middle of the page', async ({ signedIn }) => {
+  await signedIn.goto('/overview');
+  await signedIn.getByRole('button', { name: 'Arrange', exact: true }).click();
+  await signedIn.getByRole('button', { name: 'Add Needs a look' }).click();
+  await signedIn.getByRole('button', { name: 'Done' }).click();
+
+  const tile = signedIn.getByRole('heading', { name: 'Needs a look', level: 2 }).locator('../..');
+
+  /*
+   * Empty most weeks, and that is the point of it: a tile saying "everything
+   * arrived" most days and naming three things on the day something slipped is
+   * worth more of a dashboard than one saying the same thing every day.
+   */
+  await expect(tile.getByText('Everything arrived')).toBeVisible();
+
+  /*
+   * A dialog rather than a link away. Somebody reading "three bills need a look"
+   * wants the other twenty in front of them, not a page change and a way back.
+   */
+  await tile.getByRole('button', { name: 'All bills →' }).click();
+  const dialog = signedIn.getByRole('dialog');
+  await expect(dialog.getByRole('heading', { name: 'All bills' })).toBeVisible();
+  await expect(dialog.getByText('No bill has arrived three times yet.')).toBeVisible();
+  // Changing a bill is still Recurring's job; this is a read.
+  await expect(dialog.getByRole('link', { name: 'Open Recurring →' })).toBeVisible();
+});
+
+test('the utility tiles say they do not know rather than guessing', async ({ signedIn, api }) => {
+  const water = await makeDelegation(api, 'Water', '6000');
+  await api.patch(`/api/delegations/${water}`, { data: { isUtility: true } });
+
+  await signedIn.goto('/overview');
+  await signedIn.getByRole('button', { name: 'Arrange', exact: true }).click();
+  await signedIn.getByRole('button', { name: 'Add Which way they’re going' }).click();
+  await signedIn.getByRole('button', { name: 'Add Worth adjusting' }).click();
+  await signedIn.getByRole('button', { name: 'Done' }).click();
+
+  const trend = signedIn
+    .getByRole('heading', { name: 'Which way they’re going', level: 2 })
+    .locator('../..');
+
+  /*
+   * A dash, not 0%. Two years of history is what a seasonal bill needs before
+   * one year can be compared with another, and a household without it is told
+   * that rather than shown a confident flat line.
+   */
+  await expect(trend.getByText('Water')).toBeVisible();
+  await expect(trend.getByText('—', { exact: true })).toBeVisible();
+
+  const adjust = signedIn
+    .getByRole('heading', { name: 'Worth adjusting', level: 2 })
+    .locator('../..');
+  // Nothing spent, so nothing to compare a funding level against.
+  await expect(adjust.getByText('Nothing to change')).toBeVisible();
 });
 
 test('a balance-history tile asks which one before it draws anything', async ({ signedIn }) => {

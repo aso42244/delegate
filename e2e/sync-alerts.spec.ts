@@ -37,7 +37,7 @@ test('a feed complaint reaches every page, and names the bank', async ({ signedI
   await expect(signedIn).toHaveURL(/\/settings\/sync$/);
 
   // On every page, not only the one it came from.
-  for (const path of ['/transactions', '/utilities', '/insights', '/settings']) {
+  for (const path of ['/transactions', '/recurring', '/insights', '/settings']) {
     await signedIn.goto(path);
     await expect(signedIn.getByRole('link', { name: 'Sync issue' })).toBeVisible();
   }

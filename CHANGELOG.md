@@ -6,7 +6,48 @@ phase (`v0.1.0-phase1`, and so on).
 
 ## [Unreleased]
 
-Nothing yet.
+### Added
+
+- **Recurring** — Bills and Utilities are one page with two views, Due and Cost
+  ([ADR 055](docs/decisions/055-bills-and-utilities-are-one-page.md)). They were
+  never redundant with each other: one watches whether a charge that should have
+  landed did, the other judges whether a line is funded at what it costs. What
+  they shared was shape — both derived from the register, both lists of the same
+  merchants — and **Electricity was on both of them**, described two ways. The
+  view is in the URL so it survives leaving the page, and `/bills` and
+  `/utilities` redirect to the half they named.
+
+- **Five recurring tiles on Overview.** Coming up, Needs a look, Recurring this
+  cycle, Which way they're going, and Worth adjusting. Two of them are exception
+  lists that are empty most weeks — a tile that is usually empty and
+  occasionally urgent is worth more of a dashboard than one that always says the
+  same thing.
+
+  A utility's trend compares the last twelve months against the twelve before,
+  not six against six: these bills are seasonal, and July's electricity against
+  January's is weather rather than a trend. A line without two years behind it
+  says it does not know instead of reporting a confident 0%.
+
+- **The bill tiles open every bill in the middle of the page**, rather than
+  linking away. Somebody reading "three bills need a look" wants the other
+  twenty in front of them, not a page change and a way back. Changing a bill is
+  still Recurring's job, and the dialog's footer goes there.
+
+- **Bills carry their grouping's colour**, so a bill on Overview is the same
+  colour as the money it comes out of is everywhere else.
+
+### Changed
+
+- **A drag starts on the grip and nowhere else.** The whole card used to be the
+  handle: a grab cursor over every figure in it, and a drag begun by any stray
+  press — on a chart, on a label somebody meant to select.
+
+- **A day on the Daily outflow band opens what was spent that day.** The band
+  says a Tuesday cost $412 and the next question is always which $412. The
+  window is resolved from a calendar day in the household's own zone by a new
+  `day` filter on the register, because the browser's zone is not necessarily
+  the household's and a window computed in the client would disagree with the
+  cell it was clicked from.
 
 ## [0.61.0] — 2026-09-09
 

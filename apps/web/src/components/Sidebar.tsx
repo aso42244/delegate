@@ -148,8 +148,13 @@ export const PAGES = [
    * from the page it is about.
    */
   { to: '/rules', label: 'Rules', icon: 'rules', end: false },
-  { to: '/bills', label: 'Bills', icon: 'bills', end: false },
-  { to: '/utilities', label: 'Utilities', icon: 'utilities', end: false },
+  /*
+   * One entry, two views. Bills and Utilities were two entries over the same
+   * merchants — one watching whether a charge arrived, one judging whether the
+   * line is funded at what it costs — and Electricity sat on both, described two
+   * different ways.
+   */
+  { to: '/recurring', label: 'Recurring', icon: 'bills', end: false },
   { to: '/insights', label: 'Insights', icon: 'insights', end: false },
   { to: '/settings', label: 'Settings', icon: 'settings', end: false },
 ] as const satisfies readonly { to: string; label: string; icon: PageIcon; end: boolean }[];

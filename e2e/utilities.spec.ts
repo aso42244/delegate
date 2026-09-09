@@ -8,9 +8,15 @@ import { expect, makeAccount, makeDelegation, test } from './fixtures.js';
  */
 
 test('says plainly when there are no utilities yet', async ({ signedIn }) => {
+  // The old address still works: a bookmark is a promise, and the page it
+  // pointed at is still here as a view.
   await signedIn.goto('/utilities');
 
-  await expect(signedIn.getByRole('heading', { name: 'Utilities' })).toBeVisible();
+  await expect(signedIn.getByRole('heading', { name: 'Recurring' })).toBeVisible();
+  await expect(signedIn.getByRole('radio', { name: 'Cost' })).toHaveAttribute(
+    'aria-checked',
+    'true',
+  );
   await expect(signedIn.getByText('No delegations are marked as a utility.')).toBeVisible();
 });
 
