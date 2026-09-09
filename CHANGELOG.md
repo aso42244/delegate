@@ -6,6 +6,10 @@ phase (`v0.1.0-phase1`, and so on).
 
 ## [Unreleased]
 
+Nothing yet.
+
+## [0.63.0] — 2026-09-09
+
 ### Added
 
 - **One way to make a thing** ([ADR 057](docs/decisions/057-one-way-to-make-a-thing.md)).
