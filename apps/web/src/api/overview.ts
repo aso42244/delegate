@@ -226,6 +226,12 @@ export interface OutflowDayDto {
   readonly spentCents: string;
 }
 
+/** One calendar month of the band. The tile draws three, newest first. */
+export interface OutflowMonthDto {
+  readonly month: string;
+  readonly days: readonly OutflowDayDto[];
+}
+
 export interface PacePointDto {
   readonly date: string;
   readonly inflowCents: string;
@@ -268,7 +274,7 @@ export interface OverviewDataDto {
     readonly delegations: readonly PickableDto[];
   };
   readonly figures?: readonly FigureDto[];
-  readonly daily_outflow?: readonly OutflowDayDto[];
+  readonly daily_outflow?: readonly OutflowMonthDto[];
   readonly income_vs_spending_pace?: readonly PacePointDto[];
   readonly allocation?: readonly AllocationSliceDto[];
   readonly upcoming_bills?: readonly UpcomingBillDto[];

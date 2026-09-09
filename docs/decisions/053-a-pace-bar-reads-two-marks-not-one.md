@@ -1,6 +1,6 @@
 # 053 — A pace bar reads two marks, not one
 
-**Status:** accepted
+**Status:** accepted, amended by [054](054-the-pace-bar-measures-what-the-cycle-had.md)
 **Date:** 2026-09-08
 
 ## Context
@@ -45,6 +45,11 @@ rather than something plausible.
 left, reserve to the right, fill counting up from the left through one and into
 the other. Crossing the split is visible without a word.
 
+> **Superseded by [ADR 054](054-the-pace-bar-measures-what-the-cycle-had.md).**
+> The two zones meant two scales on an 8px track, and nobody reads two scales
+> that small. The cycle zone is now one number — what the line had to spend —
+> and the split moved to 80%.
+
 **The split is at a fixed position on every row, never proportional.** This is
 the load-bearing part. The tick is a _time_ marker, identical on every line, and
 it has to read as one straight vertical down the column — that is what makes a
@@ -55,6 +60,10 @@ The cost is accepted: the reserve zone's width says only that there _is_ reserve
 not how much. The figure beside the bar says how much.
 
 **Red is a negative balance and nothing else.**
+
+> **Amended by [ADR 054](054-the-pace-bar-measures-what-the-cycle-had.md).** The
+> rule stands; what changed is that red is a _segment_ rather than a _state_, so
+> its width says how far past.
 
 **Spending is measured from the payday, not the last press.** A press is where
 money moves and a payday is where time is measured from; the bar compares one

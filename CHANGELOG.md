@@ -6,7 +6,116 @@ phase (`v0.1.0-phase1`, and so on).
 
 ## [Unreleased]
 
-Nothing yet.
+### Changed
+
+- **The pace bar measures what the cycle had, and only overspending is red**
+  ([ADR 054](docs/decisions/054-the-pace-bar-measures-what-the-cycle-had.md),
+  amending 053 after the first version shipped and was used).
+
+  The track's first 80% is now one number — the delegation plus whatever surplus
+  or deficit carried in, which is what this line has to spend before the next
+  payday. The reserve zone is gone: two zones meant two scales, and at 8px tall
+  the same horizontal distance meaning different amounts on either side of a
+  boundary made a row harder to read rather than easier.
+
+  It is derived as `spent + balance` rather than assembled from
+  delegation-plus-carry-in, so it holds whether or not this cycle's press has
+  run yet.
+
+  **The tick travels 0–80% only**, so it lands at the same x on every row
+  whatever that row holds — one straight vertical down the column, which was the
+  owner's stated first priority.
+
+  **The 80–100% segment is overspending past everything the line had**, full at
+  a quarter over, and it is the only red on the bar. The fill keeps the
+  grouping's colour the whole way along the cycle zone, so a line that spent
+  more than its delegation but is still solvent stays its own colour. The first
+  version turned the whole bar red at once, which made two dollars over look
+  like two hundred and took away the colour somebody uses to find the row.
+
+  **The hover text states figures and never a verdict** — "$566 spent of $830 ·
+  $105 carried in". No "On pace", no "Out of money".
+
+  Remaining is unchanged: the line's actual balance, negative when the line is.
+
+- **The Cashflow chart's period moved into its header**, on the right where a
+  tile's own control is looked for — and the two lines saying what the chart is
+  ("Where the money went") and that it has its own period are gone. A control in
+  the corner says the second by being there. "All" went with them: on a
+  household with years of imported history it drew a chart on a scale nothing
+  else on the page shares.
+
+- **Every node on the Cashflow chart states its share of the flow**, so a
+  ribbon can be read against the whole rather than only against the ribbons
+  beside it. Anything under half a percent says `<1%` rather than `0%`.
+
+- **"Utilities against what they cost" is now "Utilities: Spent vs. Delegated".**
+  The tile was right and its name was not: it puts what a utility actually costs
+  per paycheck against what the line is funded at, and the old title said
+  neither half of that.
+
+- **Spending by delegation takes each line's grouping colour.** It was drawing
+  every bar in the accent, so a column of twenty lines was one colour while the
+  chart beside it — the same rows cut by grouping — was six.
+
+- **Tile headings sit on the tile's left edge.** The drag grip was an
+  `opacity-0` box that still took its width, indenting every title by a glyph
+  and a gap, so no heading lined up with the bars beneath it. It is out of the
+  flow now and still appears on hover.
+
+- **The budget panel is always there.** It collapsed to a button, per device;
+  the answer somebody opens this page for should not be behind one. The
+  keyboard-shortcut footer went with it, and the pay cycle moved up onto the tab
+  row — `Sep 1–Sep 14 · day 5 · 36% through` — where it qualifies all three
+  tabs instead of taking a band of its own. No "of 14": the cadence is a divisor
+  and the cycle's length falls out of the anchor.
+
+- **The panel's summary says "To spend" rather than "Budgeted".** Budgeted was
+  the sum of the amounts to delegate — what one press puts in, not what there is
+  — so on lines carrying surplus it came out _smaller_ than Remaining. It is now
+  what those lines had this cycle, the same figure the bars are drawn against,
+  and the three subtract: to spend, less spent, is remaining.
+
+- **Accounts with nothing in them are left out**, and the "Balances only ·
+  what the budget counts" footnote is gone.
+
+- **The Daily outflow band draws three months**, this one and the two before it,
+  on one shared scale — so the darkest cell anywhere is the worst day of the
+  quarter, wherever it falls. Columns are days of the month, so the 1st sits
+  over the 1st and a short month stops early rather than stretching. Every cell
+  says its own date and figure on hover.
+
+### Fixed
+
+- **The Daily outflow band was labelled a day early** — "Aug 31 – Sep 29" for
+  September. The API's day keys are UTC midnight standing for a local calendar
+  day, and formatting one through the browser's zone shifts it back a day
+  anywhere west of UTC. They are read as calendar parts now, and "today" is the
+  reader's own calendar day rather than the UTC one.
+
+- **A tile moved to the sidebar stays there across a reload.**
+  `GET /api/overview/layout` stored `region`, selected it, and re-flowed by it —
+  and then left it out of the response. Every reload therefore read the whole
+  layout back as `main` and emptied the sidebar. The drag worked and the write
+  landed; the read undid it, which is why nothing in the write path looked
+  wrong. No test covered `region` at all, and there are two now: the round trip,
+  and a layout stored before the sidebar existed.
+
+  The client's `OverviewTileDto` declares `region` as required, so the missing
+  field type-checked perfectly and arrived as `undefined` — a hand-written
+  response interface is a claim about the server, not a check on it.
+
+- **The empty sidebar has a drop target somebody can hit.** It was an 8px
+  sliver. It is a proper zone now, drawn only where a region has nothing in it —
+  a populated region needs none, because the top edge of its first tile is the
+  same drop.
+
+- **The sidebar and the main column start at the same height.** That 8px strip
+  reserved 32px above the main column and pushed every tile in it below the
+  panel beside them.
+
+- **Overview's header no longer counts its own tiles.** "9 tiles." was a
+  subtitle stating something the page below it already shows.
 
 ## [0.60.0] — 2026-09-09
 

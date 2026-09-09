@@ -300,7 +300,15 @@ export async function buildSpending(
       options.by === 'grouping' ? (grouping?.id ?? 'ungrouped') : allocation.delegation.id;
     const name =
       options.by === 'grouping' ? (grouping?.name ?? 'No grouping') : allocation.delegation.name;
-    const color = options.by === 'grouping' ? (grouping?.color ?? null) : null;
+    /*
+     * The grouping's colour either way.
+     *
+     * Cut by delegation it was null, so every bar drew in the accent and a
+     * column of twenty lines was one colour — while the chart beside it, the
+     * same rows cut by grouping, was six. The colour means "which grouping this
+     * belongs to", and that is as true of a line as of the group it sits in.
+     */
+    const color = grouping?.color ?? null;
 
     const existing = totals.get(key);
     totals.set(key, {

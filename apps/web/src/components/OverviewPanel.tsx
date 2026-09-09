@@ -4,8 +4,7 @@ import { useEffect, type ReactNode } from 'react';
 import { accountsApi, type AccountDto } from '../api/accounts.js';
 import type { OverviewDataDto, PanelLineDto } from '../api/overview.js';
 import { EmptyState, SegmentedControl } from './layout.jsx';
-import { PaceBar } from './PaceBar.jsx';
-import { Button } from './ui.jsx';
+import { PaceBar, paceSummary } from './PaceBar.jsx';
 
 /**
  * The budget, docked beside the dashboard.
@@ -41,15 +40,12 @@ export function OverviewPanel({
   onTab,
   data,
   onChoose,
-  onCollapse,
 }: {
   readonly variant: 'docked' | 'inline';
   readonly tab: PanelTab;
   readonly onTab: (next: PanelTab) => void;
   readonly data: OverviewDataDto | undefined;
   readonly onChoose: () => void;
-  /** Only the docked panel collapses; inline is already the whole width. */
-  readonly onCollapse?: () => void;
 }): ReactNode {
   /*
    * Keys 1–3, as the design specifies. Bound on the document rather than the
@@ -86,68 +82,50 @@ export function OverviewPanel({
       className="flex min-h-0 flex-col overflow-hidden rounded-lg border border-line bg-canvas"
       aria-label="Budget"
     >
-      <div className="flex items-center gap-2 border-b border-line p-3">
+      {/*
+        Tabs and where the cycle stands, on one row.
+        
+        The cycle read as a strip of its own under the tabs, which spent a whole
+        band of a 398px column on two short figures — and it belongs beside the
+        tabs rather than under them because it qualifies every number in all
+        three: what is left, in accounts, and still owed all mean something
+        different on day 2 than on day 13.
+      */}
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-line p-3">
         <SegmentedControl size="sm" label="Panel" value={tab} options={TABS} onChange={onTab} />
-        {onCollapse !== undefined && (
-          <Button variant="ghost" onClick={onCollapse} aria-label="Collapse the budget panel">
-            ›
-          </Button>
-        )}
+        <CycleStamp cycle={data?.payCycle ?? null} />
       </div>
       <div className="min-h-0 flex-1 overflow-auto">{body}</div>
-      {/* The keyboard map, always visible. A shortcut nobody can see is a
-          shortcut nobody uses. */}
-      <div className="flex flex-wrap items-center gap-2 border-t border-line p-3 text-micro text-muted">
-        <Key>1</Key>
-        <Key>2</Key>
-        <Key>3</Key>
-        <span>tabs</span>
-      </div>
     </aside>
   );
 }
 
-function Key({ children }: { readonly children: ReactNode }): ReactNode {
-  return (
-    <kbd className="rounded border border-line border-b-2 px-1 font-mono text-micro text-muted">
-      {children}
-    </kbd>
-  );
-}
-
-/** The pay-cycle strip: where the household is between one payday and the next. */
-function CycleStrip({ cycle }: { readonly cycle: OverviewDataDto['payCycle'] }): ReactNode {
+/**
+ * Where the household is between one payday and the next, in one line.
+ *
+ * It was a band of its own beneath the tabs, with a progress rail under it. At
+ * 398px that spent a whole row on two short figures, so it sits on the tab row
+ * instead — and the rail went with it, because the percentage is the rail and
+ * saying it twice is what the band was doing.
+ *
+ * No cadence: `pay_cadence` is a divisor and the length of the cycle falls out
+ * of the anchor, so "of 14" told the household a number it already knows.
+ */
+function CycleStamp({ cycle }: { readonly cycle: OverviewDataDto['payCycle'] }): ReactNode {
   if (!cycle) {
     // No anchor set. Said plainly rather than drawing an empty bar, because an
     // empty progress bar reads as "nothing has happened yet".
-    return (
-      <p className="border-b border-line p-3 text-quiet text-muted">
-        Set your next payday on Settings → Budget to see cycle pace.
-      </p>
-    );
+    return <span className="text-micro text-muted">No payday set</span>;
   }
 
   const percent = Math.round((cycle.progressBasisPoints / 10_000) * 100);
-  const from = new Date(cycle.start).toLocaleDateString(undefined, {
-    month: 'short',
-    day: 'numeric',
-  });
-  const to = new Date(cycle.end).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  const day = (iso: string): string =>
+    new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
 
   return (
-    <div className="border-b border-line p-3">
-      <div className="flex items-baseline justify-between gap-2">
-        <span className="text-micro font-semibold tracking-[0.06em] text-muted uppercase">
-          Pay cycle · {from}–{to}
-        </span>
-        <span className="text-micro text-muted">
-          day {cycle.elapsedDays} of {cycle.lengthDays} · {percent}% through
-        </span>
-      </div>
-      <div className="mt-1 h-[3px] overflow-hidden rounded bg-surface-2">
-        <div className="h-full rounded bg-axis" style={{ width: `${percent}%` }} />
-      </div>
-    </div>
+    <span className="text-micro whitespace-nowrap text-muted">
+      {day(cycle.start)}–{day(cycle.end)} · day {cycle.elapsedDays} · {percent}% through
+    </span>
   );
 }
 
@@ -161,9 +139,19 @@ function DelegationsTab({
   const lines = data?.panel ?? [];
   const tick = data?.payCycle?.progressBasisPoints ?? null;
 
-  const planned = lines.reduce((sum, line) => sum + BigInt(line.plannedCents ?? '0'), 0n);
   const spent = lines.reduce((sum, line) => sum + BigInt(line.spentCents), 0n);
   const held = lines.reduce((sum, line) => sum + BigInt(line.balanceCents), 0n);
+  /*
+   * What these lines had to spend this cycle, which is the figure the bars are
+   * drawn against — so the three numbers and every bar below them agree.
+   *
+   * It was the sum of the amounts to delegate, which answered a question nobody
+   * was asking here: "Budgeted $2,450" is what one press puts in, not what there
+   * is, and on a set of lines carrying surplus it was smaller than Remaining.
+   * Two figures on one row where the second is larger than the first is a row
+   * that teaches somebody to distrust both.
+   */
+  const available = spent + held;
 
   // Grouped in the order the server sent, which is the Budget page's own.
   const groups: { name: string | null; lines: PanelLineDto[] }[] = [];
@@ -175,14 +163,11 @@ function DelegationsTab({
 
   return (
     <div className="flex min-h-0 flex-col">
-      <CycleStrip cycle={data?.payCycle ?? null} />
-
       {lines.length > 0 && (
-        /* Budgeted, spent, remaining — the words the household uses. "Held" was
-           mine and read as jargon, and "planned" said something the amount to
-           delegate does not quite mean. */
+        /* To spend, spent, remaining — and the first two subtract to the third,
+           which is what makes the row readable at a glance. */
         <div className="grid grid-cols-3 border-b border-line">
-          <Stat label="Budgeted" value={formatCents(planned)} />
+          <Stat label="To spend" value={formatCents(available)} />
           <Stat label="Spent" value={formatCents(spent)} />
           <Stat
             label="Remaining"
@@ -262,6 +247,11 @@ function Row({
   const spent = BigInt(line.spentCents);
   const planned = BigInt(line.plannedCents ?? '0');
   const balance = BigInt(line.balanceCents);
+  const summary = paceSummary({
+    spentCents: spent,
+    plannedCents: planned,
+    balanceCents: balance,
+  });
 
   return (
     <li className="row-cell flex items-center gap-2 px-3 hover:bg-surface">
@@ -269,28 +259,23 @@ function Row({
         {line.name}
       </span>
       {/*
-        Spent-against-budgeted lives on the bar rather than beside it.
-        
+        Spent-against-available lives on the bar rather than beside it.
+
         Three money columns on a 400px panel left the name truncated to about ten
         characters — "Kenzie Perso…", "Medical Spen…" — to make room for a pair
         of figures that is the bar's own subject. The bar says the ratio; hovering
-        it says the amounts, rounded to the dollar because cents are noise in a
-        comparison. What stays in the column is the one figure somebody reads to
-        decide anything: what is left.
+        it says the amounts and what carried in, rounded to the dollar because
+        cents are noise in a comparison. What stays in the column is the one
+        figure somebody reads to decide anything: what is left.
       */}
-      <span
-        className="min-w-0 flex-1"
-        title={`${formatCents(spent, { cents: false })} spent of ${
-          planned === 0n ? 'no budget' : formatCents(planned, { cents: false })
-        }`}
-      >
+      <span className="min-w-0 flex-1" title={summary}>
         <PaceBar
           spentCents={spent}
           plannedCents={planned}
           balanceCents={balance}
           color={line.color}
           cycleProgressBasisPoints={tick}
-          label={`${line.name}: ${formatCents(spent)} spent of ${formatCents(planned)} budgeted`}
+          label={`${line.name}: ${summary}`}
         />
       </span>
       <span
@@ -323,7 +308,11 @@ function BalancesTab({ kind }: { readonly kind: 'accounts' | 'debts' }): ReactNo
     (account: AccountDto) =>
       account.archivedAt === null &&
       account.inBudget &&
-      account.type === (kind === 'debts' ? 'debt' : 'asset'),
+      account.type === (kind === 'debts' ? 'debt' : 'asset') &&
+      // An account sitting at zero is one nothing can be decided about, and a
+      // closed-but-not-archived card is the commonest of them. The total below
+      // is unchanged either way, because adding zero changes nothing.
+      BigInt(account.balanceCents) !== 0n,
   );
 
   const total = wanted.reduce((sum, account) => sum + BigInt(account.balanceCents), 0n);
@@ -351,9 +340,7 @@ function BalancesTab({ kind }: { readonly kind: 'accounts' | 'debts' }): ReactNo
               </span>
               {/* Cents here, unlike the dense rows above: this is a balance
                   list, and a balance is read against a statement. */}
-              <span
-                className={`money shrink-0 text-quiet font-semibold ${balance === 0n ? 'text-muted' : 'text-ink'}`}
-              >
+              <span className="money shrink-0 text-quiet font-semibold text-ink">
                 {formatCents(balance)}
               </span>
             </li>
@@ -364,11 +351,6 @@ function BalancesTab({ kind }: { readonly kind: 'accounts' | 'debts' }): ReactNo
         <span>{kind === 'debts' ? 'Debts in the budget' : 'Accounts in the budget'}</span>
         <span className="money">{formatCents(total)}</span>
       </div>
-      {/* Said plainly, because a total that silently excluded a $350,000 house
-          would be a number somebody trusts and should not. */}
-      <p className="p-3 text-micro text-muted">
-        Balances only · what the budget counts, not net worth.
-      </p>
     </div>
   );
 }

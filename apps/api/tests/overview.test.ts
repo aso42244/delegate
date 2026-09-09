@@ -68,6 +68,7 @@ interface LayoutBody {
   readonly maxPerRow: number;
   readonly tiles: readonly {
     readonly key: string;
+    readonly region: string;
     readonly row: number;
     readonly position: number;
     readonly config: unknown;
@@ -111,7 +112,10 @@ interface DataBody {
     readonly plannedCents: string | null;
     readonly spentCents: string;
   }[];
-  readonly daily_outflow?: readonly { readonly date: string; readonly spentCents: string }[];
+  readonly daily_outflow?: readonly {
+    readonly month: string;
+    readonly days: readonly { readonly date: string; readonly spentCents: string }[];
+  }[];
   readonly income_vs_spending_pace?: readonly {
     readonly date: string;
     readonly observed: boolean;
@@ -196,6 +200,39 @@ describe('the layout', () => {
       ['spending_by_grouping', 0, 1],
       ['delegations_negative', 1, 0],
     ]);
+  });
+
+  it('remembers which side of the page a tile is on', async () => {
+    /*
+     * Read back, not merely written.
+     *
+     * `region` was stored, selected, and re-flowed by — and then left out of the
+     * response, so every reload handed the whole layout back as `main` and the
+     * sidebar was empty again. The write path was innocent the whole time, which
+     * is why nothing in it caught this: a tile moved to the sidebar, the save
+     * succeeded, and the refresh put it back beside the grid.
+     *
+     * The owner found it by using the page. This is the assertion that would
+     * have found it first.
+     */
+    await putLayout([
+      { key: 'uncategorized_backlog', region: 'main', row: 0, position: 0 },
+      { key: 'daily_outflow', region: 'sidebar', row: 0, position: 0 },
+    ]);
+
+    const body = (await get('/api/overview/layout')).json<LayoutBody>();
+    expect(body.tiles.map((tile) => [tile.key, tile.region])).toEqual([
+      ['uncategorized_backlog', 'main'],
+      ['daily_outflow', 'sidebar'],
+    ]);
+  });
+
+  it('calls a tile saved without a region a main one', async () => {
+    // Every layout stored before the sidebar existed. Absent is not unknown.
+    await putLayout([{ key: 'uncategorized_backlog', row: 0, position: 0 }]);
+
+    const body = (await get('/api/overview/layout')).json<LayoutBody>();
+    expect(body.tiles.map((tile) => tile.region)).toEqual(['main']);
   });
 
   it('comes back in row and position order', async () => {
@@ -1051,15 +1088,32 @@ describe('the cycle-shaped tiles', () => {
      * months — bills arrive on dates and statements close on dates — so it needs
      * no anchor and works on a household that has never set one.
      */
-    const days = body.daily_outflow ?? [];
-    const now = new Date();
-    const inMonth = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 0)).getUTCDate();
-    expect(days.length).toBe(inMonth);
+    const months = body.daily_outflow ?? [];
+    // This month and the two before it: a single band says how this month is
+    // going and nothing about whether that is unusual.
+    expect(months.length).toBe(3);
 
-    // Every day gets a cell, including the empty ones: skipping them would
-    // compress a quiet fortnight into the width of a busy one.
-    expect(days.every((day) => typeof day.spentCents === 'string')).toBe(true);
-    expect(days[0]?.date.slice(8, 10)).toBe('01');
+    const daysIn = (iso: string): number => {
+      const [year, month] = iso.slice(0, 7).split('-').map(Number);
+      return new Date(Date.UTC(year!, month, 0)).getUTCDate();
+    };
+
+    for (const entry of months) {
+      // Every month starts on the 1st and runs to its own length. They are not
+      // padded to a common one: the columns are days of the month, so a short
+      // month stops early rather than putting its 28th under another's 31st.
+      expect(entry.month.slice(8, 10)).toBe('01');
+      expect(entry.days.length).toBe(daysIn(entry.month));
+      expect(entry.days[0]?.date.slice(8, 10)).toBe('01');
+      // Every day gets a cell, including the empty ones: skipping them would
+      // compress a quiet fortnight into the width of a busy one.
+      expect(entry.days.every((day) => typeof day.spentCents === 'string')).toBe(true);
+    }
+
+    // Newest first, each one month before the last.
+    const keys = months.map((entry) => entry.month.slice(0, 7));
+    expect(new Set(keys).size).toBe(3);
+    expect([...keys].sort().reverse()).toEqual(keys);
   });
 
   it('stops the pace lines at today rather than carrying them flat', async () => {

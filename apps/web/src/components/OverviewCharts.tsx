@@ -2,7 +2,7 @@ import { formatCents } from '@budget/shared';
 import type { ReactNode } from 'react';
 import type {
   AllocationSliceDto,
-  OutflowDayDto,
+  OutflowMonthDto,
   PacePointDto,
   UpcomingBillDto,
 } from '../api/overview.js';
@@ -16,51 +16,127 @@ import type {
  * has to remember is different.
  */
 
-const dayLabel = (iso: string): string =>
-  new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+/**
+ * A day key, read as a calendar date rather than as an instant.
+ *
+ * The API's day keys are UTC midnight standing for a local calendar day. Handing
+ * one to `new Date(iso)` and formatting it renders it in the *browser's* zone,
+ * so 2026-09-01 comes out "Aug 31" anywhere west of UTC — which is exactly how a
+ * band of September came to be labelled Aug 31 – Sep 29. The parts are the date;
+ * the zone is not part of it.
+ */
+const dayLabel = (iso: string): string => {
+  const [year, month, day] = iso.slice(0, 10).split('-').map(Number);
+  return new Date(year!, month! - 1, day).toLocaleDateString(undefined, {
+    month: 'short',
+    day: 'numeric',
+  });
+};
+
+/** The same reading, for a month key: "September", "August". */
+const monthLabel = (iso: string): string => {
+  const [year, month] = iso.slice(0, 7).split('-').map(Number);
+  return new Date(year!, month! - 1, 1).toLocaleDateString(undefined, { month: 'long' });
+};
+
+/** The longest a month can be, and so the number of columns the band reserves. */
+const DAYS_IN_LONGEST_MONTH = 31;
 
 /**
- * One cell per day of the cycle, shaded by what went out.
+ * One cell per day, for this calendar month and the two before it.
  *
  * Empty days keep their cell. A band that skipped them would compress a quiet
- * fortnight into the width of a busy one and say something false about the
- * shape of the cycle — the same reason a utility chart keeps an empty month
- * between two bills.
+ * fortnight into the width of a busy one and say something false about the shape
+ * of the month — the same reason a utility chart keeps an empty month between
+ * two bills.
+ *
+ * **One scale across all three rows.** The darkest cell anywhere is the worst
+ * day of the quarter, wherever it falls, which is what makes the three rows a
+ * comparison rather than three charts stacked up. Shading each row against its
+ * own peak would make every month look equally bad.
+ *
+ * **Columns are days of the month, so the 1st sits over the 1st.** Every row
+ * reserves 31 columns and a shorter month simply stops — February ends two or
+ * three columns early rather than being stretched to the full width, which would
+ * put its 28th under March's 31st and quietly break the comparison the rows
+ * exist for.
  */
 export function OutflowBand({
-  days,
+  months,
   todayIso,
 }: {
-  readonly days: readonly OutflowDayDto[];
+  readonly months: readonly OutflowMonthDto[];
   readonly todayIso: string;
 }): ReactNode {
-  const amounts = days.map((day) => BigInt(day.spentCents));
-  const peak = amounts.reduce((max, value) => (value > max ? value : max), 0n);
+  if (months.length === 0) return null;
+
+  const today = todayIso.slice(0, 10);
+  const all = months.flatMap((month) => month.days.map((day) => BigInt(day.spentCents)));
+  // The scale every row is shaded against.
+  const peak = all.reduce((max, value) => (value > max ? value : max), 0n);
+
+  return (
+    <div className="flex flex-col gap-3">
+      {months.map((month, index) => (
+        <MonthRow
+          key={month.month}
+          month={month}
+          peak={peak}
+          today={today}
+          // Only this month has a running total to summarise; the two below it
+          // are complete, and their totals are the row's own figure.
+          current={index === 0}
+        />
+      ))}
+    </div>
+  );
+}
+
+function MonthRow({
+  month,
+  peak,
+  today,
+  current,
+}: {
+  readonly month: OutflowMonthDto;
+  readonly peak: bigint;
+  readonly today: string;
+  readonly current: boolean;
+}): ReactNode {
+  const amounts = month.days.map((day) => BigInt(day.spentCents));
   const total = amounts.reduce((sum, value) => sum + value, 0n);
 
   /*
    * The average is over the days **elapsed**, not the days in the month.
    *
-   * Dividing a month's spending by thirty on the 8th reports a figure nobody
-   * has spent at — it would read as comfortably low all month and correct
-   * itself only on the last day, which is the shape of a number that teaches
-   * people to ignore it.
+   * Dividing a month's spending by thirty on the 8th reports a figure nobody has
+   * spent at — it would read as comfortably low all month and correct itself
+   * only on the last day, which is the shape of a number that teaches people to
+   * ignore it. A month that is over has elapsed entirely.
    */
-  const today = todayIso.slice(0, 10);
-  const elapsed = Math.max(days.filter((day) => day.date.slice(0, 10) <= today).length, 1);
+  const elapsed = current
+    ? Math.max(month.days.filter((day) => day.date.slice(0, 10) <= today).length, 1)
+    : Math.max(month.days.length, 1);
   const average = total / BigInt(elapsed);
 
-  const peakIndex = amounts.findIndex((value) => value === peak && value > 0n);
-  const peakDay = peakIndex >= 0 ? days[peakIndex] : undefined;
-
   return (
-    <div className="flex flex-col gap-2">
+    <div className="flex flex-col gap-1">
+      <div className="flex items-baseline justify-between gap-2">
+        <span className="text-micro font-semibold tracking-[0.06em] text-muted uppercase">
+          {monthLabel(month.month)}
+        </span>
+        <span className="text-micro text-muted">
+          <span className="money text-ink">{formatCents(total, { cents: false })}</span> out · avg{' '}
+          <span className="money">{formatCents(average, { cents: false })}</span>/day
+        </span>
+      </div>
+
       <div
-        className="flex gap-1"
+        className="flex gap-[2px]"
         role="img"
-        aria-label={`Daily outflow, ${formatCents(total)} over ${days.length} days`}
+        aria-label={`${monthLabel(month.month)}: ${formatCents(total)} over ${month.days.length} days`}
       >
-        {days.map((day, index) => {
+        {month.days.map((day, index) => {
           const value = amounts[index]!;
           // Opacity carries the amount; a zero day keeps the plain track so it
           // reads as "nothing" rather than as "a very small something".
@@ -70,11 +146,16 @@ export function OutflowBand({
           return (
             <span
               key={day.date}
-              title={`${dayLabel(day.date)}: ${formatCents(value)}`}
-              className={`h-4 flex-1 rounded-sm ${
+              // Every cell says its own date and figure. The band shows the
+              // shape; this is how somebody reads one column off it.
+              title={`${dayLabel(day.date)} · ${formatCents(value)}`}
+              className={`h-4 rounded-sm ${
                 isToday ? 'outline outline-2 outline-offset-1 outline-accent' : ''
               }`}
               style={{
+                // A fixed share of 31, so a short month stops early instead of
+                // stretching and taking the 1st out from over the 1st.
+                width: `calc(${100 / DAYS_IN_LONGEST_MONTH}% - 2px)`,
                 background:
                   value > 0n
                     ? `color-mix(in srgb, var(--color-accent) ${Math.round((0.15 + share * 0.75) * 100)}%, var(--color-surface-2))`
@@ -84,33 +165,6 @@ export function OutflowBand({
           );
         })}
       </div>
-
-      {/* Dates under the ends, so the band says which month it is drawing
-          without the header having to carry it — the header is two lines at
-          sidebar width and this is a third thing it would have to hold. */}
-      <div className="flex justify-between text-micro text-axis">
-        <span>{days[0] ? dayLabel(days[0].date) : ''}</span>
-        <span>{days.length > 0 ? dayLabel(days[days.length - 1]!.date) : ''}</span>
-      </div>
-
-      {/*
-        The rollups, under the band rather than beside the title.
-        
-        In the mock they sit on the header line, which works at full width and
-        wraps into three ragged lines in a 400px sidebar. Here they take a line
-        of their own and wrap predictably.
-      */}
-      <p className="text-quiet text-muted">
-        <span className="money font-semibold text-ink">{formatCents(total, { cents: false })}</span>{' '}
-        out · avg <span className="money">{formatCents(average, { cents: false })}</span>/day
-        {peakDay ? (
-          <>
-            {' '}
-            · peak <span className="money">{formatCents(peak, { cents: false })}</span> on{' '}
-            {dayLabel(peakDay.date)}
-          </>
-        ) : null}
-      </p>
     </div>
   );
 }

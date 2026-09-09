@@ -59,17 +59,19 @@ import { Alert, Button, Modal, SelectField, Toggle } from '../components/ui.jsx'
  * request follows; a failure puts it back and says so.
  */
 
-/** The cashflow chart's own options, defaulting to year-to-date. */
+/**
+ * The cashflow chart's own options, defaulting to year-to-date.
+ *
+ * No "All". On a household with years of imported history it drew a chart whose
+ * scale nothing else on the page shares, and the question this tile answers —
+ * where is the money going — is not one anybody asks of all time at once.
+ */
 const CASHFLOW_WINDOWS = [
   { value: '30d', label: '30D' },
   { value: '90d', label: '90D' },
   { value: 'ytd', label: 'YTD' },
   { value: '1yr', label: '1Y' },
-  { value: 'all', label: 'All' },
 ] as const;
-
-/** Per device, like the sidebar's collapse: a fact about this screen. */
-const PANEL_KEY = 'budget.overview.panel-collapsed';
 
 /** A phone's four destinations. The panel's three tabs, plus the tiles. */
 const PHONE_VIEWS = [
@@ -97,7 +99,7 @@ const TILE_COPY: Record<string, { readonly title: string; readonly description?:
   spending_by_grouping: { title: 'Spending by grouping' },
   spending_by_delegation: { title: 'Spending by delegation' },
   asset_debt_composition: { title: 'What it is all made of' },
-  utilities_vs_delegated: { title: 'Utilities against what they cost' },
+  utilities_vs_delegated: { title: 'Utilities: Spent vs. Delegated' },
   delegation_movers: { title: 'What moved' },
   net_worth_over_time: { title: 'Net worth' },
   assets_vs_debts: { title: 'Assets against debts' },
@@ -107,13 +109,17 @@ const TILE_COPY: Record<string, { readonly title: string; readonly description?:
   home_equity_over_time: { title: 'Home equity' },
   debt_trajectory: { title: 'Debt trajectory' },
   figures: { title: 'Figures' },
-  daily_outflow: { title: 'Daily outflow', description: 'This month' },
+  /* Each row names its own month, so the header does not have to — and "This
+     month" became wrong the moment there were three of them. */
+  daily_outflow: { title: 'Daily outflow' },
   income_vs_spending_pace: { title: 'In against out', description: 'Running totals' },
   allocation: { title: 'Allocation' },
   upcoming_bills: { title: 'Upcoming', description: 'From Bills' },
   account_balance_history: { title: 'Account balance' },
   delegation_balance_history: { title: 'Delegation balance' },
-  cashflow: { title: 'Cashflow', description: 'Where the money went' },
+  /* No description. The chart says where the money went by being a picture of
+     where the money went, and the header's right-hand side is the period. */
+  cashflow: { title: 'Cashflow' },
   delegations: { title: 'Delegations' },
   delegations_negative: { title: 'Over-spent lines' },
   cycle_surplus: { title: 'This cycle' },
@@ -158,6 +164,7 @@ function TileShell({
   onSplit,
   onJoin,
   drag,
+  controls,
   children,
 }: {
   readonly tile: OverviewTileDto;
@@ -176,6 +183,8 @@ function TileShell({
     readonly onDrop: (event: React.DragEvent) => void;
     readonly over: DropEdge | null;
   };
+  /** This tile's own control, drawn on the right of its header. */
+  readonly controls?: ReactNode;
   readonly children: ReactNode;
 }): ReactNode {
   const copy = TILE_COPY[tile.key] ?? { title: tile.key };
@@ -216,25 +225,36 @@ function TileShell({
         />
       )}
 
+      {/*
+        Says the tile can be pulled. Revealed on hover rather than drawn
+        permanently, because it is an affordance for an occasional act on a page
+        of figures.
+
+        **Out of the flow, in the tile's own padding.** It used to sit before the
+        heading as an `opacity-0` box that still took its width, which indented
+        every title by a glyph and a gap — so no heading lined up with the bars
+        and figures beneath it. Taking it out of the flow keeps the header from
+        reflowing on hover *and* puts the title on the tile's left edge.
+      */}
+      {draggable && (
+        <span
+          aria-hidden="true"
+          className="absolute top-4 left-1 text-quiet text-faint opacity-0 transition-opacity group-hover:opacity-100"
+        >
+          ⠿
+        </span>
+      )}
+
       <div className="flex min-w-0 items-baseline gap-2">
-        {/*
-          Says the tile can be pulled. Revealed on hover rather than drawn
-          permanently, because it is an affordance for an occasional act on a
-          page of figures — and it keeps its width either way, since an
-          `opacity-0` control still occupies its box and a header that reflows on
-          hover is worse than one carrying a faint glyph.
-        */}
-        {draggable && (
-          <span
-            aria-hidden="true"
-            className="shrink-0 text-quiet text-faint opacity-0 transition-opacity group-hover:opacity-100"
-          >
-            ⠿
-          </span>
-        )}
         <h2 className="min-w-0 truncate text-section font-semibold text-ink">{copy.title}</h2>
         {copy.description !== undefined && (
           <p className="truncate text-quiet text-muted">{copy.description}</p>
+        )}
+        {/* A control that belongs to this tile rather than to the page: the
+            cashflow period, on the header's right where a tile's own control is
+            looked for. Hidden while arranging, which needs the same room. */}
+        {controls !== undefined && !arranging && (
+          <div className="ml-auto flex shrink-0 items-center gap-2">{controls}</div>
         )}
         {arranging && (
           /*
@@ -288,6 +308,21 @@ function TileShell({
       {children}
     </section>
   );
+}
+
+/**
+ * Today, as a calendar day in the reader's own zone.
+ *
+ * `toISOString` gives the UTC day, which after 7pm in Chicago is already
+ * tomorrow — and "today" would outline a cell for a day that has not happened.
+ */
+function localToday(): string {
+  const now = new Date();
+  return [
+    now.getFullYear(),
+    String(now.getMonth() + 1).padStart(2, '0'),
+    String(now.getDate()).padStart(2, '0'),
+  ].join('-');
 }
 
 /**
@@ -864,17 +899,16 @@ function DelegationsTile({
  * go", read as a retrospective, while everything around it answers "where do I
  * stand". Year-to-date by default, because a fortnight of cashflow is mostly one
  * paycheck and one rent payment.
+ *
+ * The control sits in the tile's header rather than above the chart, which is
+ * where a tile's own control is looked for — and it no longer carries a sentence
+ * saying it has its own period. A control in the tile's corner says that by
+ * being there.
  */
 function CashflowTile({
   cashflow,
-  window,
-  onWindow,
-  preview = false,
 }: {
   readonly cashflow: NonNullable<OverviewDataDto['cashflow']>;
-  readonly window: string;
-  readonly onWindow: (next: string) => void;
-  readonly preview?: boolean;
 }): ReactNode {
   const uncategorizedIn = BigInt(cashflow.uncategorizedInCents);
   const uncategorizedOut = BigInt(cashflow.uncategorizedOutCents);
@@ -933,19 +967,6 @@ function CashflowTile({
 
   return (
     <div className="flex flex-col gap-4">
-      {!preview && (
-        <div className="flex flex-wrap items-center gap-2">
-          <SegmentedControl
-            size="sm"
-            label="Cashflow period"
-            value={window}
-            options={CASHFLOW_WINDOWS}
-            onChange={onWindow}
-          />
-          <span className="text-quiet text-muted">This chart has its own period.</span>
-        </div>
-      )}
-
       {cashflow.cycleMissing ? (
         <EmptyState>No cycle has been run yet.</EmptyState>
       ) : (
@@ -1107,30 +1128,43 @@ const ALLOCATION_MODES = [
 export type DropEdge = 'left' | 'right' | 'above' | 'below';
 
 /**
- * A target above everything in a region.
+ * Which edge of a tile a drop would land on.
  *
- * The top edge of the first tile is a drop target, but only once a first tile
- * exists — an empty sidebar could not be dropped into at all, and the strip of
- * page above a full grid was dead space.
- *
- * **It reserves its 8px whether or not a drag is running.** Appearing only
- * mid-drag pushed everything below it down by 32px at the moment somebody
- * picked a tile up, so the tile they were aiming at moved out from under the
- * pointer. A target that displaces what you are aiming at is worse than no
- * target. It is invisible at rest and costs one row of 8px.
+ * The vertical quarters decide first: a pointer in the top or bottom quarter
+ * means a new row, and anywhere in the middle half means joining this one.
+ * Quarters rather than halves because joining is the commoner act and should
+ * have the larger target — and because a tile is much wider than it is tall, so
+ * a horizontal band of a quarter is still comfortable to hit.
  */
-function DropStrip({
+function edgeFor(box: DOMRect, x: number, y: number): DropEdge {
+  const band = box.height / 4;
+  if (y < box.top + band) return 'above';
+  if (y > box.bottom - band) return 'below';
+  return x < box.left + box.width / 2 ? 'left' : 'right';
+}
+
+/**
+ * Where a tile goes when a region has none.
+ *
+ * It used to be an 8px sliver above every region, reserving its space so it did
+ * not shift the layout mid-drag. That solved one problem and created two: 8px is
+ * not a target anybody can hit — a tile dragged at it landed back in the grid —
+ * and the 32px it took above the main column pushed those tiles below the panel
+ * beside them.
+ *
+ * So it is drawn only when a region is **empty**, where it is the only way in,
+ * and it is a proper zone rather than a line. A populated region needs none: the
+ * top edge of its first tile already means "above this", which is the same drop.
+ */
+function EmptyRegionDrop({
   label,
   active,
-  dragging,
   onOver,
   onLeave,
   onDrop,
 }: {
   readonly label: string;
   readonly active: boolean;
-  /** Visible only while something is being dragged; the space is always there. */
-  readonly dragging: boolean;
   readonly onOver: () => void;
   readonly onLeave: () => void;
   readonly onDrop: () => void;
@@ -1148,18 +1182,13 @@ function DropStrip({
         event.preventDefault();
         onDrop();
       }}
-      className={`h-2 rounded transition-colors ${
-        active ? 'bg-accent' : dragging ? 'bg-surface-2' : 'bg-transparent'
+      className={`flex min-h-24 items-center justify-center rounded-lg border border-dashed p-4 text-quiet transition-colors ${
+        active ? 'border-accent bg-accent-soft text-accent' : 'border-line text-muted'
       }`}
-    />
+    >
+      {label}
+    </div>
   );
-}
-
-function edgeFor(box: DOMRect, x: number, y: number): DropEdge {
-  const band = box.height / 4;
-  if (y < box.top + band) return 'above';
-  if (y > box.bottom - band) return 'below';
-  return x < box.left + box.width / 2 ? 'left' : 'right';
 }
 
 /** Every figure the band can hold. Longer than the band is wide, deliberately. */
@@ -1324,8 +1353,6 @@ function TileBody({
   budget,
   chosen,
   onChoose,
-  cashflowWindow,
-  onCashflowWindow,
   onChooseFigures,
   allocationMode,
   onAllocationMode,
@@ -1340,8 +1367,6 @@ function TileBody({
   readonly budget?: BudgetViewDto | undefined;
   readonly chosen?: readonly string[];
   readonly onChoose?: () => void;
-  readonly cashflowWindow?: string;
-  readonly onCashflowWindow?: (next: string) => void;
   readonly onChooseFigures?: () => void;
   readonly allocationMode?: 'plan' | 'position';
   readonly onAllocationMode?: (next: 'plan' | 'position') => void;
@@ -1435,10 +1460,10 @@ function TileBody({
         />
       ) : null;
     case 'daily_outflow':
-      // The calendar month, so it needs no payday anchor and works on a
-      // household that has never set one.
+      // Calendar months, so it needs no payday anchor and works on a household
+      // that has never set one.
       return data.daily_outflow ? (
-        <OutflowBand days={data.daily_outflow} todayIso={new Date().toISOString()} />
+        <OutflowBand months={data.daily_outflow} todayIso={localToday()} />
       ) : null;
     case 'income_vs_spending_pace':
       return data.income_vs_spending_pace ? (
@@ -1482,14 +1507,7 @@ function TileBody({
     case 'upcoming_bills':
       return data.upcoming_bills ? <UpcomingList bills={data.upcoming_bills} /> : null;
     case 'cashflow':
-      return data.cashflow ? (
-        <CashflowTile
-          cashflow={data.cashflow}
-          window={cashflowWindow ?? 'ytd'}
-          onWindow={onCashflowWindow ?? (() => undefined)}
-          preview={preview}
-        />
-      ) : null;
+      return data.cashflow ? <CashflowTile cashflow={data.cashflow} /> : null;
     case 'uncategorized_backlog':
       return data.uncategorized_backlog ? (
         <BacklogTile backlog={data.uncategorized_backlog} />
@@ -1549,25 +1567,6 @@ export function Overview(): ReactNode {
   const [pickingFigures, setPickingFigures] = useState(false);
 
   const [tab, setTab] = useState<PanelTab>('delegations');
-  const [collapsed, setCollapsed] = useState(() => {
-    if (typeof globalThis.window === 'undefined') return false;
-    try {
-      return globalThis.window.localStorage.getItem(PANEL_KEY) === 'true';
-    } catch {
-      // A private window, or site data blocked. A missing preference is not an
-      // error; it means the default.
-      return false;
-    }
-  });
-
-  function setPanelCollapsed(next: boolean): void {
-    setCollapsed(next);
-    try {
-      globalThis.window.localStorage.setItem(PANEL_KEY, String(next));
-    } catch {
-      // Nothing to do: the panel still collapses for this session.
-    }
-  }
 
   /*
    * On a phone the panel's tabs are promoted onto the page and Overview becomes
@@ -1906,6 +1905,25 @@ export function Overview(): ReactNode {
     else saveRows([[tile], ...grid], aside);
   }
 
+  /**
+   * A tile's own control, drawn in its header.
+   *
+   * Only the cashflow chart has one: it carries a period the page's own control
+   * does not set, and a control in the tile's corner is how that is said.
+   */
+  function controlsFor(key: string): ReactNode {
+    if (key !== 'cashflow') return undefined;
+    return (
+      <SegmentedControl
+        size="sm"
+        label="Cashflow period"
+        value={data.data?.cashflowWindow ?? 'ytd'}
+        options={CASHFLOW_WINDOWS}
+        onChange={setCashflowWindow}
+      />
+    );
+  }
+
   /** What a picker tile has been pointed at, or undefined. */
   function pickedId(key: string, field: string): string | undefined {
     const config = tiles.find((tile) => tile.key === key)?.config;
@@ -2011,17 +2029,6 @@ export function Overview(): ReactNode {
     <>
       <PageHeader
         title="Overview"
-        /*
-         * The subtitle states a fact the body does not already state. It said
-         * "No tiles yet." while the empty state below said exactly the same
-         * words — the text budget broken in the plainest way, and visible in the
-         * first screenshot of the page in real use.
-         */
-        subtitle={
-          tiles.length === 0
-            ? undefined
-            : `${tiles.length} ${tiles.length === 1 ? 'tile' : 'tiles'}.`
-        }
         actions={
           <>
             <SegmentedControl
@@ -2150,11 +2157,12 @@ export function Overview(): ReactNode {
         className={`${phoneView === 'overview' ? '' : 'hidden lg:grid'} grid gap-6 lg:grid-cols-[minmax(0,1fr)_398px]`}
       >
         <div className="min-w-0">
-          <div className="mb-6">
-            <DropStrip
-              label="Move to the top"
+          {layout.isPending || data.isPending ? null : rows.length === 0 ? (
+            /* Nothing here, so this is the only way in. Anywhere else, the top
+               edge of the first tile is the same drop. */
+            <EmptyRegionDrop
+              label={dragging === null ? 'No tiles yet.' : 'Drop here'}
               active={topTarget === 'main'}
-              dragging={dragging !== null}
               onOver={() => setTopTarget('main')}
               onLeave={() => setTopTarget(null)}
               onDrop={() => {
@@ -2163,10 +2171,6 @@ export function Overview(): ReactNode {
                 setTopTarget(null);
               }}
             />
-          </div>
-
-          {layout.isPending || data.isPending ? null : tiles.length === 0 ? (
-            <EmptyState>No tiles yet.</EmptyState>
           ) : (
             <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
               {rows.map((group) =>
@@ -2203,6 +2207,7 @@ export function Overview(): ReactNode {
                       },
                       over: over?.key === tile.key ? over.side : null,
                     }}
+                    controls={controlsFor(tile.key)}
                   >
                     <TileBody
                       tileKey={tile.key}
@@ -2210,8 +2215,6 @@ export function Overview(): ReactNode {
                       budget={budget.data}
                       chosen={chosenFor(tile)}
                       onChoose={() => setPicking(tile.key)}
-                      cashflowWindow={data.data?.cashflowWindow ?? 'ytd'}
-                      onCashflowWindow={(next) => setCashflowWindow(next)}
                       onChooseFigures={() => setPickingFigures(true)}
                       allocationMode={allocationMode}
                       onAllocationMode={setAllocationMode}
@@ -2238,35 +2241,34 @@ export function Overview(): ReactNode {
           edges it offers are the horizontal ones.
         */}
         <div className="hidden flex-col gap-6 lg:flex">
-          {collapsed ? (
-            <Button onClick={() => setPanelCollapsed(false)} aria-label="Open the budget panel">
-              Budget
-            </Button>
-          ) : (
-            <OverviewPanel
-              variant="docked"
-              tab={tab}
-              onTab={setTab}
-              data={data.data}
-              onChoose={() => setPicking('delegations')}
-              onCollapse={() => setPanelCollapsed(true)}
-            />
-          )}
+          {/*
+            Always shown. It collapsed to a button, per device — and the answer
+            somebody opens this page for should not be behind one. The width it
+            gave back was the width the dashboard is designed around.
+          */}
+          <OverviewPanel
+            variant="docked"
+            tab={tab}
+            onTab={setTab}
+            data={data.data}
+            onChoose={() => setPicking('delegations')}
+          />
 
           {/* Above everything in this column, which no tile's own edge reaches
               — and the only way to drop into an empty sidebar at all. */}
-          <DropStrip
-            label="Move to the top of the sidebar"
-            active={topTarget === 'sidebar'}
-            dragging={dragging !== null}
-            onOver={() => setTopTarget('sidebar')}
-            onLeave={() => setTopTarget(null)}
-            onDrop={() => {
-              dropAtTop('sidebar');
-              setDragging(null);
-              setTopTarget(null);
-            }}
-          />
+          {sidebarTiles.length === 0 && (
+            <EmptyRegionDrop
+              label={dragging === null ? 'Drag a tile here' : 'Drop here'}
+              active={topTarget === 'sidebar'}
+              onOver={() => setTopTarget('sidebar')}
+              onLeave={() => setTopTarget(null)}
+              onDrop={() => {
+                dropAtTop('sidebar');
+                setDragging(null);
+                setTopTarget(null);
+              }}
+            />
+          )}
 
           {sidebarTiles.map((tile) => (
             <TileShell
@@ -2301,6 +2303,7 @@ export function Overview(): ReactNode {
                 },
                 over: over?.key === tile.key ? over.side : null,
               }}
+              controls={controlsFor(tile.key)}
             >
               <TileBody
                 tileKey={tile.key}
@@ -2308,8 +2311,6 @@ export function Overview(): ReactNode {
                 budget={budget.data}
                 chosen={chosenFor(tile)}
                 onChoose={() => setPicking(tile.key)}
-                cashflowWindow={data.data?.cashflowWindow ?? 'ytd'}
-                onCashflowWindow={(next) => setCashflowWindow(next)}
                 onChooseFigures={() => setPickingFigures(true)}
                 allocationMode={allocationMode}
                 onAllocationMode={setAllocationMode}
