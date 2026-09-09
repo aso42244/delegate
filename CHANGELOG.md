@@ -6,6 +6,10 @@ phase (`v0.1.0-phase1`, and so on).
 
 ## [Unreleased]
 
+Nothing yet.
+
+## [0.60.0] — 2026-09-09
+
 ### Added
 
 - **Account balance and Delegation balance**, the last two tiles from the
