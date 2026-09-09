@@ -112,10 +112,14 @@ recovered.
 [ADR 042](042-delegate-installs-anywhere-in-one-line.md), 2026-09-01.**
 
 This existed because a Mac produces `arm64` images a DS220+ cannot run, and
-nothing published a multi-arch one. Something does now — `amd64` and `arm64`, on
-version tags — so the NAS can pull the artefact rather than compile it, and the
-divergence this ADR created between the local build context and the deployed one
-goes with it. That divergence was not theoretical: it is how a stale
+nothing published an image at all. Something does now — `amd64`, on version tags
+— so the NAS can pull the artefact rather than compile it, and the divergence
+this ADR created between the local build context and the deployed one goes with
+it.
+
+**This ADR is still the answer on arm64.** The published image dropped arm64 in
+v0.63.0, so a Pi or an Apple Silicon host builds on the machine that runs it,
+exactly as written below. That divergence was not theoretical: it is how a stale
 `.tsbuildinfo` broke a local build while the NAS was fine.
 
 Building on the target stays supported and documented. It is still the answer for

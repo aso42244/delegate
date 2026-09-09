@@ -145,7 +145,11 @@ fi
 # Note the architecture: this produces an arm64 image on an Apple Silicon Mac
 # and the DS220+ is x86_64. That proves the Dockerfile is correct, not that a
 # native module has a prebuilt binary for the NAS — which is why ADR 019 has the
-# NAS build its own image from source.
+# NAS build its own image from source, and why the published image is built on an
+# x86_64 runner rather than here.
+#
+# The published image is amd64 only since v0.63.0. An arm64 host builds from
+# source, which is the route this step happens to exercise every run.
 # Tor, started the way compose starts it.
 #
 # The check that stood here ran `tor --verify-config` over the torrc with the

@@ -6,7 +6,20 @@ phase (`v0.1.0-phase1`, and so on).
 
 ## [Unreleased]
 
-Nothing yet.
+### Changed
+
+- **The published image is `amd64` only.** arm64 was built under QEMU on an
+  x86_64 runner — compiling argon2 and Prisma emulated, at roughly fifteen
+  minutes against amd64's one — and on `v0.63.0` it stopped finishing at all,
+  hitting the workflow's 45-minute cap twice on a release that changed no
+  dependency.
+
+  Nobody was pulling it. The deployment this exists for is a DS220+, which is
+  x86_64, and an arm64 host builds from source — which is what
+  [ADR 019](docs/decisions/019-the-image-is-built-on-the-machine-that-runs-it.md)
+  describes and what the NAS itself did for twenty releases, so it is the
+  better-exercised of the two routes. Restoring it is one line plus
+  `setup-qemu-action`, and would want the timeout raised rather than left at 45.
 
 ## [0.63.0] — 2026-09-09
 

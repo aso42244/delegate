@@ -6,6 +6,10 @@
 # push and every pull request. That is the expensive shape, and none of it is
 # here.
 #
+# **This publishes one architecture, amd64.** arm64 was dropped in v0.63.0 —
+# emulated, slow, and it stopped finishing; the note on `platforms` has the
+# reasoning. An arm64 host builds from source, which is what the NAS does anyway.
+#
 # **This does not gate anything.** `npm run verify` on the machine the code was
 # written on is still the only thing standing between a branch and `main`, which
 # is what ADR 022 actually decided. What changed is where the *image* comes from,
@@ -16,7 +20,9 @@
 #   1. It runs on version tags only. Not on pushes to main, not on pull
 #      requests. Pushing a tag is a deliberate act that happens once a release.
 #   2. `timeout-minutes` caps a hung build, which would otherwise sit there for
-#      the six-hour default.
+#      the six-hour default. It is generous for what this now builds: a native
+#      amd64 image takes about a minute, and the cap is there for the case where
+#      something is wrong rather than to size the normal run.
 #   3. `concurrency` cancels an in-flight run when a second tag arrives.
 #   4. Layer caching, so a release that changes one file does not rebuild the
 #      world.
@@ -58,11 +64,10 @@ jobs:
         with:
           ref: ${{ github.event.inputs.tag || github.ref }}
 
-      # amd64 builds natively on the runner; arm64 is emulated. Emulation is the
-      # slow half — argon2 and Prisma both compile — which is what the timeout
-      # above is sized for. Both are needed: a NAS and a cloud VM are x86_64, a
-      # Raspberry Pi and an Apple Silicon Mac are not.
-      - uses: docker/setup-qemu-action@v3
+      # amd64 only, so nothing here is emulated.
+      #
+      # `setup-qemu-action` is what made an arm64 build possible on an x86_64
+      # runner, and it is gone with it. See the note on `platforms` below.
       - uses: docker/setup-buildx-action@v3
 
       - uses: docker/login-action@v3
@@ -94,7 +99,23 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: .
-          platforms: linux/amd64,linux/arm64
+          # **amd64 only.**
+          #
+          # arm64 was emulated through QEMU, which meant compiling argon2 and
+          # Prisma under emulation — the slow half of every release, at roughly
+          # fifteen minutes against amd64's one. On v0.63.0 it stopped finishing
+          # at all: the job hit the 45-minute cap with arm64 still inside
+          # `npm ci`, twice, on a release that changed no dependency.
+          #
+          # Nobody was pulling it. The deployment this exists for is a DS220+,
+          # which is x86_64, and ADR 019 already has the NAS build its own image
+          # from source — so the arm64 route is a *build* route rather than a
+          # pull, and it is the one route that is actually exercised. Somebody on
+          # a Pi or an Apple Silicon Mac builds from source, as the NAS does.
+          #
+          # Restoring it is one line plus `setup-qemu-action` above, and would
+          # want the timeout raised rather than left at 45.
+          platforms: linux/amd64
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
