@@ -49,6 +49,11 @@ phase (`v0.1.0-phase1`, and so on).
   ribbon can be read against the whole rather than only against the ribbons
   beside it. Anything under half a percent says `<1%` rather than `0%`.
 
+- **"Utilities against what they cost" is now "Utilities: Spent vs. Delegated".**
+  The tile was right and its name was not: it puts what a utility actually costs
+  per paycheck against what the line is funded at, and the old title said
+  neither half of that.
+
 - **Spending by delegation takes each line's grouping colour.** It was drawing
   every bar in the accent, so a column of twenty lines was one colour while the
   chart beside it — the same rows cut by grouping — was six.

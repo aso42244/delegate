@@ -99,7 +99,7 @@ const TILE_COPY: Record<string, { readonly title: string; readonly description?:
   spending_by_grouping: { title: 'Spending by grouping' },
   spending_by_delegation: { title: 'Spending by delegation' },
   asset_debt_composition: { title: 'What it is all made of' },
-  utilities_vs_delegated: { title: 'Utilities against what they cost' },
+  utilities_vs_delegated: { title: 'Utilities: Spent vs. Delegated' },
   delegation_movers: { title: 'What moved' },
   net_worth_over_time: { title: 'Net worth' },
   assets_vs_debts: { title: 'Assets against debts' },

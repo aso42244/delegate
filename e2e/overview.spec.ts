@@ -173,7 +173,7 @@ test('every Batch A tile can be added and draws something', async ({ signedIn })
     'Spending by grouping',
     'Spending by delegation',
     'What it is all made of',
-    'Utilities against what they cost',
+    'Utilities: Spent vs. Delegated',
     'What moved',
   ];
 
