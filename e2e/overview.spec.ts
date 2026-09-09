@@ -626,6 +626,25 @@ test('setting a payday turns the cycle on across the page', async ({ signedIn })
   ).toHaveCount(0);
 });
 
+test('the panel lists only accounts the budget counts', async ({ signedIn }) => {
+  // A house is net worth, not money this budget can allocate. ADR 050 made that
+  // boundary a wall after three places crossed it, and this panel is the
+  // budget's — so it stands on the same side.
+  await makeAccount('Everyday Checking', 'asset', 500_00n);
+  await makeAccount('The house', 'asset', 35_000_000n, 'manual', null, { inBudget: false });
+
+  await signedIn.goto('/overview');
+  const panel = signedIn.getByRole('complementary', { name: 'Budget' });
+  await panel.getByRole('radio', { name: 'Accounts' }).click();
+
+  await expect(panel.getByText('Everyday Checking')).toBeVisible();
+  await expect(panel.getByText('The house')).toHaveCount(0);
+
+  // And the total says what it counted, because a figure that silently excluded
+  // a house is one somebody trusts and should not.
+  await expect(panel.getByText('Accounts in the budget')).toBeVisible();
+});
+
 test('the arrange controls are hidden until asked for', async ({ signedIn }) => {
   await signedIn.goto('/overview');
   await addBothTiles(signedIn);
