@@ -1229,6 +1229,15 @@ restarts. That is a smaller and more honest loop than the source route below: it
 deploys the artefact `npm run verify` was run against rather than recompiling it
 on a machine that has never run the tests.
 
+**A manual re-run of the publish workflow tags nothing unless it is told to.**
+`docker/metadata-action` derives a version from `github.ref`, and on a
+`workflow_dispatch` that is `refs/heads/main` however the checkout was pointed —
+so the semver patterns match nothing and the only tag pushed is `latest`. The
+image is correct and signed and simply has no version on it, which reads at the
+NAS as `manifest unknown`: a deploy that looks like a typo for a release that
+built fine. Fixed in v0.63.0 by passing
+`value=${{ github.event.inputs.tag || github.ref_name }}` to each pattern.
+
 **A tag is not deployable the moment it is pushed, and there are _two_ ready
 signals rather than one.** The publish workflow takes a couple of minutes now
 that nothing is emulated, and it pushes the image before it signs it, as separate

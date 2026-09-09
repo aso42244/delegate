@@ -6,6 +6,20 @@ phase (`v0.1.0-phase1`, and so on).
 
 ## [Unreleased]
 
+### Fixed
+
+- **A manual re-run of the publish workflow now tags the version it built.**
+  `docker/metadata-action` derives a version from `github.ref`, and on a
+  `workflow_dispatch` that is `refs/heads/main` however the checkout was
+  pointed — so every semver pattern matched nothing and the only tag pushed was
+  `latest`. The image was correct and signed and simply had no version on it,
+  which reads at the far end as `manifest unknown`: a deploy that looks like a
+  typo for a release that built fine.
+
+  The workflow has advertised that manual re-run since it was written, so it has
+  never worked; it went unnoticed because until now every release was published
+  by a tag push.
+
 ### Changed
 
 - **The published image is `amd64` only.** arm64 was built under QEMU on an
