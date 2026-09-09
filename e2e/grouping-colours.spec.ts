@@ -1,9 +1,9 @@
 import type { Page } from '@playwright/test';
-import { expect, makeAccount, makeDelegation, test } from './fixtures.js';
+import { expect, makeAccount, makeDelegation, openNew, test } from './fixtures.js';
 
 /** Creates a grouping through the dialog the page now opens. */
 async function makeGrouping(page: Page, name: string): Promise<void> {
-  await page.getByRole('button', { name: 'New grouping' }).click();
+  await openNew(page, 'Grouping');
   const dialog = page.getByRole('dialog', { name: 'Create a grouping' });
   await dialog.getByLabel('Name').fill(name);
   await dialog.getByRole('button', { name: 'Add' }).click();

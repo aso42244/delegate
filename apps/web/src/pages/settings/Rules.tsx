@@ -184,7 +184,7 @@ function RuleRow({
   );
 }
 
-function AddRuleDialog({
+export function AddRuleDialog({
   delegations,
   accounts,
   onDone,
@@ -533,12 +533,11 @@ export function RulesSection(): ReactNode {
       title="Auto-categorization rules"
       description="Checked in order. The first match wins."
       action={
-        <div className="flex gap-2">
-          <Button onClick={() => setRunning(true)} disabled={list.length === 0}>
-            Run rules
-          </Button>
-          <Button onClick={() => setAdding(true)}>New rule</Button>
-        </div>
+        // Run rules stays: it is not creating a thing, it is the act this card
+        // exists for. New rule moved to the header's "New …".
+        <Button onClick={() => setRunning(true)} disabled={list.length === 0}>
+          Run rules
+        </Button>
       }
     >
       {rules.isLoading ? (

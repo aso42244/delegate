@@ -99,6 +99,40 @@ export async function completeSecondFactor(page: Page): Promise<void> {
   await page.getByRole('button', { name: 'Verify' }).click();
 }
 
+/**
+ * An Overview with nothing on it.
+ *
+ * The page defaults to an arrangement now, so a spec about *arranging* has to
+ * start from one it chose — otherwise it is asserting against whatever this
+ * release's default happens to be, and every one of them would move the day the
+ * default does.
+ *
+ * Saving an empty layout is a real act, not a no-op: it records that this person
+ * has arranged Overview, which is what stops the default standing in again.
+ */
+export async function emptyOverview(api: APIRequestContext): Promise<void> {
+  const response = await api.put('/api/overview/layout', { data: { tiles: [] } });
+  if (!response.ok()) {
+    throw new Error(`Could not empty the Overview layout: ${response.status()}`);
+  }
+}
+
+/**
+ * Creating a thing, through the one control that does it.
+ *
+ * There were seven create buttons over five screens and each spec pressed
+ * whichever one its own page happened to carry. There is one now, in every page
+ * header, so the specs go through it — which also means every one of them is a
+ * test that the menu reaches that dialog.
+ */
+export async function openNew(
+  page: import('@playwright/test').Page,
+  item: 'Transaction' | 'Transfer' | 'Check' | 'Delegation' | 'Grouping' | 'Rule',
+): Promise<void> {
+  await page.getByRole('button', { name: 'New …' }).click();
+  await page.getByRole('menuitem', { name: item, exact: true }).click();
+}
+
 export const test = base.extend<BudgetFixtures>({
   signedIn: async ({ page }, use) => {
     await resetDatabase();
@@ -305,6 +339,32 @@ export async function makePendingSpend(
       eventType: 'categorize',
       deltaCents: amountCents,
     },
+  });
+}
+
+/**
+ * Money in, on a given account, today.
+ *
+ * `kind: 'income'` is what keeps it out of every spending reading: a payroll
+ * deposit is not a day's outflow, and the register's own filters lean on the
+ * kind rather than on the sign.
+ */
+export async function makeIncome(
+  accountId: string,
+  amountCents: bigint,
+  description = 'Payday',
+): Promise<void> {
+  await prisma.transaction.create({
+    data: {
+      accountId,
+      postedAt: new Date(),
+      amountCents,
+      descriptionRaw: description,
+      description,
+      kind: 'income',
+      source: 'manual',
+    },
+    select: { id: true },
   });
 }
 

@@ -1,4 +1,11 @@
-import { expect, makeAccount, makeDelegation, makePendingSpend, test } from './fixtures.js';
+import {
+  expect,
+  makeAccount,
+  makeDelegation,
+  makeIncome,
+  makePendingSpend,
+  test,
+} from './fixtures.js';
 
 /**
  * Overview — the spine.
@@ -24,9 +31,25 @@ import { expect, makeAccount, makeDelegation, makePendingSpend, test } from './f
  * happily while the layout is wrong.
  */
 
+/**
+ * Arrange, from a page this spec chose rather than from the default.
+ *
+ * Overview defaults to an arrangement now. A spec about *arranging* that starts
+ * from it is asserting against whatever this release's default happens to be,
+ * and every one of them would move the day the default does — so these empty it
+ * first. Saving an empty layout is a real act: it records that this person has
+ * arranged Overview, which is what stops the default standing in again.
+ */
+async function openArrange(page: import('@playwright/test').Page): Promise<void> {
+  const response = await page.request.put('/api/overview/layout', { data: { tiles: [] } });
+  expect(response.ok()).toBe(true);
+  await page.reload();
+  await page.getByRole('button', { name: 'Arrange', exact: true }).click();
+}
+
 /** Both proof tiles, so the grid has something in it to arrange. */
 async function addBothTiles(page: import('@playwright/test').Page): Promise<void> {
-  await page.getByRole('button', { name: 'Arrange', exact: true }).click();
+  await openArrange(page);
   await page.getByRole('button', { name: 'Add Spending by grouping' }).click();
   await expect(page.getByRole('heading', { name: 'Spending by grouping', level: 2 })).toBeVisible();
   await page.getByRole('button', { name: 'Add Waiting to be categorized' }).click();
@@ -35,13 +58,58 @@ async function addBothTiles(page: import('@playwright/test').Page): Promise<void
   ).toBeVisible();
 }
 
-test('starts empty and says so in one sentence', async ({ signedIn }) => {
+test('starts on an arrangement rather than an empty page', async ({ signedIn }) => {
   await signedIn.goto('/overview');
 
   await expect(signedIn.getByRole('heading', { name: 'Overview' })).toBeVisible();
-  // The text budget: one short sentence, no instructions. Where to go next is on
-  // the control that goes there.
-  await expect(signedIn.getByText('No tiles yet.')).toBeVisible();
+
+  /*
+   * Overview is the landing page, so this is the first thing anybody sees. An
+   * empty dashboard and a picker to discover was reasonable while the page was
+   * reachable by URL only; as a landing page it is a blank screen with a button
+   * on it.
+   */
+  await expect(signedIn.getByText('No tiles yet.')).toHaveCount(0);
+  await expect(
+    signedIn.getByRole('heading', { name: 'Spending by grouping', level: 2 }),
+  ).toBeVisible();
+  await expect(signedIn.getByRole('heading', { name: 'Cashflow', level: 2 })).toBeVisible();
+  // The sidebar is used, not only the grid.
+  await expect(signedIn.getByRole('heading', { name: 'Daily outflow', level: 2 })).toBeVisible();
+});
+
+test('the default arrangement is not written until somebody changes it', async ({ signedIn }) => {
+  await signedIn.goto('/overview');
+  await expect(
+    signedIn.getByRole('heading', { name: 'Spending by grouping', level: 2 }),
+  ).toBeVisible();
+
+  /*
+   * A default that stored itself on first sight would freeze this release's
+   * arrangement onto every household, so a later default could never reach
+   * anybody — the same reasoning as the landing page's null. The proof visible
+   * from here is that it is identical after a reload, having never been saved.
+   */
+  await signedIn.reload();
+  await expect(
+    signedIn.getByRole('heading', { name: 'Spending by grouping', level: 2 }),
+  ).toBeVisible();
+  await expect(signedIn.getByRole('heading', { name: 'Allocation', level: 2 })).toBeVisible();
+});
+
+test('three tiles fit one row on a wide screen', async ({ signedIn }) => {
+  await signedIn.goto('/overview');
+
+  /*
+   * Three, and it is arithmetic rather than a preference: a ranked bar with a
+   * name and a figure stops being readable at about 300px, the page caps at
+   * 1600 and the budget panel takes 398 of it. The default's top row is three
+   * wide, so each of them is a third of twelve columns.
+   */
+  const spending = signedIn
+    .getByRole('heading', { name: 'Spending by grouping', level: 2 })
+    .locator('../..');
+  await expect(spending).toHaveClass(/lg:col-span-4/);
 });
 
 test('a tile added stays across a reload', async ({ signedIn }) => {
@@ -160,7 +228,7 @@ test('a tile shows its empty state when there is nothing in it', async ({ signed
 
 test('every Batch A tile can be added and draws something', async ({ signedIn }) => {
   await signedIn.goto('/overview');
-  await signedIn.getByRole('button', { name: 'Arrange', exact: true }).click();
+  await openArrange(signedIn);
 
   /*
    * The five tiles that share one drawing primitive. Added in one pass rather
@@ -201,7 +269,7 @@ test('a ranked bar states its figure as text, not only as a width', async ({ sig
   await makeAccount('Card', 'debt', 50_000n);
 
   await signedIn.goto('/overview');
-  await signedIn.getByRole('button', { name: 'Arrange', exact: true }).click();
+  await openArrange(signedIn);
   await signedIn.getByRole('button', { name: 'Add What it is all made of' }).click();
   await expect(
     signedIn.getByRole('heading', { name: 'What it is all made of', level: 2 }),
@@ -223,7 +291,7 @@ test('a ranked bar states its figure as text, not only as a width', async ({ sig
 
 test('every Batch B tile draws, and says it has no history yet', async ({ signedIn }) => {
   await signedIn.goto('/overview');
-  await signedIn.getByRole('button', { name: 'Arrange', exact: true }).click();
+  await openArrange(signedIn);
 
   const titles = [
     'Net worth',
@@ -264,7 +332,7 @@ test('the picker draws each tile rather than naming it', async ({ signedIn }) =>
   await makeAccount('Card', 'debt', 50_000n);
 
   await signedIn.goto('/overview');
-  await signedIn.getByRole('button', { name: 'Arrange', exact: true }).click();
+  await openArrange(signedIn);
 
   /*
    * A picker listing titles as words asks people to choose between things they
@@ -282,13 +350,16 @@ test('the picker draws each tile rather than naming it', async ({ signedIn }) =>
   await expect(card.getByText('$2,500.00', { exact: true })).toBeVisible();
 });
 
-test('the page says it is empty once, not twice', async ({ signedIn }) => {
-  await signedIn.goto('/overview');
-
-  // The subtitle and the empty state both read "No tiles yet." on the first
-  // real screenshot of this page — the text budget broken in the plainest way.
-  await expect(signedIn.getByText('No tiles yet.')).toHaveCount(1);
-});
+/*
+ * The "empty once, not twice" test that stood here is gone with the state it
+ * guarded.
+ *
+ * It caught a header subtitle and an empty state both reading "No tiles yet." —
+ * the text budget broken in the plainest way. The subtitle was removed in
+ * v0.61.0 and the page now opens on a default arrangement, so the sentence
+ * appears only for somebody who has emptied Overview on purpose, where it is the
+ * only thing on screen and cannot be said twice.
+ */
 
 test('tiles can be dragged into one row without entering Arrange', async ({ signedIn }) => {
   await signedIn.goto('/overview');
@@ -463,7 +534,7 @@ test('the panel is always there', async ({ signedIn }) => {
 
 test('the cashflow chart carries its own period, separate from the page', async ({ signedIn }) => {
   await signedIn.goto('/overview');
-  await signedIn.getByRole('button', { name: 'Arrange', exact: true }).click();
+  await openArrange(signedIn);
   await signedIn.getByRole('button', { name: 'Add Cashflow' }).click();
   await expect(signedIn.getByRole('heading', { name: 'Cashflow', level: 2 })).toBeVisible();
   await signedIn.getByRole('button', { name: 'Done' }).click();
@@ -503,7 +574,7 @@ test('the cashflow chart says nothing came in rather than drawing an empty flow'
   signedIn,
 }) => {
   await signedIn.goto('/overview?window=ytd');
-  await signedIn.getByRole('button', { name: 'Arrange', exact: true }).click();
+  await openArrange(signedIn);
   await signedIn.getByRole('button', { name: 'Add Cashflow' }).click();
   await signedIn.getByRole('button', { name: 'Done' }).click();
 
@@ -513,7 +584,7 @@ test('the cashflow chart says nothing came in rather than drawing an empty flow'
 
 test('the figures band draws four numbers and its own picker', async ({ signedIn }) => {
   await signedIn.goto('/overview');
-  await signedIn.getByRole('button', { name: 'Arrange', exact: true }).click();
+  await openArrange(signedIn);
   await signedIn.getByRole('button', { name: 'Add Figures' }).click();
   await expect(signedIn.getByRole('heading', { name: 'Figures', level: 2 })).toBeVisible();
   await signedIn.getByRole('button', { name: 'Done' }).click();
@@ -553,7 +624,7 @@ test('the figures band draws four numbers and its own picker', async ({ signedIn
 
 test('a figure with no answer draws a dash, never a confident zero', async ({ signedIn }) => {
   await signedIn.goto('/overview');
-  await signedIn.getByRole('button', { name: 'Arrange', exact: true }).click();
+  await openArrange(signedIn);
   await signedIn.getByRole('button', { name: 'Add Figures' }).click();
   await signedIn.getByRole('button', { name: 'Done' }).click();
 
@@ -578,7 +649,7 @@ test('the cycle-shaped tiles say they need a payday rather than guessing one', a
   signedIn,
 }) => {
   await signedIn.goto('/overview');
-  await signedIn.getByRole('button', { name: 'Arrange', exact: true }).click();
+  await openArrange(signedIn);
   await signedIn.getByRole('button', { name: 'Add In against out' }).click();
   await signedIn.getByRole('button', { name: 'Done' }).click();
 
@@ -597,7 +668,7 @@ test('the cycle-shaped tiles say they need a payday rather than guessing one', a
 
 test('the donut switches between the plan and the position', async ({ signedIn }) => {
   await signedIn.goto('/overview');
-  await signedIn.getByRole('button', { name: 'Arrange', exact: true }).click();
+  await openArrange(signedIn);
   await signedIn.getByRole('button', { name: 'Add Allocation' }).click();
   await signedIn.getByRole('button', { name: 'Done' }).click();
 
@@ -626,7 +697,7 @@ test('upcoming says nothing is scheduled rather than drawing an empty list', asy
   signedIn,
 }) => {
   await signedIn.goto('/overview');
-  await signedIn.getByRole('button', { name: 'Arrange', exact: true }).click();
+  await openArrange(signedIn);
   await signedIn.getByRole('button', { name: 'Add Coming up' }).click();
   await signedIn.getByRole('button', { name: 'Done' }).click();
 
@@ -636,7 +707,7 @@ test('upcoming says nothing is scheduled rather than drawing an empty list', asy
 
 test('setting a payday turns the cycle on across the page', async ({ signedIn }) => {
   await signedIn.goto('/overview');
-  await signedIn.getByRole('button', { name: 'Arrange', exact: true }).click();
+  await openArrange(signedIn);
   await signedIn.getByRole('button', { name: 'Add In against out' }).click();
   await signedIn.getByRole('button', { name: 'Done' }).click();
 
@@ -767,9 +838,12 @@ test('the panel keeps its delegations when tiles are rearranged', async ({ signe
   await dialog.getByRole('button', { name: 'Save' }).click();
   await expect(panel.getByText('Grocery')).toBeVisible();
 
-  // Add a tile, which rewrites the whole layout.
+  // Arranged from the default rather than from an emptied page: emptying is
+  // itself an arrange, and it would throw away the choice just made — which is
+  // the very thing this test is about keeping.
   await signedIn.getByRole('button', { name: 'Arrange', exact: true }).click();
-  await signedIn.getByRole('button', { name: 'Add Cashflow' }).click();
+  // A tile the default does not already carry, so the picker offers it.
+  await signedIn.getByRole('button', { name: 'Add What moved' }).click();
   await signedIn.getByRole('button', { name: 'Done' }).click();
 
   /*
@@ -815,7 +889,7 @@ test('the panel summary says what there is, what has gone and what is left', asy
 
 test('the outflow band draws the calendar month with no payday set', async ({ signedIn }) => {
   await signedIn.goto('/overview');
-  await signedIn.getByRole('button', { name: 'Arrange', exact: true }).click();
+  await openArrange(signedIn);
   await signedIn.getByRole('button', { name: 'Add Daily outflow' }).click();
   await signedIn.getByRole('button', { name: 'Done' }).click();
 
@@ -846,9 +920,11 @@ test('a day on the outflow band opens what was spent that day', async ({ signedI
   const account = await makeAccount('Everyday Checking', 'asset', 500_00n);
   const delegationId = await makeDelegation(api, 'Groceries');
   await makePendingSpend(account, delegationId, -42_10n, 'Corner shop');
+  // Money in, on the same day, which the band does not count.
+  await makeIncome(account, 1_500_00n, 'Payday');
 
   await signedIn.goto('/overview');
-  await signedIn.getByRole('button', { name: 'Arrange', exact: true }).click();
+  await openArrange(signedIn);
   await signedIn.getByRole('button', { name: 'Add Daily outflow' }).click();
   await signedIn.getByRole('button', { name: 'Done' }).click();
 
@@ -868,6 +944,18 @@ test('a day on the outflow band opens what was spent that day', async ({ signedI
   await expect(dialog.getByText('Corner shop')).toBeVisible();
   await expect(dialog.getByText('Groceries')).toBeVisible();
   await expect(dialog.getByText('$42.10 out')).toBeVisible();
+
+  /*
+   * The pay that landed the same day is not that day's spending, and neither is
+   * a card payment. The band counts neither, so listing them here put a credit
+   * in a list headed by what went out with a total that agreed with neither.
+   */
+  await expect(dialog.getByText('Payday')).toHaveCount(0);
+
+  // A reading closes when you press outside it. A dialog holding a typed amount
+  // still does not — that would lose the typing to a stray click.
+  await signedIn.mouse.click(5, 5);
+  await expect(signedIn.getByRole('dialog')).toHaveCount(0);
 });
 
 test('a tile dragged by its body does not move', async ({ signedIn }) => {
@@ -899,7 +987,7 @@ test('a tile dragged by its body does not move', async ({ signedIn }) => {
 
 test('the bill tiles open every bill in the middle of the page', async ({ signedIn }) => {
   await signedIn.goto('/overview');
-  await signedIn.getByRole('button', { name: 'Arrange', exact: true }).click();
+  await openArrange(signedIn);
   await signedIn.getByRole('button', { name: 'Add Needs a look' }).click();
   await signedIn.getByRole('button', { name: 'Done' }).click();
 
@@ -929,7 +1017,7 @@ test('the utility tiles say they do not know rather than guessing', async ({ sig
   await api.patch(`/api/delegations/${water}`, { data: { isUtility: true } });
 
   await signedIn.goto('/overview');
-  await signedIn.getByRole('button', { name: 'Arrange', exact: true }).click();
+  await openArrange(signedIn);
   await signedIn.getByRole('button', { name: 'Add Which way they’re going' }).click();
   await signedIn.getByRole('button', { name: 'Add Worth adjusting' }).click();
   await signedIn.getByRole('button', { name: 'Done' }).click();
@@ -955,7 +1043,7 @@ test('the utility tiles say they do not know rather than guessing', async ({ sig
 
 test('a balance-history tile asks which one before it draws anything', async ({ signedIn }) => {
   await signedIn.goto('/overview');
-  await signedIn.getByRole('button', { name: 'Arrange', exact: true }).click();
+  await openArrange(signedIn);
   await signedIn.getByRole('button', { name: 'Add Account balance' }).click();
   await signedIn.getByRole('button', { name: 'Done' }).click();
 

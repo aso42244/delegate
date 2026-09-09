@@ -293,7 +293,7 @@ function GroupingRow({
   );
 }
 
-function AddGroupingDialog({ onDone }: { readonly onDone: () => void }): ReactNode {
+export function AddGroupingDialog({ onDone }: { readonly onDone: () => void }): ReactNode {
   const queryClient = useQueryClient();
   const [name, setName] = useState('');
   const [section, setSection] = useState<Section>('delegations');
@@ -390,7 +390,6 @@ export function GroupingsSection(): ReactNode {
       span="half"
       title="Groupings"
       description="Organizational only — a grouping has no balance of its own."
-      action={<Button onClick={() => setAdding(true)}>New grouping</Button>}
     >
       {view.isLoading ? (
         <p className="text-quiet text-muted">Loading groupings…</p>

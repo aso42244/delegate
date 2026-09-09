@@ -184,9 +184,10 @@ export function Alert({
 /**
  * A modal dialog.
  *
- * Escape closes it and Cancel closes it; clicking the backdrop does not. These
- * dialogs hold typed money and a description, and losing that to a stray click
- * beside the card is a worse failure than one extra keypress.
+ * Escape closes it and Cancel closes it. **The backdrop closes it only when the
+ * dialog is `dismissible`** — a reading has nothing to lose to a stray click,
+ * while a form holding a typed amount and a description has all of it, and that
+ * is a worse failure than one extra keypress.
  */
 export function Modal({
   label,
@@ -196,6 +197,7 @@ export function Modal({
   children,
   footer,
   width = 'md',
+  dismissible = false,
 }: {
   label: string;
   title: string;
@@ -208,7 +210,17 @@ export function Modal({
    * never scroll, and for those the buttons are just more children.
    */
   footer?: ReactNode;
-  width?: 'md' | 'lg';
+  width?: 'md' | 'lg' | 'xl';
+  /**
+   * Whether pressing the backdrop closes it.
+   *
+   * Off by default and deliberately: a dialog holding a typed amount and a
+   * description loses all of it to a stray click beside the card, which is a
+   * worse failure than one extra keypress. A dialog that is only a *reading* has
+   * nothing to lose, and there the expectation that clicking away closes it is
+   * strong enough that not honouring it reads as the dialog being stuck.
+   */
+  dismissible?: boolean;
 }): ReactNode {
   const viewport = useVisualViewport();
   useEffect(() => {
@@ -239,6 +251,18 @@ export function Modal({
       // rises from. Below it, a sheet's own buttons sit behind navigation.
       className="fixed inset-0 z-30 flex items-end justify-center bg-black/20 sm:items-center sm:p-4"
       /*
+       * The backdrop closes a reading, never a form. `currentTarget` so only a
+       * press on the backdrop itself counts — without it, every press that
+       * bubbles up from inside the card would close it too.
+       */
+      onPointerDown={
+        dismissible
+          ? (event) => {
+              if (event.target === event.currentTarget) onClose();
+            }
+          : undefined
+      }
+      /*
        * Sized to what is on screen rather than to the window. `inset-0` is the
        * layout viewport, which on iOS keeps its full height while the keyboard
        * covers the bottom of it — so a sheet anchored to `bottom: 0` is
@@ -260,7 +284,7 @@ export function Modal({
          * put the overflow back off-screen.
          */
         className={`flex max-h-[88%] w-full flex-col overflow-hidden rounded-t-2xl border border-line bg-canvas px-4 pt-4 pb-[calc(1.5rem+env(safe-area-inset-bottom,0px))] sm:max-h-full sm:rounded-lg sm:pb-4 ${
-          width === 'lg' ? 'sm:max-w-2xl' : 'sm:max-w-md'
+          width === 'xl' ? 'sm:max-w-4xl' : width === 'lg' ? 'sm:max-w-2xl' : 'sm:max-w-md'
         }`}
       >
         {/* The grabber says "this came from the bottom and goes back there".

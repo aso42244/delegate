@@ -1,4 +1,4 @@
-import { expect, makeDelegation, test } from './fixtures.js';
+import { expect, makeDelegation, openNew, test } from './fixtures.js';
 
 /**
  * The per-row menu on the Budget page.
@@ -140,9 +140,13 @@ test('a line can be moved into a grouping created on this page', async ({ signed
   await makeDelegation(api, 'Grocery');
   await signedIn.goto('/budget');
 
-  await signedIn.getByRole('button', { name: 'New grouping' }).click();
-  await signedIn.getByLabel('New grouping').fill('Essentials');
-  await signedIn.getByLabel('New grouping').press('Enter');
+  // The inline "name, then Enter" input on Budget is gone; creating a grouping
+  // is the header's menu and the same dialog Settings uses.
+  await openNew(signedIn, 'Grouping');
+  const grouping = signedIn.getByRole('dialog', { name: 'Create a grouping' });
+  await grouping.getByLabel('Name').fill('Essentials');
+  await grouping.getByRole('button', { name: 'Add' }).click();
+  await expect(signedIn.getByRole('dialog')).toHaveCount(0);
 
   await expect(signedIn.getByRole('button', { name: /Essentials/ })).toBeVisible();
 

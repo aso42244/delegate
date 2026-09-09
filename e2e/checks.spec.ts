@@ -1,5 +1,5 @@
 import type { Page } from '@playwright/test';
-import { expect, test, makeAccount, makeDelegation } from './fixtures.js';
+import { expect, makeAccount, makeDelegation, openNew, test } from './fixtures.js';
 
 /**
  * Outstanding checks, through the screens.
@@ -21,7 +21,7 @@ async function fundPianoLessons(page: Page): Promise<void> {
 
 /** Records check 1062 for $120 against Piano Lessons. */
 async function writeCheck(page: Page, memo?: string): Promise<void> {
-  await page.getByRole('button', { name: 'New check' }).click();
+  await openNew(page, 'Check');
 
   // Scoped to the dialog: "Amount" also names a column on the page behind it.
   const dialog = page.getByRole('dialog', { name: 'New check' });

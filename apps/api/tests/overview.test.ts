@@ -171,16 +171,56 @@ async function putLayout(tiles: unknown): Promise<LightMyRequestResponse> {
 }
 
 describe('the layout', () => {
-  it('starts empty and offers the catalogue', async () => {
+  it('starts on a default arrangement rather than an empty page', async () => {
     const response = await get('/api/overview/layout');
     expect(response.statusCode).toBe(200);
 
     const body = response.json<LayoutBody>();
-    expect(body.tiles).toEqual([]);
+    /*
+     * Overview is the landing page, so the first thing anybody sees is this. An
+     * empty dashboard and a picker to discover was reasonable while the page was
+     * reachable by URL only; as a landing page it is a blank screen with a
+     * button on it.
+     */
+    expect(body.tiles.length).toBeGreaterThan(0);
+    expect(body.tiles.map((tile) => tile.key)).toContain('spending_by_grouping');
+    // The panel's own row, without which the budget beside the dashboard has no
+    // lines in it.
+    expect(body.tiles.map((tile) => tile.key)).toContain('delegations');
+    // And the sidebar is used, not just the grid.
+    expect(body.tiles.some((tile) => tile.region === 'sidebar')).toBe(true);
+
     expect(body.catalog).toContain('spending_by_grouping');
     // Twelve columns so a row of 1, 2, 3 or 4 divides with nothing left over.
     expect(body.columns).toBe(12);
-    expect(body.maxPerRow).toBe(2);
+    expect(body.maxPerRow).toBe(3);
+  });
+
+  it("stores nothing for the default, so a first arrangement is somebody's own", async () => {
+    // Read once — which would be the moment to persist it, if it were stored.
+    await get('/api/overview/layout');
+
+    /*
+     * The default is what a read returns when nothing is stored, and no more
+     * than that. Writing it on first sight would freeze this release's
+     * arrangement onto every household, so a later default could never reach
+     * anybody — the same reasoning as the landing page's null.
+     */
+    expect(await prisma.overviewTile.count()).toBe(0);
+  });
+
+  it('stays empty once somebody has emptied it', async () => {
+    /*
+     * Arranged to nothing is not the same as never arranged. Without that
+     * distinction a tile removed on purpose comes back on the next reload, which
+     * is the default overriding a decision rather than standing in for the
+     * absence of one.
+     */
+    await putLayout([{ key: 'uncategorized_backlog', row: 0, position: 0 }]);
+    expect((await putLayout([])).json<SaveBody>()).toEqual({ ok: true });
+
+    const body = (await get('/api/overview/layout')).json<LayoutBody>();
+    expect(body.tiles).toEqual([]);
   });
 
   it('stores which row each tile is in, and its place within it', async () => {
@@ -261,8 +301,11 @@ describe('the layout', () => {
       unknown: ['credit_card_trend'],
     });
 
+    // Nothing was stored, so a read still gives the default rather than the
+    // refused arrangement.
     const body = (await get('/api/overview/layout')).json<LayoutBody>();
-    expect(body.tiles).toEqual([]);
+    expect(body.tiles.map((tile) => tile.key)).not.toContain('credit_card_trend');
+    expect(await prisma.overviewTile.count()).toBe(0);
   });
 
   it('refuses a row holding more than it can divide', async () => {
@@ -274,20 +317,26 @@ describe('the layout', () => {
     const response = await putLayout([
       { key: 'spending_by_grouping', row: 0, position: 0 },
       { key: 'spending_by_delegation', row: 0, position: 1 },
-      // A third in the same row, at a position the row cannot hold.
+      { key: 'allocation', row: 0, position: 2 },
+      // A fourth in the same row, at a position the row cannot hold.
       { key: 'asset_debt_composition', row: 0, position: 0 },
     ]);
     expect(response.json<SaveBody>()).toMatchObject({ ok: false, overfullRows: [0] });
-    expect((await get('/api/overview/layout')).json<LayoutBody>().tiles).toEqual([]);
+    // Refused rather than partly stored: nothing was written at all.
+    expect(await prisma.overviewTile.count()).toBe(0);
   });
 
-  it('allows exactly two in one row', async () => {
-    // Two, since the budget panel took the right of the page: a quarter of what
-    // is left is about 250px, and a ranked bar with a name and a figure stops
-    // being readable below roughly 300.
+  it('allows exactly three in one row', async () => {
+    /*
+     * Three, and it is arithmetic rather than a preference. A ranked bar with a
+     * name and a figure stops being readable at about 300px; the page caps at
+     * 1600 and the budget panel takes 398 of it, so a third of what is left is
+     * about 390 and a quarter is about 295.
+     */
     const response = await putLayout([
       { key: 'spending_by_grouping', row: 0, position: 0 },
       { key: 'spending_by_delegation', row: 0, position: 1 },
+      { key: 'allocation', row: 0, position: 2 },
     ]);
     expect(response.json<SaveBody>()).toEqual({ ok: true });
   });
@@ -363,10 +412,26 @@ describe('the data', () => {
     expect(body.spending_by_grouping).toBeUndefined();
   });
 
-  it('returns nothing at all for an empty page', async () => {
+  it('computes the default arrangement for somebody who has arranged nothing', async () => {
+    /*
+     * The same default the layout read applies, and it has to be the same one:
+     * this endpoint computes exactly what the caller's layout asks for, so a
+     * defaulted page fed from an empty layout would draw ten tiles with nothing
+     * in any of them.
+     */
     const body = (await get('/api/overview')).json<DataBody>();
+    expect(body.spending_by_grouping).toBeDefined();
+    expect(body.uncategorized_backlog).toBeDefined();
+  });
+
+  it('still computes only what a stored arrangement asks for', async () => {
+    // The property this page exists for, and the one the default must not cost
+    // it: `GET /api/insights` ran seven builders whatever was on the page.
+    await putLayout(rowed(['uncategorized_backlog']));
+
+    const body = (await get('/api/overview')).json<DataBody>();
+    expect(body.uncategorized_backlog).toBeDefined();
     expect(body.spending_by_grouping).toBeUndefined();
-    expect(body.uncategorized_backlog).toBeUndefined();
   });
 
   it("defaults to the cycle, which is the budget's own unit of time", async () => {
@@ -461,7 +526,8 @@ describe("a tile's own configuration", () => {
       { key: 'delegations', row: 0, position: 0, config: { delegationIds: ['not-a-uuid'] } },
     ]);
     expect(response.json<SaveBody>()).toMatchObject({ ok: false, badConfig: ['delegations'] });
-    expect((await get('/api/overview/layout')).json<LayoutBody>().tiles).toEqual([]);
+    // Nothing stored, so a read gives the default rather than the refused row.
+    expect(await prisma.overviewTile.count()).toBe(0);
   });
 
   it('refuses configuration on a tile that takes none', async () => {
@@ -1187,6 +1253,9 @@ describe('the figures band', () => {
 describe('a layout stored under an older cap', () => {
   it('is re-flowed on read rather than left unsaveable', async () => {
     const user = await prisma.user.findFirstOrThrow();
+    // Somebody who arranged under the old cap has arranged, so the default does
+    // not stand in for what they stored.
+    await prisma.user.update({ where: { id: user.id }, data: { overviewArranged: true } });
     // Exactly what v0.58 allowed: four tiles sharing one row.
     for (const [position, widgetKey] of [
       'figures',
@@ -1206,11 +1275,13 @@ describe('a layout stored under an older cap', () => {
      * arrangement to change one thing. The page rendered and nothing could be
      * changed, which is the worst of both.
      */
+    // Three to a row now, so four stored under the old cap of four become a
+    // row of three and a row of one.
     expect(tiles.map((tile) => [tile.row, tile.position])).toEqual([
       [0, 0],
       [0, 1],
+      [0, 2],
       [1, 0],
-      [1, 1],
     ]);
 
     // And what comes back is now saveable, which is the property that failed.
@@ -1219,6 +1290,7 @@ describe('a layout stored under an older cap', () => {
 
   it('narrows the arrangement rather than reshuffling it', async () => {
     const user = await prisma.user.findFirstOrThrow();
+    await prisma.user.update({ where: { id: user.id }, data: { overviewArranged: true } });
     for (const [position, widgetKey] of ['figures', 'cashflow', 'allocation'].entries()) {
       await prisma.overviewTile.create({ data: { userId: user.id, widgetKey, row: 0, position } });
     }

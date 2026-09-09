@@ -102,6 +102,19 @@ That is what lets one stored arrangement serve both screens: rearranging on a
 phone rearranges the laptop too, because the thing being stored is the order and
 the grouping rather than a width that only means something on one of them.
 
+### Creating a thing
+
+**`New …` in every page header, and nowhere else**
+([ADR 057](decisions/057-one-way-to-make-a-thing.md)). Six items: transaction,
+transfer, check, delegation, grouping, rule. `PageHeader` renders it, so no page
+has to remember to, and it is the **leftmost** action so it holds the same
+position whatever else a page puts beside it.
+
+A page keeps anything that is not creating a thing — Delegate, Arrange, Run
+rules, and every row-level action. Those belong to the page they act on.
+
+`ui-system.test.ts` fails the gate on a `New <noun>` button outside the menu.
+
 ### The pace bar
 
 The one construction wherever a budget line appears

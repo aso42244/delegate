@@ -229,6 +229,59 @@ function billsThisCycle(
   };
 }
 
+/**
+ * What a household sees before it has arranged anything.
+ *
+ * Overview is the landing page now, so the first thing anybody sees is this. An
+ * empty dashboard and a picker to discover was a reasonable answer while the
+ * page was reachable by URL only; as a landing page it is a blank screen with a
+ * button on it.
+ *
+ * The arrangement is the owner's own, taken from the layout he built by hand and
+ * uses daily — which is a better default than anything designed from first
+ * principles, because it is the one arrangement known to survive real use:
+ *
+ * - **The top row is where the money went**, cut three ways: by grouping, by
+ *   delegation, and by what it is allocated to.
+ * - **Cashflow takes a row of its own**, because a Sankey at a third of the
+ *   width is a diagram nobody can read.
+ * - **Then what is coming**, which is the forward-looking pair.
+ * - **The sidebar is the daily check**: the day's spending, what is over, and
+ *   what is waiting to be dealt with.
+ *
+ * Stored for nobody. It is what a read returns when nothing is stored, and the
+ * first arrangement anybody makes writes their own — so this can change in a
+ * later release without overriding a choice, exactly like the landing page.
+ */
+const DEFAULT_LAYOUT: readonly {
+  widgetKey: string;
+  region: OverviewRegion;
+  row: number;
+  position: number;
+  display: string | null;
+  config: null;
+}[] = [
+  ['spending_by_grouping', 'main', 0, 0],
+  ['spending_by_delegation', 'main', 0, 1],
+  ['allocation', 'main', 0, 2],
+  ['cashflow', 'main', 1, 0],
+  ['upcoming_bills', 'main', 2, 0],
+  ['bills_this_cycle', 'main', 2, 1],
+  // The panel's own row. It is drawn by the panel rather than in the grid, and
+  // without it the budget beside the dashboard has no lines in it.
+  ['delegations', 'main', 3, 0],
+  ['daily_outflow', 'sidebar', 0, 0],
+  ['delegations_negative', 'sidebar', 1, 0],
+  ['uncategorized_backlog', 'sidebar', 2, 0],
+].map(([widgetKey, region, row, position]) => ({
+  widgetKey: widgetKey as string,
+  region: region as OverviewRegion,
+  row: row as number,
+  position: position as number,
+  display: null,
+  config: null,
+}));
+
 export const overviewRoutes: FastifyPluginCallback = (fastify, _options, done) => {
   for (const guard of AUTHENTICATED) {
     fastify.addHook('preHandler', guard);
@@ -250,6 +303,20 @@ export const overviewRoutes: FastifyPluginCallback = (fastify, _options, done) =
       },
     });
 
+    /*
+     * Never arranged means the default; arranged means whatever they arranged,
+     * including nothing.
+     *
+     * The flag rather than `chosen.length`, because somebody who removes every
+     * tile has arranged it to nothing — and handing them the default back would
+     * be a tile deleted on purpose reappearing on the next reload.
+     */
+    const { overviewArranged } = await prisma.user.findUniqueOrThrow({
+      where: { id: userId },
+      select: { overviewArranged: true },
+    });
+    const layout = overviewArranged ? chosen : DEFAULT_LAYOUT;
+
     return {
       catalog: OVERVIEW_TILES,
       columns: OVERVIEW_COLUMNS,
@@ -264,7 +331,7 @@ export const overviewRoutes: FastifyPluginCallback = (fastify, _options, done) =
        * writes, so a gap left by an emptied row closes on the next change
        * rather than being repaired on every read.
        */
-      tiles: reflow(chosen.filter((tile) => isOverviewTile(tile.widgetKey))).map((tile) => ({
+      tiles: reflow(layout.filter((tile) => isOverviewTile(tile.widgetKey))).map((tile) => ({
         key: tile.widgetKey,
         /*
          * Which side of the page. It was stored, selected and re-flowed by, and
@@ -352,6 +419,10 @@ export const overviewRoutes: FastifyPluginCallback = (fastify, _options, done) =
     }
 
     await prisma.$transaction(async (tx) => {
+      // Arranging is the act, and this is where it happens — including an
+      // arrangement of nothing, which is why the flag is set before the rows are
+      // counted rather than derived from them afterwards.
+      await tx.user.update({ where: { id: userId }, data: { overviewArranged: true } });
       await tx.overviewTile.deleteMany({ where: { userId } });
       for (const tile of tiles) {
         await tx.overviewTile.create({
@@ -376,11 +447,23 @@ export const overviewRoutes: FastifyPluginCallback = (fastify, _options, done) =
     const userId = request.currentUser!.id;
     const { window } = dataQuerySchema.parse(request.query ?? {});
 
-    const stored = await prisma.overviewTile.findMany({
+    const storedTiles = await prisma.overviewTile.findMany({
       where: { userId },
       orderBy: { position: 'asc' },
       select: { widgetKey: true, config: true },
     });
+
+    /*
+     * The same default the layout read applies, and it has to be the same one:
+     * this endpoint computes exactly what the caller's layout asks for, so a
+     * defaulted page fed from an empty layout would draw ten tiles with nothing
+     * in any of them.
+     */
+    const { overviewArranged } = await prisma.user.findUniqueOrThrow({
+      where: { id: userId },
+      select: { overviewArranged: true },
+    });
+    const stored = overviewArranged ? storedTiles : DEFAULT_LAYOUT;
 
     const tiles = stored
       .map((row) => row.widgetKey)

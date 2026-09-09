@@ -1,11 +1,12 @@
 import type { Locator } from '@playwright/test';
 import {
-  ageLatestDelegateRun,
   expect,
+  ageLatestDelegateRun,
   makeAccount,
   makeDelegation,
   makePendingSpend,
   makeSucceededSyncRun,
+  openNew,
   test,
 } from './fixtures.js';
 
@@ -284,7 +285,7 @@ test('Transfer moves between envelopes without moving the bottom line', async ({
   await balance.press('Enter');
   await expect(signedIn.getByRole('status')).toContainText('Balanced');
 
-  await signedIn.getByRole('button', { name: 'Transfer' }).click();
+  await openNew(signedIn, 'Transfer');
   const dialog = signedIn.getByRole('dialog', { name: 'Transfer between delegations' });
   // The balance is part of the option label now, so choosing where to move
   // money from means comparing what the candidates hold while the list is open.
@@ -410,7 +411,7 @@ test('Transfer lists delegations grouped as the page groups them', async ({ sign
   await api.patch(`/api/delegations/${dining}`, { data: { groupingId: fun } });
 
   await signedIn.goto('/budget');
-  await signedIn.getByRole('button', { name: 'Transfer' }).click();
+  await openNew(signedIn, 'Transfer');
 
   const from = signedIn
     .getByRole('dialog', { name: 'Transfer between delegations' })

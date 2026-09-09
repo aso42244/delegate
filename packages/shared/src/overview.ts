@@ -45,21 +45,28 @@ export const OVERVIEW_COLUMNS = 12;
 /**
  * The most tiles one row can hold.
  *
- * **Two**, since the budget panel took the right-hand 398px of the page.
+ * **Three**, and it is arithmetic rather than a preference.
  *
- * It was four while the tiles had the whole width: a quarter of 1200px is
- * 300px, which is about where a ranked bar with a name and a figure stops being
- * readable. With the panel docked, a 1440px window leaves roughly 1000px for
- * tiles — a quarter of that is 250px, comfortably under the same floor, and a
- * third is 330px which only just clears it.
+ * A ranked bar with a name and a figure stops being readable at about 300px.
+ * The cap was four while the tiles had the whole 1200px; it fell to two when the
+ * budget panel took the right-hand 398px, because a 1440px window then left
+ * roughly 1000px for tiles and a third of that is 330px — only just clear.
  *
- * So the cap is the arithmetic rather than a preference, and it moved because
- * the arithmetic did. A tile that wants to be small can still share a row; one
- * that wants to be readable can have the row to itself.
+ * The page cap moved to 1600px, so a wide window leaves about 1180px beside the
+ * panel: a third is 390px, comfortably over the floor, and a quarter is 295px,
+ * which is not. Three.
+ *
+ * A tile that wants to be small can still share a row; one that wants to be
+ * readable can have the row to itself.
  */
-export const MAX_TILES_PER_ROW = 2;
+export const MAX_TILES_PER_ROW = 3;
 
-/** How many columns each tile in a row of `size` takes. */
+/**
+ * How many columns each tile in a row of `size` takes.
+ *
+ * Twelve divides by one, two, three and four with nothing left over, which is
+ * why the grid is twelve columns and not ten.
+ */
 export function columnsForRow(size: number): number {
   const clamped = Math.min(Math.max(size, 1), MAX_TILES_PER_ROW);
   return OVERVIEW_COLUMNS / clamped;

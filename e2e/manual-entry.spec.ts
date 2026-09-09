@@ -1,4 +1,4 @@
-import { expect, makeAccount, makeDelegation, test } from './fixtures.js';
+import { expect, makeAccount, makeDelegation, openNew, test } from './fixtures.js';
 
 /**
  * Entering a transaction by hand, and splitting one across envelopes.
@@ -14,7 +14,7 @@ test('a manual transaction moves the account balance', async ({ signedIn }) => {
   await makeAccount('Physical Cash', 'asset', 20000n);
 
   await signedIn.goto('/transactions');
-  await signedIn.getByRole('button', { name: 'New transaction' }).click();
+  await openNew(signedIn, 'Transaction');
 
   await signedIn.getByLabel('Account').selectOption({ label: 'Physical Cash' });
   await signedIn.getByLabel('Description').fill('Farmers market');
@@ -37,7 +37,7 @@ test('money in raises the balance instead of lowering it', async ({ signedIn }) 
   await makeAccount('Physical Cash', 'asset', 20000n);
 
   await signedIn.goto('/transactions');
-  await signedIn.getByRole('button', { name: 'New transaction' }).click();
+  await openNew(signedIn, 'Transaction');
 
   await signedIn.getByLabel('Account').selectOption({ label: 'Physical Cash' });
   await signedIn.getByLabel('Description').fill('Sold the old bicycle');
@@ -57,7 +57,7 @@ test('a delegation chosen while entering is applied to the new row', async ({ si
   await makeDelegation(api, 'Grocery');
 
   await signedIn.goto('/transactions');
-  await signedIn.getByRole('button', { name: 'New transaction' }).click();
+  await openNew(signedIn, 'Transaction');
 
   await signedIn.getByLabel('Account').selectOption({ label: 'Physical Cash' });
   await signedIn.getByLabel('Description').fill('Farmers market');
@@ -78,7 +78,7 @@ test('income allocates to nothing, so no delegation is offered', async ({ signed
   await makeAccount('Everyday Checking', 'asset', 500000n);
 
   await signedIn.goto('/transactions');
-  await signedIn.getByRole('button', { name: 'New transaction' }).click();
+  await openNew(signedIn, 'Transaction');
   await signedIn.getByLabel('Kind').selectOption({ label: 'Income' });
 
   await expect(signedIn.getByLabel('Delegation for this transaction')).toHaveCount(0);
@@ -204,7 +204,7 @@ test('a transaction can be entered from the Budget page, which then updates', as
     '$200.00',
   );
 
-  await signedIn.getByRole('button', { name: 'New transaction' }).click();
+  await openNew(signedIn, 'Transaction');
   const dialog = signedIn.getByRole('dialog');
 
   await dialog.getByLabel('Account').selectOption({ label: 'Physical Cash' });
@@ -231,7 +231,7 @@ test('the Budget page picker does not offer outstanding checks', async ({ signed
   await makeDelegation(api, 'Grocery', '40000');
 
   await signedIn.goto('/budget');
-  await signedIn.getByRole('button', { name: 'New check' }).click();
+  await openNew(signedIn, 'Check');
 
   const checkDialog = signedIn.getByRole('dialog');
   await checkDialog.getByLabel('Check number').fill('1042');
@@ -243,7 +243,7 @@ test('the Budget page picker does not offer outstanding checks', async ({ signed
   await expect(signedIn.getByRole('dialog')).toHaveCount(0);
   await expect(signedIn.getByRole('button', { name: 'Check 1042 balance' })).toBeVisible();
 
-  await signedIn.getByRole('button', { name: 'New transaction' }).click();
+  await openNew(signedIn, 'Transaction');
   const dialog = signedIn.getByRole('dialog');
 
   // Focusing the picker opens the list with everything it is willing to offer.
