@@ -5,6 +5,7 @@ import { accountsApi, type AccountDto } from '../api/accounts.js';
 import type { OverviewDataDto, PanelLineDto } from '../api/overview.js';
 import { EmptyState, SegmentedControl } from './layout.jsx';
 import { PaceBar, paceSummary } from './PaceBar.jsx';
+import { useIsDemo } from '../useDemo.js';
 
 /**
  * The budget, docked beside the dashboard.
@@ -139,6 +140,7 @@ function DelegationsTab({
   readonly data: OverviewDataDto | undefined;
   readonly onChoose: () => void;
 }): ReactNode {
+  const demo = useIsDemo();
   const lines = data?.panel ?? [];
   const tick = data?.payCycle?.progressBasisPoints ?? null;
 
@@ -201,11 +203,15 @@ function DelegationsTab({
         )}
       </div>
 
-      <div className="border-t border-line p-3">
-        <button type="button" className="linkish" onClick={onChoose}>
-          Choose which delegations show →
-        </button>
-      </div>
+      {/* Choosing writes the layout, which a read-only demo refuses. What it
+          opens with is what it watches. */}
+      {!demo && (
+        <div className="border-t border-line p-3">
+          <button type="button" className="linkish" onClick={onChoose}>
+            Choose which delegations show →
+          </button>
+        </div>
+      )}
     </div>
   );
 }

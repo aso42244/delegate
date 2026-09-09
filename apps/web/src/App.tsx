@@ -1,7 +1,6 @@
-import { useQuery } from '@tanstack/react-query';
 import { useState, type ReactNode } from 'react';
 import { Navigate, Outlet, Route, Routes, useLocation } from 'react-router-dom';
-import { api } from './api/client.js';
+import { useAppInfo } from './useDemo.js';
 import { DEFAULT_LANDING_PAGE, LANDING_PATH } from '@budget/shared';
 import { useSession } from './auth/SessionProvider.jsx';
 import { TabBar } from './components/TabBar.jsx';
@@ -32,12 +31,7 @@ import { SignIn } from './pages/SignIn.jsx';
  */
 
 function useAppName(): string {
-  const query = useQuery({
-    queryKey: ['app-name'],
-    queryFn: () => api.get<{ appName: string }>('/api/app'),
-    staleTime: Infinity,
-  });
-  return query.data?.appName ?? 'Delegate';
+  return useAppInfo().appName;
 }
 
 /**

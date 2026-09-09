@@ -9,6 +9,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useMemo, useRef, useState, type ReactNode } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { useMediaQuery } from '../useMediaQuery.js';
+import { useIsDemo } from '../useDemo.js';
 import {
   overviewApi,
   type BalanceHistoryDto,
@@ -1949,6 +1950,9 @@ export function Overview(): ReactNode {
   const [resizing, setResizing] = useState<{ row: number; px: number } | null>(null);
 
   const [tab, setTab] = useState<PanelTab>('delegations');
+  // Read-only: the controls that write are not drawn. The server refuses them
+  // regardless; this is about not offering what cannot be done.
+  const demo = useIsDemo();
 
   /*
    * On a phone the panel's tabs are promoted onto the page and Overview becomes
@@ -2511,13 +2515,17 @@ export function Overview(): ReactNode {
               options={WINDOWS}
               onChange={setWindow}
             />
-            <Button
-              variant={arranging ? 'primary' : 'default'}
-              onClick={() => setArranging(!arranging)}
-              aria-pressed={arranging}
-            >
-              {arranging ? 'Done' : 'Arrange'}
-            </Button>
+            {/* Arranging writes a layout, which a read-only demo refuses.
+                What it opens on is what it has. */}
+            {!demo && (
+              <Button
+                variant={arranging ? 'primary' : 'default'}
+                onClick={() => setArranging(!arranging)}
+                aria-pressed={arranging}
+              >
+                {arranging ? 'Done' : 'Arrange'}
+              </Button>
+            )}
           </>
         }
       />
