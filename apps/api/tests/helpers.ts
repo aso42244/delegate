@@ -58,6 +58,9 @@ export async function resetDatabase(): Promise<void> {
       undoWindowHours: 12,
       identityToleranceCents: 500n,
       goLiveAt: null,
+      // Every column, including this one. It leaked into every later test the
+      // day it was added — which is the failure the comment above describes.
+      nextPaydayOn: null,
       // The product default. Left out of this list once already, which leaked a
       // cadence from one test into the next and made the suggestion in the
       // following test wrong for reasons nothing in it explained.

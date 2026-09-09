@@ -6,7 +6,59 @@ phase (`v0.1.0-phase1`, and so on).
 
 ## [Unreleased]
 
+### Added
+
+- **Overview is a dashboard with the budget docked beside it.** The owner brought
+  a full visual specification; this is it reconciled with what Delegate already
+  is, and the reasoning is in
+  [ADR 053](docs/decisions/053-a-pace-bar-reads-two-marks-not-one.md).
+
+- **A pay cycle has dates.** `pay_cadence` was a divisor and stays one — money
+  still moves on Delegate presses, and nothing is scheduled by a date. One anchor
+  (`next_payday_on`) generates every boundary around it, which is what lets a bar
+  say whether a line is being spent faster than time is passing. **No anchor
+  means no tick**, never a default: a marker drawn from a guessed schedule is
+  confidently wrong, and every reading beside it is judged against it.
+
+  Semi-monthly is approximate and says so. Twenty-four paydays a year is exactly
+  two a month, so it cannot be a fixed day-count; a household paid on the 1st and
+  15th sees its second boundary land a day late.
+
+- **The pace bar.** Track split at a fixed 75% — this cycle's plan left, reserve
+  right — with the fill counting up from the left and a tick showing how far
+  through the cycle the household is. The split does not move, because the tick
+  has to read as one straight vertical down the column. **Red is a negative
+  balance**, never spent-exceeds-plan: in an envelope budget that is ordinary and
+  often correct.
+
+- **The budget panel**, docked right with three tabs — Delegations, Accounts,
+  Debts — keys 1–3, collapsible per device. On a phone the tabs are promoted onto
+  the page and Overview becomes the fourth. The Delegations tile retires into it:
+  one selection, one place, no way for two lists on one screen to disagree.
+
+- **Five new tiles.** A figures band (one tile, four slots, seven things they can
+  hold), daily outflow, in-against-out, an allocation donut that switches between
+  the plan and the position, and Upcoming from Bills. All cycle-shaped rather
+  than calendar-shaped: every figure here is measured from payday, and one
+  month-shaped reading among them would be the one somebody has to remember is
+  different.
+
 ### Changed
+
+- **A row holds two tiles, not four.** The cap was arithmetic and the arithmetic
+  moved when the panel took 400px of the page.
+
+- **The spacing scale is five values**: 4, 8, 12, 16, 24. Twelve was added
+  deliberately, with the gate changed rather than worked around — a dashboard of
+  small cards has a real gap between _inside a card_ and _between blocks_. 32 was
+  proposed alongside it and left out, because 24 already separates sections.
+
+- **Two new tokens.** `--text-micro` at 10px for a tracked uppercase label above
+  a figure. And `--color-axis`: the design proposed a third text tone at
+  `#a9a6a0`, which measures about 2.4:1 and clears neither the 4.5 AA asks of
+  text nor the 3 it asks of non-text boundaries — this is that idea darkened
+  until it clears 3:1, restricted to marks a chart could be read without, and
+  measured in both palettes.
 
 - **Two palettes, not six.** Light and Dark, plus System, which follows the
   device. **Ledger, Reading light and High contrast are removed** at the owner's
@@ -40,6 +92,22 @@ phase (`v0.1.0-phase1`, and so on).
 
 - `docs/handoff.md` said the NAS was on `v0.55.1`. It is on `v0.58.0`. That file
   is explicit that a stale version line is its own kind of problem.
+
+- **The Arrange picker drew each preview inside a `<button>`**, and one preview
+  contains a segmented control — also a button. A button inside a button is
+  invalid HTML: the parser hoists the inner one out of its ancestor and tears
+  apart the structure around it, which made headings elsewhere on the page
+  disappear. Shipped in v0.58.
+
+  `pointer-events-none` and `aria-hidden` were already on that preview and
+  neither helped — they stop it being _used_ and say nothing about the markup.
+  Fixed twice over: a preview now builds no interactive elements at all, and the
+  card is a div with its own Add control.
+
+- **A test-isolation leak in `resetDatabase`.** `budget_settings` survives the
+  truncate and is reset column by column, so `next_payday_on` leaked from
+  whichever test set it into every test after it. The helper's own comment
+  describes exactly this failure; the column is now in the list.
 
 ## [0.58.0] — 2026-09-08
 

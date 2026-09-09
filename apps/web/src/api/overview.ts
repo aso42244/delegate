@@ -219,8 +219,40 @@ export interface FigureDto {
   readonly count: number | null;
 }
 
+export interface OutflowDayDto {
+  readonly date: string;
+  readonly spentCents: string;
+}
+
+export interface PacePointDto {
+  readonly date: string;
+  readonly inflowCents: string;
+  readonly spentCents: string;
+  /** False after today: the future has no figure, and a flat line implies one. */
+  readonly observed: boolean;
+}
+
+export interface AllocationSliceDto {
+  readonly key: string;
+  readonly name: string;
+  readonly color: string | null;
+  readonly amountCents: string;
+}
+
+export interface UpcomingBillDto {
+  readonly key: string;
+  readonly name: string;
+  readonly expectedNextAt: string;
+  readonly typicalAmountCents: string;
+  readonly delegationName: string | null;
+}
+
 export interface OverviewDataDto {
   readonly figures?: readonly FigureDto[];
+  readonly daily_outflow?: readonly OutflowDayDto[];
+  readonly income_vs_spending_pace?: readonly PacePointDto[];
+  readonly allocation?: readonly AllocationSliceDto[];
+  readonly upcoming_bills?: readonly UpcomingBillDto[];
   /** The panel's chosen lines. Empty until somebody picks some. */
   readonly panel?: readonly PanelLineDto[];
   /** Null when no payday anchor is set — then no tick is drawn at all. */

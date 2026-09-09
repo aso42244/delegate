@@ -102,6 +102,46 @@ That is what lets one stored arrangement serve both screens: rearranging on a
 phone rearranges the laptop too, because the thing being stored is the order and
 the grouping rather than a width that only means something on one of them.
 
+### The pace bar
+
+The one construction wherever a budget line appears
+([ADR 053](decisions/053-a-pace-bar-reads-two-marks-not-one.md)). Track 8px,
+`--color-surface-2`, radius 4. Fill 3px, inset 2px from the left, the grouping's
+colour. Tick 1.5px × 6px in `--color-axis`.
+
+**The track splits at a fixed 75%**: this cycle's plan to the left, reserve to
+the right. The fill counts up from the left through the plan and on into the
+reserve, so crossing the split says "into reserve" without a word.
+
+**The split does not move.** It is 75% on every row whatever the line holds,
+because the tick is a _time_ marker and has to read as one straight vertical
+down the column. Scaling each track to its own plan-plus-reserve would put the
+tick somewhere different on every row and turn a scannable list into twenty
+separate charts. The reserve zone therefore says only that there is reserve; the
+figure beside the bar says how much.
+
+**Red is a negative balance**, never spent-exceeds-plan. In an envelope budget
+that second condition is ordinary and often correct.
+
+**No payday anchor means no tick.** A marker drawn from a guessed schedule is
+confidently in the wrong place, and every reading beside it is judged against it.
+
+### Overview's panel
+
+Docked right at 398px on `lg` and above, collapsible per device. Below `lg` its
+three tabs are promoted onto the page and Overview becomes the fourth — there is
+no room to dock 398px beside anything at 390px wide, and the answer somebody
+opens the application for should not be behind a button.
+
+**A row holds two tiles**, not four. The cap is arithmetic and it moved when the
+panel took the right of the page: a quarter of the ~1000px left on a 1440px
+window is 250px, and a ranked bar with a name and a figure stops being readable
+below about 300.
+
+**Panel rows are one step tighter than table rows** — 32 / 28 / 24 against
+Settings → Display's 40 / 32 / 28. One setting still governs both; the panel is a
+dense list rather than a table, and reads as one.
+
 **Dragging works on the page itself**, not only inside Arrange — pointer devices
 only, since HTML5 drag fires no events under a thumb and a phone has no rows to
 rearrange. A grip appears on hover to say so: `design.md` is explicit that a card

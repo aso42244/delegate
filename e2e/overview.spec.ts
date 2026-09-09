@@ -524,6 +524,64 @@ test('a figure with no answer draws a dash, never a confident zero', async ({ si
   await expect(tile.getByText('—')).toBeVisible();
 });
 
+test('the cycle-shaped tiles say they need a payday rather than guessing one', async ({
+  signedIn,
+}) => {
+  await signedIn.goto('/overview');
+  await signedIn.getByRole('button', { name: 'Arrange', exact: true }).click();
+  await signedIn.getByRole('button', { name: 'Add Daily outflow' }).click();
+  await signedIn.getByRole('button', { name: 'Add In against out' }).click();
+  await signedIn.getByRole('button', { name: 'Done' }).click();
+
+  /*
+   * Both are measured from payday, and there is no anchor. A band of days drawn
+   * from a guessed payday would be a picture of the wrong fortnight, so they
+   * draw nothing at all rather than something plausible.
+   */
+  await expect(
+    signedIn.getByText('Set your next payday on Settings → Budget to see this cycle.'),
+  ).toHaveCount(2);
+});
+
+test('the donut switches between the plan and the position', async ({ signedIn }) => {
+  await signedIn.goto('/overview');
+  await signedIn.getByRole('button', { name: 'Arrange', exact: true }).click();
+  await signedIn.getByRole('button', { name: 'Add Allocation' }).click();
+  await signedIn.getByRole('button', { name: 'Done' }).click();
+
+  const tile = signedIn.getByRole('heading', { name: 'Allocation', level: 2 }).locator('../..');
+
+  // Two readings of one subject, which is why they are one tile with a switch
+  // rather than two tiles. The plan is the default: it is the proportion that
+  // says something about the household rather than about the timing of bills.
+  await expect(tile.getByRole('radio', { name: 'Plan' })).toHaveAttribute('aria-checked', 'true');
+  await expect(tile.getByText('No amounts to delegate yet.')).toBeVisible();
+
+  await tile.getByRole('radio', { name: 'Now' }).click();
+  await expect(tile.getByText('Nothing in the envelopes yet.')).toBeVisible();
+
+  // Stored on the tile, so it survives a reload the way the cashflow period does.
+  await signedIn.reload();
+  await expect(
+    signedIn
+      .getByRole('heading', { name: 'Allocation', level: 2 })
+      .locator('../..')
+      .getByRole('radio', { name: 'Now' }),
+  ).toHaveAttribute('aria-checked', 'true');
+});
+
+test('upcoming says nothing is scheduled rather than drawing an empty list', async ({
+  signedIn,
+}) => {
+  await signedIn.goto('/overview');
+  await signedIn.getByRole('button', { name: 'Arrange', exact: true }).click();
+  await signedIn.getByRole('button', { name: 'Add Upcoming' }).click();
+  await signedIn.getByRole('button', { name: 'Done' }).click();
+
+  const tile = signedIn.getByRole('heading', { name: 'Upcoming', level: 2 }).locator('../..');
+  await expect(tile.getByText('Nothing scheduled.')).toBeVisible();
+});
+
 test('the arrange controls are hidden until asked for', async ({ signedIn }) => {
   await signedIn.goto('/overview');
   await addBothTiles(signedIn);

@@ -19,6 +19,12 @@ import {
 import { EmptyState, PageHeader, SegmentedControl } from '../components/layout.jsx';
 import { budgetApi, type BudgetViewDto } from '../api/budget.js';
 import { DelegationPickerDialog } from '../components/DelegationPickerDialog.jsx';
+import {
+  AllocationDonut,
+  OutflowBand,
+  PaceChart,
+  UpcomingList,
+} from '../components/OverviewCharts.jsx';
 import { OverviewPanel, type PanelTab } from '../components/OverviewPanel.jsx';
 import { Sankey, type FlowNode } from '../components/Sankey.jsx';
 import { CompositionBars, RankedBars, type RankedRow } from '../components/RankedBars.jsx';
@@ -99,6 +105,10 @@ const TILE_COPY: Record<string, { readonly title: string; readonly description?:
   home_equity_over_time: { title: 'Home equity' },
   debt_trajectory: { title: 'Debt trajectory' },
   figures: { title: 'Figures' },
+  daily_outflow: { title: 'Daily outflow', description: 'This cycle' },
+  income_vs_spending_pace: { title: 'In against out', description: 'Running totals' },
+  allocation: { title: 'Allocation' },
+  upcoming_bills: { title: 'Upcoming', description: 'From Bills' },
   cashflow: { title: 'Cashflow', description: 'Where the money went' },
   delegations: { title: 'Delegations' },
   delegations_negative: { title: 'Over-spent lines' },
@@ -940,6 +950,65 @@ function CashflowTile({
   );
 }
 
+/**
+ * Said once, by the three tiles that cannot be drawn without a payday.
+ *
+ * A band of days measured from a guessed payday would be a picture of the wrong
+ * fortnight, so these draw nothing at all rather than something plausible.
+ */
+function NeedsPayday(): ReactNode {
+  return (
+    <p className="text-quiet text-muted">
+      Set your next payday on Settings → Budget to see this cycle.
+    </p>
+  );
+}
+
+/** The donut, and the switch between what it can say. */
+function AllocationTile({
+  slices,
+  mode,
+  onMode,
+  preview = false,
+}: {
+  readonly slices: NonNullable<OverviewDataDto['allocation']>;
+  readonly mode: 'plan' | 'position';
+  readonly onMode: (next: 'plan' | 'position') => void;
+  readonly preview?: boolean;
+}): ReactNode {
+  return (
+    <div className="flex flex-col gap-3">
+      {!preview && (
+        <SegmentedControl
+          size="sm"
+          label="Allocation reading"
+          value={mode}
+          options={ALLOCATION_MODES}
+          onChange={onMode}
+        />
+      )}
+      <AllocationDonut
+        slices={slices}
+        emptyMessage={
+          mode === 'plan' ? 'No amounts to delegate yet.' : 'Nothing in the envelopes yet.'
+        }
+      />
+    </div>
+  );
+}
+
+/**
+ * Two readings of one subject, which is why they are one tile with a switch.
+ *
+ * The plan is what every payday puts where — the household's priorities, stable
+ * enough to recognise at a glance. The position is where the money is sitting
+ * now, which drifts with the timing of bills rather than with anything decided.
+ */
+const ALLOCATION_MODES = [
+  { value: 'plan' as const, label: 'Plan' },
+  { value: 'position' as const, label: 'Now' },
+];
+
 /** Every figure the band can hold. Longer than the band is wide, deliberately. */
 const FIGURE_CATALOG = [
   'inflow',
@@ -1105,6 +1174,8 @@ function TileBody({
   cashflowWindow,
   onCashflowWindow,
   onChooseFigures,
+  allocationMode,
+  onAllocationMode,
   preview = false,
 }: {
   readonly tileKey: string;
@@ -1115,6 +1186,8 @@ function TileBody({
   readonly cashflowWindow?: string;
   readonly onCashflowWindow?: (next: string) => void;
   readonly onChooseFigures?: () => void;
+  readonly allocationMode?: 'plan' | 'position';
+  readonly onAllocationMode?: (next: 'plan' | 'position') => void;
   /**
    * A picture of the tile, not the tile.
    *
@@ -1200,6 +1273,29 @@ function TileBody({
           preview={preview}
         />
       ) : null;
+    case 'daily_outflow':
+      return data.daily_outflow ? (
+        <OutflowBand days={data.daily_outflow} todayIso={new Date().toISOString()} />
+      ) : (
+        <NeedsPayday />
+      );
+    case 'income_vs_spending_pace':
+      return data.income_vs_spending_pace ? (
+        <PaceChart points={data.income_vs_spending_pace} />
+      ) : (
+        <NeedsPayday />
+      );
+    case 'allocation':
+      return data.allocation ? (
+        <AllocationTile
+          slices={data.allocation}
+          mode={allocationMode ?? 'plan'}
+          onMode={onAllocationMode ?? (() => undefined)}
+          preview={preview}
+        />
+      ) : null;
+    case 'upcoming_bills':
+      return data.upcoming_bills ? <UpcomingList bills={data.upcoming_bills} /> : null;
     case 'cashflow':
       return data.cashflow ? (
         <CashflowTile
@@ -1554,6 +1650,13 @@ export function Overview(): ReactNode {
     // configurations as well as keys — see the comment there.
   }
 
+  /** The donut's reading, stored on its tile. */
+  function setAllocationMode(next: 'plan' | 'position'): void {
+    save.mutate(
+      tiles.map((tile) => (tile.key === 'allocation' ? { ...tile, config: { mode: next } } : tile)),
+    );
+  }
+
   /** The figures band's own selection. */
   function saveFigures(keys: readonly string[]): void {
     save.mutate(
@@ -1592,6 +1695,13 @@ export function Overview(): ReactNode {
     );
     setPicking(null);
   }
+
+  /** What the donut is currently drawing, read from its stored configuration. */
+  const allocationMode: 'plan' | 'position' =
+    (tiles.find((tile) => tile.key === 'allocation')?.config as { mode?: string } | null)?.mode ===
+    'position'
+      ? 'position'
+      : 'plan';
 
   /*
    * The panel's chosen lines are stored on the `delegations` layout row.
@@ -1797,6 +1907,8 @@ export function Overview(): ReactNode {
                       cashflowWindow={data.data?.cashflowWindow ?? 'ytd'}
                       onCashflowWindow={(next) => setCashflowWindow(next)}
                       onChooseFigures={() => setPickingFigures(true)}
+                      allocationMode={allocationMode}
+                      onAllocationMode={setAllocationMode}
                     />
                   </TileShell>
                 )),

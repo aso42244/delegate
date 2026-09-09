@@ -30,6 +30,7 @@ import {
   type SnapshotRange,
 } from './snapshot-series.js';
 import { getBudgetSettings } from './settings.js';
+import { localDayKey, startOfLocalDay } from './calendar.js';
 import { buildUtilities, type UtilitiesView } from './utilities.js';
 import type { Db } from '../db/client.js';
 
@@ -109,6 +110,12 @@ export const OVERVIEW_TILES = [
 
   /** The band of four figures across the top. One tile, not four. */
   'figures',
+
+  /* Cycle-shaped, all three: every figure on this page is measured from payday. */
+  'daily_outflow',
+  'income_vs_spending_pace',
+  'allocation',
+  'upcoming_bills',
 
   'uncategorized_backlog',
 ] as const;
@@ -527,6 +534,10 @@ export interface OverviewData {
   };
   readonly cashflow?: Cashflow;
   readonly figures?: readonly Figure[];
+  readonly daily_outflow?: readonly OutflowDay[];
+  readonly income_vs_spending_pace?: readonly PacePoint[];
+  readonly allocation?: readonly AllocationSlice[];
+  readonly upcoming_bills?: readonly UpcomingBill[];
   readonly spending_by_grouping?: OverviewSpending;
   readonly spending_by_delegation?: OverviewSpending;
   readonly asset_debt_composition?: Composition;
@@ -889,4 +900,190 @@ export async function buildFigures(
 function sumOf(rows: { amountCents: Cents; kind: string }[] | undefined, kind: string): Cents {
   if (!rows) return 0n;
   return rows.reduce((total, row) => (row.kind === kind ? total + row.amountCents : total), 0n);
+}
+
+export interface UpcomingBill {
+  readonly key: string;
+  readonly name: string;
+  readonly expectedNextAt: Date;
+  readonly typicalAmountCents: Cents;
+  readonly delegationName: string | null;
+}
+
+export interface OutflowDay {
+  readonly date: Date;
+  readonly spentCents: Cents;
+}
+
+/**
+ * What went out on each day of the cycle.
+ *
+ * **Cycle-shaped, not month-shaped.** The design this came from draws thirty
+ * cells for a calendar month; every other figure on this page is measured from
+ * payday, and one calendar-shaped band among them would be the reading somebody
+ * has to remember is different.
+ *
+ * Every day in the range gets a cell, including the ones nothing happened on. A
+ * band that skipped empty days would compress a quiet fortnight into the same
+ * width as a busy one and say something false about the shape of the month —
+ * the same mistake the utility charts avoid by keeping an empty month between
+ * two bills.
+ */
+export async function buildOutflow(
+  db: Db,
+  options: { readonly start: Date; readonly end: Date; readonly timeZone: string },
+): Promise<OutflowDay[]> {
+  const rows = await db.transaction.findMany({
+    where: {
+      archivedAt: null,
+      kind: 'normal',
+      amountCents: { lt: 0 },
+      postedAt: { gte: startOfLocalDay(options.start, options.timeZone) },
+    },
+    select: { amountCents: true, postedAt: true },
+  });
+
+  const byDay = new Map<number, Cents>();
+  for (const row of rows) {
+    // An instant needs a zone to be placed in a day. ADR 037, and the reason an
+    // evening charge once landed in the wrong month.
+    const key = localDayKey(row.postedAt, options.timeZone).getTime();
+    byDay.set(key, (byDay.get(key) ?? 0n) - row.amountCents);
+  }
+
+  const days: OutflowDay[] = [];
+  const cursor = new Date(options.start.getTime());
+  while (cursor.getTime() < options.end.getTime()) {
+    days.push({ date: new Date(cursor.getTime()), spentCents: byDay.get(cursor.getTime()) ?? 0n });
+    cursor.setUTCDate(cursor.getUTCDate() + 1);
+  }
+  return days;
+}
+
+export interface PacePoint {
+  readonly date: Date;
+  readonly inflowCents: Cents;
+  readonly spentCents: Cents;
+  /** Null after today: the future has no figure, and a flat line would imply one. */
+  readonly observed: boolean;
+}
+
+/**
+ * Money in against money out, both running totals, across the cycle.
+ *
+ * The two lines stop at today. Carrying them flat to the end of the cycle would
+ * draw a fortnight of spending nothing, which is a claim about the future rather
+ * than a record of the past — and on a chart whose whole job is pace, a flat
+ * tail reads as being comfortably ahead.
+ */
+export async function buildPace(
+  db: Db,
+  options: {
+    readonly start: Date;
+    readonly end: Date;
+    readonly timeZone: string;
+  },
+  now: Date = new Date(),
+): Promise<PacePoint[]> {
+  const rows = await db.transaction.findMany({
+    where: {
+      archivedAt: null,
+      kind: { in: ['income', 'normal'] },
+      postedAt: { gte: startOfLocalDay(options.start, options.timeZone) },
+    },
+    select: { amountCents: true, kind: true, postedAt: true },
+  });
+
+  const inflowByDay = new Map<number, Cents>();
+  const spentByDay = new Map<number, Cents>();
+  for (const row of rows) {
+    const key = localDayKey(row.postedAt, options.timeZone).getTime();
+    if (row.kind === 'income') inflowByDay.set(key, (inflowByDay.get(key) ?? 0n) + row.amountCents);
+    else if (row.amountCents < 0n)
+      spentByDay.set(key, (spentByDay.get(key) ?? 0n) - row.amountCents);
+  }
+
+  const today = localDayKey(now, options.timeZone).getTime();
+  const points: PacePoint[] = [];
+  let inflow = 0n;
+  let spent = 0n;
+
+  const cursor = new Date(options.start.getTime());
+  while (cursor.getTime() < options.end.getTime()) {
+    const key = cursor.getTime();
+    inflow += inflowByDay.get(key) ?? 0n;
+    spent += spentByDay.get(key) ?? 0n;
+    points.push({
+      date: new Date(key),
+      inflowCents: inflow,
+      spentCents: spent,
+      observed: key <= today,
+    });
+    cursor.setUTCDate(cursor.getUTCDate() + 1);
+  }
+  return points;
+}
+
+export interface AllocationSlice {
+  readonly key: string;
+  readonly name: string;
+  readonly color: string | null;
+  readonly amountCents: Cents;
+}
+
+/**
+ * What is delegated where — either the plan or the position.
+ *
+ * `plan` is each grouping's sum of amount-to-delegate: what every payday puts
+ * where, and therefore what the household's priorities actually are. It moves
+ * only when somebody changes the plan, which is what makes it recognisable at a
+ * glance.
+ *
+ * `position` is each grouping's total balance: where the money is sitting right
+ * now. It moves as the cycle is spent, so the proportions drift with the timing
+ * of bills rather than with anything anybody decided.
+ *
+ * Two readings of one subject, which is why they are one tile with a switch
+ * rather than two tiles.
+ */
+export async function buildAllocation(
+  db: Db,
+  mode: 'plan' | 'position',
+): Promise<AllocationSlice[]> {
+  const lines = await db.delegation.findMany({
+    where: { archivedAt: null },
+    select: {
+      balanceCents: true,
+      amountToDelegateCents: true,
+      grouping: { select: { id: true, name: true, color: true, position: true, systemKey: true } },
+    },
+  });
+
+  const totals = new Map<string, AllocationSlice & { position: number }>();
+  for (const line of lines) {
+    // Outstanding Checks is the budget's own grouping — money that has left in
+    // paper form rather than a category anybody filed under.
+    if (line.grouping?.systemKey === 'outstanding-checks') continue;
+
+    const amount = mode === 'plan' ? (line.amountToDelegateCents ?? 0n) : line.balanceCents;
+    if (amount <= 0n) continue;
+
+    const key = line.grouping?.id ?? 'ungrouped';
+    const existing = totals.get(key);
+    if (existing) {
+      totals.set(key, { ...existing, amountCents: existing.amountCents + amount });
+      continue;
+    }
+    totals.set(key, {
+      key,
+      name: line.grouping?.name ?? 'No grouping',
+      color: line.grouping?.color ?? null,
+      amountCents: amount,
+      position: line.grouping?.position ?? Number.MAX_SAFE_INTEGER,
+    });
+  }
+
+  return [...totals.values()]
+    .sort((a, b) => (b.amountCents > a.amountCents ? 1 : b.amountCents < a.amountCents ? -1 : 0))
+    .map(({ position: _position, ...slice }) => slice);
 }

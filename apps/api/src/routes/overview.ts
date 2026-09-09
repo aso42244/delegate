@@ -6,7 +6,10 @@ import { z } from 'zod';
 import { prisma } from '../db/client.js';
 import { SPENDING_WINDOWS } from '../domain/insights.js';
 import {
+  buildAllocation,
   buildFigures,
+  buildOutflow,
+  buildPace,
   buildOverview,
   buildPanel,
   isFigureKey,
@@ -16,6 +19,7 @@ import {
   type OverviewTileKey,
 } from '../domain/overview.js';
 import { payCycleAt } from '../domain/pay-cycle.js';
+import { findRecurringBills } from '../domain/recurring.js';
 import { getBudgetSettings, householdTimezone } from '../domain/settings.js';
 import { centsOut, dateOut } from '../http/serialize.js';
 import { AUTHENTICATED } from '../plugins/auth.js';
@@ -62,6 +66,9 @@ const TILE_CONFIG: Partial<Record<string, z.ZodType>> = {
   cashflow: z.object({
     window: z.enum(SPENDING_WINDOWS),
   }),
+
+  /** Which reading the allocation donut draws. */
+  allocation: z.object({ mode: z.enum(['plan', 'position']) }),
 
   /** Which four figures the band draws, in order. */
   figures: z.object({
@@ -295,6 +302,26 @@ export const overviewRoutes: FastifyPluginCallback = (fastify, _options, done) =
         })
       : [];
 
+    /*
+     * The cycle-shaped tiles. All three need the cycle's own bounds, and none of
+     * them can be drawn without an anchor — a band of days measured from a
+     * guessed payday would be a picture of the wrong fortnight.
+     */
+    const keys = new Set(tiles);
+    const bounds = cycle === null ? null : { start: cycle.start, end: cycle.end, timeZone };
+
+    const [outflow, pace, allocation, bills] = await Promise.all([
+      keys.has('daily_outflow') && bounds ? buildOutflow(prisma, bounds) : undefined,
+      keys.has('income_vs_spending_pace') && bounds ? buildPace(prisma, bounds) : undefined,
+      keys.has('allocation')
+        ? buildAllocation(
+            prisma,
+            readAllocationMode(stored.find((tile) => tile.widgetKey === 'allocation')?.config),
+          )
+        : undefined,
+      keys.has('upcoming_bills') ? findRecurringBills(prisma, timeZone) : undefined,
+    ]);
+
     const panelTile = stored.find((tile) => tile.widgetKey === 'delegations');
     const panel = await buildPanel(prisma, {
       delegationIds: readDelegationIds(panelTile?.config),
@@ -311,6 +338,56 @@ export const overviewRoutes: FastifyPluginCallback = (fastify, _options, done) =
               valueCents: centsOut(figure.valueCents),
               count: figure.count,
             })),
+          }
+        : {}),
+      ...(outflow
+        ? {
+            daily_outflow: outflow.map((day) => ({
+              date: dateOut(day.date),
+              spentCents: centsOut(day.spentCents),
+            })),
+          }
+        : {}),
+      ...(pace
+        ? {
+            income_vs_spending_pace: pace.map((point) => ({
+              date: dateOut(point.date),
+              inflowCents: centsOut(point.inflowCents),
+              spentCents: centsOut(point.spentCents),
+              observed: point.observed,
+            })),
+          }
+        : {}),
+      ...(allocation
+        ? {
+            allocation: allocation.map((slice) => ({
+              key: slice.key,
+              name: slice.name,
+              color: slice.color,
+              amountCents: centsOut(slice.amountCents),
+            })),
+          }
+        : {}),
+      ...(bills
+        ? {
+            upcoming_bills: bills
+              /*
+               * What is coming, soonest first. A lapsed bill has plainly
+               * stopped — its expected date is in the past by definition — so
+               * it would sort to the very top of a list of what is next while
+               * being the least actionable row on it. That is exactly where the
+               * first real run of the Bills page put a thrift shop.
+               */
+              .filter((bill) => bill.status !== 'lapsed')
+              .sort((a, b) => a.expectedNextAt.getTime() - b.expectedNextAt.getTime())
+              .slice(0, 8)
+              .map((bill) => ({
+                key: bill.key,
+                name: bill.name,
+                expectedNextAt: dateOut(bill.expectedNextAt),
+                typicalAmountCents: centsOut(bill.typicalAmountCents),
+                delegationName: bill.delegationName,
+              })),
           }
         : {}),
       panel: panel.map((line) => ({
@@ -415,6 +492,13 @@ function point(entry: {
  * period rather than a figure — the worst a wrong one does is show a different
  * span of the same true numbers.
  */
+/** Which reading the donut draws. The plan unless told otherwise. */
+function readAllocationMode(config: unknown): 'plan' | 'position' {
+  if (config === null || typeof config !== 'object') return 'plan';
+  const mode = (config as { mode?: unknown }).mode;
+  return mode === 'position' ? 'position' : 'plan';
+}
+
 /** The figure keys a band was told to draw, or the defaults. */
 function readFigureKeys(config: unknown): readonly FigureKey[] {
   if (config === null || typeof config !== 'object') return DEFAULT_FIGURES;
