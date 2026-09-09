@@ -674,22 +674,34 @@ test('the donut switches between the plan and the position', async ({ signedIn }
 
   const tile = signedIn.getByRole('heading', { name: 'Allocation', level: 2 }).locator('../..');
 
-  // Two readings of one subject, which is why they are one tile with a switch
-  // rather than two tiles. The plan is the default: it is the proportion that
-  // says something about the household rather than about the timing of bills.
-  await expect(tile.getByRole('radio', { name: 'Plan' })).toHaveAttribute('aria-checked', 'true');
-  await expect(tile.getByText('No amounts to delegate yet.')).toBeVisible();
-
-  await tile.getByRole('radio', { name: 'Now' }).click();
+  /*
+   * Two readings of one subject, which is why they are one tile with a switch
+   * rather than two tiles. Current is the default and sits first: it is the one
+   * somebody is usually asking about, where Delegations is a decision they
+   * already made.
+   */
+  await expect(tile.getByRole('radio', { name: 'Current' })).toHaveAttribute(
+    'aria-checked',
+    'true',
+  );
   await expect(tile.getByText('Nothing in the envelopes yet.')).toBeVisible();
 
-  // Stored on the tile, so it survives a reload the way the cashflow period does.
+  /*
+   * Both readings arrived with the page, so this is a local switch. It used to
+   * write the layout and wait for the whole page to be recomputed before the
+   * donut redrew — about a second, for a toggle whose data was already here.
+   */
+  await tile.getByRole('radio', { name: 'Delegations' }).click();
+  await expect(tile.getByText('No amounts to delegate yet.')).toBeVisible();
+
+  // Still stored on the tile, so it survives a reload the way the cashflow
+  // period does — the write simply is not what the drawing waits on.
   await signedIn.reload();
   await expect(
     signedIn
       .getByRole('heading', { name: 'Allocation', level: 2 })
       .locator('../..')
-      .getByRole('radio', { name: 'Now' }),
+      .getByRole('radio', { name: 'Delegations' }),
   ).toHaveAttribute('aria-checked', 'true');
 });
 
@@ -1039,6 +1051,62 @@ test('the utility tiles say they do not know rather than guessing', async ({ sig
     .locator('../..');
   // Nothing spent, so nothing to compare a funding level against.
   await expect(adjust.getByText('Nothing to change')).toBeVisible();
+});
+
+test('a row keeps the height it was dragged to', async ({ signedIn }) => {
+  await signedIn.goto('/overview');
+  await openArrange(signedIn);
+  await signedIn.getByRole('button', { name: 'Add Cashflow' }).click();
+  await signedIn.getByRole('button', { name: 'Done' }).click();
+
+  const tile = signedIn.getByRole('heading', { name: 'Cashflow', level: 2 }).locator('../..');
+  await expect(tile).toBeVisible();
+
+  /*
+   * Dragging is not reachable by keyboard, so the handle takes the arrows —
+   * which is also the route a test can drive without simulating a pointer
+   * gesture. Each press is 24px, a height somebody can actually land on.
+   *
+   * **One press, and then wait for it.** Every press is its own write, so four
+   * in a row race each other and a height measured straight after the loop
+   * catches whichever had landed — which is how this failed the first time,
+   * expecting 144 against a stored 168.
+   */
+  const handle = signedIn.getByRole('separator', { name: /Height of the row/ });
+  const before = Math.round((await tile.boundingBox())!.height);
+  await handle.focus();
+  await handle.press('ArrowDown');
+
+  const taller = before + 24;
+  await expect.poll(async () => Math.round((await tile.boundingBox())!.height)).toBe(taller);
+
+  /*
+   * Stored on every tile in the row, so it survives the reload that proves the
+   * write landed rather than only the optimistic update. Polled again, because
+   * a box measured the instant after a reload is measured while the layout
+   * query is still in flight and the tile is at its natural height.
+   */
+  await signedIn.reload();
+  const reloadedTile = signedIn
+    .getByRole('heading', { name: 'Cashflow', level: 2 })
+    .locator('../..');
+  await expect(reloadedTile).toBeVisible();
+  await expect
+    .poll(async () => Math.round((await reloadedTile.boundingBox())!.height))
+    .toBe(taller);
+});
+
+test('the outstanding checks tile lists what has not cleared', async ({ signedIn }) => {
+  await signedIn.goto('/overview');
+  await openArrange(signedIn);
+  await signedIn.getByRole('button', { name: 'Add Outstanding checks' }).click();
+  await signedIn.getByRole('button', { name: 'Done' }).click();
+
+  const tile = signedIn
+    .getByRole('heading', { name: 'Outstanding checks', level: 2 })
+    .locator('../..');
+  // Nothing written yet, said plainly rather than drawn as an empty list.
+  await expect(tile.getByText('Nothing outstanding.')).toBeVisible();
 });
 
 test('a balance-history tile asks which one before it draws anything', async ({ signedIn }) => {

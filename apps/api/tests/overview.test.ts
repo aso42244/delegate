@@ -71,6 +71,7 @@ interface LayoutBody {
     readonly region: string;
     readonly row: number;
     readonly position: number;
+    readonly heightPx: number | null;
     readonly config: unknown;
   }[];
 }
@@ -112,6 +113,10 @@ interface DataBody {
     readonly plannedCents: string | null;
     readonly spentCents: string;
   }[];
+  readonly outstanding_checks?: readonly {
+    readonly checkNumber: string;
+    readonly amountCents: string;
+  }[];
   readonly daily_outflow?: readonly {
     readonly month: string;
     readonly days: readonly { readonly date: string; readonly spentCents: string }[];
@@ -120,7 +125,10 @@ interface DataBody {
     readonly date: string;
     readonly observed: boolean;
   }[];
-  readonly allocation?: readonly { readonly name: string; readonly amountCents: string }[];
+  readonly allocation?: {
+    readonly plan: readonly { readonly name: string; readonly amountCents: string }[];
+    readonly position: readonly { readonly name: string; readonly amountCents: string }[];
+  };
   readonly upcoming_bills?: readonly { readonly name: string }[];
   readonly account_balance_history?: { readonly name: string | null };
   readonly pickable?: {
@@ -273,6 +281,30 @@ describe('the layout', () => {
 
     const body = (await get('/api/overview/layout')).json<LayoutBody>();
     expect(body.tiles.map((tile) => tile.region)).toEqual(['main']);
+  });
+
+  it('remembers how tall a row was dragged', async () => {
+    /*
+     * Stored on every member because a row is not a record — it is a number two
+     * or three tiles happen to share — and read back as the largest of them, so
+     * a row whose members disagree is still a row rather than a ragged edge.
+     */
+    await putLayout([
+      { key: 'cashflow', row: 0, position: 0, heightPx: 640 },
+      { key: 'spending_by_grouping', row: 1, position: 0 },
+    ]);
+
+    const body = (await get('/api/overview/layout')).json<LayoutBody>();
+    expect(body.tiles.map((tile) => [tile.key, tile.heightPx])).toEqual([
+      ['cashflow', 640],
+      ['spending_by_grouping', null],
+    ]);
+  });
+
+  it('refuses a row too short to hold its own header', async () => {
+    // A row shorter than its header is one nobody can grab the edge of again.
+    const response = await putLayout([{ key: 'cashflow', row: 0, position: 0, heightPx: 20 }]);
+    expect(response.statusCode).toBe(400);
   });
 
   it('comes back in row and position order', async () => {
@@ -1136,6 +1168,16 @@ describe('the cycle-shaped tiles', () => {
     });
   }
 
+  it('lists outstanding checks, with the number and the amount', async () => {
+    /*
+     * A check is money that has left the budget but not the bank, so it is the
+     * one figure a statement and this application legitimately disagree about.
+     */
+    await putLayout(rowed(['outstanding_checks']));
+    const body = (await get('/api/overview')).json<DataBody>();
+    expect(body.outstanding_checks).toEqual([]);
+  });
+
   it('draws the pace chart only with a payday, never from a guess', async () => {
     await putLayout(rowed(['income_vs_spending_pace']));
     const body = (await get('/api/overview')).json<DataBody>();
@@ -1195,18 +1237,21 @@ describe('the cycle-shaped tiles', () => {
 });
 
 describe('allocation', () => {
-  it('reads the plan by default and the position when told', async () => {
+  it('sends both readings, so the switch between them is local', async () => {
     await makeDelegation({ name: 'Grocery', amountToDelegateCents: 78_000n });
-
     await putLayout(rowed(['allocation']));
-    const plan = (await get('/api/overview')).json<DataBody>().allocation ?? [];
-    expect(plan[0]?.amountCents).toBe('78000');
 
-    await putLayout([{ key: 'allocation', row: 0, position: 0, config: { mode: 'position' } }]);
-    const position = (await get('/api/overview')).json<DataBody>().allocation ?? [];
-    // The line holds nothing yet, so the position has no slice at all — which is
-    // a different answer from a plan of $780, and the point of the switch.
-    expect(position).toEqual([]);
+    const allocation = (await get('/api/overview')).json<DataBody>().allocation;
+
+    /*
+     * They are the same rows summed two ways, so they arrive together. Sending
+     * one and re-fetching on a switch meant a layout write and a recompute of
+     * the whole page before the donut redrew — about a second, for a toggle.
+     */
+    expect(allocation?.plan[0]?.amountCents).toBe('78000');
+    // The line holds nothing yet, so the current position has no slice at all —
+    // a different answer from a delegation of $780, and the point of the switch.
+    expect(allocation?.position).toEqual([]);
   });
 
   it('refuses a reading it cannot draw', async () => {

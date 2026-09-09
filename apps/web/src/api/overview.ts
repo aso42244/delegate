@@ -17,6 +17,14 @@ export interface OverviewTileDto {
   readonly row: number;
   /** Order within that row. */
   readonly position: number;
+  /**
+   * How tall this tile's **row** is, in pixels. Null is the tile's own height.
+   *
+   * Per row and stored on every tile in it, because a row is not a record here —
+   * it is a number two or three tiles happen to share. A read takes the largest
+   * of them, so a row whose members disagree is still a row.
+   */
+  readonly heightPx: number | null;
   /** Which chart this tile is drawn as; null means the tile's own default. */
   readonly display: string | null;
   /**
@@ -291,6 +299,15 @@ export interface BillsThisCycleDto {
   } | null;
 }
 
+/** A check written and not yet cleared. */
+export interface OutstandingCheckDto {
+  readonly id: string;
+  readonly checkNumber: string;
+  readonly memo: string | null;
+  readonly issuedAt: string;
+  readonly amountCents: string;
+}
+
 export interface PickableDto {
   readonly id: string;
   readonly name: string;
@@ -312,7 +329,19 @@ export interface OverviewDataDto {
   readonly figures?: readonly FigureDto[];
   readonly daily_outflow?: readonly OutflowMonthDto[];
   readonly income_vs_spending_pace?: readonly PacePointDto[];
-  readonly allocation?: readonly AllocationSliceDto[];
+  /**
+   * Both readings, so the tile's toggle is a local switch.
+   *
+   * They are the same rows summed two ways. Sending one and re-fetching on a
+   * switch meant a layout write and a recompute of the whole page before the
+   * donut redrew — about a second, for a toggle.
+   */
+  readonly allocation?: {
+    /** What one Delegate press puts in. */
+    readonly plan: readonly AllocationSliceDto[];
+    /** What the envelopes hold now. */
+    readonly position: readonly AllocationSliceDto[];
+  };
   readonly upcoming_bills?: readonly UpcomingBillDto[];
   readonly bills_attention?: readonly BillAttentionDto[];
   readonly bills_this_cycle?: BillsThisCycleDto;
@@ -343,6 +372,7 @@ export interface OverviewDataDto {
   readonly asset_debt_composition?: CompositionDto;
   readonly utilities_vs_delegated?: UtilitiesComparisonDto;
   readonly delegation_movers?: MoversDto;
+  readonly outstanding_checks?: readonly OutstandingCheckDto[];
   readonly uncategorized_backlog?: OverviewBacklogDto;
 }
 

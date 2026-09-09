@@ -6,7 +6,45 @@ phase (`v0.1.0-phase1`, and so on).
 
 ## [Unreleased]
 
+### Added
+
+- **A row on Overview can be dragged to its own height.** The bottom edge of any
+  tile in a row resizes the whole row, and the arrows do it from the keyboard
+  since dragging is not reachable that way. Stored on every tile in the row,
+  because a row is not a record — it is a number two or three tiles share — and
+  read back as the largest of them, so a row whose members disagree is still a
+  row. A tile moved to another row leaves the height behind: heights belong to
+  rows.
+
+- **An Outstanding checks tile** — number, what it was for, and the amount. A
+  check is money that has left the budget but not the bank, so it is the one
+  figure a statement and this application legitimately disagree about, and the
+  disagreement is exactly that list.
+
+### Changed
+
+- **Overview steps down from three tiles to two to one** as the window narrows,
+  rather than holding three until it hits a phone. A tile that keeps a third of
+  the width on a laptop is 300px of ranked bars with the names truncated to
+  nothing, which is the floor the row cap is derived from.
+
+- **The Cashflow chart is capped at 520px tall.** It scales with its width and
+  the page got 400px wider, so the chart that fitted a screen at 1200px ran off
+  the bottom of one at 1600. A row dragged taller than that gives it the room.
+
+- **The allocation donut switches instantly**, and its readings are called
+  **Current** and **Delegations** with Current first. Both readings are computed
+  and sent together now — they are the same rows summed two ways — so switching
+  is local instead of a layout write and a recompute of the whole page, which
+  took about a second for a toggle. The old names said the idea rather than the
+  thing on screen; this budget calls those amounts delegations everywhere else.
+
 ### Fixed
+
+- **Today no longer reads as a day that has not happened.** Both were an outline
+  — one accent, one grey — so on the row where today meets the future they were
+  two shades of one idiom. A border means "not yet"; today is a rule beneath its
+  own cell.
 
 - **A manual re-run of the publish workflow now tags the version it built.**
   `docker/metadata-action` derives a version from `github.ref`, and on a

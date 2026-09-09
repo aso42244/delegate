@@ -28,6 +28,7 @@ import {
   BillAttentionList,
   BillsThisCycle,
   OutflowBand,
+  OutstandingChecks,
   PaceChart,
   UpcomingList,
   UtilitiesToAdjust,
@@ -137,6 +138,7 @@ const TILE_COPY: Record<string, { readonly title: string; readonly description?:
   change_per_cycle: { title: 'Change per cycle' },
   thirty_day_momentum: { title: '30-day momentum' },
   delegation_burn_rate: { title: 'What each line burns' },
+  outstanding_checks: { title: 'Outstanding checks' },
   uncategorized_backlog: { title: 'Waiting to be categorized' },
 };
 
@@ -162,10 +164,21 @@ const NO_HISTORY = 'No history yet — the first night records one.';
  * Written out rather than interpolated, because Tailwind reads the source for
  * class names and `lg:col-span-${n}` is a string it never sees.
  */
+/*
+ * How wide a tile is, at each width the page has.
+ *
+ * Three steps down rather than one: a row of three becomes two at `md` and one
+ * below it, and a row of two becomes one. A tile that keeps a third of the width
+ * on a laptop is 300px of ranked bars with the names truncated to nothing, which
+ * is the floor the row cap is derived from in the first place.
+ *
+ * Written out rather than interpolated, because Tailwind reads the source for
+ * class names and `lg:col-span-${n}` is a string it never sees.
+ */
 const COLUMN_CLASS: Record<number, string> = {
   12: 'lg:col-span-12',
-  6: 'lg:col-span-6',
-  4: 'lg:col-span-4',
+  6: 'md:col-span-6 lg:col-span-6',
+  4: 'md:col-span-6 lg:col-span-4',
 };
 
 function TileShell({
@@ -180,6 +193,8 @@ function TileShell({
   onJoin,
   drag,
   controls,
+  height,
+  onResize,
   children,
 }: {
   readonly tile: OverviewTileDto;
@@ -200,6 +215,11 @@ function TileShell({
   };
   /** This tile's own control, drawn on the right of its header. */
   readonly controls?: ReactNode;
+  /** The height of this tile's row, or null for whatever its content wants. */
+  readonly height?: number | null;
+  /** Live while dragging, then once more to commit. Absent where a row cannot
+   *  be resized — the sidebar, where every tile has its own row already. */
+  readonly onResize?: ((px: number, done: boolean) => void) | undefined;
   readonly children: ReactNode;
 }): ReactNode {
   const copy = TILE_COPY[tile.key] ?? { title: tile.key };
@@ -230,6 +250,9 @@ function TileShell({
       className={`group relative col-span-1 flex min-w-0 flex-col gap-4 rounded-lg border border-line bg-canvas p-4 ${
         COLUMN_CLASS[columns] ?? 'lg:col-span-12'
       }`}
+      // A fixed height turns the body into the thing that scrolls, so a tile
+      // dragged shorter than its content stays a tile rather than a clipped one.
+      style={height === null || height === undefined ? undefined : { height }}
       draggable={draggable}
       onPointerDown={(event) => {
         fromGrip.current = (event.target as HTMLElement).closest('[data-grip]') !== null;
@@ -351,7 +374,58 @@ function TileShell({
           </div>
         )}
       </div>
-      {children}
+      {/* The body is what scrolls when the row has been dragged shorter than its
+          content — `min-h-0` because a flex item's minimum is its content, which
+          would otherwise push the tile back to its natural height. */}
+      <div
+        className={height === null || height === undefined ? '' : 'min-h-0 flex-1 overflow-auto'}
+      >
+        {children}
+      </div>
+
+      {/*
+        The row's height, dragged from the bottom edge.
+
+        On every tile in the row rather than on the row, because a row is not an
+        element here — it is a col-span relationship inside one grid. Dragging
+        any member resizes all of them, which is also the behaviour somebody
+        expects: the edge under the pointer is the edge that moves.
+      */}
+      {onResize !== undefined && (
+        <span
+          role="separator"
+          aria-label={`Height of the row holding ${copy.title}`}
+          aria-orientation="horizontal"
+          tabIndex={0}
+          className="absolute inset-x-0 -bottom-1 z-10 h-2 cursor-ns-resize rounded-full opacity-0 transition-opacity group-hover:opacity-100 hover:bg-accent focus-visible:opacity-100 focus-visible:bg-accent"
+          onPointerDown={(event) => {
+            event.preventDefault();
+            const handle = event.currentTarget;
+            const start = event.clientY;
+            const from = handle.closest('section')?.getBoundingClientRect().height ?? 0;
+            handle.setPointerCapture(event.pointerId);
+
+            const move = (moved: PointerEvent): void =>
+              onResize(Math.round(from + (moved.clientY - start)), false);
+            const up = (ended: PointerEvent): void => {
+              onResize(Math.round(from + (ended.clientY - start)), true);
+              handle.removeEventListener('pointermove', move);
+              handle.removeEventListener('pointerup', up);
+            };
+            handle.addEventListener('pointermove', move);
+            handle.addEventListener('pointerup', up);
+          }}
+          /* Dragging is not reachable by keyboard, so the arrows are — 24px a
+             press, which is a row height somebody can actually land on. */
+          onKeyDown={(event) => {
+            if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') return;
+            event.preventDefault();
+            const box = event.currentTarget.closest('section')?.getBoundingClientRect();
+            if (!box) return;
+            onResize(Math.round(box.height + (event.key === 'ArrowDown' ? 24 : -24)), true);
+          }}
+        />
+      )}
     </section>
   );
 }
@@ -1304,8 +1378,10 @@ function AllocationTile({
           onChange={onMode}
         />
       )}
+      {/* Both readings arrived together, so this is a local switch rather than
+          a layout write and a recompute of the page. */}
       <AllocationDonut
-        slices={slices}
+        slices={mode === 'plan' ? slices.plan : slices.position}
         emptyMessage={
           mode === 'plan' ? 'No amounts to delegate yet.' : 'Nothing in the envelopes yet.'
         }
@@ -1317,13 +1393,21 @@ function AllocationTile({
 /**
  * Two readings of one subject, which is why they are one tile with a switch.
  *
- * The plan is what every payday puts where — the household's priorities, stable
- * enough to recognise at a glance. The position is where the money is sitting
- * now, which drifts with the timing of bills rather than with anything decided.
+ * **Current** is where the money is sitting now, which drifts with the timing of
+ * bills rather than with anything decided. **Delegations** is what every payday
+ * puts where — the household's priorities, stable enough to recognise at a
+ * glance. Current is first because it is the one somebody is usually asking
+ * about; the other they already decided.
+ *
+ * They were "Now" and "Plan", which named the *idea* rather than the thing on
+ * screen — this budget calls those amounts delegations everywhere else.
  */
 const ALLOCATION_MODES = [
-  { value: 'plan' as const, label: 'Plan' },
-  { value: 'position' as const, label: 'Now' },
+  // Current first, because it is the one somebody is usually asking about — the
+  // plan is a decision they already made and can recognise; this is where the
+  // money actually is today.
+  { value: 'position' as const, label: 'Current' },
+  { value: 'plan' as const, label: 'Delegations' },
 ];
 
 /**
@@ -1695,7 +1779,7 @@ function TileBody({
       return data.allocation ? (
         <AllocationTile
           slices={data.allocation}
-          mode={allocationMode ?? 'plan'}
+          mode={allocationMode ?? 'position'}
           onMode={onAllocationMode ?? (() => undefined)}
           preview={preview}
         />
@@ -1744,6 +1828,10 @@ function TileBody({
     case 'utilities_trend':
       return data.utilities_vs_delegated ? (
         <UtilityTrends entries={data.utilities_vs_delegated.entries} />
+      ) : null;
+    case 'outstanding_checks':
+      return data.outstanding_checks ? (
+        <OutstandingChecks checks={data.outstanding_checks} />
       ) : null;
     case 'utilities_adjust':
       return data.utilities_vs_delegated ? (
@@ -1812,6 +1900,14 @@ export function Overview(): ReactNode {
   const [pickedDay, setPickedDay] = useState<string | null>(null);
   /** Whether every bill is showing, opened from one of the bill tiles. */
   const [showingBills, setShowingBills] = useState(false);
+  /**
+   * The row being dragged taller or shorter, and how tall it is right now.
+   *
+   * Local while the pointer is down so the edge tracks it, and written once on
+   * release — a layout PUT per pointermove would be a request every few
+   * milliseconds for a gesture that has one outcome.
+   */
+  const [resizing, setResizing] = useState<{ row: number; px: number } | null>(null);
 
   const [tab, setTab] = useState<PanelTab>('delegations');
 
@@ -1911,9 +2007,28 @@ export function Overview(): ReactNode {
        * tile drew it empty; it recurred here, where changing the period silently
        * kept the old one until a reload.
        */
+      /*
+       * The allocation tile's **configuration** is left out — not the tile.
+       *
+       * It is the one config the server no longer reads: both readings of the
+       * donut are computed and sent together, so which of them is showing
+       * changes nothing about what would come back. Including it meant every
+       * press of that switch waited on a recompute of the whole page — about a
+       * second, for a toggle whose data was already in the browser.
+       *
+       * Dropping the tile from the signature entirely was the first attempt and
+       * was wrong in the way this comment exists to prevent: *adding* Allocation
+       * then changed nothing either, so the page never refetched and the tile
+       * drew empty until a reload. Which tiles are on the page always changes
+       * what the server computes.
+       */
       const signature = (tiles: readonly OverviewTileDto[]): string =>
         tiles
-          .map((tile) => `${tile.key}:${JSON.stringify(tile.config ?? null)}`)
+          .map((tile) =>
+            tile.key === 'allocation'
+              ? tile.key
+              : `${tile.key}:${JSON.stringify(tile.config ?? null)}`,
+          )
           .sort()
           .join('\u0000');
 
@@ -1964,11 +2079,21 @@ export function Overview(): ReactNode {
     next: readonly (readonly OverviewTileDto[])[],
     sidebar: readonly OverviewTileDto[] = sidebarTiles,
   ): void {
+    /*
+     * A height belongs to a row, so a tile that leaves one leaves it behind.
+     *
+     * It is stored on every member because a row is not a record — but that
+     * makes a tile carry the number with it, and a tall tile dragged onto a row
+     * of its own would arrive still 600px tall for no reason anybody gave.
+     * Clearing it on a move is the rule that matches what the drag meant.
+     */
+    const before = new Map(tiles.map((tile) => [tile.key, tile.row]));
     const grid = flattenRows(next).map(({ row, position, tile }) => ({
       ...tile,
       region: 'main' as const,
       row,
       position,
+      heightPx: before.get(tile.key) === row ? tile.heightPx : null,
     }));
     // The sidebar is one column, so its row number is its order and its
     // position is always zero.
@@ -2069,7 +2194,16 @@ export function Overview(): ReactNode {
     // mutation's `onSuccess`, not here — see the comment on it.
     save.mutate([
       ...tiles,
-      { key, region: 'main' as const, row: rows.length, position: 0, display: null, config: null },
+      {
+        key,
+        region: 'main' as const,
+        row: rows.length,
+        position: 0,
+        // Its own height until somebody drags the row.
+        heightPx: null,
+        display: null,
+        config: null,
+      },
     ]);
   }
 
@@ -2171,6 +2305,40 @@ export function Overview(): ReactNode {
     );
   }
 
+  /** How tall a row is: the largest its members claim, or their own height. */
+  function heightOf(group: readonly OverviewTileDto[], index: number): number | null {
+    if (resizing?.row === index) return resizing.px;
+    const claimed = group
+      .map((tile) => tile.heightPx)
+      .filter((height): height is number => height !== null);
+    return claimed.length > 0 ? Math.max(...claimed) : null;
+  }
+
+  /*
+   * Bounds, matched to the ones the server enforces. Held here as well because
+   * a refused save is a row that snaps back with no explanation, and the honest
+   * place to stop a drag is at the edge of what can be stored.
+   */
+  const MIN_ROW = 120;
+  const MAX_ROW = 1600;
+
+  /** A row's height, live while dragging and written once on release. */
+  function resizeRow(index: number, px: number, done: boolean): void {
+    const clamped = Math.max(MIN_ROW, Math.min(px, MAX_ROW));
+    if (!done) {
+      setResizing({ row: index, px: clamped });
+      return;
+    }
+    setResizing(null);
+
+    const group = rows[index];
+    if (!group) return;
+    const keys = new Set(group.map((tile) => tile.key));
+    // Written to every member, because a row is a number they share rather than
+    // a record of its own.
+    save.mutate(tiles.map((tile) => (keys.has(tile.key) ? { ...tile, heightPx: clamped } : tile)));
+  }
+
   /** What a picker tile has been pointed at, or undefined. */
   function pickedId(key: string, field: string): string | undefined {
     const config = tiles.find((tile) => tile.key === key)?.config;
@@ -2233,6 +2401,7 @@ export function Overview(): ReactNode {
             // Off the end of the grid, and never drawn there anyway.
             row: rows.length,
             position: 0,
+            heightPx: null,
             display: null,
             config,
           },
@@ -2250,12 +2419,17 @@ export function Overview(): ReactNode {
     setPicking(null);
   }
 
-  /** What the donut is currently drawing, read from its stored configuration. */
+  /**
+   * What the donut is drawing, read from its stored configuration.
+   *
+   * Current unless it was told otherwise, matching the order of the switch: it
+   * is the reading somebody is usually asking about.
+   */
   const allocationMode: 'plan' | 'position' =
     (tiles.find((tile) => tile.key === 'allocation')?.config as { mode?: string } | null)?.mode ===
-    'position'
-      ? 'position'
-      : 'plan';
+    'plan'
+      ? 'plan'
+      : 'position';
 
   /*
    * The panel's chosen lines are stored on the `delegations` layout row.
@@ -2423,7 +2597,7 @@ export function Overview(): ReactNode {
               }}
             />
           ) : (
-            <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
+            <div className="grid grid-cols-1 gap-6 md:grid-cols-12 lg:grid-cols-12">
               {rows.map((group) =>
                 group.map((tile) => (
                   <TileShell
@@ -2459,6 +2633,8 @@ export function Overview(): ReactNode {
                       over: over?.key === tile.key ? over.side : null,
                     }}
                     controls={controlsFor(tile.key)}
+                    height={heightOf(group, rows.indexOf(group))}
+                    onResize={(px, done) => resizeRow(rows.indexOf(group), px, done)}
                   >
                     <TileBody
                       tileKey={tile.key}

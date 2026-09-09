@@ -30,6 +30,7 @@ import {
   type SnapshotRange,
 } from './snapshot-series.js';
 import { getBudgetSettings } from './settings.js';
+import type { OutstandingCheck } from './checks.js';
 import { addMonthsToKey, localDayKey, localMonthKey, startOfLocalDay } from './calendar.js';
 import { buildUtilities, type UtilitiesView } from './utilities.js';
 import type { Db } from '../db/client.js';
@@ -126,6 +127,7 @@ export const OVERVIEW_TILES = [
   'bills_attention',
   'utilities_trend',
   'utilities_adjust',
+  'outstanding_checks',
 
   /* The two that ask "which one", and carry a picker to answer it. */
   'account_balance_history',
@@ -590,6 +592,7 @@ export interface OverviewData {
     readonly movers: readonly Mover[];
     readonly cycleMissing: boolean;
   };
+  readonly outstanding_checks?: readonly OutstandingCheck[];
   readonly uncategorized_backlog?: OverviewBacklog;
 }
 
@@ -1168,6 +1171,25 @@ export interface AllocationSlice {
  * Two readings of one subject, which is why they are one tile with a switch
  * rather than two tiles.
  */
+/**
+ * Both readings, from one pass.
+ *
+ * The tile switches between them, and switching used to write the choice to the
+ * layout and wait for the whole page to be recomputed before the donut redrew —
+ * about a second, for a toggle. They are the same rows summed two ways, so they
+ * are sent together and the switch is a local one; the write still happens, to
+ * remember the choice, but nothing waits for it.
+ */
+export async function buildAllocations(
+  db: Db,
+): Promise<{ plan: AllocationSlice[]; position: AllocationSlice[] }> {
+  const [plan, position] = await Promise.all([
+    buildAllocation(db, 'plan'),
+    buildAllocation(db, 'position'),
+  ]);
+  return { plan, position };
+}
+
 export async function buildAllocation(
   db: Db,
   mode: 'plan' | 'position',

@@ -15,7 +15,7 @@ import { z } from 'zod';
 import { prisma } from '../db/client.js';
 import { SPENDING_WINDOWS } from '../domain/insights.js';
 import {
-  buildAllocation,
+  buildAllocations,
   buildFigures,
   buildOutflowMonths,
   buildPace,
@@ -31,6 +31,7 @@ import {
 } from '../domain/overview.js';
 import { payCycleAt } from '../domain/pay-cycle.js';
 import { findRecurringBills, type RecurringBill } from '../domain/recurring.js';
+import { listOutstandingChecks } from '../domain/checks.js';
 import { accountSeries } from '../domain/snapshot-series.js';
 import { getBudgetSettings, householdTimezone } from '../domain/settings.js';
 import { centsOut, dateOut } from '../http/serialize.js';
@@ -124,6 +125,14 @@ const layoutSchema = z.object({
           .int()
           .min(0)
           .max(MAX_TILES_PER_ROW - 1),
+        /**
+         * How tall this tile's row is, in pixels. Null is the tile's own height.
+         *
+         * Bounded rather than free: a row shorter than its header is a row that
+         * cannot be dragged back, and one taller than a tall screen is a page
+         * that scrolls to find a single tile.
+         */
+        heightPx: z.number().int().min(120).max(1600).nullish(),
         display: z.string().nullish(),
         /**
          * What the tile has been told about itself.
@@ -258,6 +267,7 @@ const DEFAULT_LAYOUT: readonly {
   region: OverviewRegion;
   row: number;
   position: number;
+  heightPx: number | null;
   display: string | null;
   config: null;
 }[] = [
@@ -278,9 +288,25 @@ const DEFAULT_LAYOUT: readonly {
   region: region as OverviewRegion,
   row: row as number,
   position: position as number,
+  heightPx: null,
   display: null,
   config: null,
 }));
+
+/** One slice of the allocation donut, for either reading. */
+function sliceOut(slice: { key: string; name: string; color: string | null; amountCents: Cents }): {
+  key: string;
+  name: string;
+  color: string | null;
+  amountCents: string;
+} {
+  return {
+    key: slice.key,
+    name: slice.name,
+    color: slice.color,
+    amountCents: centsOut(slice.amountCents),
+  };
+}
 
 export const overviewRoutes: FastifyPluginCallback = (fastify, _options, done) => {
   for (const guard of AUTHENTICATED) {
@@ -298,6 +324,7 @@ export const overviewRoutes: FastifyPluginCallback = (fastify, _options, done) =
         region: true,
         row: true,
         position: true,
+        heightPx: true,
         display: true,
         config: true,
       },
@@ -343,6 +370,7 @@ export const overviewRoutes: FastifyPluginCallback = (fastify, _options, done) =
         region: isOverviewRegion(tile.region) ? tile.region : 'main',
         row: tile.row,
         position: tile.position,
+        heightPx: tile.heightPx ?? null,
         display: tile.display ?? null,
         // Null means nothing configured, which is not an empty selection: one
         // invites a choice and the other is a choice.
@@ -432,6 +460,7 @@ export const overviewRoutes: FastifyPluginCallback = (fastify, _options, done) =
             region: tile.region ?? 'main',
             row: tile.row,
             position: tile.position,
+            heightPx: tile.heightPx ?? null,
             display: tile.display ?? null,
             config: tile.config ?? Prisma.JsonNull,
           },
@@ -545,7 +574,7 @@ export const overviewRoutes: FastifyPluginCallback = (fastify, _options, done) =
     const wantsPickable =
       keys.has('account_balance_history') || keys.has('delegation_balance_history');
 
-    const [outflow, pace, allocation, bills, accountHistory, delegationHistory, pickable] =
+    const [outflow, pace, allocation, checks, bills, accountHistory, delegationHistory, pickable] =
       await Promise.all([
         /*
          * The one tile drawn against the calendar month rather than the cycle,
@@ -556,12 +585,16 @@ export const overviewRoutes: FastifyPluginCallback = (fastify, _options, done) =
           ? buildOutflowMonths(prisma, { timeZone, months: OUTFLOW_MONTHS })
           : undefined,
         keys.has('income_vs_spending_pace') && bounds ? buildPace(prisma, bounds) : undefined,
-        keys.has('allocation')
-          ? buildAllocation(
-              prisma,
-              readAllocationMode(stored.find((tile) => tile.widgetKey === 'allocation')?.config),
-            )
-          : undefined,
+        // Both readings, so switching between them is local rather than a
+        // layout write and a full recompute of the page.
+        keys.has('allocation') ? buildAllocations(prisma) : undefined,
+        /*
+         * What has been written and not yet cleared. A check is money that has
+         * left the budget but not the bank, so it is the one balance a statement
+         * and this application legitimately disagree about — worth a tile of its
+         * own for exactly that reason.
+         */
+        keys.has('outstanding_checks') ? listOutstandingChecks(prisma) : undefined,
         // One pass over the register serves all three bill-shaped tiles.
         keys.has('upcoming_bills') || keys.has('bills_attention') || keys.has('bills_this_cycle')
           ? findRecurringBills(prisma, timeZone)
@@ -614,14 +647,23 @@ export const overviewRoutes: FastifyPluginCallback = (fastify, _options, done) =
             })),
           }
         : {}),
+      ...(checks
+        ? {
+            outstanding_checks: checks.map((check) => ({
+              id: check.id,
+              checkNumber: check.checkNumber,
+              memo: check.memo,
+              issuedAt: dateOut(check.issuedAt),
+              amountCents: centsOut(check.balanceCents),
+            })),
+          }
+        : {}),
       ...(allocation
         ? {
-            allocation: allocation.map((slice) => ({
-              key: slice.key,
-              name: slice.name,
-              color: slice.color,
-              amountCents: centsOut(slice.amountCents),
-            })),
+            allocation: {
+              plan: allocation.plan.map(sliceOut),
+              position: allocation.position.map(sliceOut),
+            },
           }
         : {}),
       ...(accountHistory
@@ -872,13 +914,6 @@ function readId(config: unknown, field: string): string | null {
   if (config === null || typeof config !== 'object') return null;
   const value = (config as Record<string, unknown>)[field];
   return typeof value === 'string' ? value : null;
-}
-
-/** Which reading the donut draws. The plan unless told otherwise. */
-function readAllocationMode(config: unknown): 'plan' | 'position' {
-  if (config === null || typeof config !== 'object') return 'plan';
-  const mode = (config as { mode?: unknown }).mode;
-  return mode === 'position' ? 'position' : 'plan';
 }
 
 /** The figure keys a band was told to draw, or the defaults. */

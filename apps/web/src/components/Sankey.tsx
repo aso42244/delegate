@@ -233,7 +233,16 @@ export function Sankey({
     <div className="w-full overflow-x-auto">
       <svg
         viewBox={`0 0 ${WIDTH} ${height}`}
-        className="block h-auto w-full min-w-[640px]"
+        /*
+         * Capped, because the drawing scales with its width and the page got
+         * 400px wider — the same chart that fitted a screen at 1200px ran off
+         * the bottom of one at 1600. `meet` keeps the proportions and centres
+         * what is left, so a tall flow shrinks rather than being cropped.
+         *
+         * A row on Overview can be dragged taller than this, and then the tile
+         * gives it the room; this is only what it asks for unasked.
+         */
+        className="block h-auto max-h-[520px] w-full min-w-[640px]"
         role="img"
         aria-label={`Cashflow: ${formatCents(total)} from ${left.length} sources to ${right.length} destinations`}
         style={{ fontVariantNumeric: 'tabular-nums' }}

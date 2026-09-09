@@ -1084,6 +1084,18 @@ model OverviewTile {
   /// anybody reading the table.
   region    String  @default("main")
 
+  /// How tall this tile's **row** is, in pixels. Null is the tile's own height.
+  ///
+  /// Per row rather than per tile, and stored on every tile in the row because a
+  /// row is not a record — it is a number two or three tiles happen to share. A
+  /// read takes the largest of them, so a row whose members disagree is still a
+  /// row rather than a ragged edge, and dragging writes the same value to each.
+  ///
+  /// The Sankey is what this is for: it is legible at 600px and absurd at the
+  /// height its own content wants, and no single default suits both it and a
+  /// list of six ranked bars.
+  heightPx  Int?    @map("height_px")
+
   /// Which chart this tile is drawn as. Null means the widget's own default.
   display   String?
 
