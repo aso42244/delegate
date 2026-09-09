@@ -6,6 +6,10 @@ phase (`v0.1.0-phase1`, and so on).
 
 ## [Unreleased]
 
+Nothing yet.
+
+## [0.59.0] — 2026-09-08
+
 ### Added
 
 - **Overview is a dashboard with the budget docked beside it.** The owner brought
