@@ -102,6 +102,26 @@ That is what lets one stored arrangement serve both screens: rearranging on a
 phone rearranges the laptop too, because the thing being stored is the order and
 the grouping rather than a width that only means something on one of them.
 
+### Ranked bars
+
+**Name, bar, figure — on one line**, at the same 28px row the budget panel uses.
+It was a name and a figure with the bar on a second line beneath them: two rows
+of chrome per reading, about 44px a line, and a tile that showed five readings
+where it now shows nine.
+
+A **grid**, not flex: the bars start at the same x down the column, which is what
+makes them comparable at a glance, and that is a column definition rather than
+whatever each name happens to be wide.
+
+No tick and no overspend zone — those belong to the pace bar, which is answering
+a different question. These bars are scaled to the largest row, so a small
+figure beside the amount carries a share of the total where one is worth having.
+
+**A row's own list is what scrolls**, never the tile's body. A body that scrolls
+takes the whole tile with it, so a row dragged short clips a chart halfway
+instead of shortening the list beside it. Charts scale to the room; lists scroll
+in place.
+
 ### Overview's rows
 
 **Three tiles to a row at `lg`, two at `md`, one below it.** The cap is

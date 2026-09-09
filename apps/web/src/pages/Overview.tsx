@@ -24,7 +24,6 @@ import { transactionsApi } from '../api/transactions.js';
 import { recurringApi } from '../api/recurring.js';
 import { DelegationPickerDialog } from '../components/DelegationPickerDialog.jsx';
 import {
-  AllocationDonut,
   BillAttentionList,
   BillsThisCycle,
   OutflowBand,
@@ -374,11 +373,25 @@ function TileShell({
           </div>
         )}
       </div>
-      {/* The body is what scrolls when the row has been dragged shorter than its
-          content — `min-h-0` because a flex item's minimum is its content, which
-          would otherwise push the tile back to its natural height. */}
+      {/*
+        The body holds the tile's shape; whatever is inside it decides what gives.
+
+        `min-h-0` because a flex item's minimum is its content, which would
+        otherwise push the tile back to its natural height whatever the row was
+        dragged to.
+
+        `overflow-hidden` rather than `auto`, because a scrolling body and a
+        scrolling list inside it are two scrollbars for one overflow — and the
+        outer one takes the whole tile with it, so a short row clipped its donut
+        halfway instead of shortening the legend beside it. A chart scales to the
+        room it is given; a list scrolls in place.
+      */}
       <div
-        className={height === null || height === undefined ? '' : 'min-h-0 flex-1 overflow-auto'}
+        className={
+          height === null || height === undefined
+            ? 'flex min-h-0 flex-col'
+            : 'flex min-h-0 flex-1 flex-col overflow-hidden'
+        }
       >
         {children}
       </div>
@@ -1263,7 +1276,9 @@ function CashflowTile({
   ];
 
   return (
-    <div className="flex flex-col gap-4">
+    // `h-full min-h-0` so a dragged row reaches the chart: without it the column
+    // is as tall as its content and the Sankey never learns it has less room.
+    <div className="flex h-full min-h-0 flex-col gap-4">
       {cashflow.cycleMissing ? (
         <EmptyState>No cycle has been run yet.</EmptyState>
       ) : (
@@ -1355,38 +1370,60 @@ function NeedsPayday(): ReactNode {
   );
 }
 
-/** The donut, and the switch between what it can say. */
+/**
+ * A share of a total, to the nearest whole percent.
+ *
+ * Integer arithmetic on cents throughout, and rounded rather than truncated so a
+ * slice at 7.6% does not read as 7. Anything under half a percent says `<1%`,
+ * because `0%` beside a real amount reads as a bug.
+ */
+function share(amountCents: bigint, total: bigint): string {
+  const tenths = Number((amountCents * 1000n) / total);
+  return tenths < 5 ? '<1%' : `${Math.round(tenths / 10)}%`;
+}
+
+/**
+ * Where the money is, as ranked bars.
+ *
+ * It was a donut with a legend beside it. A donut answers "what share" and
+ * nothing else — the legend beside it was already carrying every figure anybody
+ * read, in a column half the tile wide, and at a third of the page's width
+ * neither half had room. The same rows as bars are the shape every other tile on
+ * this page uses, they sort largest first without a colour key, and they read at
+ * the density the budget panel reads at.
+ *
+ * The share is kept as a small figure beside each amount, because the bars are
+ * scaled to the largest row rather than to the total — so the bar says "compared
+ * with the others" and the percentage says "of everything".
+ */
 function AllocationTile({
   slices,
   mode,
-  onMode,
-  preview = false,
 }: {
   readonly slices: NonNullable<OverviewDataDto['allocation']>;
   readonly mode: 'plan' | 'position';
-  readonly onMode: (next: 'plan' | 'position') => void;
-  readonly preview?: boolean;
 }): ReactNode {
+  const chosen = mode === 'plan' ? slices.plan : slices.position;
+  const total = chosen.reduce((sum, slice) => sum + BigInt(slice.amountCents), 0n);
+
+  const rows: RankedRow[] = chosen.map((slice) => {
+    const amount = BigInt(slice.amountCents);
+    return {
+      key: slice.key,
+      name: slice.name,
+      color: slice.color,
+      valueCents: amount,
+      ...(total > 0n ? { aside: share(amount, total) } : {}),
+    };
+  });
+
   return (
-    <div className="flex flex-col gap-3">
-      {!preview && (
-        <SegmentedControl
-          size="sm"
-          label="Allocation reading"
-          value={mode}
-          options={ALLOCATION_MODES}
-          onChange={onMode}
-        />
-      )}
-      {/* Both readings arrived together, so this is a local switch rather than
-          a layout write and a recompute of the page. */}
-      <AllocationDonut
-        slices={mode === 'plan' ? slices.plan : slices.position}
-        emptyMessage={
-          mode === 'plan' ? 'No amounts to delegate yet.' : 'Nothing in the envelopes yet.'
-        }
-      />
-    </div>
+    <RankedBars
+      rows={rows}
+      emptyMessage={
+        mode === 'plan' ? 'No amounts to delegate yet.' : 'Nothing in the envelopes yet.'
+      }
+    />
   );
 }
 
@@ -1651,7 +1688,6 @@ function TileBody({
   onPickDay,
   onOpenAllBills,
   allocationMode,
-  onAllocationMode,
   accountId,
   onAccount,
   delegationId,
@@ -1669,7 +1705,6 @@ function TileBody({
   /** Opens every recurring bill, in the middle of the page. */
   readonly onOpenAllBills?: (() => void) | undefined;
   readonly allocationMode?: 'plan' | 'position';
-  readonly onAllocationMode?: (next: 'plan' | 'position') => void;
   readonly accountId?: string | undefined;
   readonly onAccount?: (id: string) => void;
   readonly delegationId?: string | undefined;
@@ -1777,12 +1812,7 @@ function TileBody({
       );
     case 'allocation':
       return data.allocation ? (
-        <AllocationTile
-          slices={data.allocation}
-          mode={allocationMode ?? 'position'}
-          onMode={onAllocationMode ?? (() => undefined)}
-          preview={preview}
-        />
+        <AllocationTile slices={data.allocation} mode={allocationMode ?? 'position'} />
       ) : null;
     case 'account_balance_history':
       return (
@@ -2289,20 +2319,34 @@ export function Overview(): ReactNode {
   /**
    * A tile's own control, drawn in its header.
    *
-   * Only the cashflow chart has one: it carries a period the page's own control
-   * does not set, and a control in the tile's corner is how that is said.
+   * Two have one: the cashflow chart's period, which the page's own control does
+   * not set, and the allocation donut's reading. Both belong to the tile rather
+   * than to the page, and a control in the tile's corner is how that is said.
    */
   function controlsFor(key: string): ReactNode {
-    if (key !== 'cashflow') return undefined;
-    return (
-      <SegmentedControl
-        size="sm"
-        label="Cashflow period"
-        value={data.data?.cashflowWindow ?? 'ytd'}
-        options={CASHFLOW_WINDOWS}
-        onChange={setCashflowWindow}
-      />
-    );
+    if (key === 'cashflow') {
+      return (
+        <SegmentedControl
+          size="sm"
+          label="Cashflow period"
+          value={data.data?.cashflowWindow ?? 'ytd'}
+          options={CASHFLOW_WINDOWS}
+          onChange={setCashflowWindow}
+        />
+      );
+    }
+    if (key === 'allocation') {
+      return (
+        <SegmentedControl
+          size="sm"
+          label="Allocation reading"
+          value={allocationMode}
+          options={ALLOCATION_MODES}
+          onChange={setAllocationMode}
+        />
+      );
+    }
+    return undefined;
   }
 
   /** How tall a row is: the largest its members claim, or their own height. */
@@ -2646,7 +2690,6 @@ export function Overview(): ReactNode {
                       onPickDay={setPickedDay}
                       onOpenAllBills={() => setShowingBills(true)}
                       allocationMode={allocationMode}
-                      onAllocationMode={setAllocationMode}
                       accountId={pickedId('account_balance_history', 'accountId')}
                       onAccount={(id) => setPicked('account_balance_history', 'accountId', id)}
                       delegationId={pickedId('delegation_balance_history', 'delegationId')}
@@ -2744,7 +2787,6 @@ export function Overview(): ReactNode {
                 onPickDay={setPickedDay}
                 onOpenAllBills={() => setShowingBills(true)}
                 allocationMode={allocationMode}
-                onAllocationMode={setAllocationMode}
                 accountId={pickedId('account_balance_history', 'accountId')}
                 onAccount={(id) => setPicked('account_balance_history', 'accountId', id)}
                 delegationId={pickedId('delegation_balance_history', 'delegationId')}

@@ -666,7 +666,9 @@ test('the cycle-shaped tiles say they need a payday rather than guessing one', a
   ).toHaveCount(1);
 });
 
-test('the donut switches between the plan and the position', async ({ signedIn }) => {
+test('the allocation tile switches between what is held and what is delegated', async ({
+  signedIn,
+}) => {
   await signedIn.goto('/overview');
   await openArrange(signedIn);
   await signedIn.getByRole('button', { name: 'Add Allocation' }).click();
@@ -679,6 +681,10 @@ test('the donut switches between the plan and the position', async ({ signedIn }
    * rather than two tiles. Current is the default and sits first: it is the one
    * somebody is usually asking about, where Delegations is a decision they
    * already made.
+   *
+   * The switch is in the tile's header, beside the title, where every tile's own
+   * control sits — in the body it stretched to the tile's full width, because a
+   * flex column stretches its children.
    */
   await expect(tile.getByRole('radio', { name: 'Current' })).toHaveAttribute(
     'aria-checked',
@@ -1094,6 +1100,37 @@ test('a row keeps the height it was dragged to', async ({ signedIn }) => {
   await expect
     .poll(async () => Math.round((await reloadedTile.boundingBox())!.height))
     .toBe(taller);
+});
+
+test('a row dragged short fits its content rather than clipping it', async ({ signedIn }) => {
+  await signedIn.goto('/overview');
+  await openArrange(signedIn);
+  await signedIn.getByRole('button', { name: 'Add Cashflow' }).click();
+  await signedIn.getByRole('button', { name: 'Add Allocation' }).click();
+  await signedIn.getByRole('button', { name: 'Done' }).click();
+
+  const handle = signedIn.getByRole('separator', { name: /Height of the row/ }).first();
+  await handle.focus();
+  for (let press = 0; press < 12; press += 1) await handle.press('ArrowUp');
+
+  /*
+   * The tile's body clips, so anything overflowing it is unreachable rather
+   * than merely below the fold — which is what a dragged-short row did on the
+   * first cut: the Sankey kept its full height and scrolled, the donut was
+   * clipped halfway, and rows of the spending lists were simply gone.
+   *
+   * A chart scales to the room it is given and a list scrolls in place, so the
+   * body itself never overflows. That is the property, and it is measurable.
+   */
+  const overflow = await signedIn.evaluate(() =>
+    [...document.querySelectorAll('section[data-tile] > div:last-of-type')].map((element) => ({
+      tile: (element.closest('section') as HTMLElement).dataset['tile'],
+      over: element.scrollHeight - element.clientHeight,
+    })),
+  );
+
+  expect(overflow.length).toBeGreaterThan(0);
+  for (const entry of overflow) expect(entry.over).toBeLessThanOrEqual(1);
 });
 
 test('the outstanding checks tile lists what has not cleared', async ({ signedIn }) => {

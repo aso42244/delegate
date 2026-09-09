@@ -36,6 +36,14 @@ export interface RankedRow {
   readonly color?: string | null;
   readonly valueCents: bigint;
   /** A second figure on the same row, for a comparison rather than a ranking. */
+  /**
+   * A small figure before the amount — a share, a count, a percentage.
+   *
+   * Text rather than cents, because it is not money: the allocation tile shows
+   * each grouping's share of the whole, which the bar cannot say on its own
+   * since bars here are scaled to the largest row rather than to the total.
+   */
+  readonly aside?: string;
   readonly compare?: { readonly label: string; readonly valueCents: bigint | null };
   /** Replaces the formatted figure, where the row states something else. */
   readonly note?: string;
@@ -84,7 +92,9 @@ export function RankedBars({
   const peak = peakOf(rows);
 
   return (
-    <ul className="flex list-none flex-col gap-2 p-0">
+    // `min-h-0` so it can be shorter than its rows, and scroll rather than
+    // pushing the tile past the height somebody dragged it to.
+    <ul className="min-h-0 list-none overflow-y-auto p-0">
       {rows.map((row) => {
         const negative = row.valueCents < 0n;
         const width = widthOf(row.valueCents, peak);
@@ -99,50 +109,78 @@ export function RankedBars({
             : 'var(--color-accent)');
 
         return (
-          <li key={row.key} className="flex flex-col gap-1">
-            <div className="flex items-baseline gap-2">
-              <span className="min-w-0 flex-1 truncate text-base text-ink" title={row.name}>
-                {row.name}
-              </span>
-              {row.compare !== undefined && (
-                <span className="money shrink-0 text-quiet text-muted">
-                  {row.compare.valueCents === null ? '—' : formatCents(row.compare.valueCents)}
-                  <span className="sr-only"> {row.compare.label}</span>
-                </span>
-              )}
-              <span
-                className={`money shrink-0 font-semibold ${negative ? 'text-negative' : 'text-ink'}`}
-              >
-                {row.note ??
-                  formatCents(row.valueCents, signed ? { explicitPlus: true } : undefined)}
-              </span>
-            </div>
+          /*
+           * Name, bar, figure — on one line.
+           *
+           * It was a name and a figure with the bar on a second line beneath
+           * them, which is two rows of chrome per reading and about 44px a line.
+           * The budget panel has always drawn the same thing at 28px on one
+           * line, and it is the densest, most-read list in the application — so
+           * this is that shape, and a tile now shows nine lines where it showed
+           * five.
+           *
+           * A grid rather than flex: the bars have to start at the same x down
+           * the column, which is what makes them comparable at a glance, and
+           * that is a column definition rather than whatever each name happens
+           * to be wide.
+           */
+          <li
+            key={row.key}
+            className="row-cell grid items-center gap-2 [grid-template-columns:8rem_minmax(0,1fr)_auto]"
+          >
+            <span className="truncate text-quiet text-ink" title={row.name}>
+              {row.name}
+            </span>
 
             {/* The track is the axis. On a signed chart the centre is the zero
                 line, so a bar's side is its sign — read before any figure is. */}
-            <div
-              className="h-2 overflow-hidden rounded bg-surface-2"
+            <span
+              className="block h-2 overflow-hidden rounded bg-surface-2"
               // Presentational: the figure beside it already says the value, and
               // a second announcement of the same number is noise.
               aria-hidden="true"
             >
               {signed ? (
-                <div className="flex h-full w-full">
-                  <div className="flex h-full w-1/2 justify-end">
+                <span className="flex h-full w-full">
+                  <span className="flex h-full w-1/2 justify-end">
                     {negative && (
-                      <div className="h-full rounded-l" style={{ width, background: fill }} />
+                      <span
+                        className="block h-full rounded-l"
+                        style={{ width, background: fill }}
+                      />
                     )}
-                  </div>
-                  <div className="flex h-full w-1/2 justify-start">
+                  </span>
+                  <span className="flex h-full w-1/2 justify-start">
                     {!negative && (
-                      <div className="h-full rounded-r" style={{ width, background: fill }} />
+                      <span
+                        className="block h-full rounded-r"
+                        style={{ width, background: fill }}
+                      />
                     )}
-                  </div>
-                </div>
+                  </span>
+                </span>
               ) : (
-                <div className="h-full rounded" style={{ width, background: fill }} />
+                <span className="block h-full rounded" style={{ width, background: fill }} />
               )}
-            </div>
+            </span>
+
+            <span className="flex shrink-0 items-baseline gap-2">
+              {row.aside !== undefined && (
+                <span className="money text-micro text-muted">{row.aside}</span>
+              )}
+              {row.compare !== undefined && (
+                <span className="money text-micro text-muted">
+                  {row.compare.valueCents === null ? '—' : formatCents(row.compare.valueCents)}
+                  <span className="sr-only"> {row.compare.label}</span>
+                </span>
+              )}
+              <span
+                className={`money text-quiet font-semibold ${negative ? 'text-negative' : 'text-ink'}`}
+              >
+                {row.note ??
+                  formatCents(row.valueCents, signed ? { explicitPlus: true } : undefined)}
+              </span>
+            </span>
           </li>
         );
       })}
