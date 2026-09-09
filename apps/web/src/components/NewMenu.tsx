@@ -9,6 +9,7 @@ import { TransferDialog } from '../pages/MainBudget.jsx';
 import { NewCheckDialog } from './NewCheckDialog.jsx';
 import { NewTransactionDialog } from './NewTransactionDialog.jsx';
 import { Alert, Button, Modal, TextField } from './ui.jsx';
+import { useIsDemo } from '../useDemo.js';
 
 /**
  * One way to make a thing, on every page.
@@ -47,6 +48,14 @@ const ITEMS: readonly { readonly kind: Kind; readonly label: string }[] = [
 ];
 
 export function NewMenu(): ReactNode {
+  /*
+   * Nothing to create on a read-only demo, so nothing offering to.
+   *
+   * The wall on the server refuses the write whatever this draws; hiding it is
+   * about not offering somebody a control that answers 403, which reads as a
+   * broken application rather than as a deliberate one.
+   */
+  const demo = useIsDemo();
   const [open, setOpen] = useState(false);
   const [kind, setKind] = useState<Kind | null>(null);
   const container = useRef<HTMLDivElement>(null);
@@ -73,6 +82,8 @@ export function NewMenu(): ReactNode {
       document.removeEventListener('pointerdown', onPointerDown);
     };
   }, [open]);
+
+  if (demo) return null;
 
   return (
     <>

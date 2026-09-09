@@ -4,6 +4,7 @@ import { NavLink } from 'react-router-dom';
 import { authApi, syncApi } from '../api/client.js';
 import { useSession } from '../auth/SessionProvider.jsx';
 import { Button } from './ui.jsx';
+import { useIsDemo } from '../useDemo.js';
 
 /**
  * The left sidebar: 232px, collapsible to a 64px icon rail.
@@ -190,6 +191,16 @@ function formatLastSync(iso: string | null): string {
 }
 
 export function Sidebar({ appName }: { appName: string }): ReactNode {
+  /*
+   * A demo has no Settings and no sync.
+   *
+   * Settings is where the bank-feed credential and the household's accounts
+   * live, and neither is worth showing to a room. Sync is a write, which the
+   * server refuses anyway — this is about not offering it.
+   */
+  const demo = useIsDemo();
+  const pages = demo ? PAGES.filter((page) => page.to !== '/settings') : PAGES;
+
   const [collapsed, setCollapsed] = useCollapsed();
   const { user } = useSession();
   const queryClient = useQueryClient();
@@ -293,7 +304,7 @@ export function Sidebar({ appName }: { appName: string }): ReactNode {
       </div>
 
       <ul className="flex flex-1 flex-col px-2">
-        {PAGES.map((page) => (
+        {pages.map((page) => (
           <li key={page.to}>
             <NavLink
               to={page.to}
@@ -312,15 +323,19 @@ export function Sidebar({ appName }: { appName: string }): ReactNode {
         ))}
       </ul>
 
-      <div className="border-t border-line px-2 py-3">
-        <Button
-          onClick={() => runSync.mutate()}
-          disabled={runSync.isPending || syncStatus.data?.syncing === true}
-          className="w-full"
-          title={collapsed ? 'Sync SimpleFIN' : undefined}
-        >
-          {collapsed ? '⟳' : runSync.isPending ? 'Syncing…' : 'Sync SimpleFIN'}
-        </Button>
+      {/* The bank feed, whole. A demo has no feed to sync and no caption worth
+          writing about one — invented data does not come from anywhere. */}
+      <div className={`border-t border-line px-2 py-3 ${demo ? 'hidden' : ''}`}>
+        {!demo && (
+          <Button
+            onClick={() => runSync.mutate()}
+            disabled={runSync.isPending || syncStatus.data?.syncing === true}
+            className="w-full"
+            title={collapsed ? 'Sync SimpleFIN' : undefined}
+          >
+            {collapsed ? '⟳' : runSync.isPending ? 'Syncing…' : 'Sync SimpleFIN'}
+          </Button>
+        )}
 
         {!collapsed && (
           <p className="mt-1 max-w-sidebar-cap px-1 text-label text-muted">

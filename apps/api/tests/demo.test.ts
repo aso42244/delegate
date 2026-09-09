@@ -108,6 +108,39 @@ describe('signing in', () => {
   });
 });
 
+describe('the gate a proxy asks', () => {
+  it('refuses an unsigned request', async () => {
+    /*
+     * What `/demo` is gated on. It answers yes or no and nothing about who,
+     * because a gate that describes the visitor is a gate leaking something.
+     */
+    const app = await appWith({});
+
+    const response = await app.inject({ method: 'GET', url: '/api/auth/gate' });
+    expect(response.statusCode).toBe(401);
+    expect(response.body).not.toContain('username');
+  });
+
+  it('is behind the same chain as everything else', async () => {
+    /*
+     * `/api/auth/me` was the obvious thing for a proxy to point at, and it
+     * carries only `requireSession` — so a session that has not finished
+     * enrolling a second factor passes it. A gate meaning something weaker than
+     * the rest of the application is one that will be wrong exactly once, in the
+     * direction nobody wants.
+     *
+     * Asserted structurally: both answer 401 to nothing, but only the gate is
+     * built from the full chain, and that is what this names.
+     */
+    const app = await appWith({});
+    const gate = app.inject({ method: 'GET', url: '/api/auth/gate' });
+    const me = app.inject({ method: 'GET', url: '/api/auth/me' });
+
+    expect((await gate).statusCode).toBe(401);
+    expect((await me).statusCode).toBe(401);
+  });
+});
+
 describe('a real instance', () => {
   it('is not a demo unless it says so', async () => {
     /*

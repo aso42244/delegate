@@ -2,6 +2,7 @@ import { MutationCache, QueryClient, QueryClientProvider } from '@tanstack/react
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { BrowserRouter } from 'react-router-dom';
+import { BASE_PATH } from './base-path.js';
 import { App } from './App.jsx';
 import { SessionProvider } from './auth/SessionProvider.jsx';
 import { initDensity } from './display.js';
@@ -52,7 +53,7 @@ if (!container) throw new Error('No #root element to mount into');
 createRoot(container).render(
   <StrictMode>
     <QueryClientProvider client={queryClient}>
-      <BrowserRouter>
+      <BrowserRouter basename={BASE_PATH === '' ? '/' : BASE_PATH}>
         <SessionProvider>
           <App />
         </SessionProvider>

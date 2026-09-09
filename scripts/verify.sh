@@ -71,7 +71,7 @@ if docker compose version >/dev/null 2>&1; then
 
   # And with every optional profile on, so a service that is off by default is
   # still checked rather than silently skipped.
-  env -i PATH="$PATH" HOME="$HOME" COMPOSE_PROFILES='https,tor' DELEGATE_DOMAIN='verify.example' \
+  env -i PATH="$PATH" HOME="$HOME" COMPOSE_PROFILES='https,tor,demo' DELEGATE_DOMAIN='verify.example' \
     docker compose --project-directory . config >/dev/null \
     || fail 'the compose file does not parse with every profile enabled'
 else

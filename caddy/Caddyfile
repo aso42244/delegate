@@ -10,6 +10,32 @@
 # That is the whole of the configuration — there is no certificate path to set
 # and nothing to renew by hand.
 {$DELEGATE_DOMAIN} {
+	# The demo, behind the household's own sign-in.
+	#
+	# `forward_auth` asks the real application whether this browser is signed in
+	# before anything reaches the demo container. The endpoint sits behind the
+	# same chain every other authenticated route does — session, password, second
+	# factor — so "signed in" here means exactly what it means everywhere else,
+	# rather than what a lesser check happened to accept.
+	#
+	# The demo is invented data and refuses every write, so this gate is not
+	# protecting anything of the household's. What it protects is the household:
+	# a budget-shaped page on their domain that anybody could open is a page
+	# somebody has to look at twice to be sure whose money it is showing.
+	#
+	# `handle_path` strips the prefix, so the demo container is an ordinary
+	# Delegate serving at its own root. Only the *build* knows about `/demo` —
+	# see VITE_BASE_PATH in docker-compose.yml.
+	handle_path /demo* {
+		forward_auth app:3000 {
+			uri /api/auth/gate
+			# The cookie is what carries the session; without this the gate is
+			# asked about an anonymous request and refuses every time.
+			copy_headers Cookie
+		}
+		reverse_proxy demo:3000
+	}
+
 	# The application, by service name on the compose network. It publishes no
 	# port of its own when this profile is on, so this is the only way in.
 	reverse_proxy app:3000
