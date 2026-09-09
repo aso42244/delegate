@@ -6,6 +6,10 @@ phase (`v0.1.0-phase1`, and so on).
 
 ## [Unreleased]
 
+Nothing yet.
+
+## [0.62.0] — 2026-09-09
+
 ### Added
 
 - **Overview is the first destination and Budget the second**
