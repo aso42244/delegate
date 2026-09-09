@@ -99,9 +99,24 @@ export function RankedBars({
    * on — and the tiles without one are most of them.
    */
   const hasAside = rows.some((row) => row.aside !== undefined);
+
+  /*
+   * The name gives, the figure never does.
+   *
+   * The name column was a flat 8rem, which is more than a third of a tile at
+   * three to a row on a laptop — so the grid overflowed and the *amount* was
+   * what got cut, leaving rows reading "$1,91". A truncated name is a name
+   * somebody can still recognise; a truncated figure is a wrong number.
+   *
+   * `minmax(0, 6rem)` lets the name shrink before anything else moves, and
+   * `max-content` on the figure means it is never the thing that gives. The bar
+   * keeps a floor of its own: at three tiles to a row on a laptop the name and
+   * the figure between them left it about sixty pixels, which is a bar nobody
+   * can read a length off — so the name truncates further instead.
+   */
   const columns = hasAside
-    ? '[grid-template-columns:8rem_minmax(0,1fr)_2.5rem_auto]'
-    : '[grid-template-columns:8rem_minmax(0,1fr)_auto]';
+    ? '[grid-template-columns:minmax(0,6rem)_minmax(2.5rem,1fr)_2rem_max-content]'
+    : '[grid-template-columns:minmax(0,6rem)_minmax(2.5rem,1fr)_max-content]';
 
   return (
     // `min-h-0` so it can be shorter than its rows, and scroll rather than

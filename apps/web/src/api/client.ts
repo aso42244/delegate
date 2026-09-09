@@ -1,3 +1,4 @@
+import { withBase } from '../base-path.js';
 /**
  * The API client.
  *
@@ -31,7 +32,9 @@ export class ApiError extends Error {
 }
 
 async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
-  const response = await fetch(path, {
+  // Prefixed where this build is mounted under a path. At the root it adds
+  // nothing, which is every deployment but the demo.
+  const response = await fetch(withBase(path), {
     method,
     // The session cookie is HttpOnly, so it must be sent explicitly.
     credentials: 'same-origin',

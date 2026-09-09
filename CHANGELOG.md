@@ -6,7 +6,37 @@ phase (`v0.1.0-phase1`, and so on).
 
 ## [Unreleased]
 
-Nothing yet.
+### Added
+
+- **A read-only demo instance, at `/demo`**
+  ([ADR 058](docs/decisions/058-the-demo-is-a-second-instance.md)). A second
+  container with its own database and the same image, so there is no query that
+  could reach the household's data — they are different processes. Behind a
+  `demo` profile: a household running Delegate for itself has no use for it.
+
+  Eighteen months of invented history, dated backwards from today so a demo
+  shown in March and one shown in July are both current. Built through the
+  domain's own functions and then backdated, so the ledger and the cached
+  balances agree because the application produced them. The nightly snapshots
+  are reconstructed by `fillGaps` from the ledger — the same code that repairs a
+  real household's missed nights.
+
+  It opens with the newest pay packet undelegated, because Delegate is the
+  action this application is named for and a demo that opens with the button
+  greyed out has to be explained rather than shown.
+
+  **Only signed-in members of the household can reach it.** Caddy asks
+  `/api/auth/gate` — behind the full authenticated chain — before forwarding
+  anything.
+
+### Fixed
+
+- **A ranked bar's figure is never what gets cut.** The name column was a flat
+  8rem, which is more than a third of a tile at three to a row on a laptop, so
+  the grid overflowed and the _amount_ was what got clipped — rows reading
+  "$1,91". The name truncates now and the bar keeps a floor of its own, because
+  a truncated name is still recognisable and a truncated figure is a wrong
+  number.
 
 ## [0.66.0] — 2026-09-09
 

@@ -234,6 +234,46 @@ services:
   # buckets the whole internet into one sign-in rate limit. `172.16.0.0/12`
   # covers Docker's default networks. The application warns at boot when a
   # forwarded header turns up and nothing is configured to trust it.
+  # The demo: invented data, read-only, behind the household's own sign-in.
+  #
+  # A second Delegate rather than a mode inside the first. This application is
+  # single-household by design — there is no tenant column anywhere and every
+  # query is household-wide — so the only way to be *certain* a demo cannot read
+  # a real balance is for it to be a different process against a different
+  # database. That is cheaper than tenancy and it cannot be got wrong later.
+  #
+  # Caddy gates `/demo` on the real instance's own sign-in and strips the prefix,
+  # so this container is an ordinary Delegate serving at its own root.
+  #
+  # Behind a profile: a household running Delegate for itself has no use for it,
+  # and an unused container is still a container to keep alive.
+  demo:
+    image: ${APP_IMAGE:-ghcr.io/aso42244/delegate:latest}
+    restart: unless-stopped
+    profiles: ['demo']
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      APP_NAME: ${APP_NAME:-Delegate}
+      NODE_ENV: production
+      PORT: 3000
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      # Its own database. Named rather than defaulted from the app's, because a
+      # demo pointed at the household's database is the one mistake this whole
+      # arrangement exists to make impossible — so it has to be typed out.
+      DATABASE_URL: ${DEMO_DATABASE_URL:-}
+      # Its own secret, so a session minted here cannot be presented there.
+      SESSION_SECRET: ${DEMO_SESSION_SECRET:-}
+      # And its own cookie name. Both instances answer on one domain, and two
+      # cookies called `budget_session` are two cookies the browser sends
+      # together — the one arriving first belonging to the wrong instance.
+      SESSION_COOKIE_NAME: budget_demo_session
+      SESSION_COOKIE_SECURE: ${SESSION_COOKIE_SECURE:-false}
+      TRUST_PROXY: ${TRUST_PROXY:-}
+      # The wall. Every write is refused before it reaches a route.
+      DELEGATE_DEMO: 'true'
+
   caddy:
     image: caddy:2-alpine
     restart: unless-stopped
