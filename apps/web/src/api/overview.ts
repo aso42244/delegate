@@ -191,7 +191,32 @@ export interface CashflowDto {
   readonly totalInCents: string;
 }
 
+export interface PanelLineDto {
+  readonly id: string;
+  readonly name: string;
+  readonly groupingId: string | null;
+  readonly groupingName: string | null;
+  readonly color: string | null;
+  readonly balanceCents: string;
+  /** Null on an ad-hoc line with no standing amount. */
+  readonly plannedCents: string | null;
+  readonly spentCents: string;
+}
+
+export interface PayCycleDto {
+  readonly start: string;
+  readonly end: string;
+  readonly lengthDays: number;
+  readonly elapsedDays: number;
+  /** 0–10,000, so the tick's position stays an integer to the stylesheet. */
+  readonly progressBasisPoints: number;
+}
+
 export interface OverviewDataDto {
+  /** The panel's chosen lines. Empty until somebody picks some. */
+  readonly panel?: readonly PanelLineDto[];
+  /** Null when no payday anchor is set — then no tick is drawn at all. */
+  readonly payCycle?: PayCycleDto | null;
   readonly cashflow?: CashflowDto;
   /** The cashflow tile's own period, which is not the page's. */
   readonly cashflowWindow?: string;

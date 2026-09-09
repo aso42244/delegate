@@ -320,43 +320,39 @@ test('tiles can be dragged into one row without entering Arrange', async ({ sign
   ).toHaveClass(/lg:col-span-6/);
 });
 
-test('the delegations tile picks its lines in a dialog on the tile', async ({ signedIn, api }) => {
+test('the panel picks its lines in a dialog, and they survive a reload', async ({
+  signedIn,
+  api,
+}) => {
   await makeDelegation(api, 'Grocery');
   await makeDelegation(api, 'Fuel');
 
   await signedIn.goto('/overview');
-  await signedIn.getByRole('button', { name: 'Arrange', exact: true }).click();
-  await signedIn.getByRole('button', { name: 'Add Delegations' }).click();
-  await expect(signedIn.getByRole('heading', { name: 'Delegations', level: 2 })).toBeVisible();
-  await signedIn.getByRole('button', { name: 'Done' }).click();
-
-  // Added and never configured — which invites a choice rather than showing an
-  // empty table.
-  const tile = signedIn.getByRole('heading', { name: 'Delegations', level: 2 }).locator('../..');
-  await expect(tile.getByText('No delegations chosen yet.')).toBeVisible();
 
   /*
-   * The choice is made on the tile, not in Settings. That also sidesteps a real
-   * permission problem: household settings are administrator-only, so a shared
-   * setting would be one a `user` account could not change.
+   * The panel is docked and always present — it is not a tile and is never
+   * added from the picker. Its lines are chosen from the panel itself, which is
+   * also why the selection can exist on a page holding no tiles at all.
    */
-  await tile.getByRole('button', { name: 'Choose which delegations show →' }).click();
-  const dialog = signedIn.getByRole('dialog');
-  await expect(dialog).toBeVisible();
+  const panel = signedIn.getByRole('complementary', { name: 'Budget' });
+  await expect(panel).toBeVisible();
+  await expect(panel.getByText('No delegations chosen yet.')).toBeVisible();
 
+  await panel.getByRole('button', { name: 'Choose which delegations show →' }).click();
+  const dialog = signedIn.getByRole('dialog');
   await dialog.getByRole('switch', { name: 'Show Grocery' }).click();
   await dialog.getByRole('button', { name: 'Save' }).click();
-
   await expect(dialog).toHaveCount(0);
-  await expect(tile.getByText('Grocery')).toBeVisible();
-  await expect(tile.getByText('Fuel')).toHaveCount(0);
+
+  await expect(panel.getByText('Grocery')).toBeVisible();
+  await expect(panel.getByText('Fuel')).toHaveCount(0);
 
   // The risk an optimistic write introduces is one that never reaches the
   // server: perfect on screen until the page is loaded again.
   await signedIn.reload();
   await expect(
-    signedIn.getByRole('heading', { name: 'Delegations', level: 2 }).locator('../..'),
-  ).toContainText('Grocery');
+    signedIn.getByRole('complementary', { name: 'Budget' }).getByText('Grocery'),
+  ).toBeVisible();
 });
 
 test('the picker lists delegations under their groupings, in the budget order', async ({
@@ -364,24 +360,51 @@ test('the picker lists delegations under their groupings, in the budget order', 
   api,
 }) => {
   // Named so alphabetical and positional order disagree: the owner's groupings
-  // are named "3 - Food" and "5 - Home" precisely because ordering was the
-  // thing missing, and a picker that sorted by name would undo that.
+  // are "3 - Food" and "5 - Home" precisely because ordering was the thing
+  // missing, and a picker that sorted by name would undo that.
   await makeDelegation(api, 'Zucchini');
   await makeDelegation(api, 'Apples');
 
   await signedIn.goto('/overview');
-  await signedIn.getByRole('button', { name: 'Arrange', exact: true }).click();
-  await signedIn.getByRole('button', { name: 'Add Delegations' }).click();
-  await signedIn.getByRole('button', { name: 'Done' }).click();
+  await signedIn
+    .getByRole('complementary', { name: 'Budget' })
+    .getByRole('button', { name: 'Choose which delegations show →' })
+    .click();
 
-  await signedIn.getByRole('button', { name: 'Choose which delegations show →' }).click();
   const dialog = signedIn.getByRole('dialog');
-
   // A 1:1 mirror because it reads `GET /api/budget` — the same call, the same
   // cache entry and the same ordering the Budget page draws.
   await expect(dialog.getByRole('switch', { name: 'Show Zucchini' })).toBeVisible();
   await expect(dialog.getByRole('switch', { name: 'Show Apples' })).toBeVisible();
   await expect(dialog.getByText('No grouping')).toBeVisible();
+});
+
+test('the panel says there is no cycle pace until a payday is set', async ({ signedIn }) => {
+  await signedIn.goto('/overview');
+
+  /*
+   * No anchor means no tick, and the panel says so rather than drawing an empty
+   * progress bar — an empty bar reads as "nothing has happened yet", which is a
+   * different and wrong answer.
+   */
+  await expect(
+    signedIn.getByText('Set your next payday on Settings → Budget to see cycle pace.'),
+  ).toBeVisible();
+});
+
+test('the panel collapses and gives the width back', async ({ signedIn }) => {
+  await signedIn.goto('/overview');
+
+  await signedIn.getByRole('button', { name: 'Collapse the budget panel' }).click();
+  await expect(signedIn.getByRole('complementary', { name: 'Budget' })).toHaveCount(0);
+
+  // Per device, like the sidebar's collapse: a fact about this screen rather
+  // than about the household's budget.
+  await signedIn.reload();
+  await expect(signedIn.getByRole('complementary', { name: 'Budget' })).toHaveCount(0);
+
+  await signedIn.getByRole('button', { name: 'Open the budget panel' }).click();
+  await expect(signedIn.getByRole('complementary', { name: 'Budget' })).toBeVisible();
 });
 
 test('the cashflow chart carries its own period, separate from the page', async ({ signedIn }) => {

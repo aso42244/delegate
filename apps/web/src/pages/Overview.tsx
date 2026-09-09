@@ -19,6 +19,7 @@ import {
 import { EmptyState, PageHeader, SegmentedControl } from '../components/layout.jsx';
 import { budgetApi, type BudgetViewDto } from '../api/budget.js';
 import { DelegationPickerDialog } from '../components/DelegationPickerDialog.jsx';
+import { OverviewPanel, type PanelTab } from '../components/OverviewPanel.jsx';
 import { Sankey, type FlowNode } from '../components/Sankey.jsx';
 import { CompositionBars, RankedBars, type RankedRow } from '../components/RankedBars.jsx';
 import { TimeSeriesChart, type TimePoint } from '../components/TimeSeries.jsx';
@@ -58,6 +59,17 @@ const CASHFLOW_WINDOWS = [
   { value: '1yr', label: '1Y' },
   { value: 'all', label: 'All' },
 ] as const;
+
+/** Per device, like the sidebar's collapse: a fact about this screen. */
+const PANEL_KEY = 'budget.overview.panel-collapsed';
+
+/** A phone's four destinations. The panel's three tabs, plus the tiles. */
+const PHONE_VIEWS = [
+  { value: 'overview' as const, label: 'Overview' },
+  { value: 'delegations' as const, label: 'Delegations' },
+  { value: 'accounts' as const, label: 'Accounts' },
+  { value: 'debts' as const, label: 'Debts' },
+];
 
 const WINDOWS = [
   { value: 'cycle', label: 'Cycle' },
@@ -1063,6 +1075,41 @@ export function Overview(): ReactNode {
   /** Which tile's picker is open, by key. Null is closed. */
   const [picking, setPicking] = useState<string | null>(null);
 
+  /*
+   * The panel: which tab, and whether it is docked open.
+   *
+   * Collapse is per device, like the sidebar's, because it describes the screen
+   * somebody is looking at rather than the household's budget. On a phone the
+   * panel is not docked at all, so the state is unused there.
+   */
+  const [tab, setTab] = useState<PanelTab>('delegations');
+  const [collapsed, setCollapsed] = useState(() => {
+    if (typeof globalThis.window === 'undefined') return false;
+    try {
+      return globalThis.window.localStorage.getItem(PANEL_KEY) === 'true';
+    } catch {
+      // A private window, or site data blocked. A missing preference is not an
+      // error; it means the default.
+      return false;
+    }
+  });
+
+  function setPanelCollapsed(next: boolean): void {
+    setCollapsed(next);
+    try {
+      globalThis.window.localStorage.setItem(PANEL_KEY, String(next));
+    } catch {
+      // Nothing to do: the panel still collapses for this session.
+    }
+  }
+
+  /*
+   * On a phone the panel's tabs are promoted onto the page and Overview becomes
+   * the fourth. There is no room to dock 398px beside anything at 390px wide,
+   * and the answer she opens the app for should not be behind a button.
+   */
+  const [phoneView, setPhoneView] = useState<'overview' | PanelTab>('overview');
+
   const [dragging, setDragging] = useState<string | null>(null);
   const [over, setOver] = useState<{ key: string; side: 'left' | 'right' } | null>(null);
 
@@ -1176,7 +1223,15 @@ export function Overview(): ReactNode {
   }
 
   /** The arrangement as rows, which is what every edit below works on. */
-  const rows = useMemo(() => groupIntoRows([...tiles]), [tiles]);
+  /*
+   * The grid's rows. The panel's own layout row is filtered out first: it holds
+   * the chosen delegations and is drawn by the panel, so leaving it in would put
+   * an empty tile in the grid beside the panel already showing its contents.
+   */
+  const rows = useMemo(
+    () => groupIntoRows(tiles.filter((tile) => tile.key !== 'delegations')),
+    [tiles],
+  );
 
   /** Writes rows back as tiles, renumbering so a gap left by a row closes. */
   function saveRows(next: readonly (readonly OverviewTileDto[])[]): void {
@@ -1314,6 +1369,26 @@ export function Overview(): ReactNode {
     // configurations as well as keys — see the comment there.
   }
 
+  /** The panel's own selection, creating its layout row the first time. */
+  function savePanelChoice(delegationIds: readonly string[]): void {
+    const config = { delegationIds: [...delegationIds] };
+    const next = panelTile
+      ? tiles.map((tile) => (tile.key === 'delegations' ? { ...tile, config } : tile))
+      : [
+          ...tiles,
+          {
+            key: 'delegations',
+            // Off the end of the grid, and never drawn there anyway.
+            row: rows.length,
+            position: 0,
+            display: null,
+            config,
+          },
+        ];
+    save.mutate(next);
+    setPicking(null);
+  }
+
   function saveChoice(key: string, delegationIds: readonly string[]): void {
     save.mutate(
       tiles.map((tile) =>
@@ -1323,9 +1398,21 @@ export function Overview(): ReactNode {
     setPicking(null);
   }
 
-  const available = (layout.data?.catalog ?? []).filter(
-    (key) => !tiles.some((tile) => tile.key === key),
-  );
+  /*
+   * The panel's chosen lines are stored on the `delegations` layout row.
+   *
+   * That row is never drawn in the grid — the panel draws it instead — but it
+   * stays in the layout because it is where the selection lives, and a
+   * selection needs somewhere to be whether or not anything renders it. The
+   * grid filters it out below and the picker creates it on first save, so the
+   * panel works on a page that has never held a tile.
+   */
+  const panelTile = tiles.find((tile) => tile.key === 'delegations');
+
+  const available = (layout.data?.catalog ?? [])
+    // The panel is not a tile and must not be offered as one.
+    .filter((key) => key !== 'delegations')
+    .filter((key) => !tiles.some((tile) => tile.key === key));
   return (
     <>
       <PageHeader
@@ -1410,63 +1497,115 @@ export function Overview(): ReactNode {
       {picking !== null && (
         <DelegationPickerDialog
           budget={budget.data}
-          selected={chosenFor(tiles.find((tile) => tile.key === picking) ?? tiles[0]!)}
-          onSave={(ids) => saveChoice(picking, ids)}
+          selected={panelTile ? chosenFor(panelTile) : []}
+          onSave={(ids) =>
+            picking === 'delegations' ? savePanelChoice(ids) : saveChoice(picking, ids)
+          }
           onClose={() => setPicking(null)}
         />
       )}
 
-      {layout.isPending || data.isPending ? null : tiles.length === 0 ? (
-        <EmptyState>No tiles yet.</EmptyState>
-      ) : (
-        <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
-          {rows.map((group) =>
-            group.map((tile) => (
-              <TileShell
-                key={tile.key}
-                tile={tile}
-                columns={columnsForRow(group.length)}
-                rowSize={group.length}
-                arranging={arranging}
-                draggable={pointer}
-                onMove={(step) => move(tile.key, step)}
-                onRemove={() => remove(tile.key)}
-                onSplit={() => split(tile.key)}
-                onJoin={() => join(tile.key)}
-                drag={{
-                  onDragStart: () => setDragging(tile.key),
-                  onDragOver: (event) => {
-                    if (dragging === null || dragging === tile.key) return;
-                    // Without this the browser refuses the drop outright.
-                    event.preventDefault();
-                    const box = event.currentTarget.getBoundingClientRect();
-                    const side = event.clientX < box.left + box.width / 2 ? 'left' : 'right';
-                    setOver({ key: tile.key, side });
-                  },
-                  onDrop: (event) => {
-                    event.preventDefault();
-                    const side = over?.key === tile.key ? over.side : 'right';
-                    drop(tile.key, side);
-                    setDragging(null);
-                    setOver(null);
-                  },
-                  over: over?.key === tile.key ? over.side : null,
-                }}
-              >
-                <TileBody
-                  tileKey={tile.key}
-                  data={data.data}
-                  budget={budget.data}
-                  chosen={chosenFor(tile)}
-                  onChoose={() => setPicking(tile.key)}
-                  cashflowWindow={data.data?.cashflowWindow ?? 'ytd'}
-                  onCashflowWindow={(next) => setCashflowWindow(next)}
-                />
-              </TileShell>
-            )),
-          )}
+      {/* The phone's four destinations. Below `lg` only: on a pointer the panel
+          is docked beside the tiles and none of this is drawn. */}
+      <div className="mb-4 lg:hidden">
+        <SegmentedControl
+          label="View"
+          value={phoneView}
+          options={PHONE_VIEWS}
+          onChange={setPhoneView}
+        />
+      </div>
+
+      {phoneView !== 'overview' && (
+        <div className="lg:hidden">
+          <OverviewPanel
+            variant="inline"
+            tab={phoneView}
+            onTab={setPhoneView}
+            data={data.data}
+            onChoose={() => setPicking('delegations')}
+          />
         </div>
       )}
+
+      <div
+        className={`${phoneView === 'overview' ? '' : 'hidden lg:grid'} grid gap-6 lg:grid-cols-[minmax(0,1fr)_398px]`}
+      >
+        <div className="min-w-0">
+          {layout.isPending || data.isPending ? null : tiles.length === 0 ? (
+            <EmptyState>No tiles yet.</EmptyState>
+          ) : (
+            <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
+              {rows.map((group) =>
+                group.map((tile) => (
+                  <TileShell
+                    key={tile.key}
+                    tile={tile}
+                    columns={columnsForRow(group.length)}
+                    rowSize={group.length}
+                    arranging={arranging}
+                    draggable={pointer}
+                    onMove={(step) => move(tile.key, step)}
+                    onRemove={() => remove(tile.key)}
+                    onSplit={() => split(tile.key)}
+                    onJoin={() => join(tile.key)}
+                    drag={{
+                      onDragStart: () => setDragging(tile.key),
+                      onDragOver: (event) => {
+                        if (dragging === null || dragging === tile.key) return;
+                        // Without this the browser refuses the drop outright.
+                        event.preventDefault();
+                        const box = event.currentTarget.getBoundingClientRect();
+                        const side = event.clientX < box.left + box.width / 2 ? 'left' : 'right';
+                        setOver({ key: tile.key, side });
+                      },
+                      onDrop: (event) => {
+                        event.preventDefault();
+                        const side = over?.key === tile.key ? over.side : 'right';
+                        drop(tile.key, side);
+                        setDragging(null);
+                        setOver(null);
+                      },
+                      over: over?.key === tile.key ? over.side : null,
+                    }}
+                  >
+                    <TileBody
+                      tileKey={tile.key}
+                      data={data.data}
+                      budget={budget.data}
+                      chosen={chosenFor(tile)}
+                      onChoose={() => setPicking(tile.key)}
+                      cashflowWindow={data.data?.cashflowWindow ?? 'ytd'}
+                      onCashflowWindow={(next) => setCashflowWindow(next)}
+                    />
+                  </TileShell>
+                )),
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Docked, and only on a pointer. Collapsed it is a single control that
+            gives the width back rather than a sliver of panel. */}
+        <div className="hidden lg:block">
+          {collapsed ? (
+            <Button onClick={() => setPanelCollapsed(false)} aria-label="Open the budget panel">
+              Budget
+            </Button>
+          ) : (
+            <div className="sticky top-0 max-h-[calc(100vh-96px)]">
+              <OverviewPanel
+                variant="docked"
+                tab={tab}
+                onTab={setTab}
+                data={data.data}
+                onChoose={() => setPicking('delegations')}
+                onCollapse={() => setPanelCollapsed(true)}
+              />
+            </div>
+          )}
+        </div>
+      </div>
     </>
   );
 }
