@@ -918,6 +918,67 @@ line, off the right of the display, with the end of the sentence unreachable.
   because the detail is only as wide as its content and a short fixture passes
   against the broken code.
 
+**Since v0.58.0 — the dashboard the owner designed (`v0.59.0`)**
+
+The owner brought a full visual specification for Overview and asked for it
+reconciled with what Delegate already is rather than dropped on top. Most of the
+work was deciding which half of each disagreement was right, and the reasoning is
+in [ADR 053](decisions/053-a-pace-bar-reads-two-marks-not-one.md).
+
+- **A pay cycle has dates now, and `pay_cadence` is still a divisor.** Money
+  moves on Delegate presses and nothing is scheduled by a date; what one anchor
+  adds — `next_payday_on`, on Settings → Budget — is the other half of a question
+  the budget could never answer: not "how much is left" but "how much is left
+  **for how long**". A line that has spent 90% of its money is fine on the last
+  day of a cycle and alarming on the second.
+
+  **No anchor means no tick.** Not a default — a marker drawn from a guessed
+  schedule is confidently in the wrong place, and every pace reading is judged
+  against it. Three tiles draw nothing at all rather than something plausible.
+
+  Semi-monthly is approximate and says so in the code: 24 paydays a year is
+  exactly two a month, so it cannot be a fixed day-count, and a household paid on
+  the 1st and 15th sees its second boundary land a day late.
+
+- **The pace bar splits at a fixed 75%** — this cycle's plan left, reserve right
+  — because Delegate's envelopes carry over and neither reading alone is enough.
+  The split does not move: the tick is a **time** marker and has to read as one
+  straight vertical down the column, which scaling each track to its own
+  plan-plus-reserve would destroy. **Red is a negative balance**, never
+  spent-exceeds-plan; in an envelope budget that second condition is ordinary.
+
+- **The budget is docked beside the dashboard**, three tabs, keys 1–3,
+  collapsible per device, and promoted to a segmented control on a phone. It is
+  **not** the Budget page and does not replace it — the owner chose that
+  knowingly, so the same line reads two ways on two screens. They read the same
+  domain functions, so they differ in presentation and never in arithmetic.
+
+- **The spacing scale is five values.** 12px was added deliberately with the gate
+  changed rather than worked around; 32 was proposed alongside and refused,
+  because 24 already separates sections. A third text tone was proposed at
+  `#a9a6a0` and **refused** — 2.4:1, clearing neither bar — and `--color-axis` is
+  that idea darkened to clear 3:1, restricted to marks a chart could be read
+  without, and measured in both palettes.
+
+- **A row holds two tiles**, down from four, because the panel took 400px and a
+  quarter of what is left is 250px.
+
+**Two defects found on the way, both worth the shape rather than the detail.**
+
+- The Arrange picker drew each tile's preview **inside a `<button>`**, and one
+  preview contains a segmented control — also a button. A button inside a button
+  is invalid HTML; the parser hoists the inner one out and tears apart the
+  structure around it, which made headings elsewhere vanish. It shipped in
+  v0.58.0. `pointer-events-none` and `aria-hidden` were already on that preview
+  and neither helped: **they stop it being used and say nothing about the
+  markup.**
+
+- `resetDatabase` truncates every table it discovers but resets `budget_settings`
+  **column by column**, because that row is pinned. A new column therefore leaked
+  from whichever test set it into every test after. The helper's own comment
+  describes that failure exactly, and it happened anyway — which is the argument
+  for discovering columns there the way tables already are.
+
 ### Known gaps to fix
 
 None outstanding. The September security review is closed — see
