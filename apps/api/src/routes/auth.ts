@@ -1,4 +1,4 @@
-import type { UserRole } from '@budget/shared';
+import { LANDING_PAGES, type LandingPage, type UserRole } from '@budget/shared';
 import type { FastifyPluginCallback, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { prisma } from '../db/client.js';
@@ -12,6 +12,7 @@ import {
   needsFirstRunSetup,
   recordLogin,
   setOwnDisplayName,
+  setOwnLandingPage,
   MAX_DISPLAY_NAME_LENGTH,
 } from '../domain/users.js';
 import { claimChallenge, issueChallenge, readChallenge } from '../domain/challenge.js';
@@ -55,6 +56,7 @@ interface PresentableUser {
   readonly id: string;
   readonly username: string;
   readonly displayName?: string | null | undefined;
+  readonly landingPage?: LandingPage | null | undefined;
   readonly role: UserRole;
   readonly mustChangePassword: boolean;
 }
@@ -65,6 +67,9 @@ function presentUser(user: PresentableUser): Record<string, unknown> {
     username: user.username,
     // Null where none is set; the interface falls back to the username.
     displayName: user.displayName ?? null,
+    // Null is "never chose", and the interface applies the default. Sending the
+    // default here instead would make a choice look like one that was made.
+    landingPage: user.landingPage ?? null,
     role: user.role,
     mustChangePassword: user.mustChangePassword,
   };
@@ -449,12 +454,31 @@ export const authRoutes: FastifyPluginCallback = (fastify, _options, done) => {
    * it, so there is no privilege here to protect.
    */
   fastify.patch('/api/auth/me', { preHandler: [requireSession] }, async (request) => {
-    const { displayName } = z
-      .object({ displayName: z.string().max(MAX_DISPLAY_NAME_LENGTH).nullable() })
+    /*
+     * Both fields optional, and each applied only when sent.
+     *
+     * One route rather than two because both answer the same question — what is
+     * mine to set about myself — and because a client that wanted to change one
+     * would otherwise have to send the other back unchanged, which is how a
+     * display name gets cleared by a page that never showed it.
+     */
+    const body = z
+      .object({
+        displayName: z.string().max(MAX_DISPLAY_NAME_LENGTH).nullable().optional(),
+        // Null clears the choice and returns to the default rather than storing
+        // one, so the default can move later without overriding anybody.
+        landingPage: z.enum(LANDING_PAGES).nullable().optional(),
+      })
       .parse(request.body);
 
-    const user = await setOwnDisplayName(prisma, request.currentUser!.id, displayName);
-    return { user };
+    let updated: PresentableUser = request.currentUser!;
+    if (body.displayName !== undefined) {
+      updated = await setOwnDisplayName(prisma, request.currentUser!.id, body.displayName);
+    }
+    if (body.landingPage !== undefined) {
+      updated = await setOwnLandingPage(prisma, request.currentUser!.id, body.landingPage);
+    }
+    return { user: presentUser(updated) };
   });
 
   fastify.get('/api/auth/totp', { preHandler: [requireSession] }, async (request) => {

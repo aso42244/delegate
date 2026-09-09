@@ -1,3 +1,4 @@
+import type { Cents } from '@budget/shared';
 import {
   DEFAULT_FIGURES,
   isOverviewRegion,
@@ -29,7 +30,7 @@ import {
   type OverviewTileKey,
 } from '../domain/overview.js';
 import { payCycleAt } from '../domain/pay-cycle.js';
-import { findRecurringBills } from '../domain/recurring.js';
+import { findRecurringBills, type RecurringBill } from '../domain/recurring.js';
 import { accountSeries } from '../domain/snapshot-series.js';
 import { getBudgetSettings, householdTimezone } from '../domain/settings.js';
 import { centsOut, dateOut } from '../http/serialize.js';
@@ -137,6 +138,96 @@ const layoutSchema = z.object({
     )
     .max(OVERVIEW_TILES.length),
 });
+
+/**
+ * A bill that now costs meaningfully more than it typically does, or null.
+ *
+ * A tenth, and at least a dollar. Utilities drift by a few cents between
+ * statements and a tile that flagged every one of those would be a tile nobody
+ * reads; the case worth surfacing is the subscription that renewed at a new
+ * price without saying so.
+ *
+ * The typical figure is the median charge, so a single dear month does not move
+ * the thing the rise is measured against.
+ */
+function priceRise(bill: RecurringBill): Cents | null {
+  if (bill.status === 'lapsed') return null;
+  const rise = bill.lastAmountCents - bill.typicalAmountCents;
+  if (rise < 100n) return null;
+  return rise * 10n > bill.typicalAmountCents ? rise : null;
+}
+
+/** Late first, then apparently stopped, then merely dearer. */
+function attentionRank(bill: RecurringBill): number {
+  if (bill.status === 'overdue') return 0;
+  if (bill.status === 'lapsed') return 1;
+  return 2;
+}
+
+/** Cents as `$1,234.56`, for a sentence rather than a column. */
+function formatUsd(cents: Cents): string {
+  const whole = cents < 0n ? -cents : cents;
+  const dollars = (whole / 100n).toLocaleString('en-US');
+  return `${cents < 0n ? '-' : ''}$${dollars}.${String(whole % 100n).padStart(2, '0')}`;
+}
+
+/**
+ * What this pay cycle's recurring charges come to, and how much has gone.
+ *
+ * Paid is what actually landed inside the cycle rather than what was due before
+ * today: a bill that arrived four days early is paid, and one that is overdue is
+ * not paid however long ago it was expected. To come is everything still
+ * expected before the next payday, the overdue ones included — they are money
+ * that still has to leave.
+ */
+function billsThisCycle(
+  bills: readonly RecurringBill[],
+  cycle: { readonly start: Date; readonly end: Date },
+): {
+  paidCents: string;
+  toComeCents: string;
+  paidCount: number;
+  totalCount: number;
+  largestDue: { name: string; amountCents: string; expectedNextAt: string } | null;
+} {
+  const inCycle = (at: Date): boolean =>
+    at.getTime() >= cycle.start.getTime() && at.getTime() < cycle.end.getTime();
+
+  const paid = bills.filter((bill) => bill.status !== 'lapsed' && inCycle(bill.lastPostedAt));
+  const toCome = bills.filter(
+    (bill) =>
+      bill.status !== 'lapsed' &&
+      !inCycle(bill.lastPostedAt) &&
+      (bill.status === 'overdue' || inCycle(bill.expectedNextAt)),
+  );
+
+  const sum = (rows: readonly RecurringBill[], pick: (bill: RecurringBill) => Cents): Cents =>
+    rows.reduce((total, bill) => total + pick(bill), 0n);
+
+  const largest = [...toCome].sort((a, b) =>
+    b.typicalAmountCents > a.typicalAmountCents
+      ? 1
+      : b.typicalAmountCents < a.typicalAmountCents
+        ? -1
+        : 0,
+  )[0];
+
+  return {
+    // What was actually charged for the ones that landed; what they usually cost
+    // for the ones that have not.
+    paidCents: centsOut(sum(paid, (bill) => bill.lastAmountCents)),
+    toComeCents: centsOut(sum(toCome, (bill) => bill.typicalAmountCents)),
+    paidCount: paid.length,
+    totalCount: paid.length + toCome.length,
+    largestDue: largest
+      ? {
+          name: largest.name,
+          amountCents: centsOut(largest.typicalAmountCents),
+          expectedNextAt: dateOut(largest.expectedNextAt),
+        }
+      : null,
+  };
+}
 
 export const overviewRoutes: FastifyPluginCallback = (fastify, _options, done) => {
   for (const guard of AUTHENTICATED) {
@@ -388,7 +479,10 @@ export const overviewRoutes: FastifyPluginCallback = (fastify, _options, done) =
               readAllocationMode(stored.find((tile) => tile.widgetKey === 'allocation')?.config),
             )
           : undefined,
-        keys.has('upcoming_bills') ? findRecurringBills(prisma, timeZone) : undefined,
+        // One pass over the register serves all three bill-shaped tiles.
+        keys.has('upcoming_bills') || keys.has('bills_attention') || keys.has('bills_this_cycle')
+          ? findRecurringBills(prisma, timeZone)
+          : undefined,
         keys.has('account_balance_history') && accountId
           ? accountSeries(prisma, accountId, window)
           : undefined,
@@ -468,7 +562,52 @@ export const overviewRoutes: FastifyPluginCallback = (fastify, _options, done) =
           }
         : {}),
       ...(pickable ? { pickable } : {}),
-      ...(bills
+      ...(bills && keys.has('bills_attention')
+        ? {
+            /*
+             * Only what is wrong: late, apparently stopped, or newly dearer.
+             *
+             * Usually empty, and that is the point of it — a tile that says
+             * "everything arrived" most weeks and names three things on the week
+             * something slipped is worth more of a dashboard than one saying the
+             * same thing every day. The three conditions are the three ways a
+             * recurring charge fails quietly: it did not come, it stopped
+             * coming, and it came for more.
+             */
+            bills_attention: bills
+              .filter(
+                (bill) =>
+                  bill.status === 'overdue' || bill.status === 'lapsed' || priceRise(bill) !== null,
+              )
+              // Late first, then stopped, then dearer: the order somebody would
+              // deal with them in.
+              .sort((a, b) => attentionRank(a) - attentionRank(b))
+              .slice(0, 6)
+              .map((bill) => ({
+                key: bill.key,
+                name: bill.name,
+                status: bill.status,
+                color: bill.color,
+                amountCents: centsOut(
+                  priceRise(bill) === null ? bill.typicalAmountCents : bill.lastAmountCents,
+                ),
+                /** What is wrong, in the fewest words that are still specific. */
+                note:
+                  bill.status === 'overdue'
+                    ? `${bill.daysLate} ${bill.daysLate === 1 ? 'day' : 'days'} late`
+                    : bill.status === 'lapsed'
+                      ? `nothing since ${bill.lastPostedAt.toLocaleDateString('en-US', {
+                          month: 'short',
+                          timeZone,
+                        })}`
+                      : `was ${formatUsd(bill.typicalAmountCents)}`,
+              })),
+          }
+        : {}),
+      ...(bills && keys.has('bills_this_cycle') && cycle
+        ? { bills_this_cycle: billsThisCycle(bills, cycle) }
+        : {}),
+      ...(bills && keys.has('upcoming_bills')
         ? {
             upcoming_bills: bills
               /*
@@ -487,6 +626,8 @@ export const overviewRoutes: FastifyPluginCallback = (fastify, _options, done) =
                 expectedNextAt: dateOut(bill.expectedNextAt),
                 typicalAmountCents: centsOut(bill.typicalAmountCents),
                 delegationName: bill.delegationName,
+                color: bill.color,
+                status: bill.status,
               })),
           }
         : {}),
@@ -832,6 +973,19 @@ function serializeOverview(data: OverviewData): Record<string, unknown> {
               // Null is an ad-hoc line with no standing amount, which is not
               // the same as one funded at zero.
               amountToDelegateCents: centsOut(summary.amountToDelegateCents),
+              /*
+               * The shape and the direction, for the two tiles that read this
+               * same payload — one draws the twelve months, one says whether the
+               * last year cost more than the year before.
+               *
+               * Three tiles from one key rather than three keys from one pass:
+               * they are three readings of the same twenty-four months, which is
+               * the arrangement the aggregate series already uses for the three
+               * net-worth tiles.
+               */
+              months: summary.months.map((month) => centsOut(month.spendCents)),
+              // Null is "not enough history to say", which is not flat.
+              trendBasisPoints: summary.trendBasisPoints,
             })),
           },
         }

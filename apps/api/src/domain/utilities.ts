@@ -47,6 +47,11 @@ export interface UtilitySummary {
    * configured cadence. Advice, never auto-written.
    */
   readonly suggestedPerCycleCents: Cents;
+  /**
+   * The last twelve complete months against the twelve before, in basis points.
+   * Null when there is not enough history to say, which is not the same as flat.
+   */
+  readonly trendBasisPoints: number | null;
 }
 
 export interface UtilitiesView {
@@ -64,6 +69,19 @@ export interface UtilitiesView {
 const MONTHS_SHOWN = 12;
 
 /**
+ * How far back the trend looks: the last twelve complete months against the
+ * twelve before them.
+ *
+ * Twelve against twelve rather than six against six, because these bills are
+ * seasonal. Electricity in July against electricity in January is summer against
+ * winter, which is weather rather than a trend — and a tile that flagged every
+ * air-conditioned household every June would be one nobody reads by August. A
+ * full year on each side cancels the season out and leaves the thing worth
+ * knowing: it costs more than it used to.
+ */
+const TREND_MONTHS = 24;
+
+/**
  * The 12 month buckets ending with the one `now` falls in — **in the household's
  * zone**.
  *
@@ -72,11 +90,32 @@ const MONTHS_SHOWN = 12;
  * in the following month's average and the suggestion drawn from it was off by
  * that spend in both directions. See ADR 037.
  */
-function monthWindow(now: Date, timeZone: string): Date[] {
+function monthWindow(now: Date, timeZone: string, length = MONTHS_SHOWN): Date[] {
   const current = localMonthKey(now, timeZone);
-  return Array.from({ length: MONTHS_SHOWN }, (_, index) =>
-    addMonthsToKey(current, index - (MONTHS_SHOWN - 1)),
-  );
+  return Array.from({ length }, (_unused, index) => addMonthsToKey(current, index - (length - 1)));
+}
+
+/**
+ * Which way a bill is going, in basis points, or null.
+ *
+ * Null when there are not two full years of complete months behind it, or when
+ * the earlier year spent nothing. A household eight months in has no year to
+ * compare against, and a confident 0% would say something false — the tile says
+ * it does not know yet instead.
+ */
+function trendBasisPoints(months: readonly MonthlySpend[]): number | null {
+  const complete = months.filter((entry) => entry.complete);
+  if (complete.length < TREND_MONTHS - 1) return null;
+
+  const recent = complete.slice(-MONTHS_SHOWN);
+  const earlier = complete.slice(-MONTHS_SHOWN * 2, -MONTHS_SHOWN);
+  if (recent.length < MONTHS_SHOWN || earlier.length < MONTHS_SHOWN) return null;
+
+  const before = sumCents(earlier.map((entry) => entry.spendCents));
+  if (before <= 0n) return null;
+
+  const after = sumCents(recent.map((entry) => entry.spendCents));
+  return Number(((after - before) * 10_000n) / before);
 }
 
 export async function buildUtilities(
@@ -99,7 +138,8 @@ export async function buildUtilitySummaries(
   timeZone: string,
   now: Date = new Date(),
 ): Promise<UtilitySummary[]> {
-  const months = monthWindow(now, timeZone);
+  // Two years back for the trend; the page and the tiles draw the last twelve.
+  const months = monthWindow(now, timeZone, TREND_MONTHS);
   const currentMonth = localMonthKey(now, timeZone);
   const firstMonth = months[0] ?? currentMonth;
   // The window is filtered on a timestamp column, so the boundary has to be the
@@ -165,7 +205,18 @@ export async function buildUtilitySummaries(
       };
     });
 
-    const complete = monthly.filter((entry) => entry.complete);
+    /*
+     * The complete months **of the twelve shown**, which is not the same as the
+     * last twelve complete months of twenty-four.
+     *
+     * The longer window exists only for the trend. Taking twelve complete months
+     * out of it reaches back past the year the page draws and, on a household
+     * whose history is shorter than the window, changes the divisor — eleven
+     * months of bills averaged over twelve. That moves the suggestion without
+     * anything about the household having changed.
+     */
+    const shown = monthly.slice(-MONTHS_SHOWN);
+    const complete = shown.filter((entry) => entry.complete);
     const averageCents =
       complete.length === 0
         ? 0n
@@ -177,9 +228,11 @@ export async function buildUtilitySummaries(
       groupingName: delegation.grouping?.name ?? null,
       groupingColor: delegation.grouping?.color ?? null,
       amountToDelegateCents: delegation.amountToDelegateCents,
-      months: monthly,
+      // The window fetched is two years; what anything draws is the last twelve.
+      months: shown,
       averageCents,
       suggestedPerCycleCents: suggestedPerCycleCents(averageCents, cyclesPerYear),
+      trendBasisPoints: trendBasisPoints(monthly),
     };
   });
 }

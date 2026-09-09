@@ -119,7 +119,7 @@ test('the preview counts before anything moves, and leaves hand-made work alone'
   await expect(signedIn.getByText('1 of 2 transactions would be categorized.')).toBeVisible();
   await signedIn.getByRole('button', { name: 'Cancel' }).click();
 
-  await signedIn.goto('/');
+  await signedIn.goto('/budget');
   await expect(signedIn.getByRole('button', { name: 'Grocery balance' })).toContainText('$0.00');
 });
 
@@ -137,7 +137,7 @@ test('applying the rules categorizes the backlog', async ({ signedIn, api }) => 
   await expect(signedIn.getByText('1 of 1 categorized.')).toBeVisible();
   await signedIn.getByRole('button', { name: 'Done' }).click();
 
-  await signedIn.goto('/');
+  await signedIn.goto('/budget');
   await expect(signedIn.getByRole('button', { name: 'Grocery balance' })).toContainText('-$42.10');
 });
 

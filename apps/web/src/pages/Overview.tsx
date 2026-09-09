@@ -6,7 +6,7 @@ import {
   MAX_TILES_PER_ROW,
 } from '@budget/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useMemo, useState, type ReactNode } from 'react';
+import { useMemo, useRef, useState, type ReactNode } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { useMediaQuery } from '../useMediaQuery.js';
 import {
@@ -20,12 +20,18 @@ import {
 } from '../api/overview.js';
 import { EmptyState, PageHeader, SegmentedControl } from '../components/layout.jsx';
 import { budgetApi, type BudgetViewDto } from '../api/budget.js';
+import { transactionsApi } from '../api/transactions.js';
+import { recurringApi } from '../api/recurring.js';
 import { DelegationPickerDialog } from '../components/DelegationPickerDialog.jsx';
 import {
   AllocationDonut,
+  BillAttentionList,
+  BillsThisCycle,
   OutflowBand,
   PaceChart,
   UpcomingList,
+  UtilitiesToAdjust,
+  UtilityTrends,
 } from '../components/OverviewCharts.jsx';
 import { OverviewPanel, type PanelTab } from '../components/OverviewPanel.jsx';
 import { Sankey, type FlowNode } from '../components/Sankey.jsx';
@@ -114,7 +120,11 @@ const TILE_COPY: Record<string, { readonly title: string; readonly description?:
   daily_outflow: { title: 'Daily outflow' },
   income_vs_spending_pace: { title: 'In against out', description: 'Running totals' },
   allocation: { title: 'Allocation' },
-  upcoming_bills: { title: 'Upcoming', description: 'From Bills' },
+  upcoming_bills: { title: 'Coming up', description: 'Next 14 days' },
+  bills_attention: { title: 'Needs a look' },
+  bills_this_cycle: { title: 'Recurring this cycle' },
+  utilities_trend: { title: 'Which way they’re going', description: '12 months' },
+  utilities_adjust: { title: 'Worth adjusting' },
   account_balance_history: { title: 'Account balance' },
   delegation_balance_history: { title: 'Delegation balance' },
   /* No description. The chart says where the money went by being a picture of
@@ -189,13 +199,43 @@ function TileShell({
 }): ReactNode {
   const copy = TILE_COPY[tile.key] ?? { title: tile.key };
 
+  /*
+   * A drag starts on the grip and nowhere else.
+   *
+   * The whole card used to be the handle: a grab cursor over every figure in it,
+   * and a drag begun by any stray press — on a chart, on a label somebody meant
+   * to select. The grip is the affordance, so it should be the only thing that
+   * starts a drag.
+   *
+   * `draggable` stays on the **section** rather than moving to the grip, because
+   * the browser's drag image is the element carrying the attribute: the grip
+   * alone drags a ⠿ glyph across the page, while the section drags a picture of
+   * the tile, which is what is actually being moved. What gates it is where the
+   * press landed, recorded on the way down and read at `dragstart`.
+   *
+   * A ref rather than state, and recomputed on **every** press inside the tile:
+   * a state update would not necessarily have flushed before the browser decided
+   * whether the element was draggable, and a flag only ever set true would leave
+   * the tile armed after a press on the grip that went nowhere.
+   */
+  const fromGrip = useRef(false);
+
   return (
     <section
       className={`group relative col-span-1 flex min-w-0 flex-col gap-4 rounded-lg border border-line bg-canvas p-4 ${
         COLUMN_CLASS[columns] ?? 'lg:col-span-12'
-      } ${draggable ? 'cursor-grab' : ''}`}
+      }`}
       draggable={draggable}
-      onDragStart={drag.onDragStart}
+      onPointerDown={(event) => {
+        fromGrip.current = (event.target as HTMLElement).closest('[data-grip]') !== null;
+      }}
+      onDragStart={(event) => {
+        if (!fromGrip.current) {
+          event.preventDefault();
+          return;
+        }
+        drag.onDragStart();
+      }}
       onDragOver={drag.onDragOver}
       onDrop={drag.onDrop}
       data-tile={tile.key}
@@ -239,7 +279,8 @@ function TileShell({
       {draggable && (
         <span
           aria-hidden="true"
-          className="absolute top-4 left-1 text-quiet text-faint opacity-0 transition-opacity group-hover:opacity-100"
+          data-grip="true"
+          className="absolute top-4 left-1 cursor-grab text-quiet text-faint opacity-0 transition-opacity group-hover:opacity-100"
         >
           ⠿
         </span>
@@ -323,6 +364,170 @@ function localToday(): string {
     String(now.getMonth() + 1).padStart(2, '0'),
     String(now.getDate()).padStart(2, '0'),
   ].join('-');
+}
+
+/**
+ * What one day cost, opened from the outflow band.
+ *
+ * A read, not a working surface: the register is where a row is changed, and a
+ * link goes there. This answers the question the band always provokes — the 3rd
+ * cost $412, which $412 — without leaving the dashboard.
+ *
+ * The day is sent as a calendar day and bounded by the server in the household's
+ * zone, so the list is exactly the rows that drew the cell. Computing the window
+ * here would use the browser's zone, and an evening charge would go missing from
+ * the day it is drawn on.
+ */
+function DayDialog({
+  dayIso,
+  onClose,
+}: {
+  readonly dayIso: string;
+  readonly onClose: () => void;
+}): ReactNode {
+  const day = dayIso.slice(0, 10);
+  const rows = useQuery({
+    queryKey: ['transactions', 'day', day],
+    queryFn: () => transactionsApi.list({ day, limit: 100 }),
+  });
+
+  const [year, month, date] = day.split('-').map(Number);
+  const title = new Date(year!, month! - 1, date).toLocaleDateString(undefined, {
+    weekday: 'long',
+    month: 'long',
+    day: 'numeric',
+  });
+
+  const spent = (rows.data?.transactions ?? [])
+    .map((row) => BigInt(row.amountCents))
+    .filter((amount) => amount < 0n)
+    .reduce((sum, amount) => sum - amount, 0n);
+
+  return (
+    <Modal label={`What was spent on ${title}`} title={title} onClose={onClose} width="lg">
+      {rows.isPending ? (
+        <p className="text-quiet text-muted">Loading…</p>
+      ) : (rows.data?.transactions.length ?? 0) === 0 ? (
+        <EmptyState>Nothing posted that day.</EmptyState>
+      ) : (
+        <>
+          <ul className="list-none border-t border-line p-0">
+            {rows.data!.transactions.map((row) => {
+              const amount = BigInt(row.amountCents);
+              return (
+                <li
+                  key={row.id}
+                  className="row-cell flex items-baseline gap-3 border-b border-line"
+                >
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-quiet text-ink">{row.description}</span>
+                    <span className="block truncate text-micro text-muted">
+                      {/* Where it came from and where it went, which is the pair
+                          somebody checks a charge against. */}
+                      {row.account.name}
+                      {row.allocations.length > 0 &&
+                        ` · ${row.allocations.map((entry) => entry.delegation.name).join(', ')}`}
+                      {row.allocations.length === 0 && row.kind === 'normal' && ' · Uncategorized'}
+                      {row.pending && ' · Pending'}
+                    </span>
+                  </span>
+                  <span
+                    className={`money shrink-0 text-quiet font-semibold ${
+                      amount > 0n ? 'text-positive' : 'text-ink'
+                    }`}
+                  >
+                    {formatCents(amount)}
+                  </span>
+                </li>
+              );
+            })}
+          </ul>
+
+          <div className="mt-3 flex items-center justify-between gap-2 text-quiet">
+            <span className="font-semibold text-ink">
+              {/* Out, not net: the band draws spending, and a refund landing the
+                  same day would otherwise make the two figures disagree. */}
+              <span className="money">{formatCents(spent)}</span> out
+            </span>
+            <Link to={`/transactions?search=${encodeURIComponent(day)}`} className="linkish">
+              Open in the register →
+            </Link>
+          </div>
+        </>
+      )}
+    </Modal>
+  );
+}
+
+/**
+ * Every bill, in the middle of the page.
+ *
+ * A dialog rather than a link away, because the tiles it opens from are a
+ * glance: somebody reading "three bills need a look" wants the other twenty in
+ * front of them, not a page change and a way back. Changing a bill — renaming
+ * it, attaching a charge, dismissing it — is still Recurring's job, and the
+ * footer goes there.
+ */
+function AllBillsDialog({ onClose }: { readonly onClose: () => void }): ReactNode {
+  const bills = useQuery({ queryKey: ['bills'], queryFn: () => recurringApi.list() });
+  const rows = bills.data?.bills ?? [];
+
+  return (
+    <Modal label="Every recurring bill" title="All bills" onClose={onClose} width="lg">
+      {bills.isPending ? (
+        <p className="text-quiet text-muted">Loading…</p>
+      ) : rows.length === 0 ? (
+        <EmptyState>No bill has arrived three times yet.</EmptyState>
+      ) : (
+        <ul className="list-none border-t border-line p-0">
+          {rows.map((bill) => (
+            <li
+              key={bill.key}
+              className="row-cell flex items-center gap-3 border-b border-line"
+              title={`${bill.name} · ${bill.cadence} · next ${shortDate(bill.expectedNextAt)}`}
+            >
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-quiet text-ink">{bill.name}</span>
+                <span className="block truncate text-micro text-muted">
+                  {bill.cadence}
+                  {bill.delegationName !== null && ` · ${bill.delegationName}`}
+                </span>
+              </span>
+              <span className="w-20 shrink-0 text-right text-micro text-muted">
+                {shortDate(bill.expectedNextAt)}
+              </span>
+              <span className="money w-20 shrink-0 text-right text-quiet font-semibold text-ink">
+                {formatCents(BigInt(bill.typicalAmountCents))}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {/* Outside the list, because the way out belongs here whether or not there
+          is anything to show — a household with no bills yet is exactly the one
+          that might want to look at the page. */}
+      {!bills.isPending && (
+        <div className="mt-3 flex items-center justify-between gap-2 text-quiet">
+          <span className="text-muted">
+            {rows.length} {rows.length === 1 ? 'recurring bill' : 'recurring'}
+          </span>
+          <Link to="/recurring" className="linkish">
+            Open Recurring →
+          </Link>
+        </div>
+      )}
+    </Modal>
+  );
+}
+
+/** A bill's next date, read as a calendar date rather than an instant. */
+function shortDate(iso: string): string {
+  const [year, month, day] = iso.slice(0, 10).split('-').map(Number);
+  return new Date(year!, month! - 1, day).toLocaleDateString(undefined, {
+    month: 'short',
+    day: 'numeric',
+  });
 }
 
 /**
@@ -1354,6 +1559,8 @@ function TileBody({
   chosen,
   onChoose,
   onChooseFigures,
+  onPickDay,
+  onOpenAllBills,
   allocationMode,
   onAllocationMode,
   accountId,
@@ -1368,6 +1575,10 @@ function TileBody({
   readonly chosen?: readonly string[];
   readonly onChoose?: () => void;
   readonly onChooseFigures?: () => void;
+  /** Opens what was spent on one day of the outflow band. */
+  readonly onPickDay?: ((dayIso: string) => void) | undefined;
+  /** Opens every recurring bill, in the middle of the page. */
+  readonly onOpenAllBills?: (() => void) | undefined;
   readonly allocationMode?: 'plan' | 'position';
   readonly onAllocationMode?: (next: 'plan' | 'position') => void;
   readonly accountId?: string | undefined;
@@ -1463,7 +1674,11 @@ function TileBody({
       // Calendar months, so it needs no payday anchor and works on a household
       // that has never set one.
       return data.daily_outflow ? (
-        <OutflowBand months={data.daily_outflow} todayIso={localToday()} />
+        <OutflowBand
+          months={data.daily_outflow}
+          todayIso={localToday()}
+          onPickDay={onPickDay ?? (() => undefined)}
+        />
       ) : null;
     case 'income_vs_spending_pace':
       return data.income_vs_spending_pace ? (
@@ -1505,7 +1720,30 @@ function TileBody({
         />
       );
     case 'upcoming_bills':
-      return data.upcoming_bills ? <UpcomingList bills={data.upcoming_bills} /> : null;
+      return data.upcoming_bills ? (
+        <UpcomingList bills={data.upcoming_bills} onOpenAll={onOpenAllBills ?? (() => undefined)} />
+      ) : null;
+    case 'bills_attention':
+      return data.bills_attention ? (
+        <BillAttentionList
+          bills={data.bills_attention}
+          onOpenAll={onOpenAllBills ?? (() => undefined)}
+        />
+      ) : null;
+    case 'bills_this_cycle':
+      return data.bills_this_cycle ? (
+        <BillsThisCycle summary={data.bills_this_cycle} />
+      ) : (
+        <EmptyState>Set your next payday on Settings → Budget to see this cycle.</EmptyState>
+      );
+    case 'utilities_trend':
+      return data.utilities_vs_delegated ? (
+        <UtilityTrends entries={data.utilities_vs_delegated.entries} />
+      ) : null;
+    case 'utilities_adjust':
+      return data.utilities_vs_delegated ? (
+        <UtilitiesToAdjust entries={data.utilities_vs_delegated.entries} />
+      ) : null;
     case 'cashflow':
       return data.cashflow ? <CashflowTile cashflow={data.cashflow} /> : null;
     case 'uncategorized_backlog':
@@ -1565,6 +1803,10 @@ export function Overview(): ReactNode {
    */
   /** Whether the figures band's own picker is open. */
   const [pickingFigures, setPickingFigures] = useState(false);
+  /** Which day of the outflow band is open, if any. */
+  const [pickedDay, setPickedDay] = useState<string | null>(null);
+  /** Whether every bill is showing, opened from one of the bill tiles. */
+  const [showingBills, setShowingBills] = useState(false);
 
   const [tab, setTab] = useState<PanelTab>('delegations');
 
@@ -2102,6 +2344,10 @@ export function Overview(): ReactNode {
         </section>
       )}
 
+      {pickedDay !== null && <DayDialog dayIso={pickedDay} onClose={() => setPickedDay(null)} />}
+
+      {showingBills && <AllBillsDialog onClose={() => setShowingBills(false)} />}
+
       {pickingFigures && (
         <FigurePickerDialog
           /*
@@ -2216,6 +2462,8 @@ export function Overview(): ReactNode {
                       chosen={chosenFor(tile)}
                       onChoose={() => setPicking(tile.key)}
                       onChooseFigures={() => setPickingFigures(true)}
+                      onPickDay={setPickedDay}
+                      onOpenAllBills={() => setShowingBills(true)}
                       allocationMode={allocationMode}
                       onAllocationMode={setAllocationMode}
                       accountId={pickedId('account_balance_history', 'accountId')}
@@ -2312,6 +2560,8 @@ export function Overview(): ReactNode {
                 chosen={chosenFor(tile)}
                 onChoose={() => setPicking(tile.key)}
                 onChooseFigures={() => setPickingFigures(true)}
+                onPickDay={setPickedDay}
+                onOpenAllBills={() => setShowingBills(true)}
                 allocationMode={allocationMode}
                 onAllocationMode={setAllocationMode}
                 accountId={pickedId('account_balance_history', 'accountId')}

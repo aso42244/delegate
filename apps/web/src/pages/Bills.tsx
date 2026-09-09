@@ -4,7 +4,7 @@ import { useMemo, useState, type ReactNode } from 'react';
 import { recurringApi, type BillDto, type BillStatus } from '../api/recurring.js';
 import { ApiError } from '../api/client.js';
 import { BillRowMenu } from '../components/BillRowMenu.jsx';
-import { Disclosure, EmptyState, PageHeader } from '../components/layout.jsx';
+import { Disclosure, EmptyState } from '../components/layout.jsx';
 import { Alert, Button } from '../components/ui.jsx';
 import { NARROW, useMediaQuery } from '../useMediaQuery.js';
 
@@ -215,7 +215,14 @@ function Hidden({
   );
 }
 
-export function Bills(): ReactNode {
+/**
+ * The Due half of Recurring: what is coming, and what did not come.
+ *
+ * Not a page any more — Recurring owns the header and the switch, because Bills
+ * and Utilities were two sidebar entries describing the same merchants two ways,
+ * and Electricity lived on both.
+ */
+export function BillsView(): ReactNode {
   const [search, setSearch] = useState('');
   const [problem, setProblem] = useState<string | null>(null);
   const bills = useQuery({ queryKey: ['recurring'], queryFn: recurringApi.list });
@@ -243,22 +250,20 @@ export function Bills(): ReactNode {
   return (
     <div>
       {/*
-        The subtitle states the current fact, which for this page is the count
-        and whether any of it needs attention — never an explanation of how the
-        detection works. That belongs in the ADR, not on the screen every day.
+        The current fact — the count, and whether any of it needs attention.
+        Never an explanation of how the detection works: that belongs in the ADR
+        rather than on the screen every day.
+
+        It sits above the search rather than in a page subtitle, because the page
+        header now belongs to Recurring and names both halves.
       */}
-      <PageHeader
-        title="Bills"
-        subtitle={
-          bills.isLoading
-            ? undefined
-            : all.length === 0
-              ? undefined
-              : overdue > 0
-                ? `${all.length} recurring, ${overdue} overdue.`
-                : `${all.length} recurring.`
-        }
-      />
+      {!bills.isLoading && all.length > 0 && (
+        <p className="mb-4 text-quiet text-muted">
+          {overdue > 0
+            ? `${all.length} recurring, ${overdue} overdue.`
+            : `${all.length} recurring.`}
+        </p>
+      )}
 
       <div className="mb-4 flex flex-wrap items-center gap-2">
         <input

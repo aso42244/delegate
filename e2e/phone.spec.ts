@@ -16,7 +16,7 @@ test.describe('on a phone', () => {
   test.use({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
 
   test('navigation is a tab bar, and the sidebar is gone', async ({ signedIn: page }) => {
-    await page.goto('/');
+    await page.goto('/budget');
 
     const tabs = page.getByRole('navigation', { name: 'Pages' });
     await expect(tabs).toBeVisible();
@@ -60,7 +60,7 @@ test.describe('on a phone', () => {
     await expect(page.getByRole('dialog')).toHaveCount(0);
     await expect(chip).toHaveText('Grocery');
 
-    await page.goto('/');
+    await page.goto('/budget');
     await expect(page.getByRole('button', { name: 'Grocery balance' })).toContainText('-$42.10');
   });
 
@@ -169,7 +169,7 @@ test.describe('on a phone', () => {
    */
   test('controls that hide on hover are reachable', async ({ signedIn: page, api }) => {
     await makeDelegation(api, 'Grocery');
-    await page.goto('/');
+    await page.goto('/budget');
 
     await expect(page.getByRole('button', { name: 'Options for Grocery' })).toBeVisible();
   });
@@ -205,10 +205,11 @@ test.describe('at 390px, on every screen', () => {
   test.use({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
 
   const ROUTES = [
+    // The root, which resolves to whichever page this person lands on.
     '/',
+    '/budget',
     '/transactions',
-    '/utilities',
-    '/insights',
+    '/recurring?view=cost',
     '/settings/sync',
     '/settings/accounts',
     '/settings/delegations',
@@ -259,7 +260,7 @@ test.describe('at 390px, on every screen', () => {
     api,
   }) => {
     await makeDelegation(api, 'Groceries', '80000');
-    await page.goto('/');
+    await page.goto('/budget');
 
     const trigger = page.getByRole('button', { name: 'Options for Groceries' });
 
@@ -298,22 +299,14 @@ test.describe('at 390px, on every screen', () => {
    * reorder was one that could not be performed there — and the drag handle was
    * still drawn, a grip on nothing.
    */
-  test('a tile can be reordered, and the drag handle is not drawn', async ({ signedIn: page }) => {
-    await page.goto('/insights');
-    await expect(page.locator('section h2').nth(1)).toBeVisible();
-
-    const titles = (): Promise<string[]> => page.locator('section h2').allInnerTexts();
-    const second = (await titles())[1]!;
-
-    // The arrows are visible without a hover, because there is none to give.
-    const up = page.getByRole('button', { name: `Move ${second} earlier` });
-    await expect(up).toBeVisible();
-    await up.tap();
-    await expect.poll(async () => (await titles())[0]).toBe(second);
-
-    // And the handle, which only a pointer can use, is not taking up room.
-    await expect(page.locator('.pointer-only').first()).not.toBeVisible();
-  });
+  /*
+   * The Insights reorder test that stood here is gone with the page.
+   *
+   * The property it protected is Overview's now, and stronger: HTML5 drag fires
+   * no events under a thumb, so the buttons are the route that always works —
+   * `overview.spec.ts` asserts an arrangement made with them survives a reload,
+   * and that a drag begun anywhere but the grip does nothing.
+   */
 
   test('nothing is clipped by the edge of the screen', async ({ signedIn: page, api }) => {
     await household(api);
@@ -398,7 +391,7 @@ test.describe('at 390px, on every screen', () => {
  */
 test('the sidebar is only as wide as the longest thing in it', async ({ signedIn: page }) => {
   await page.setViewportSize({ width: 1280, height: 800 });
-  await page.goto('/');
+  await page.goto('/budget');
 
   const sidebar = page.getByRole('navigation', { name: 'Main' });
   const box = await sidebar.boundingBox();

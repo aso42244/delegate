@@ -22,6 +22,8 @@ import { dismissDuplicate, findDuplicates } from '../domain/duplicates.js';
 import { suggestDelegations } from '../domain/suggestions.js';
 import { booleanQuery, centsInLoose, centsOut, dateOut } from '../http/serialize.js';
 import { AUTHENTICATED } from '../plugins/auth.js';
+import { householdTimezone } from '../domain/settings.js';
+import { localDayBounds } from '../domain/calendar.js';
 
 /**
  * The Transactions page.
@@ -40,6 +42,20 @@ const listQuerySchema = z.object({
   kind: z.enum(TRANSACTION_KINDS).optional(),
   dateFrom: z.coerce.date().optional(),
   dateTo: z.coerce.date().optional(),
+  /**
+   * One calendar day, `YYYY-MM-DD`, resolved in the **household's** zone.
+   *
+   * `dateFrom`/`dateTo` are instants, and a caller that wanted "what happened on
+   * the 3rd" had to work out the instants that bound the 3rd here — which needs
+   * the household's zone, which the browser does not necessarily share. Every
+   * day-shaped reading on Overview is bucketed server-side in that zone, so a
+   * client-computed window would disagree with the chart it was clicked from by
+   * the offset: an evening charge would be missing from the day it is drawn on.
+   */
+  day: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/)
+    .optional(),
   uncategorized: booleanQuery.optional(),
   pending: booleanQuery.optional(),
   includeArchived: booleanQuery.optional(),
@@ -128,8 +144,31 @@ export const transactionRoutes: FastifyPluginCallback = (fastify, _options, done
   }
 
   fastify.get('/api/transactions', async (request) => {
-    const query = listQuerySchema.parse(request.query ?? {});
-    const { transactions, total } = await listTransactions(prisma, query);
+    const { day, ...query } = listQuerySchema.parse(request.query ?? {});
+
+    /*
+     * A calendar day becomes the instants that bound it here, in the household's
+     * own zone — the same conversion every day-shaped reading on Overview uses,
+     * so a day clicked on a chart lists exactly the rows that drew it. Exclusive
+     * at the end, because `lte` on midnight would pull in the next day's first
+     * instant.
+     */
+    const bounded = day
+      ? await (async () => {
+          const timeZone = await householdTimezone(prisma, fastify.config.SCHEDULE_TIMEZONE);
+          /*
+           * `localDayBounds` resolves both ends by probing the offset actually in
+           * force, so a spring-forward day is 23 hours and an autumn one is 25.
+           * Adding 24 hours to the start would be wrong twice a year, in the
+           * direction that drops an hour of a day's charges.
+           */
+          const { start, end } = localDayBounds(new Date(`${day}T00:00:00.000Z`), timeZone);
+          // `dateTo` is inclusive, and `end` is the next day's first instant.
+          return { ...query, dateFrom: start, dateTo: new Date(end.getTime() - 1) };
+        })()
+      : query;
+
+    const { transactions, total } = await listTransactions(prisma, bounded);
 
     return {
       transactions: transactions.map(present),

@@ -76,6 +76,13 @@ export interface UtilityComparisonDto {
   readonly suggestedPerCycleCents: string;
   /** Null is an ad-hoc line with no standing amount, not one funded at zero. */
   readonly amountToDelegateCents: string | null;
+  /** The last twelve months of spending, oldest first, for the shape. */
+  readonly months: readonly string[];
+  /**
+   * The last twelve complete months against the twelve before, in basis points.
+   * Null is "not enough history to say", which is not the same as flat.
+   */
+  readonly trendBasisPoints: number | null;
 }
 
 export interface UtilitiesComparisonDto {
@@ -247,12 +254,41 @@ export interface AllocationSliceDto {
   readonly amountCents: string;
 }
 
+export type BillStatusDto = 'expected' | 'arrived' | 'due' | 'overdue' | 'lapsed';
+
 export interface UpcomingBillDto {
   readonly key: string;
   readonly name: string;
   readonly expectedNextAt: string;
   readonly typicalAmountCents: string;
   readonly delegationName: string | null;
+  /** The grouping colour of where it is filed, so it matches the rest of the page. */
+  readonly color: string | null;
+  readonly status: BillStatusDto;
+}
+
+/** A bill that is late, has apparently stopped, or costs more than it did. */
+export interface BillAttentionDto {
+  readonly key: string;
+  readonly name: string;
+  readonly status: BillStatusDto;
+  readonly color: string | null;
+  readonly amountCents: string;
+  /** What is wrong, in the fewest words that are still specific. */
+  readonly note: string;
+}
+
+/** What this cycle's recurring charges come to, and how much has gone. */
+export interface BillsThisCycleDto {
+  readonly paidCents: string;
+  readonly toComeCents: string;
+  readonly paidCount: number;
+  readonly totalCount: number;
+  readonly largestDue: {
+    readonly name: string;
+    readonly amountCents: string;
+    readonly expectedNextAt: string;
+  } | null;
 }
 
 export interface PickableDto {
@@ -278,6 +314,8 @@ export interface OverviewDataDto {
   readonly income_vs_spending_pace?: readonly PacePointDto[];
   readonly allocation?: readonly AllocationSliceDto[];
   readonly upcoming_bills?: readonly UpcomingBillDto[];
+  readonly bills_attention?: readonly BillAttentionDto[];
+  readonly bills_this_cycle?: BillsThisCycleDto;
   /** The panel's chosen lines. Empty until somebody picks some. */
   readonly panel?: readonly PanelLineDto[];
   /** Null when no payday anchor is set — then no tick is drawn at all. */

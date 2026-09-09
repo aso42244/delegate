@@ -8,43 +8,14 @@ import { expect, test, makeAccount, makeDelegation } from './fixtures.js';
  * column. So these drive the interface rather than the API.
  */
 
-test.describe('insights tiles', () => {
-  test('a tile can be drawn a different way, and remembers it', async ({ signedIn: page }) => {
-    await page.goto('/insights');
-
-    // A radio now rather than a toggle button: picking one of a few is what
-    // this is, and `toBeChecked` is the assertion that follows from saying so.
-    const donut = page.getByRole('radio', { name: 'Show Spending by grouping as Donut' });
-    await donut.click();
-    await expect(donut).toBeChecked();
-
-    await page.reload();
-    await expect(
-      page.getByRole('radio', { name: 'Show Spending by grouping as Donut' }),
-    ).toBeChecked();
-  });
-
-  test('drag a tile onto another and it takes that place', async ({ signedIn: page }) => {
-    await page.goto('/insights');
-
-    const titles = page.locator('section h2');
-    const third = (await titles.nth(2).innerText()).trim();
-
-    // HTML5 drag-and-drop: Playwright's dragTo drives the real events.
-    await page.locator('section').nth(2).dragTo(page.locator('section').first());
-
-    await expect(titles.first()).toContainText(third);
-    await page.reload();
-    await expect(page.locator('section h2').first()).toContainText(third);
-  });
-
-  /** A single number has one honest shape, so no switch is offered at all. */
-  test('a tile with one sensible shape offers no switch', async ({ signedIn: page }) => {
-    await page.goto('/insights');
-
-    await expect(page.getByRole('button', { name: /Show Uncategorized as/ })).toHaveCount(0);
-  });
-});
+/*
+ * The `insights tiles` block that stood here is gone with the page.
+ *
+ * It exercised per-tile display modes and drag reordering on Insights. Overview
+ * replaced both — its arrangement is per region with per-tile configuration, and
+ * `overview.spec.ts` asserts that a display choice and an arrangement each
+ * survive a reload against the endpoint that now holds them.
+ */
 
 test('a grouping takes a colour outside the five presets', async ({ signedIn: page, api }) => {
   await api.post('/api/groupings', { data: { name: 'Essentials', section: 'delegations' } });
@@ -91,7 +62,7 @@ test('an account nickname replaces the long name on the budget', async ({
 
   // The budget shows the short one; Settings keeps the full one, because that is
   // where identifying the account is the point.
-  await page.goto('/');
+  await page.goto('/budget');
   await expect(page.getByText('Costco Visa')).toBeVisible();
   await expect(page.getByText('Citibank Costco VISA', { exact: false })).toBeHidden();
 

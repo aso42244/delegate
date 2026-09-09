@@ -27,7 +27,7 @@ test('a manual transaction moves the account balance', async ({ signedIn }) => {
   await expect(signedIn.getByText('Farmers market')).toBeVisible();
 
   // Money out by default: $200.00 − $42.10.
-  await signedIn.goto('/');
+  await signedIn.goto('/budget');
   await expect(signedIn.getByRole('button', { name: 'Physical Cash balance' })).toContainText(
     '$157.90',
   );
@@ -46,7 +46,7 @@ test('money in raises the balance instead of lowering it', async ({ signedIn }) 
   await signedIn.getByRole('button', { name: 'Save' }).click();
 
   await expect(signedIn.getByRole('dialog')).toHaveCount(0);
-  await signedIn.goto('/');
+  await signedIn.goto('/budget');
   await expect(signedIn.getByRole('button', { name: 'Physical Cash balance' })).toContainText(
     '$275.00',
   );
@@ -70,7 +70,7 @@ test('a delegation chosen while entering is applied to the new row', async ({ si
   await signedIn.getByRole('button', { name: 'Save' }).click();
 
   await expect(signedIn.getByRole('dialog')).toHaveCount(0);
-  await signedIn.goto('/');
+  await signedIn.goto('/budget');
   await expect(signedIn.getByRole('button', { name: 'Grocery balance' })).toContainText('-$42.10');
 });
 
@@ -123,7 +123,7 @@ test('a split must add up before it can be saved', async ({ signedIn, api }) => 
   await save.click();
 
   await expect(signedIn.getByRole('dialog')).toHaveCount(0);
-  await signedIn.goto('/');
+  await signedIn.goto('/budget');
   await expect(signedIn.getByRole('button', { name: 'Grocery balance' })).toContainText('-$60.00');
   await expect(signedIn.getByRole('button', { name: 'Household balance' })).toContainText(
     '-$40.00',
@@ -170,7 +170,7 @@ test('splitting evenly hands the odd cent to the first line', async ({ signedIn,
   await signedIn.getByRole('button', { name: 'Save split' }).click();
 
   await expect(signedIn.getByRole('dialog')).toHaveCount(0);
-  await signedIn.goto('/');
+  await signedIn.goto('/budget');
   await expect(signedIn.getByRole('button', { name: 'Grocery balance' })).toContainText('-$33.34');
   await expect(signedIn.getByRole('button', { name: 'Fuel balance' })).toContainText('-$33.33');
 });
@@ -199,7 +199,7 @@ test('a transaction can be entered from the Budget page, which then updates', as
   await makeAccount('Physical Cash', 'asset', 20000n);
   await makeDelegation(api, 'Grocery');
 
-  await signedIn.goto('/');
+  await signedIn.goto('/budget');
   await expect(signedIn.getByRole('button', { name: 'Physical Cash balance' })).toContainText(
     '$200.00',
   );
@@ -230,7 +230,7 @@ test('the Budget page picker does not offer outstanding checks', async ({ signed
   await makeAccount('Everyday Checking', 'asset', 500000n);
   await makeDelegation(api, 'Grocery', '40000');
 
-  await signedIn.goto('/');
+  await signedIn.goto('/budget');
   await signedIn.getByRole('button', { name: 'New check' }).click();
 
   const checkDialog = signedIn.getByRole('dialog');

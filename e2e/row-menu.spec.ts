@@ -12,7 +12,7 @@ import { expect, makeDelegation, test } from './fixtures.js';
 
 test('the menu is reachable and names the line', async ({ signedIn, api }) => {
   await makeDelegation(api, 'Grocery');
-  await signedIn.goto('/');
+  await signedIn.goto('/budget');
 
   await signedIn.getByRole('button', { name: 'Options for Grocery' }).click();
   await expect(signedIn.getByRole('menu', { name: 'Options for Grocery' })).toBeVisible();
@@ -28,7 +28,7 @@ test('the menu is reachable and names the line', async ({ signedIn, api }) => {
  */
 test('the menu opens from the keyboard alone', async ({ signedIn, api }) => {
   await makeDelegation(api, 'Grocery');
-  await signedIn.goto('/');
+  await signedIn.goto('/budget');
 
   await signedIn.getByRole('button', { name: 'Options for Grocery' }).focus();
   await signedIn.keyboard.press('Enter');
@@ -38,7 +38,7 @@ test('the menu opens from the keyboard alone', async ({ signedIn, api }) => {
 
 test('Escape closes the menu', async ({ signedIn, api }) => {
   await makeDelegation(api, 'Grocery');
-  await signedIn.goto('/');
+  await signedIn.goto('/budget');
 
   await signedIn.getByRole('button', { name: 'Options for Grocery' }).click();
   await expect(signedIn.getByRole('menu')).toBeVisible();
@@ -49,7 +49,7 @@ test('Escape closes the menu', async ({ signedIn, api }) => {
 
 test('rename changes the line everywhere', async ({ signedIn, api }) => {
   await makeDelegation(api, 'Grocery');
-  await signedIn.goto('/');
+  await signedIn.goto('/budget');
 
   await signedIn.getByRole('button', { name: 'Options for Grocery' }).click();
   await signedIn.getByRole('menuitem', { name: 'Rename' }).click();
@@ -65,7 +65,7 @@ test('a manual adjustment records a movement, not a new total', async ({ signedI
   // Start it somewhere other than zero, so a delta and an absolute would differ.
   await api.post(`/api/delegations/${id}/adjust`, { data: { deltaCents: '65000' } });
 
-  await signedIn.goto('/');
+  await signedIn.goto('/budget');
   await expect(signedIn.getByRole('button', { name: 'Grocery balance' })).toContainText('$650.00');
 
   await signedIn.getByRole('button', { name: 'Options for Grocery' }).click();
@@ -87,7 +87,7 @@ test('history shows the adjustment, which the Transactions page never does', asy
   const id = await makeDelegation(api, 'Grocery');
   await api.post(`/api/delegations/${id}/adjust`, { data: { deltaCents: '2500' } });
 
-  await signedIn.goto('/');
+  await signedIn.goto('/budget');
   await signedIn.getByRole('button', { name: 'Options for Grocery' }).click();
   await signedIn.getByRole('menuitem', { name: 'History for this line' }).click();
 
@@ -107,7 +107,7 @@ test('archiving is refused while the line still holds money, and offers a way ou
   const id = await makeDelegation(api, 'Grocery');
   await api.post(`/api/delegations/${id}/adjust`, { data: { deltaCents: '2500' } });
 
-  await signedIn.goto('/');
+  await signedIn.goto('/budget');
   await signedIn.getByRole('button', { name: 'Options for Grocery' }).click();
   await signedIn.getByRole('menuitem', { name: 'Archive' }).click();
 
@@ -128,7 +128,7 @@ test('an empty line archives and leaves the table', async ({ signedIn, api }) =>
   await makeDelegation(api, 'Grocery');
   await makeDelegation(api, 'Household');
 
-  await signedIn.goto('/');
+  await signedIn.goto('/budget');
   await signedIn.getByRole('button', { name: 'Options for Grocery' }).click();
   await signedIn.getByRole('menuitem', { name: 'Archive' }).click();
 
@@ -138,7 +138,7 @@ test('an empty line archives and leaves the table', async ({ signedIn, api }) =>
 
 test('a line can be moved into a grouping created on this page', async ({ signedIn, api }) => {
   await makeDelegation(api, 'Grocery');
-  await signedIn.goto('/');
+  await signedIn.goto('/budget');
 
   await signedIn.getByRole('button', { name: 'New grouping' }).click();
   await signedIn.getByLabel('New grouping').fill('Essentials');
@@ -159,7 +159,7 @@ test('a line can be moved into a grouping created on this page', async ({ signed
 
 test('the utility toggle sticks', async ({ signedIn, api }) => {
   await makeDelegation(api, 'Water');
-  await signedIn.goto('/');
+  await signedIn.goto('/budget');
 
   await signedIn.getByRole('button', { name: 'Options for Water' }).click();
   const toggle = signedIn.getByRole('switch', { name: 'Water is a utility' });
@@ -176,7 +176,7 @@ test('the utility toggle sticks', async ({ signedIn, api }) => {
 
 test('a note is written, shown in the menu, and can be cleared', async ({ signedIn, api }) => {
   await makeDelegation(api, 'Car Insurance');
-  await signedIn.goto('/');
+  await signedIn.goto('/budget');
 
   await signedIn.getByRole('button', { name: 'Options for Car Insurance' }).click();
   await signedIn.getByRole('menuitem', { name: 'Add a note' }).click();
@@ -207,7 +207,7 @@ test('the row menu stays on screen at the bottom of a long table', async ({ sign
     await makeDelegation(api, `Line ${String(index).padStart(2, '0')}`);
   }
   await signedIn.setViewportSize({ width: 1280, height: 700 });
-  await signedIn.goto('/');
+  await signedIn.goto('/budget');
 
   const last = signedIn.getByRole('button', { name: 'Options for Line 24' });
   await last.scrollIntoViewIfNeeded();
@@ -233,7 +233,7 @@ test('the row menu stays on screen at the bottom of a long table', async ({ sign
 test('the row menu still opens downwards where there is room', async ({ signedIn, api }) => {
   await makeDelegation(api, 'Grocery');
   await signedIn.setViewportSize({ width: 1280, height: 900 });
-  await signedIn.goto('/');
+  await signedIn.goto('/budget');
 
   const trigger = signedIn.getByRole('button', { name: 'Options for Grocery' });
   await trigger.click();

@@ -1149,3 +1149,64 @@ They are left at their existing values rather than quietly adjusted — changing
 settled specification as a side effect of deleting a theme is the drift ADR 048
 exists to catch — and **whether to tighten them is an open question** rather than
 a closed one.
+
+## The navigation, and where a person lands
+
+**Overview is the first destination and Budget the second.** Overview is the
+daily read and Budget is where the work happens — a quick review, then the full
+inspection — and the order is the order they are used in.
+
+**Insights is gone.** Overview replaced it: the same catalogue, arranged per
+region with per-tile configuration, a docked budget beside it, and its period in
+the URL rather than in component state. `/insights` redirects to `/overview`,
+which is the same promise `/bills` and `/utilities` make — the thing a bookmark
+pointed at still exists, in better form.
+
+**Bills and Utilities are one destination, Recurring**
+([ADR 055](decisions/055-bills-and-utilities-are-one-page.md)). Six entries
+where there were eight, and the tab bar's columns still come from the page list
+rather than a number written beside it — six tabs at 390px give each 65px, which
+is what the list was sized for.
+
+**Where somebody lands is per person, and it is a redirect rather than a page.**
+`/` was the Budget page's own address, which is exactly why a landing preference
+could not have worked before: a preference can only ever redirect _away_ from a
+root that is already something. Budget has `/budget` now and `/` resolves to
+whichever page this person chose.
+
+Two choices, not every page: a landing page answers a whole question, and
+Overview and Budget are the two that do. Landing somebody on Rules is a setting
+nobody wants and one more thing to keep working.
+
+**Null means "never chose", which is not the same as having chosen the
+default.** The column stores no default, so the default can move later without
+overriding a decision somebody made. It sits beside the display name on
+Settings → Users, because both are yours to set whatever role you hold and
+neither is a credential — an Admin cannot set either for somebody else, which is
+the point when two people read the same budget for different reasons.
+
+## Motion
+
+**Motion is for continuity, never for decoration.** A thing that moves is
+telling the reader that it is the same thing in a new place — a panel opening, a
+row leaving a list, a tile landing where it was dropped. Anything that moves
+without saying that is a delay somebody has to wait through, several times a
+day, on a page they read every morning.
+
+**The durations are 120ms for a state change and 200ms for something entering or
+leaving.** Under 120 reads as an abrupt swap rather than a movement; over 200 is
+felt as waiting. Two values, because a scale with more is one nobody applies
+consistently — the same reasoning as the spacing scale in `ui-system.md` §1.
+
+**Ease out, never ease in.** A thing arriving should decelerate into place; a
+thing that accelerates away from the reader's eye reads as a stutter.
+
+**Nothing animates that carries a figure.** A number that counts up cannot be
+read while it does, and a balance that slides into place is one somebody waits to
+trust. Money appears.
+
+**`prefers-reduced-motion` removes it all**, and is honoured at the token rather
+than per component — a rule each component opts into is one a component forgets.
+The interface must be complete and correct with every transition set to zero,
+which is also how it is tested: nothing may be conveyed by movement alone, for
+the same reason nothing is conveyed by colour alone (§9).

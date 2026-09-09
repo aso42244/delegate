@@ -55,6 +55,13 @@ export interface TransactionFilters {
   readonly accountId?: string | undefined;
   readonly delegationId?: string | undefined;
   readonly kind?: string | undefined;
+  /**
+   * One calendar day, `YYYY-MM-DD`, resolved in the household's zone by the
+   * server. Not a pair of instants: the browser's zone is not necessarily the
+   * household's, and a window computed here would disagree with the chart the
+   * day was clicked from by the offset between them.
+   */
+  readonly day?: string | undefined;
   readonly uncategorized?: boolean | undefined;
   readonly pending?: boolean | undefined;
   readonly limit?: number | undefined;

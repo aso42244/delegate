@@ -18,6 +18,6 @@ test('sign out ends the session and returns to the login screen', async ({ signe
   await expect(page.getByLabel('Username')).toBeVisible();
 
   // And the budget is genuinely out of reach, not merely off-screen.
-  await page.goto('/');
+  await page.goto('/budget');
   await expect(page.getByLabel('Username')).toBeVisible();
 });

@@ -343,7 +343,7 @@ test('a collapsed grouping folds at once and is still folded after a reload', as
 }) => {
   await makeDelegation(api, 'Grocery');
   await api.post('/api/groupings', { data: { name: 'Essentials', section: 'delegations' } });
-  await signedIn.goto('/');
+  await signedIn.goto('/budget');
 
   await signedIn.getByRole('button', { name: 'Options for Grocery' }).click();
   await signedIn.getByRole('menuitem', { name: 'Move to grouping' }).click();
@@ -409,7 +409,7 @@ test('Transfer lists delegations grouped as the page groups them', async ({ sign
   await api.patch(`/api/delegations/${grocery}`, { data: { groupingId: essentials } });
   await api.patch(`/api/delegations/${dining}`, { data: { groupingId: fun } });
 
-  await signedIn.goto('/');
+  await signedIn.goto('/budget');
   await signedIn.getByRole('button', { name: 'Transfer' }).click();
 
   const from = signedIn
@@ -549,7 +549,7 @@ test('the reading states itself, and shows its working on demand', async ({ sign
   await makeAccount('Frontier Checking', 'asset', 100_000n);
   await makeDelegation(api, 'Grocery', '40000');
 
-  await signedIn.goto('/');
+  await signedIn.goto('/budget');
 
   const reading = signedIn.getByRole('status');
   await expect(reading).toHaveText('To delegate $1,000.00');
@@ -609,7 +609,7 @@ test('every pill keeps its detail inside the viewport', async ({ signedIn, api }
   await makeDelegation(api, 'Grocery', '40000');
 
   await signedIn.setViewportSize({ width: 1280, height: 800 });
-  await signedIn.goto('/');
+  await signedIn.goto('/budget');
 
   // Notification pills are links and the budget's own reading is a status, so
   // the thing they share is the detail they describe — not a role.
@@ -645,7 +645,7 @@ test('a pill keeps its detail inside a phone screen', async ({ signedIn, api }) 
   await makeDelegation(api, 'Grocery', '40000');
 
   await signedIn.setViewportSize({ width: 390, height: 844 });
-  await signedIn.goto('/');
+  await signedIn.goto('/budget');
 
   const pill = signedIn.locator('header [aria-describedby]').first();
   await pill.hover();

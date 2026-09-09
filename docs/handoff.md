@@ -956,6 +956,31 @@ in [ADR 053](decisions/053-a-pace-bar-reads-two-marks-not-one.md).
   Checked the same day: no other route in `apps/api/src/routes` selects a column
   and then drops it when mapping the response.
 
+- **A field added to a model is a field every narrow `select` has to be checked
+  against.** `landing_page` was added, written correctly, and read back as null
+  on every request — because `requireSession` builds `currentUser` from its own
+  select and that one had not been touched. The root then redirected to the
+  default however anybody chose. **This is the second time in two releases**:
+  `region` was stored, selected and re-flowed by, then dropped on the way out of
+  the layout response. Both were caught end-to-end rather than anywhere nearer.
+
+  Grep the model's field name across `apps/api/src` the same day you add it, and
+  read every `select` that comes back.
+
+- **Bills and Utilities are one page called Recurring**
+  ([ADR 055](decisions/055-bills-and-utilities-are-one-page.md)). Two views —
+  Due watches time, Cost judges amount — because neither answer is in the other,
+  and one entry because Electricity was on both pages described two ways. The
+  glance is five tiles on Overview; the page is where something is changed.
+
+  **Widening a window changes every average taken from it.** Utilities now
+  fetches twenty-four months for the trend, and the first cut of that let the
+  longer window into the average — eleven months of bills averaged over twelve,
+  on a household whose history is shorter than the window. The suggestion moved
+  without anything about the household having changed. The existing tests caught
+  it, which is what they were for; the fix is to slice to the months the page
+  draws _before_ filtering for complete ones.
+
 - **The pace bar splits at a fixed 80%** — what this cycle had to spend on the
   left, overspending past it on the right ([ADR 054](decisions/054-the-pace-bar-measures-what-the-cycle-had.md),
   amending 053, after the two-zone version shipped and the owner used it). What

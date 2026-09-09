@@ -88,7 +88,7 @@ test('dragging a delegation into a grouping moves it', async ({ signedIn, api })
   await makeDelegation(api, 'Grocery');
   await api.post('/api/groupings', { data: { name: 'Essentials', section: 'delegations' } });
 
-  await signedIn.goto('/');
+  await signedIn.goto('/budget');
   await expect(signedIn.getByRole('button', { name: /Essentials/ })).toBeVisible();
 
   // The row is the drag source; the grouping header is the target.
@@ -106,7 +106,7 @@ test('the row menu remains the route that works without a mouse', async ({ signe
   await makeDelegation(api, 'Grocery');
   await api.post('/api/groupings', { data: { name: 'Essentials', section: 'delegations' } });
 
-  await signedIn.goto('/');
+  await signedIn.goto('/budget');
   await signedIn.getByRole('button', { name: 'Options for Grocery' }).focus();
   await signedIn.keyboard.press('Enter');
   await signedIn.getByRole('menuitem', { name: 'Move to grouping' }).click();
@@ -156,7 +156,7 @@ test('a line is moved with the row menu, and stays there for everyone', async ({
   const NAMES = ['Apples', 'Bananas', 'Cherries'];
   for (const name of NAMES) await makeDelegation(api, name);
 
-  await signedIn.goto('/');
+  await signedIn.goto('/budget');
   // Alphabetical to begin with, which is what the backfill preserves.
   expect(await order(signedIn, NAMES)).toEqual(['Apples', 'Bananas', 'Cherries']);
 
@@ -176,7 +176,7 @@ test('the top line cannot be moved above itself', async ({ signedIn, api }) => {
   const NAMES = ['Apples', 'Bananas'];
   for (const name of NAMES) await makeDelegation(api, name);
 
-  await signedIn.goto('/');
+  await signedIn.goto('/budget');
   await signedIn.getByRole('button', { name: 'Options for Apples' }).click();
   await signedIn.getByRole('menuitem', { name: 'Move up' }).click();
 
@@ -197,7 +197,7 @@ test('dragging an account reorders the Assets section', async ({ signedIn }) => 
   await makeAccount('Savings', 'asset', 900000n);
   await makeAccount('Checking', 'asset', 480000n);
 
-  await signedIn.goto('/');
+  await signedIn.goto('/budget');
   await expect(signedIn.getByRole('button', { name: 'Checking balance' })).toBeVisible();
 
   // Alphabetical until something is moved: Checking, then Savings.
@@ -213,7 +213,7 @@ test('the account row menu is the route that works without a mouse', async ({ si
   await makeAccount('Savings', 'asset', 900000n);
   await makeAccount('Checking', 'asset', 480000n);
 
-  await signedIn.goto('/');
+  await signedIn.goto('/budget');
   await signedIn.getByRole('button', { name: 'Options for Savings' }).click();
   await signedIn.getByRole('menuitem', { name: 'Move up' }).click();
 
@@ -259,7 +259,7 @@ test('a row can be dropped at the end of a list', async ({ signedIn }) => {
   await makeAccount('Checking', 'asset', 480000n);
   await makeAccount('Savings', 'asset', 900000n);
 
-  await signedIn.goto('/');
+  await signedIn.goto('/budget');
   const assets = signedIn.getByRole('table').filter({ hasText: 'Assets' });
   await expect(assets.getByRole('row').filter({ hasText: 'Cash' })).toBeVisible();
 
@@ -293,7 +293,7 @@ test('a heading can be dropped past the rows of the last grouping', async ({ sig
   );
   await api.patch(`/api/delegations/${grocery}`, { data: { groupingId: target.id } });
 
-  await signedIn.goto('/');
+  await signedIn.goto('/budget');
   await expect(signedIn.getByRole('row').filter({ hasText: 'Long term' })).toBeVisible();
 
   /*

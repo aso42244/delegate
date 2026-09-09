@@ -162,7 +162,16 @@ export const test = base.extend<BudgetFixtures>({
       );
     }
 
-    await page.goto('/');
+    /*
+     * The fixture's contract is "signed in, on the budget page".
+     *
+     * It used to be `/`, which was the Budget page's own address — so every
+     * spec that opens with an assertion about the budget was relying on that
+     * coincidence. The root is a redirect now, to whichever page this person
+     * lands on, so the destination is named here instead. A spec that is about
+     * *landing* navigates to `/` itself.
+     */
+    await page.goto('/budget');
     await use(page);
   },
 

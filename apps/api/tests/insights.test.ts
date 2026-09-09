@@ -19,7 +19,6 @@ import {
   markTwoFactorEnrolled,
   resetDatabase,
 } from './helpers.js';
-import { sessionCookie } from './http.js';
 
 /**
  * Insights.
@@ -31,7 +30,6 @@ import { sessionCookie } from './http.js';
  */
 
 let app: FastifyInstance;
-let cookie: string;
 
 const OWNER = { username: 'owner', password: 'correct-horse-battery' };
 const NOW = new Date('2026-08-09T12:00:00Z');
@@ -61,8 +59,10 @@ afterAll(async () => {
 
 beforeEach(async () => {
   await resetDatabase();
-  const response = await app.inject({ method: 'POST', url: '/api/auth/setup', payload: OWNER });
-  cookie = sessionCookie(response.headers);
+  // The owner still has to exist: these builders read a household's data, and
+  // `resetDatabase` leaves none. Nothing here signs in any more — the routes
+  // went with the page, and the builders are called directly.
+  await app.inject({ method: 'POST', url: '/api/auth/setup', payload: OWNER });
   await markTwoFactorEnrolled();
 });
 
@@ -231,97 +231,19 @@ describe('the other widgets', () => {
   });
 });
 
-describe('the layout', () => {
-  it('starts empty and is saved per user', async () => {
-    const before = await app.inject({
-      method: 'GET',
-      url: '/api/insights/layout',
-      headers: { cookie },
-    });
-    expect(before.json<{ chosen: unknown[] }>().chosen).toEqual([]);
-
-    const saved = await app.inject({
-      method: 'PUT',
-      url: '/api/insights/layout',
-      headers: { cookie },
-      payload: { widgets: ['uncategorized_backlog', 'asset_debt_composition'] },
-    });
-    expect(saved.statusCode).toBe(200);
-
-    const after = await app.inject({
-      method: 'GET',
-      url: '/api/insights/layout',
-      headers: { cookie },
-    });
-    // Order is part of the layout, so it comes back in the order it was set.
-    // Order is part of the layout, and so is the chart each tile is drawn as;
-    // a bare key means "its usual chart".
-    expect(after.json<{ chosen: { key: string; display: string | null }[] }>().chosen).toEqual([
-      { key: 'uncategorized_backlog', display: null },
-      { key: 'asset_debt_composition', display: null },
-    ]);
-  });
-
-  it('remembers the chart a tile is drawn as', async () => {
-    await app.inject({
-      method: 'PUT',
-      url: '/api/insights/layout',
-      headers: { cookie },
-      payload: { widgets: [{ key: 'spending_by_grouping', display: 'donut' }] },
-    });
-
-    const after = await app.inject({
-      method: 'GET',
-      url: '/api/insights/layout',
-      headers: { cookie },
-    });
-    expect(after.json<{ chosen: { key: string; display: string | null }[] }>().chosen).toEqual([
-      { key: 'spending_by_grouping', display: 'donut' },
-    ]);
-  });
-
-  /**
-   * A donut of a single number says nothing. Refused rather than stored and
-   * quietly ignored at render time, which would look like the setting not
-   * working.
-   */
-  it('refuses a chart the widget cannot be drawn as', async () => {
-    const response = await app.inject({
-      method: 'PUT',
-      url: '/api/insights/layout',
-      headers: { cookie },
-      payload: { widgets: [{ key: 'uncategorized_backlog', display: 'donut' }] },
-    });
-
-    expect(response.json<{ ok: boolean; mismatched: string[] }>()).toMatchObject({
-      ok: false,
-      mismatched: ['uncategorized_backlog:donut'],
-    });
-  });
-
-  it('refuses a widget that is not in the catalog', async () => {
-    const response = await app.inject({
-      method: 'PUT',
-      url: '/api/insights/layout',
-      headers: { cookie },
-      payload: { widgets: ['not_a_widget'] },
-    });
-
-    expect(response.json<{ ok: boolean }>().ok).toBe(false);
-    const layout = await app.inject({
-      method: 'GET',
-      url: '/api/insights/layout',
-      headers: { cookie },
-    });
-    // Nothing was written.
-    expect(layout.json<{ chosen: string[] }>().chosen).toEqual([]);
-  });
-
-  it('requires a session', async () => {
-    const response = await app.inject({ method: 'GET', url: '/api/insights' });
-    expect(response.statusCode).toBe(401);
-  });
-});
+/*
+ * The `describe('the layout')` block that stood here is gone with the route.
+ *
+ * It exercised `/api/insights/layout`, which Overview's own layout replaced —
+ * per region, per tile configuration, and a catalogue three times the size. The
+ * property it protected, that an arrangement is per person and survives a
+ * reload, is asserted in `overview.test.ts` against the endpoint that now holds
+ * it.
+ *
+ * `insight_layouts` is still in the database and still holds whatever anybody
+ * arranged. Nothing reads it; dropping it would destroy an arrangement somebody
+ * made, and keeping it costs a table.
+ */
 
 /**
  * Bitcoin over time.

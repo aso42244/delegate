@@ -69,12 +69,19 @@ export const api = {
 // --- Shapes the server returns -------------------------------------------
 
 export type UserRole = 'user' | 'admin' | 'super_admin';
+export type LandingPage = 'overview' | 'budget';
 
 export interface SessionUser {
   readonly id: string;
   readonly username: string;
   /** What to call them on screen. Null falls back to the username. */
   readonly displayName: string | null;
+  /**
+   * Where they land. Null is "never chose", which is not the same as having
+   * chosen the default — it is what lets the default move without overriding a
+   * decision somebody made.
+   */
+  readonly landingPage: LandingPage | null;
   readonly role: UserRole;
   readonly mustChangePassword: boolean;
   /** The household requires a second factor and this account has none. */
@@ -151,6 +158,13 @@ export const authApi = {
   /** Your own, whatever role you hold: it is not a credential. */
   setDisplayName: (displayName: string | null) =>
     api.patch<{ user: SessionUser }>('/api/auth/me', { displayName }),
+
+  /**
+   * Where you land, which is yours alone — an Admin cannot set it for somebody
+   * else. Null clears the choice and returns to the default.
+   */
+  setLandingPage: (landingPage: LandingPage | null) =>
+    api.patch<{ user: SessionUser }>('/api/auth/me', { landingPage }),
 
   totpStatus: () => api.get<TotpStatusDto>('/api/auth/totp'),
   totpBegin: (currentPassword: string) =>

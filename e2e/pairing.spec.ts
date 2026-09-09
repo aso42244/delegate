@@ -90,7 +90,7 @@ test('pairing returns a delegation that had been moved', async ({ signedIn, api 
   await makeTransaction(api, card, '50000', 'Payment received', '2026-08-03T00:00:00Z');
   await api.post(`/api/transactions/${out}/categorize`, { data: { delegationId: grocery } });
 
-  await signedIn.goto('/');
+  await signedIn.goto('/budget');
   await expect(signedIn.getByRole('button', { name: 'Grocery balance' })).toContainText('-$500.00');
 
   await signedIn.goto('/transactions');
@@ -99,7 +99,7 @@ test('pairing returns a delegation that had been moved', async ({ signedIn, api 
     .click();
   await expect(signedIn.getByText('possible transfer')).toHaveCount(0);
 
-  await signedIn.goto('/');
+  await signedIn.goto('/budget');
   // No money left the household, so the envelope is back where it started.
   await expect(signedIn.getByRole('button', { name: 'Grocery balance' })).toContainText('$0.00');
 });

@@ -116,6 +116,16 @@ export const OVERVIEW_TILES = [
   'income_vs_spending_pace',
   'allocation',
   'upcoming_bills',
+  'bills_this_cycle',
+
+  /*
+   * The recurring reads, drawn from the same pass over the register that Bills
+   * and Utilities use. Two of them are exception lists — usually empty, and
+   * worth their space precisely on the weeks they are not.
+   */
+  'bills_attention',
+  'utilities_trend',
+  'utilities_adjust',
 
   /* The two that ask "which one", and carry a picker to answer it. */
   'account_balance_history',
@@ -645,7 +655,16 @@ export async function buildOverview(
         )
       : undefined,
     wanted.has('asset_debt_composition') ? buildComposition(db) : undefined,
-    wanted.has('utilities_vs_delegated') ? buildUtilities(db, options.timeZone, now) : undefined,
+    /*
+     * One pass serves all three utility tiles — funded-against-actual, the
+     * trend, and what is worth adjusting are three readings of the same
+     * twenty-four months.
+     */
+    wanted.has('utilities_vs_delegated') ||
+    wanted.has('utilities_trend') ||
+    wanted.has('utilities_adjust')
+      ? buildUtilities(db, options.timeZone, now)
+      : undefined,
     wanted.has('delegation_movers')
       ? buildMovers(db, { window: options.window, timeZone: options.timeZone }, now)
       : undefined,
