@@ -131,7 +131,7 @@ unaffected, and that is the ordinary deploy now.
 ([ADR 042](decisions/042-delegate-installs-anywhere-in-one-line.md)):
 `docker compose up -d` with nothing configured. Secrets are generated on first
 boot, the first account is claimed with a token from the logs, HTTPS is one flag,
-and the image is published multi-arch on version tags. The NAS is one deployment
+and the image is published on version tags. The NAS is one deployment
 of many rather than the deployment, and it keeps working — it adopts the secrets
 already in its `.env`.
 
@@ -1190,8 +1190,11 @@ Nothing from it is outstanding.
 ### Deployment
 
 **Since [ADR 042](decisions/042-delegate-installs-anywhere-in-one-line.md) there
-is a published image**, multi-arch and signed, built by a workflow that fires on
-version tags and runs no tests.
+is a published image**, signed and built by a workflow that fires on version tags
+and runs no tests. **`amd64` only since v0.63.0** — arm64 was emulated, slow, and
+then stopped finishing inside the 45-minute cap on a release that changed no
+dependency. An arm64 host builds from source, which is what the NAS did for
+twenty releases before ADR 042 and is therefore the better-exercised route.
 
 **Two things about a registry deploy.** It verifies the signature, so `cosign`
 has to be on the NAS — the README has the one command. And **`COMPOSE_PROFILES`
@@ -1200,7 +1203,7 @@ profile in `v0.41.0`, and a deploy that does not name it will not bring it back
 up.
 
 **The package is public, done on 2026-09-01 and verified** — an anonymous token
-is issued and the manifest lists `linux/amd64` and `linux/arm64`.
+is issued and the manifest lists `linux/amd64`.
 
 Worth keeping the reason it needed doing at all: GitHub publishes a workflow's
 package as **private** by default, whatever the repository's visibility. Until
@@ -1227,8 +1230,8 @@ deploys the artefact `npm run verify` was run against rather than recompiling it
 on a machine that has never run the tests.
 
 **A tag is not deployable the moment it is pushed, and there are _two_ ready
-signals rather than one.** The publish workflow takes about fifteen minutes — the
-arm64 half is emulated — and it pushes the image before it signs it, as separate
+signals rather than one.** The publish workflow takes a couple of minutes now
+that nothing is emulated, and it pushes the image before it signs it, as separate
 steps. So a version passes through two states on the way to deployable:
 
 1. **Not in the registry.** The pull fails with `manifest unknown`, which is true
@@ -1355,11 +1358,12 @@ are not negotiable by a request, whoever wrote it.
   `colima start` if a build reports no Docker daemon; `colima stop` gives the
   RAM back.
 
-  Two things it still does not prove. It produces an **arm64** image and the
-  DS220+ is x86_64, so it shows the Dockerfile is correct rather than that a
-  native module has a prebuilt binary for the NAS — which is why the NAS builds
-  its own from source (ADR 019). And `docker-compose.yml` is still reasoned about
-  rather than executed, so say so plainly when changing it.
+  Two things it still does not prove. It produces an **arm64** image on this
+  Mac and the DS220+ is x86_64, so it shows the Dockerfile is correct rather than
+  that a native module has a prebuilt binary for the NAS — which is why the NAS
+  builds its own from source (ADR 019), and why the _published_ image is built on
+  an x86_64 runner rather than here. And `docker-compose.yml` is still reasoned
+  about rather than executed, so say so plainly when changing it.
 
   **`tor/` is no longer in that category**, and the cost of it having been there
   is worth remembering. The image and its entrypoint shipped un-run, carrying

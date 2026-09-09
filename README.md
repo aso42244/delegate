@@ -280,9 +280,9 @@ dump failed silently for months because the directory was root's.
 
 ### Building it yourself
 
-The image is published for `amd64` and `arm64`, so there is normally nothing to
-build. To build from source anyway — an unreleased commit, or an architecture
-that is not published:
+The image is published for `amd64` only, so on an x86_64 host there is normally
+nothing to build. **On arm64 — a Raspberry Pi, an Apple Silicon Mac — build from
+source**, which is also what an unreleased commit needs:
 
 ```bash
 git clone https://github.com/aso42244/delegate.git && cd delegate \

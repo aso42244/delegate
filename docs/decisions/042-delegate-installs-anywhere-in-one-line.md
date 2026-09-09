@@ -65,6 +65,14 @@ which gets a Let's Encrypt certificate on first start and renews it unattended.
 a NAS, a cloud VM, a Raspberry Pi and an Apple Silicon Mac all run the same
 artefact.
 
+> **Amended in v0.63.0: `amd64` only.** arm64 was built under QEMU on an x86_64
+> runner, which meant compiling argon2 and Prisma emulated — fifteen minutes
+> against amd64's one — and on v0.63.0 it stopped finishing at all, hitting the
+> 45-minute cap twice on a release that changed no dependency. Nobody was pulling
+> it. An arm64 host builds from source, which is what ADR 019 describes and what
+> the NAS itself did for twenty releases, so it is the better-exercised route of
+> the two. One line and `setup-qemu-action` restore it.
+
 **Tor moves behind a profile.** Most deployments will never reach an onion
 address, and the minimum stack should be the minimum.
 
@@ -111,8 +119,9 @@ the justification no longer generalises to every address the image can reach.
 
 **ADR 019 — the image is built on the machine that runs it.** Superseded for the
 ordinary case. It existed because a Mac produces `arm64` images a DS220+ cannot
-run; a published multi-arch image solves that properly. Building locally stays
-supported and documented, and remains the answer for an unreleased commit.
+run; a published image solves that properly. Building locally stays supported and
+documented, and remains the answer for an unreleased commit — and, since v0.63.0
+dropped arm64 from the published image, for every arm64 host.
 
 **ADR 022 — the checks run here, not on GitHub.** Intact. `npm run verify` is
 still the only gate, and the publish workflow runs no tests. What returns to
