@@ -337,10 +337,19 @@ export function Toggle({
   checked,
   onChange,
   label,
+  disabled = false,
 }: {
   checked: boolean;
   onChange: (next: boolean) => void;
   label: string;
+  /**
+   * Refused rather than hidden.
+   *
+   * Where a set has a cap — four figures in the band — the options past it stay
+   * on screen and stop responding, so the limit reads as a state somebody has
+   * reached rather than as choices that quietly vanished.
+   */
+  disabled?: boolean;
 }): ReactNode {
   return (
     <button
@@ -348,8 +357,9 @@ export function Toggle({
       role="switch"
       aria-checked={checked}
       aria-label={label}
+      disabled={disabled}
       onClick={() => onChange(!checked)}
-      className={`relative inline-flex h-5 w-9 shrink-0 rounded-full transition-colors ${
+      className={`relative inline-flex h-5 w-9 shrink-0 rounded-full transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
         checked ? 'bg-accent' : 'bg-surface-2'
       }`}
     >

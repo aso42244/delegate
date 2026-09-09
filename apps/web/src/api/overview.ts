@@ -212,7 +212,15 @@ export interface PayCycleDto {
   readonly progressBasisPoints: number;
 }
 
+export interface FigureDto {
+  readonly key: string;
+  /** Null where the figure is a count, or has no answer yet. */
+  readonly valueCents: string | null;
+  readonly count: number | null;
+}
+
 export interface OverviewDataDto {
+  readonly figures?: readonly FigureDto[];
   /** The panel's chosen lines. Empty until somebody picks some. */
   readonly panel?: readonly PanelLineDto[];
   /** Null when no payday anchor is set — then no tick is drawn at all. */

@@ -1,12 +1,15 @@
-import { MAX_TILES_PER_ROW, OVERVIEW_COLUMNS } from '@budget/shared';
+import { DEFAULT_FIGURES, MAX_TILES_PER_ROW, OVERVIEW_COLUMNS } from '@budget/shared';
 import type { FastifyPluginCallback } from 'fastify';
 import { Prisma } from '@prisma/client';
+import type { FigureKey } from '../domain/overview.js';
 import { z } from 'zod';
 import { prisma } from '../db/client.js';
 import { SPENDING_WINDOWS } from '../domain/insights.js';
 import {
+  buildFigures,
   buildOverview,
   buildPanel,
+  isFigureKey,
   isOverviewTile,
   OVERVIEW_TILES,
   type OverviewData,
@@ -58,6 +61,11 @@ const TILE_CONFIG: Partial<Record<string, z.ZodType>> = {
    */
   cashflow: z.object({
     window: z.enum(SPENDING_WINDOWS),
+  }),
+
+  /** Which four figures the band draws, in order. */
+  figures: z.object({
+    keys: z.array(z.string().refine(isFigureKey, 'Not a figure this tile can draw')).max(4),
   }),
 
   delegations: z.object({
@@ -273,6 +281,20 @@ export const overviewRoutes: FastifyPluginCallback = (fastify, _options, done) =
      * a moment after the tick that judges it would show every line as fully
      * spent for that moment.
      */
+    /*
+     * The figures band. Its keys are per tile, so the catalogue can be longer
+     * than the band is wide — four slots, seven things they could hold.
+     */
+    const figuresTile = stored.find((tile) => tile.widgetKey === 'figures');
+    const figures = figuresTile
+      ? await buildFigures(prisma, {
+          keys: readFigureKeys(figuresTile.config),
+          timeZone,
+          cycleStart: cycle?.start ?? null,
+          daysLeftInCycle: cycle === null ? null : cycle.lengthDays - cycle.elapsedDays,
+        })
+      : [];
+
     const panelTile = stored.find((tile) => tile.widgetKey === 'delegations');
     const panel = await buildPanel(prisma, {
       delegationIds: readDelegationIds(panelTile?.config),
@@ -282,6 +304,15 @@ export const overviewRoutes: FastifyPluginCallback = (fastify, _options, done) =
 
     return {
       window,
+      ...(figuresTile
+        ? {
+            figures: figures.map((figure) => ({
+              key: figure.key,
+              valueCents: centsOut(figure.valueCents),
+              count: figure.count,
+            })),
+          }
+        : {}),
       panel: panel.map((line) => ({
         id: line.id,
         name: line.name,
@@ -384,6 +415,17 @@ function point(entry: {
  * period rather than a figure — the worst a wrong one does is show a different
  * span of the same true numbers.
  */
+/** The figure keys a band was told to draw, or the defaults. */
+function readFigureKeys(config: unknown): readonly FigureKey[] {
+  if (config === null || typeof config !== 'object') return DEFAULT_FIGURES;
+  const keys = (config as { keys?: unknown }).keys;
+  if (!Array.isArray(keys)) return DEFAULT_FIGURES;
+  const valid = keys.filter((key): key is FigureKey => typeof key === 'string' && isFigureKey(key));
+  // An empty band is a band nobody configured, not a band somebody emptied:
+  // the tile has four slots and no control for leaving them blank.
+  return valid.length > 0 ? valid : DEFAULT_FIGURES;
+}
+
 /** The delegation ids a Delegations configuration names. */
 function readDelegationIds(config: unknown): readonly string[] {
   if (config === null || typeof config !== 'object') return [];

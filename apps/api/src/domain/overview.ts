@@ -107,6 +107,9 @@ export const OVERVIEW_TILES = [
    */
   'cashflow',
 
+  /** The band of four figures across the top. One tile, not four. */
+  'figures',
+
   'uncategorized_backlog',
 ] as const;
 
@@ -523,6 +526,7 @@ export interface OverviewData {
     readonly cycleMissing: boolean;
   };
   readonly cashflow?: Cashflow;
+  readonly figures?: readonly Figure[];
   readonly spending_by_grouping?: OverviewSpending;
   readonly spending_by_delegation?: OverviewSpending;
   readonly asset_debt_composition?: Composition;
@@ -767,4 +771,122 @@ export async function buildPanel(
         a.name.localeCompare(b.name),
     )
     .map(({ _groupPosition: _g, _position: _p, ...line }) => line);
+}
+
+export const FIGURE_KEYS = [
+  'inflow',
+  'spent',
+  'left_to_spend',
+  'uncategorized',
+  'safe_per_day',
+  'net_worth',
+  'days_to_payday',
+] as const;
+
+export type FigureKey = (typeof FIGURE_KEYS)[number];
+
+export function isFigureKey(value: string): value is FigureKey {
+  return (FIGURE_KEYS as readonly string[]).includes(value);
+}
+
+export interface Figure {
+  readonly key: FigureKey;
+  /** Cents, or null where the figure has no answer yet. */
+  readonly valueCents: Cents | null;
+  /** For the two that are counts rather than money. */
+  readonly count: number | null;
+}
+
+/**
+ * The figures a person chose for the band across the top.
+ *
+ * One tile drawing four numbers rather than four tiles, because a row holds two
+ * and four separate tiles would fill the first screen before a chart appeared.
+ * Which four is a per-tile setting, which is also what makes the catalogue here
+ * able to be longer than the band is wide.
+ *
+ * **`safe_per_day` divides by days left in the cycle, not the month.** Every
+ * other figure on this page is cycle-shaped, and a month divisor would be the
+ * one number measuring something different — which is the sort of thing nobody
+ * notices until they have trusted it for a fortnight.
+ */
+export async function buildFigures(
+  db: Db,
+  options: {
+    readonly keys: readonly FigureKey[];
+    readonly timeZone: string;
+    readonly cycleStart: Date | null;
+    readonly daysLeftInCycle: number | null;
+  },
+): Promise<Figure[]> {
+  const wanted = new Set(options.keys);
+  if (wanted.size === 0) return [];
+
+  const since = options.cycleStart;
+  const inCycle = since ? { postedAt: { gte: since } } : {};
+
+  const needsFlow =
+    wanted.has('inflow') ||
+    wanted.has('spent') ||
+    wanted.has('left_to_spend') ||
+    wanted.has('safe_per_day');
+
+  const [flow, backlog, composition] = await Promise.all([
+    needsFlow
+      ? db.transaction.findMany({
+          where: { archivedAt: null, kind: { in: ['income', 'normal'] }, ...inCycle },
+          select: { amountCents: true, kind: true },
+        })
+      : undefined,
+    wanted.has('uncategorized') ? buildBacklog(db) : undefined,
+    wanted.has('net_worth') ? buildComposition(db) : undefined,
+  ]);
+
+  const inflow = sumOf(flow, 'income');
+  // Spending is stored negative; report a magnitude.
+  const spent = -sumOf(flow, 'normal');
+  const left = inflow - spent;
+
+  const figures: Figure[] = [];
+  for (const key of options.keys) {
+    switch (key) {
+      case 'inflow':
+        figures.push({ key, valueCents: inflow, count: null });
+        break;
+      case 'spent':
+        figures.push({ key, valueCents: spent, count: null });
+        break;
+      case 'left_to_spend':
+        figures.push({ key, valueCents: left, count: null });
+        break;
+      case 'safe_per_day':
+        figures.push({
+          key,
+          // Null rather than dividing by nothing: with no anchor there is no
+          // cycle to spread it over, and a figure invented from a guess is
+          // worse than an absent one.
+          valueCents:
+            options.daysLeftInCycle && options.daysLeftInCycle > 0
+              ? left / BigInt(options.daysLeftInCycle)
+              : null,
+          count: null,
+        });
+        break;
+      case 'uncategorized':
+        figures.push({ key, valueCents: null, count: backlog?.count ?? 0 });
+        break;
+      case 'net_worth':
+        figures.push({ key, valueCents: composition?.netCents ?? 0n, count: null });
+        break;
+      case 'days_to_payday':
+        figures.push({ key, valueCents: null, count: options.daysLeftInCycle });
+        break;
+    }
+  }
+  return figures;
+}
+
+function sumOf(rows: { amountCents: Cents; kind: string }[] | undefined, kind: string): Cents {
+  if (!rows) return 0n;
+  return rows.reduce((total, row) => (row.kind === kind ? total + row.amountCents : total), 0n);
 }

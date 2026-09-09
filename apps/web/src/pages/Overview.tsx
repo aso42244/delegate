@@ -23,7 +23,7 @@ import { OverviewPanel, type PanelTab } from '../components/OverviewPanel.jsx';
 import { Sankey, type FlowNode } from '../components/Sankey.jsx';
 import { CompositionBars, RankedBars, type RankedRow } from '../components/RankedBars.jsx';
 import { TimeSeriesChart, type TimePoint } from '../components/TimeSeries.jsx';
-import { Alert, Button } from '../components/ui.jsx';
+import { Alert, Button, Modal, Toggle } from '../components/ui.jsx';
 
 /**
  * Overview — the dashboard that replaces Insights.
@@ -98,6 +98,7 @@ const TILE_COPY: Record<string, { readonly title: string; readonly description?:
   bitcoin_value_over_time: { title: 'Bitcoin over time' },
   home_equity_over_time: { title: 'Home equity' },
   debt_trajectory: { title: 'Debt trajectory' },
+  figures: { title: 'Figures' },
   cashflow: { title: 'Cashflow', description: 'Where the money went' },
   delegations: { title: 'Delegations' },
   delegations_negative: { title: 'Over-spent lines' },
@@ -120,11 +121,16 @@ const NO_HISTORY = 'No history yet — the first night records one.';
  * a row holds at most four tiles — see `MAX_TILES_PER_ROW` and the arithmetic
  * behind it.
  */
+/**
+ * Whole class names, because Tailwind reads the source for the classes it emits
+ * and an interpolated one exists in the browser's stylesheet nowhere.
+ *
+ * Two entries, not four: a row holds at most two tiles now that the panel takes
+ * the right of the page.
+ */
 const COLUMN_CLASS: Record<number, string> = {
   12: 'lg:col-span-12',
   6: 'lg:col-span-6',
-  4: 'lg:col-span-4',
-  3: 'lg:col-span-3',
 };
 
 function TileShell({
@@ -835,10 +841,12 @@ function CashflowTile({
   cashflow,
   window,
   onWindow,
+  preview = false,
 }: {
   readonly cashflow: NonNullable<OverviewDataDto['cashflow']>;
   readonly window: string;
   readonly onWindow: (next: string) => void;
+  readonly preview?: boolean;
 }): ReactNode {
   const uncategorizedIn = BigInt(cashflow.uncategorizedInCents);
   const uncategorizedOut = BigInt(cashflow.uncategorizedOutCents);
@@ -897,16 +905,18 @@ function CashflowTile({
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex flex-wrap items-center gap-2">
-        <SegmentedControl
-          size="sm"
-          label="Cashflow period"
-          value={window}
-          options={CASHFLOW_WINDOWS}
-          onChange={onWindow}
-        />
-        <span className="text-quiet text-muted">This chart has its own period.</span>
-      </div>
+      {!preview && (
+        <div className="flex flex-wrap items-center gap-2">
+          <SegmentedControl
+            size="sm"
+            label="Cashflow period"
+            value={window}
+            options={CASHFLOW_WINDOWS}
+            onChange={onWindow}
+          />
+          <span className="text-quiet text-muted">This chart has its own period.</span>
+        </div>
+      )}
 
       {cashflow.cycleMissing ? (
         <EmptyState>No cycle has been run yet.</EmptyState>
@@ -930,6 +940,155 @@ function CashflowTile({
   );
 }
 
+/** Every figure the band can hold. Longer than the band is wide, deliberately. */
+const FIGURE_CATALOG = [
+  'inflow',
+  'spent',
+  'left_to_spend',
+  'uncategorized',
+  'safe_per_day',
+  'net_worth',
+  'days_to_payday',
+] as const;
+
+/** How many the band draws. Four columns on a desktop, two on a phone. */
+const FIGURE_SLOTS = 4;
+
+/**
+ * Which figures the band draws.
+ *
+ * Capped at four rather than scrolling: the band is a row across the top of a
+ * dashboard, and a fifth figure would either shrink the other four below
+ * readable or wrap into a second row that is no longer a band.
+ */
+function FigurePickerDialog({
+  selected,
+  onSave,
+  onClose,
+}: {
+  readonly selected: readonly string[];
+  readonly onSave: (keys: readonly string[]) => void;
+  readonly onClose: () => void;
+}): ReactNode {
+  const [chosen, setChosen] = useState<readonly string[]>(() => [...selected]);
+  const full = chosen.length >= FIGURE_SLOTS;
+
+  return (
+    <Modal
+      label="Choose which figures show"
+      title="Which figures show"
+      description={`Pick up to ${FIGURE_SLOTS}. They are drawn in the order you choose them.`}
+      onClose={onClose}
+      footer={
+        <div className="flex items-center gap-2">
+          <span className="text-quiet text-muted">
+            {chosen.length} of {FIGURE_SLOTS} chosen
+          </span>
+          <span className="ml-auto flex items-center gap-2">
+            <Button onClick={onClose}>Cancel</Button>
+            <Button variant="primary" onClick={() => onSave(chosen)}>
+              Save
+            </Button>
+          </span>
+        </div>
+      }
+    >
+      <ul className="flex list-none flex-col gap-1 p-0">
+        {FIGURE_CATALOG.map((key) => {
+          const on = chosen.includes(key);
+          return (
+            <li key={key} className="flex items-center gap-2">
+              <span className="min-w-0 flex-1 truncate text-base text-ink">
+                {FIGURE_COPY[key]?.label ?? key}
+              </span>
+              {/* A full band disables the unchosen rather than hiding them, so
+                  the cap is visible as a state rather than as options that
+                  vanished. */}
+              <Toggle
+                checked={on}
+                disabled={!on && full}
+                onChange={(next) =>
+                  setChosen((current) =>
+                    next ? [...current, key] : current.filter((entry) => entry !== key),
+                  )
+                }
+                label={`Show ${FIGURE_COPY[key]?.label ?? key}`}
+              />
+            </li>
+          );
+        })}
+      </ul>
+    </Modal>
+  );
+}
+
+/** What each figure is called, and how it is read. */
+const FIGURE_COPY: Record<string, { readonly label: string; readonly note?: string }> = {
+  inflow: { label: 'Inflow' },
+  spent: { label: 'Spent' },
+  left_to_spend: { label: 'Left to spend' },
+  uncategorized: { label: 'Uncategorized' },
+  safe_per_day: { label: 'Safe per day' },
+  net_worth: { label: 'Net worth' },
+  days_to_payday: { label: 'Days to payday' },
+};
+
+/**
+ * The band of figures across the top.
+ *
+ * One tile drawing up to four numbers rather than four tiles: a row holds two,
+ * so four separate tiles would take two full rows and fill the first screen
+ * before a chart appeared.
+ *
+ * A figure with no answer draws an em-dash rather than a zero. `Safe per day`
+ * has none until a payday anchor is set, and a confident $0.00 would be a
+ * different and wrong claim.
+ */
+function FiguresTile({
+  figures,
+  onChoose,
+  preview = false,
+}: {
+  readonly figures: NonNullable<OverviewDataDto['figures']>;
+  readonly onChoose: () => void;
+  readonly preview?: boolean;
+}): ReactNode {
+  return (
+    <div className="flex flex-col gap-3">
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        {figures.map((figure) => {
+          const copy = FIGURE_COPY[figure.key] ?? { label: figure.key };
+          const value =
+            figure.count !== null
+              ? String(figure.count)
+              : figure.valueCents === null
+                ? '—'
+                : formatCents(BigInt(figure.valueCents));
+          const negative = figure.valueCents !== null && BigInt(figure.valueCents) < 0n;
+
+          return (
+            <div key={figure.key} className="flex flex-col gap-1">
+              <span className="text-micro font-semibold tracking-[0.07em] text-muted uppercase">
+                {copy.label}
+              </span>
+              <span
+                className={`money text-figure font-bold ${negative ? 'text-negative' : 'text-ink'}`}
+              >
+                {value}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+      {!preview && (
+        <button type="button" className="linkish self-start" onClick={onChoose}>
+          Choose which figures show →
+        </button>
+      )}
+    </div>
+  );
+}
+
 /**
  * Which body a tile draws.
  *
@@ -945,6 +1104,8 @@ function TileBody({
   onChoose,
   cashflowWindow,
   onCashflowWindow,
+  onChooseFigures,
+  preview = false,
 }: {
   readonly tileKey: string;
   readonly data: OverviewDataDto | undefined;
@@ -953,6 +1114,18 @@ function TileBody({
   readonly onChoose?: () => void;
   readonly cashflowWindow?: string;
   readonly onCashflowWindow?: (next: string) => void;
+  readonly onChooseFigures?: () => void;
+  /**
+   * A picture of the tile, not the tile.
+   *
+   * Previews build **no interactive elements**. Marking them
+   * `pointer-events-none` and `aria-hidden` stops them being used and does
+   * nothing about the markup: a `<button>` inside a `<button>` is invalid HTML,
+   * and the parser hoists the inner one out of its ancestor, which tears apart
+   * the structure around it. That is what a segmented control inside the
+   * picker's card was doing to the whole page.
+   */
+  readonly preview?: boolean;
 }): ReactNode {
   // The delegations tile reads the budget rather than this page's payload, so
   // it draws before — and without — anything the overview endpoint computes.
@@ -1019,12 +1192,21 @@ function TileBody({
       ) : null;
     case 'delegation_burn_rate':
       return data.delegation_burn_rate ? <BurnRateTile burn={data.delegation_burn_rate} /> : null;
+    case 'figures':
+      return data.figures ? (
+        <FiguresTile
+          figures={data.figures}
+          onChoose={onChooseFigures ?? (() => undefined)}
+          preview={preview}
+        />
+      ) : null;
     case 'cashflow':
       return data.cashflow ? (
         <CashflowTile
           cashflow={data.cashflow}
           window={cashflowWindow ?? 'ytd'}
           onWindow={onCashflowWindow ?? (() => undefined)}
+          preview={preview}
         />
       ) : null;
     case 'uncategorized_backlog':
@@ -1082,6 +1264,9 @@ export function Overview(): ReactNode {
    * somebody is looking at rather than the household's budget. On a phone the
    * panel is not docked at all, so the state is unused there.
    */
+  /** Whether the figures band's own picker is open. */
+  const [pickingFigures, setPickingFigures] = useState(false);
+
   const [tab, setTab] = useState<PanelTab>('delegations');
   const [collapsed, setCollapsed] = useState(() => {
     if (typeof globalThis.window === 'undefined') return false;
@@ -1369,6 +1554,16 @@ export function Overview(): ReactNode {
     // configurations as well as keys — see the comment there.
   }
 
+  /** The figures band's own selection. */
+  function saveFigures(keys: readonly string[]): void {
+    save.mutate(
+      tiles.map((tile) =>
+        tile.key === 'figures' ? { ...tile, config: { keys: [...keys] } } : tile,
+      ),
+    );
+    setPickingFigures(false);
+  }
+
   /** The panel's own selection, creating its layout row the first time. */
   function savePanelChoice(delegationIds: readonly string[]): void {
     const config = { delegationIds: [...delegationIds] };
@@ -1465,18 +1660,25 @@ export function Overview(): ReactNode {
           */}
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
             {available.map((key) => (
-              <button
+              <div
                 key={key}
-                type="button"
-                onClick={() => add(key)}
-                className="flex flex-col gap-2 rounded-lg border border-line bg-canvas p-4 text-left transition-colors hover:border-accent hover:bg-surface-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
-                aria-label={`Add ${TILE_COPY[key]?.title ?? key}`}
+                className="flex flex-col gap-2 rounded-lg border border-line bg-canvas p-4 text-left"
               >
                 <span className="flex items-baseline gap-2">
                   <span className="truncate text-section font-semibold text-ink">
                     {TILE_COPY[key]?.title ?? key}
                   </span>
-                  <span className="ml-auto shrink-0 text-quiet font-semibold text-accent">Add</span>
+                  {/* The action is its own control rather than the whole card.
+                      A card that is a button cannot contain one, and some tiles
+                      draw controls of their own. */}
+                  <Button
+                    variant="ghost"
+                    className="ml-auto"
+                    onClick={() => add(key)}
+                    aria-label={`Add ${TILE_COPY[key]?.title ?? key}`}
+                  >
+                    Add
+                  </Button>
                 </span>
                 {/* Not interactive, and not reachable: it is a picture of the
                     tile inside a button, and a control inside a control is a
@@ -1485,13 +1687,30 @@ export function Overview(): ReactNode {
                   {preview.isPending ? (
                     <span className="block text-quiet text-muted">Loading…</span>
                   ) : (
-                    <TileBody tileKey={key} data={preview.data} budget={budget.data} />
+                    <TileBody tileKey={key} data={preview.data} budget={budget.data} preview />
                   )}
                 </span>
-              </button>
+              </div>
             ))}
           </div>
         </section>
+      )}
+
+      {pickingFigures && (
+        <FigurePickerDialog
+          /*
+           * What is actually on screen, not what the tile's configuration says.
+           *
+           * A band that has never been configured draws the server's defaults,
+           * so reading the stored config here opened the dialog empty beside a
+           * tile showing four figures — the picker and the thing it picks for
+           * disagreeing about the current state. The payload already names the
+           * keys it drew; that is the one answer.
+           */
+          selected={(data.data?.figures ?? []).map((figure) => figure.key)}
+          onSave={saveFigures}
+          onClose={() => setPickingFigures(false)}
+        />
       )}
 
       {picking !== null && (
@@ -1577,6 +1796,7 @@ export function Overview(): ReactNode {
                       onChoose={() => setPicking(tile.key)}
                       cashflowWindow={data.data?.cashflowWindow ?? 'ytd'}
                       onCashflowWindow={(next) => setCashflowWindow(next)}
+                      onChooseFigures={() => setPickingFigures(true)}
                     />
                   </TileShell>
                 )),

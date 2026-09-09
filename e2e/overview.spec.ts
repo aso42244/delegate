@@ -273,8 +273,12 @@ test('the picker draws each tile rather than naming it', async ({ signedIn }) =>
    * endpoint's "only what you have" rule — by definition nobody has a tile they
    * are deciding whether to add.
    */
-  const card = signedIn.getByRole('button', { name: 'Add What it is all made of' });
-  await expect(card).toBeVisible();
+  // The card is not itself a button: a card that is a button cannot contain
+  // one, and some tiles draw controls of their own. The Add control sits inside
+  // it, and the preview beside that.
+  const add = signedIn.getByRole('button', { name: 'Add What it is all made of' });
+  await expect(add).toBeVisible();
+  const card = add.locator('../..');
   await expect(card.getByText('$2,500.00', { exact: true })).toBeVisible();
 });
 
@@ -455,6 +459,69 @@ test('the cashflow chart says nothing came in rather than drawing an empty flow'
 
   const tile = signedIn.getByRole('heading', { name: 'Cashflow', level: 2 }).locator('../..');
   await expect(tile.getByText('Nothing came in yet.')).toBeVisible();
+});
+
+test('the figures band draws four numbers and its own picker', async ({ signedIn }) => {
+  await signedIn.goto('/overview');
+  await signedIn.getByRole('button', { name: 'Arrange', exact: true }).click();
+  await signedIn.getByRole('button', { name: 'Add Figures' }).click();
+  await expect(signedIn.getByRole('heading', { name: 'Figures', level: 2 })).toBeVisible();
+  await signedIn.getByRole('button', { name: 'Done' }).click();
+
+  const tile = signedIn.getByRole('heading', { name: 'Figures', level: 2 }).locator('../..');
+
+  /*
+   * One tile drawing four figures, not four tiles. A row holds two, so four
+   * separate tiles would take two full rows and fill the first screen before a
+   * chart appeared.
+   */
+  await expect(tile.getByText('Inflow')).toBeVisible();
+  await expect(tile.getByText('Spent')).toBeVisible();
+  await expect(tile.getByText('Left to spend')).toBeVisible();
+  await expect(tile.getByText('Uncategorized')).toBeVisible();
+
+  await tile.getByRole('button', { name: 'Choose which figures show →' }).click();
+  const dialog = signedIn.getByRole('dialog');
+
+  // Four chosen, so the rest are refused rather than hidden — the cap reads as
+  // a state somebody reached, not as options that vanished.
+  await expect(dialog.getByRole('switch', { name: 'Show Net worth' })).toBeDisabled();
+
+  await dialog.getByRole('switch', { name: 'Show Uncategorized' }).click();
+  await dialog.getByRole('switch', { name: 'Show Net worth' }).click();
+  await dialog.getByRole('button', { name: 'Save' }).click();
+  await expect(dialog).toHaveCount(0);
+
+  await expect(tile.getByText('Net worth')).toBeVisible();
+  await expect(tile.getByText('Uncategorized')).toHaveCount(0);
+
+  await signedIn.reload();
+  await expect(
+    signedIn.getByRole('heading', { name: 'Figures', level: 2 }).locator('../..'),
+  ).toContainText('Net worth');
+});
+
+test('a figure with no answer draws a dash, never a confident zero', async ({ signedIn }) => {
+  await signedIn.goto('/overview');
+  await signedIn.getByRole('button', { name: 'Arrange', exact: true }).click();
+  await signedIn.getByRole('button', { name: 'Add Figures' }).click();
+  await signedIn.getByRole('button', { name: 'Done' }).click();
+
+  const tile = signedIn.getByRole('heading', { name: 'Figures', level: 2 }).locator('../..');
+  await tile.getByRole('button', { name: 'Choose which figures show →' }).click();
+  const dialog = signedIn.getByRole('dialog');
+
+  // Clear the band, then take the one figure that has no answer without a
+  // payday anchor.
+  for (const label of ['Inflow', 'Spent', 'Left to spend', 'Uncategorized']) {
+    await dialog.getByRole('switch', { name: `Show ${label}` }).click();
+  }
+  await dialog.getByRole('switch', { name: 'Show Safe per day' }).click();
+  await dialog.getByRole('button', { name: 'Save' }).click();
+
+  // No anchor means no cycle to spread it over. A $0.00 would be a different
+  // and wrong claim.
+  await expect(tile.getByText('—')).toBeVisible();
 });
 
 test('the arrange controls are hidden until asked for', async ({ signedIn }) => {
