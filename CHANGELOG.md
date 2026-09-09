@@ -6,6 +6,10 @@ phase (`v0.1.0-phase1`, and so on).
 
 ## [Unreleased]
 
+Nothing yet.
+
+## [0.66.0] — 2026-09-09
+
 ### Changed
 
 - **One bar, everywhere.** A grey track with a 3px coloured bar inset inside it —
