@@ -6,6 +6,10 @@ phase (`v0.1.0-phase1`, and so on).
 
 ## [Unreleased]
 
+Nothing yet.
+
+## [0.64.0] — 2026-09-09
+
 ### Added
 
 - **A row on Overview can be dragged to its own height.** The bottom edge of any
