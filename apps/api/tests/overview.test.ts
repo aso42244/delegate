@@ -104,6 +104,13 @@ interface DataBody {
   readonly home_equity_over_time?: { readonly name: string | null };
   readonly debt_trajectory?: { readonly hasEnoughHistory: boolean };
   readonly cashflowWindow?: string;
+  readonly panel?: readonly {
+    readonly name: string;
+    readonly groupingName: string | null;
+    readonly balanceCents: string;
+    readonly plannedCents: string | null;
+    readonly spentCents: string;
+  }[];
   readonly payCycle?: {
     readonly start: string;
     readonly end: string;
@@ -409,17 +416,16 @@ describe("a tile's own configuration", () => {
     });
   });
 
-  it('computes nothing for the Delegations tile', async () => {
-    // It reads the budget's own model instead — a second query ordering
-    // delegations by grouping would be a second answer to a question the Budget
-    // page already answers.
+  it('draws the Delegations key as the panel, not as a tile', async () => {
     await putLayout(rowed(['delegations']));
     const body = (await get('/api/overview')).json<DataBody>();
 
-    // Page-level fields are always there — the window, and where the household
-    // sits between paydays, which every pace bar is read against. What must be
-    // absent is tile data: this tile reads the budget's own model instead.
-    expect(Object.keys(body).sort()).toEqual(['payCycle', 'window']);
+    /*
+     * Three page-level fields and no tile data. The panel is not a tile — it is
+     * docked beside them and carries its own lines, so a chart key here would
+     * mean the same list was being drawn twice on one screen.
+     */
+    expect(Object.keys(body).sort()).toEqual(['panel', 'payCycle', 'window']);
   });
 });
 
@@ -883,6 +889,88 @@ describe('the pay cycle', () => {
     });
 
     expect((await get('/api/overview')).json<DataBody>().payCycle).toBeNull();
+  });
+});
+
+describe('the panel', () => {
+  async function spend(delegationId: string, cents: bigint, postedAt: Date): Promise<void> {
+    const account = await prisma.account.findFirstOrThrow();
+    const transaction = await makeTransaction({
+      accountId: account.id,
+      amountCents: -cents,
+      postedAt,
+    });
+    await categorizeTransaction(prisma, transaction.id, delegationId);
+  }
+
+  it('is empty until lines are chosen', async () => {
+    await makeDelegation({ name: 'Grocery' });
+    await putLayout(rowed(['delegations']));
+    expect((await get('/api/overview')).json<DataBody>().panel).toEqual([]);
+  });
+
+  it('carries what a pace bar needs for each chosen line', async () => {
+    await makeAccount({ name: 'Everyday', type: 'asset', balanceCents: 5_000_000n });
+    const grocery = await makeDelegation({ name: 'Grocery', amountToDelegateCents: 78_000n });
+    await spend(grocery.id, 51_200n, new Date());
+
+    await putLayout([
+      { key: 'delegations', row: 0, position: 0, config: { delegationIds: [grocery.id] } },
+    ]);
+
+    const [line] = (await get('/api/overview')).json<DataBody>().panel ?? [];
+    expect(line?.name).toBe('Grocery');
+    // Spending is stored signed and negative; a bar reads a magnitude.
+    expect(line?.spentCents).toBe('51200');
+    expect(line?.plannedCents).toBe('78000');
+    expect(line?.balanceCents).toBeDefined();
+  });
+
+  it('reports no spending rather than negative when a line was refunded', async () => {
+    await makeAccount({ name: 'Everyday', type: 'asset', balanceCents: 5_000_000n });
+    const line = await makeDelegation({ name: 'Refunded' });
+    await spend(line.id, -10_000n, new Date());
+
+    await putLayout([
+      { key: 'delegations', row: 0, position: 0, config: { delegationIds: [line.id] } },
+    ]);
+
+    // A line that netted positive over the window has not spent a negative
+    // amount; it has spent none.
+    expect((await get('/api/overview')).json<DataBody>().panel?.[0]?.spentCents).toBe('0');
+  });
+
+  it('leaves out an archived line rather than drawing an empty row', async () => {
+    const gone = await makeDelegation({ name: 'Archived' });
+    await putLayout([
+      { key: 'delegations', row: 0, position: 0, config: { delegationIds: [gone.id] } },
+    ]);
+    await prisma.delegation.update({ where: { id: gone.id }, data: { archivedAt: new Date() } });
+
+    expect((await get('/api/overview')).json<DataBody>().panel).toEqual([]);
+  });
+
+  it("orders by the budget's own arrangement, never alphabetically", async () => {
+    // Named so the two orders disagree: the owner's groupings are "3 - Food"
+    // and "5 - Home" precisely because ordering was the thing missing.
+    const zed = await makeDelegation({ name: 'Zucchini' });
+    const apple = await makeDelegation({ name: 'Apples' });
+    await prisma.delegation.update({ where: { id: zed.id }, data: { position: 0 } });
+    await prisma.delegation.update({ where: { id: apple.id }, data: { position: 1 } });
+
+    await putLayout([
+      {
+        key: 'delegations',
+        row: 0,
+        position: 0,
+        config: { delegationIds: [apple.id, zed.id] },
+      },
+    ]);
+
+    expect((await get('/api/overview')).json<DataBody>().panel?.map((line) => line.name)).toEqual([
+      'Zucchini',
+      'Apples',
+    ]);
   });
 });
 

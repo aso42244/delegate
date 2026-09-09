@@ -651,3 +651,120 @@ export async function buildOverview(
     ...(backlog ? { uncategorized_backlog: backlog } : {}),
   };
 }
+
+export interface PanelLine {
+  readonly id: string;
+  readonly name: string;
+  readonly groupingId: string | null;
+  readonly groupingName: string | null;
+  readonly color: string | null;
+  /** What the line holds now. Negative is overspent. */
+  readonly balanceCents: Cents;
+  /** What each Delegate press puts in. Null on an ad-hoc line. */
+  readonly plannedCents: Cents | null;
+  /** Spending allocated to this line since the cycle began. */
+  readonly spentCents: Cents;
+}
+
+/**
+ * The panel's delegations: the lines somebody chose, with everything a pace bar
+ * needs.
+ *
+ * **"Since the cycle began" means since the payday**, not since the last
+ * Delegate press, and the distinction is worth stating because both exist.
+ *
+ * A press is where money moves; a payday is where time is measured from. The
+ * bar compares one against the other, so its numerator and its tick have to
+ * share a window — measuring spending from the press while measuring time from
+ * the payday would put a line's fill and the tick judging it on two different
+ * clocks, and the gap between them would show up as a line looking behind for no
+ * reason on any cycle where the press ran late.
+ *
+ * With no anchor set there is no payday to measure from, so it falls back to the
+ * press boundary — which is what this application has always meant by "cycle",
+ * and it keeps every figure on the page working before the anchor is entered.
+ */
+export async function buildPanel(
+  db: Db,
+  options: {
+    readonly delegationIds: readonly string[];
+    readonly since: Date | null;
+    readonly timeZone: string;
+  },
+  now: Date = new Date(),
+): Promise<PanelLine[]> {
+  if (options.delegationIds.length === 0) return [];
+
+  const since =
+    options.since ??
+    (await windowStart(db, 'cycle', options.timeZone, now).then((start) =>
+      start.kind === 'since' ? start.date : null,
+    ));
+
+  const [lines, allocations] = await Promise.all([
+    db.delegation.findMany({
+      where: { id: { in: [...options.delegationIds] }, archivedAt: null },
+      select: {
+        id: true,
+        name: true,
+        balanceCents: true,
+        amountToDelegateCents: true,
+        position: true,
+        grouping: { select: { id: true, name: true, color: true, position: true } },
+      },
+    }),
+    db.transactionAllocation.findMany({
+      where: {
+        delegationId: { in: [...options.delegationIds] },
+        transaction: {
+          archivedAt: null,
+          kind: 'normal',
+          ...(since ? { postedAt: { gte: since } } : {}),
+        },
+      },
+      select: { delegationId: true, amountCents: true },
+    }),
+  ]);
+
+  // Spending is stored signed and negative; the bar reads a magnitude.
+  const spent = new Map<string, Cents>();
+  for (const allocation of allocations) {
+    spent.set(
+      allocation.delegationId,
+      (spent.get(allocation.delegationId) ?? 0n) - allocation.amountCents,
+    );
+  }
+
+  /*
+   * The Budget page's own order: grouping position, then the line's position,
+   * then name. Not alphabetical — the owner's groupings are named "3 - Food"
+   * and "5 - Home" because ordering was the thing missing before positions
+   * existed, and sorting by name here would undo a deliberate arrangement.
+   */
+  return lines
+    .map((line) => ({
+      id: line.id,
+      name: line.name,
+      groupingId: line.grouping?.id ?? null,
+      groupingName: line.grouping?.name ?? null,
+      color: line.grouping?.color ?? null,
+      balanceCents: line.balanceCents,
+      plannedCents: line.amountToDelegateCents,
+      spentCents: (() => {
+        const value = spent.get(line.id) ?? 0n;
+        // A refunded line can net positive over the window; that is not
+        // negative spending, it is none.
+        return value > 0n ? value : 0n;
+      })(),
+      _groupPosition: line.grouping?.position ?? Number.MAX_SAFE_INTEGER,
+      _position: line.position,
+    }))
+    .sort(
+      (a, b) =>
+        a._groupPosition - b._groupPosition ||
+        (a.groupingName ?? '').localeCompare(b.groupingName ?? '') ||
+        a._position - b._position ||
+        a.name.localeCompare(b.name),
+    )
+    .map(({ _groupPosition: _g, _position: _p, ...line }) => line);
+}

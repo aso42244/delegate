@@ -6,6 +6,7 @@ import { prisma } from '../db/client.js';
 import { SPENDING_WINDOWS } from '../domain/insights.js';
 import {
   buildOverview,
+  buildPanel,
   isOverviewTile,
   OVERVIEW_TILES,
   type OverviewData,
@@ -266,8 +267,31 @@ export const overviewRoutes: FastifyPluginCallback = (fastify, _options, done) =
     const settings = await getBudgetSettings(prisma);
     const cycle = payCycleAt(settings.nextPaydayOn, settings.payCadence, new Date(), timeZone);
 
+    /*
+     * The panel's own lines. Sent with the page rather than fetched separately
+     * because the pace bars are read against the cycle above — a panel arriving
+     * a moment after the tick that judges it would show every line as fully
+     * spent for that moment.
+     */
+    const panelTile = stored.find((tile) => tile.widgetKey === 'delegations');
+    const panel = await buildPanel(prisma, {
+      delegationIds: readDelegationIds(panelTile?.config),
+      since: cycle?.start ?? null,
+      timeZone,
+    });
+
     return {
       window,
+      panel: panel.map((line) => ({
+        id: line.id,
+        name: line.name,
+        groupingId: line.groupingId,
+        groupingName: line.groupingName,
+        color: line.color,
+        balanceCents: centsOut(line.balanceCents),
+        plannedCents: centsOut(line.plannedCents),
+        spentCents: centsOut(line.spentCents),
+      })),
       payCycle:
         cycle === null
           ? null
@@ -360,6 +384,13 @@ function point(entry: {
  * period rather than a figure — the worst a wrong one does is show a different
  * span of the same true numbers.
  */
+/** The delegation ids a Delegations configuration names. */
+function readDelegationIds(config: unknown): readonly string[] {
+  if (config === null || typeof config !== 'object') return [];
+  const ids = (config as { delegationIds?: unknown }).delegationIds;
+  return Array.isArray(ids) ? ids.filter((id): id is string => typeof id === 'string') : [];
+}
+
 function readCashflowWindow(config: unknown): (typeof SPENDING_WINDOWS)[number] {
   if (config === null || typeof config !== 'object') return 'ytd';
   const window = (config as { window?: unknown }).window;
