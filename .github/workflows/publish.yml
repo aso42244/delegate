@@ -36,7 +36,9 @@ name: Publish the image
 on:
   push:
     tags: ['v*.*.*']
-  # Manual re-runs, for a tag that was pushed before this workflow existed.
+  # Manual re-runs: a tag pushed before this workflow existed, or one whose run
+  # failed. The input reaches both the checkout and the image tags — see the
+  # note on `value=` below, which is what that took.
   workflow_dispatch:
     inputs:
       tag:
@@ -89,10 +91,21 @@ jobs:
           # one character — which is exactly the sort of thing somebody hits at
           # the end of a deploy, as a 404, having typed what the release is
           # actually called.
+          #
+          # **`value=` is what makes a manual re-run work.** A `semver` pattern
+          # reads `github.ref`, and on a `workflow_dispatch` that is
+          # `refs/heads/main` however the checkout above was pointed — so every
+          # pattern matched nothing and the only tag pushed was `latest`. The
+          # image was correct and signed and simply had no version on it, which
+          # reads at the far end as `manifest unknown`: a deploy that looks like
+          # a typo for a release that built fine.
+          #
+          # `github.ref_name` is the tag on a push and the branch on a dispatch,
+          # so the input wins where there is one and nothing changes otherwise.
           tags: |
-            type=semver,pattern={{version}}
-            type=semver,pattern=v{{version}}
-            type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern={{version}},value=${{ github.event.inputs.tag || github.ref_name }}
+            type=semver,pattern=v{{version}},value=${{ github.event.inputs.tag || github.ref_name }}
+            type=semver,pattern={{major}}.{{minor}},value=${{ github.event.inputs.tag || github.ref_name }}
             type=raw,value=latest
 
       - id: build
