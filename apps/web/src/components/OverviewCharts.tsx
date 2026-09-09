@@ -60,13 +60,21 @@ const DAYS_IN_LONGEST_MONTH = 31;
  * three columns early rather than being stretched to the full width, which would
  * put its 28th under March's 31st and quietly break the comparison the rows
  * exist for.
+ *
+ * **A day opens what was in it.** The band says a Tuesday cost $412 and the next
+ * question is always which $412 — so pressing a cell lists that day's rows,
+ * bounded server-side in the household's own zone so the list can never disagree
+ * with the cell it came from.
  */
 export function OutflowBand({
   months,
   todayIso,
+  onPickDay,
 }: {
   readonly months: readonly OutflowMonthDto[];
   readonly todayIso: string;
+  /** A day key, `YYYY-MM-DDT…`. Opens what was spent that day. */
+  readonly onPickDay: (dayIso: string) => void;
 }): ReactNode {
   if (months.length === 0) return null;
 
@@ -86,6 +94,7 @@ export function OutflowBand({
           // Only this month has a running total to summarise; the two below it
           // are complete, and their totals are the row's own figure.
           current={index === 0}
+          onPickDay={onPickDay}
         />
       ))}
     </div>
@@ -97,11 +106,13 @@ function MonthRow({
   peak,
   today,
   current,
+  onPickDay,
 }: {
   readonly month: OutflowMonthDto;
   readonly peak: bigint;
   readonly today: string;
   readonly current: boolean;
+  readonly onPickDay: (dayIso: string) => void;
 }): ReactNode {
   const amounts = month.days.map((day) => BigInt(day.spentCents));
   const total = amounts.reduce((sum, value) => sum + value, 0n);
@@ -144,12 +155,22 @@ function MonthRow({
           const isToday = day.date.slice(0, 10) === today;
 
           return (
-            <span
+            <button
               key={day.date}
+              type="button"
+              /*
+               * A button rather than a span, so a day is openable by keyboard as
+               * well as by pointer. A day with nothing on it is disabled rather
+               * than hidden: it keeps its cell — the shape of the month depends
+               * on it — and pressing it would open an empty list.
+               */
+              disabled={value === 0n}
+              onClick={() => onPickDay(day.date)}
               // Every cell says its own date and figure. The band shows the
               // shape; this is how somebody reads one column off it.
               title={`${dayLabel(day.date)} · ${formatCents(value)}`}
-              className={`h-4 rounded-sm ${
+              aria-label={`${dayLabel(day.date)}, ${formatCents(value)}`}
+              className={`h-4 rounded-sm p-0 enabled:cursor-pointer enabled:hover:outline enabled:hover:outline-1 enabled:hover:outline-offset-1 enabled:hover:outline-axis ${
                 isToday ? 'outline outline-2 outline-offset-1 outline-accent' : ''
               }`}
               style={{

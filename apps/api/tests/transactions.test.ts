@@ -96,6 +96,48 @@ describe('listing', () => {
     expect(typeof body.transactions[0]?.amountCents).toBe('string');
   });
 
+  it("lists one calendar day, cut in the household's zone rather than in UTC", async () => {
+    await prisma.budgetSettings.updateMany({ data: { scheduleTimezone: 'America/Chicago' } });
+    const account = await makeAccount({ name: 'Checking', type: 'asset', balanceCents: 500000n });
+
+    /*
+     * Half past seven on the evening of the 3rd, in Chicago. That instant is
+     * already the 4th in UTC — which is the whole point: a caller working the
+     * window out from a date string in its own zone would put this charge on the
+     * wrong day, and it would go missing from the cell of the outflow band that
+     * drew it.
+     */
+    await makeTransaction({
+      accountId: account.id,
+      amountCents: -4210n,
+      description: 'Evening groceries',
+      postedAt: new Date('2026-09-04T00:30:00Z'),
+    });
+    // Half past six on the morning of the 4th, in Chicago, and so also the 4th
+    // in UTC. It must not appear on the 3rd.
+    await makeTransaction({
+      accountId: account.id,
+      amountCents: -1100n,
+      description: 'Morning coffee',
+      postedAt: new Date('2026-09-04T11:30:00Z'),
+    });
+
+    const third = await list('?day=2026-09-03');
+    expect(third.transactions.map((row) => row.description)).toEqual(['Evening groceries']);
+
+    const fourth = await list('?day=2026-09-04');
+    expect(fourth.transactions.map((row) => row.description)).toEqual(['Morning coffee']);
+  });
+
+  it('refuses a day that is not a day', async () => {
+    const response = await app.inject({
+      method: 'GET',
+      url: '/api/transactions?day=september',
+      headers: { cookie },
+    });
+    expect(response.statusCode).toBe(400);
+  });
+
   it('hides archived transactions unless asked', async () => {
     const account = await makeAccount({ name: 'Checking', type: 'asset', balanceCents: 500000n });
     const transaction = await makeTransaction({

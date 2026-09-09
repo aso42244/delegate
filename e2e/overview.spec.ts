@@ -1,4 +1,4 @@
-import { expect, makeAccount, makeDelegation, test } from './fixtures.js';
+import { expect, makeAccount, makeDelegation, makePendingSpend, test } from './fixtures.js';
 
 /**
  * Overview — the spine.
@@ -332,7 +332,8 @@ test('tiles can be dragged into one row without entering Arrange', async ({ sign
    * the commoner act.
    */
   const box = (await spending.boundingBox())!;
-  await backlog.dragTo(spending, {
+  // From the grip, which is the only thing that starts a drag now.
+  await backlog.locator('[data-grip]').dragTo(spending, {
     targetPosition: { x: 20, y: box.height / 2 },
   });
 
@@ -366,7 +367,7 @@ test('a tile dragged into the empty sidebar stays there across a reload', async 
    */
   const zone = signedIn.getByText('Drag a tile here');
   await expect(zone).toBeVisible();
-  await backlog.dragTo(zone);
+  await backlog.locator('[data-grip]').dragTo(zone);
 
   await expect(signedIn.getByText('Drag a tile here')).toHaveCount(0);
 
@@ -732,7 +733,9 @@ test('a tile can be dropped onto its own row, and at the very top', async ({ sig
 
   // Join first, so there is a row to be split by dragging rather than by ⤓.
   const box = (await spending.boundingBox())!;
-  await backlog.dragTo(spending, { targetPosition: { x: 20, y: box.height / 2 } });
+  await backlog.locator('[data-grip]').dragTo(spending, {
+    targetPosition: { x: 20, y: box.height / 2 },
+  });
   await expect(spending).toHaveClass(/lg:col-span-6/);
 
   /*
@@ -741,7 +744,9 @@ test('a tile can be dropped onto its own row, and at the very top', async ({ sig
    * separate two tiles was the ⤓ button inside Arrange.
    */
   const joined = (await spending.boundingBox())!;
-  await backlog.dragTo(spending, { targetPosition: { x: joined.width / 2, y: 4 } });
+  await backlog.locator('[data-grip]').dragTo(spending, {
+    targetPosition: { x: joined.width / 2, y: 4 },
+  });
   await expect(spending).toHaveClass(/lg:col-span-12/);
   await expect(backlog).toHaveClass(/lg:col-span-12/);
 
@@ -835,6 +840,61 @@ test('the outflow band draws the calendar month with no payday set', async ({ si
   // name is asserted through the band's own label rather than built here, so
   // the test does not depend on the browser's locale matching Node's.
   await expect(tile.getByRole('img', { name: /over \d+ days/ })).toHaveCount(3);
+});
+
+test('a day on the outflow band opens what was spent that day', async ({ signedIn, api }) => {
+  const account = await makeAccount('Everyday Checking', 'asset', 500_00n);
+  const delegationId = await makeDelegation(api, 'Groceries');
+  await makePendingSpend(account, delegationId, -42_10n, 'Corner shop');
+
+  await signedIn.goto('/overview');
+  await signedIn.getByRole('button', { name: 'Arrange', exact: true }).click();
+  await signedIn.getByRole('button', { name: 'Add Daily outflow' }).click();
+  await signedIn.getByRole('button', { name: 'Done' }).click();
+
+  const tile = signedIn.getByRole('heading', { name: 'Daily outflow', level: 2 }).locator('../..');
+
+  /*
+   * The band says a day cost $42.10 and the next question is always which
+   * $42.10. Days with nothing on them are disabled rather than hidden — the
+   * shape of the month depends on their cells — so the only enabled one is the
+   * day this charge landed.
+   */
+  const day = tile.getByRole('button', { name: /\$42\.10/ });
+  await expect(day).toBeEnabled();
+  await day.click();
+
+  const dialog = signedIn.getByRole('dialog');
+  await expect(dialog.getByText('Corner shop')).toBeVisible();
+  await expect(dialog.getByText('Groceries')).toBeVisible();
+  await expect(dialog.getByText('$42.10 out')).toBeVisible();
+});
+
+test('a tile dragged by its body does not move', async ({ signedIn }) => {
+  await signedIn.goto('/overview');
+  await addBothTiles(signedIn);
+  await signedIn.getByRole('button', { name: 'Done' }).click();
+
+  const spending = signedIn
+    .getByRole('heading', { name: 'Spending by grouping', level: 2 })
+    .locator('../..');
+  const backlog = signedIn
+    .getByRole('heading', { name: 'Waiting to be categorized', level: 2 })
+    .locator('../..');
+  await expect(spending.getByText('No cycle has been run yet.')).toBeVisible();
+  await expect(backlog.getByText('Nothing waiting.')).toBeVisible();
+
+  /*
+   * The whole card used to be the handle, so a press on a chart or on a label
+   * somebody meant to select began a drag. Dragging from the body is now refused
+   * at `dragstart`, and the arrangement is untouched — each tile still has its
+   * own row and so still spans all twelve columns.
+   */
+  const box = (await spending.boundingBox())!;
+  await backlog.dragTo(spending, { targetPosition: { x: 20, y: box.height / 2 } });
+
+  await expect(spending).toHaveClass(/lg:col-span-12/);
+  await expect(backlog).toHaveClass(/lg:col-span-12/);
 });
 
 test('a balance-history tile asks which one before it draws anything', async ({ signedIn }) => {
