@@ -582,6 +582,50 @@ test('upcoming says nothing is scheduled rather than drawing an empty list', asy
   await expect(tile.getByText('Nothing scheduled.')).toBeVisible();
 });
 
+test('setting a payday turns the cycle on across the page', async ({ signedIn }) => {
+  await signedIn.goto('/overview');
+  await signedIn.getByRole('button', { name: 'Arrange', exact: true }).click();
+  await signedIn.getByRole('button', { name: 'Add Daily outflow' }).click();
+  await signedIn.getByRole('button', { name: 'Done' }).click();
+
+  /*
+   * Nothing to draw yet: the cadence says how many paychecks a year arrive and
+   * nothing about when, so there is no cycle to measure a band of days against.
+   *
+   * Scoped to the tile and the panel rather than the page: the Arrange picker
+   * draws previews of the other cycle-shaped tiles, which say the same thing for
+   * the same reason, so an unscoped locator matches whatever happens to be open.
+   */
+  const band = signedIn.getByRole('heading', { name: 'Daily outflow', level: 2 }).locator('../..');
+  await expect(
+    band.getByText('Set your next payday on Settings → Budget to see this cycle.'),
+  ).toBeVisible();
+  await expect(
+    signedIn
+      .getByRole('complementary', { name: 'Budget' })
+      .getByText('Set your next payday on Settings → Budget to see cycle pace.'),
+  ).toBeVisible();
+
+  await signedIn.goto('/settings/budget');
+  await signedIn.getByLabel('Next payday').fill('2099-01-15');
+  // Saved on change, like the cadence beside it.
+  await expect(signedIn.getByText('Every other payday is worked out from this one.')).toBeVisible();
+
+  await signedIn.goto('/overview');
+
+  /*
+   * One date, and every boundary around it follows. The panel now says where the
+   * household sits between paydays, and the band has a cycle to draw.
+   */
+  await expect(signedIn.getByText(/day \d+ of 14/)).toBeVisible();
+  await expect(
+    signedIn
+      .getByRole('heading', { name: 'Daily outflow', level: 2 })
+      .locator('../..')
+      .getByText('Set your next payday on Settings → Budget to see this cycle.'),
+  ).toHaveCount(0);
+});
+
 test('the arrange controls are hidden until asked for', async ({ signedIn }) => {
   await signedIn.goto('/overview');
   await addBothTiles(signedIn);
