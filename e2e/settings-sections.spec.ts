@@ -1,4 +1,4 @@
-import { expect, makeAccount, makeDelegation, test } from './fixtures.js';
+import { expect, makeAccount, makeDelegation, openNew, test } from './fixtures.js';
 
 /**
  * Settings → Delegations, Groupings and Archived.
@@ -79,7 +79,7 @@ test('clearing the amount makes a line ad hoc rather than zero', async ({ signed
 test('a grouping is created and renamed from Settings', async ({ signedIn }) => {
   await signedIn.goto('/settings/groupings');
 
-  await signedIn.getByRole('button', { name: 'New grouping' }).click();
+  await openNew(signedIn, 'Grouping');
   const dialog = signedIn.getByRole('dialog', { name: 'Create a grouping' });
   await dialog.getByLabel('Name').fill('Essentials');
   await dialog.getByRole('button', { name: 'Add' }).click();
@@ -95,7 +95,7 @@ test('a grouping is created and renamed from Settings', async ({ signedIn }) => 
 
 test('a grouping holding a live line refuses to archive', async ({ signedIn, api }) => {
   await signedIn.goto('/settings/groupings');
-  await signedIn.getByRole('button', { name: 'New grouping' }).click();
+  await openNew(signedIn, 'Grouping');
   const dialog = signedIn.getByRole('dialog', { name: 'Create a grouping' });
   await dialog.getByLabel('Name').fill('Essentials');
   await dialog.getByRole('button', { name: 'Add' }).click();

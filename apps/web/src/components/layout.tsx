@@ -1,6 +1,7 @@
 import { useId, useState, type ReactNode } from 'react';
 import { Button } from './ui.jsx';
 import { NotificationPills } from './NotificationPills.jsx';
+import { NewMenu } from './NewMenu.jsx';
 
 /**
  * The pieces every screen repeats.
@@ -54,9 +55,19 @@ export function PageHeader({
           138px of the Insights window picker off the side of a phone, with the
           last option unreachable — the header must give way before the screen
           does. `min-w-0` so a child that scrolls can. */}
-      {actions !== undefined && (
-        <div className="flex min-w-0 max-w-full flex-wrap items-center gap-2">{actions}</div>
-      )}
+      {/*
+        Creating a thing is always here, on every page, and always first.
+
+        Rendered by the header rather than passed in by each page, because
+        "every page" is a promise no page can keep on its own — the seven create
+        buttons this replaced were each in whichever corner their own screen had
+        room for. Leftmost of the actions, so it holds the same position
+        whatever else a page puts beside it.
+      */}
+      <div className="flex min-w-0 max-w-full flex-wrap items-center gap-2">
+        <NewMenu />
+        {actions}
+      </div>
     </header>
   );
 }

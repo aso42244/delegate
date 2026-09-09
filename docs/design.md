@@ -75,7 +75,7 @@ Collapsible to a 64px icon-only rail via a `«` button that flips to `»`. Colla
 state persists across sessions. Active nav item: accent-soft background, accent
 text and icon. Nav items 14px/500, 17px icon, 6px radius.
 
-**Main content**: soft-surface background, max width ~1200px, 28–36px top
+**Main content**: soft-surface background, max width ~1600px, 28–36px top
 padding, 24–48px side gutters. Page header is title plus a one-line grey subtitle
 on the left, primary actions on the right.
 

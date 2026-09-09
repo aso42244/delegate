@@ -157,6 +157,15 @@ function MonthRow({
           // reads as "nothing" rather than as "a very small something".
           const share = peak > 0n && value > 0n ? Number((value * 100n) / peak) / 100 : 0;
           const isToday = day.date.slice(0, 10) === today;
+          /*
+           * A day that has not happened yet is an outline, not a filled cell.
+           *
+           * Drawn in the same grey as a day that cost nothing, the rest of the
+           * month read as three weeks of spending nothing — a claim about the
+           * future rather than a record of the past, and the same mistake the
+           * pace chart avoids by stopping its lines at today.
+           */
+          const isFuture = day.date.slice(0, 10) > today;
 
           return (
             <button
@@ -172,8 +181,16 @@ function MonthRow({
               onClick={() => onPickDay(day.date)}
               // Every cell says its own date and figure. The band shows the
               // shape; this is how somebody reads one column off it.
-              title={`${dayLabel(day.date)} · ${formatCents(value)}`}
-              aria-label={`${dayLabel(day.date)}, ${formatCents(value)}`}
+              title={
+                isFuture
+                  ? `${dayLabel(day.date)} · not yet`
+                  : `${dayLabel(day.date)} · ${formatCents(value)}`
+              }
+              aria-label={
+                isFuture
+                  ? `${dayLabel(day.date)}, not yet`
+                  : `${dayLabel(day.date)}, ${formatCents(value)}`
+              }
               className={`h-4 rounded-sm p-0 enabled:cursor-pointer enabled:hover:outline enabled:hover:outline-1 enabled:hover:outline-offset-1 enabled:hover:outline-axis ${
                 isToday ? 'outline outline-2 outline-offset-1 outline-accent' : ''
               }`}
@@ -181,10 +198,12 @@ function MonthRow({
                 // A fixed share of 31, so a short month stops early instead of
                 // stretching and taking the 1st out from over the 1st.
                 width: `calc(${100 / DAYS_IN_LONGEST_MONTH}% - 2px)`,
-                background:
-                  value > 0n
+                background: isFuture
+                  ? 'transparent'
+                  : value > 0n
                     ? `color-mix(in srgb, var(--color-accent) ${Math.round((0.15 + share * 0.75) * 100)}%, var(--color-surface-2))`
                     : 'var(--color-surface-2)',
+                ...(isFuture ? { border: '1px solid var(--color-line)' } : {}),
               }}
             />
           );

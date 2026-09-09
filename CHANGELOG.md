@@ -6,7 +6,63 @@ phase (`v0.1.0-phase1`, and so on).
 
 ## [Unreleased]
 
-Nothing yet.
+### Added
+
+- **One way to make a thing** ([ADR 057](docs/decisions/057-one-way-to-make-a-thing.md)).
+  `New …` in every page header, with transaction, transfer, check, delegation,
+  grouping and rule behind it. Seven create buttons over five screens are gone,
+  and so is the phone's `⋯` sheet that folded four of them away below a
+  breakpoint. The dialogs did not move — each still lives with the screen that
+  owns the thing it makes.
+
+  What a page keeps is anything that is not _creating_ a thing: Delegate,
+  Arrange, Run rules, and every row-level action.
+
+- **Overview starts on an arrangement rather than an empty page.** It is the
+  landing page now, so a blank screen with a button on it was the first thing
+  anybody saw. The default is the owner's own layout — where the money went
+  across the top, Cashflow on a row of its own, what is coming below it, and the
+  daily checks in the sidebar.
+
+  It is not stored for anybody, so a later default can reach a household that
+  has never arranged theirs. **Arranging Overview to nothing sticks**: a tile
+  removed on purpose does not come back, which needed the act to be recorded
+  rather than inferred from the absence of tiles.
+
+### Changed
+
+- **Pages are wider — 1600px, from 1200.** The old cap was set when every page
+  was a table and a column of cards; on a modern desktop it left a band of empty
+  surface down each side wider than the sidebar.
+
+- **Overview fits three tiles in a row**, from two. Arithmetic rather than
+  preference: a ranked bar with a name and a figure stops being readable at
+  about 300px, and a third of what is left beside the 398px panel is now about
+  390px.
+
+- **Links look like links.** `.linkish` was used in half a dozen places and
+  never defined, so those controls rendered as plain ink beside others that
+  spelled the accent out by hand — two controls doing the same job on one screen
+  in two colours. One definition now, and everything that reads as a link points
+  at it.
+
+- **The Cashflow chart no longer carries "Categorize what is left".** The way
+  into the queue is on "Waiting to be categorized", which is the tile whose
+  whole subject that is.
+
+- **A reading closes when you click outside it.** Dialogs that hold a typed
+  amount still do not — losing that to a stray click beside the card is worse
+  than one extra keypress — but a dialog that is only a reading has nothing to
+  lose.
+
+- **Daily outflow: a day lists only what went out.** Income and confirmed
+  transfers are not a day's spending, and listing them put a credit and a card
+  payment in a list headed by what went out, with a total that agreed with
+  neither. The rows are wider and read left to right now, and days that have not
+  happened yet are drawn as outlines rather than as days that cost nothing.
+
+- **"Open in the register" filters to that day**, through a `day` parameter in
+  the URL, instead of searching for the date as text.
 
 ## [0.62.0] — 2026-09-09
 

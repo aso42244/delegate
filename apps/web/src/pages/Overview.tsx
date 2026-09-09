@@ -158,9 +158,14 @@ const NO_HISTORY = 'No history yet — the first night records one.';
  * Two entries, not four: a row holds at most two tiles now that the panel takes
  * the right of the page.
  */
+/*
+ * Written out rather than interpolated, because Tailwind reads the source for
+ * class names and `lg:col-span-${n}` is a string it never sees.
+ */
 const COLUMN_CLASS: Record<number, string> = {
   12: 'lg:col-span-12',
   6: 'lg:col-span-6',
+  4: 'lg:col-span-4',
 };
 
 function TileShell({
@@ -388,7 +393,16 @@ function DayDialog({
   const day = dayIso.slice(0, 10);
   const rows = useQuery({
     queryKey: ['transactions', 'day', day],
-    queryFn: () => transactionsApi.list({ day, limit: 100 }),
+    /*
+     * The same rows the cell was drawn from, and only those.
+     *
+     * `kind: 'normal'` drops income and confirmed transfers — a payroll deposit
+     * is not a day's spending, and a card payment is money moving between two
+     * accounts the household already owns. The band counts neither, so listing
+     * them here put a $200 credit and a card payment in a list headed by what
+     * went out, and the total underneath disagreed with both.
+     */
+    queryFn: () => transactionsApi.list({ day, kind: 'normal', limit: 100 }),
   });
 
   const [year, month, date] = day.split('-').map(Number);
@@ -398,62 +412,69 @@ function DayDialog({
     day: 'numeric',
   });
 
-  const spent = (rows.data?.transactions ?? [])
-    .map((row) => BigInt(row.amountCents))
-    .filter((amount) => amount < 0n)
-    .reduce((sum, amount) => sum - amount, 0n);
+  // Money out. A refund landing the same day is a negative amount of spending
+  // and nets off, which is what the cell above did with it too.
+  const spending = (rows.data?.transactions ?? []).filter((row) => BigInt(row.amountCents) < 0n);
+  const spent = spending.reduce((sum, row) => sum - BigInt(row.amountCents), 0n);
 
   return (
-    <Modal label={`What was spent on ${title}`} title={title} onClose={onClose} width="lg">
+    <Modal
+      label={`What was spent on ${title}`}
+      title={title}
+      onClose={onClose}
+      width="xl"
+      dismissible
+    >
       {rows.isPending ? (
         <p className="text-quiet text-muted">Loading…</p>
-      ) : (rows.data?.transactions.length ?? 0) === 0 ? (
-        <EmptyState>Nothing posted that day.</EmptyState>
+      ) : spending.length === 0 ? (
+        <EmptyState>Nothing went out that day.</EmptyState>
       ) : (
-        <>
-          <ul className="list-none border-t border-line p-0">
-            {rows.data!.transactions.map((row) => {
-              const amount = BigInt(row.amountCents);
-              return (
-                <li
-                  key={row.id}
-                  className="row-cell flex items-baseline gap-3 border-b border-line"
-                >
-                  <span className="min-w-0 flex-1">
-                    <span className="block truncate text-quiet text-ink">{row.description}</span>
-                    <span className="block truncate text-micro text-muted">
-                      {/* Where it came from and where it went, which is the pair
-                          somebody checks a charge against. */}
-                      {row.account.name}
-                      {row.allocations.length > 0 &&
-                        ` · ${row.allocations.map((entry) => entry.delegation.name).join(', ')}`}
-                      {row.allocations.length === 0 && row.kind === 'normal' && ' · Uncategorized'}
-                      {row.pending && ' · Pending'}
-                    </span>
-                  </span>
-                  <span
-                    className={`money shrink-0 text-quiet font-semibold ${
-                      amount > 0n ? 'text-positive' : 'text-ink'
-                    }`}
-                  >
-                    {formatCents(amount)}
-                  </span>
-                </li>
-              );
-            })}
-          </ul>
+        <ul className="list-none border-t border-line p-0">
+          {spending.map((row) => (
+            <li key={row.id} className="row-cell flex items-center gap-3 border-b border-line">
+              {/*
+                Description and where it was filed on one row, not stacked.
 
-          <div className="mt-3 flex items-center justify-between gap-2 text-quiet">
-            <span className="font-semibold text-ink">
-              {/* Out, not net: the band draws spending, and a refund landing the
-                  same day would otherwise make the two figures disagree. */}
-              <span className="money">{formatCents(spent)}</span> out
-            </span>
-            <Link to={`/transactions?search=${encodeURIComponent(day)}`} className="linkish">
-              Open in the register →
-            </Link>
-          </div>
-        </>
+                Two lines a transaction turned six charges into twelve rows of
+                alternating weight, and the second line — an account and a
+                delegation — is short. A row reads left to right: what it was,
+                where it came from, where it went, how much.
+              */}
+              <span
+                className="min-w-0 flex-[2] truncate text-quiet text-ink"
+                title={row.description}
+              >
+                {row.description}
+              </span>
+              <span className="hidden min-w-0 flex-1 truncate text-micro text-muted sm:block">
+                {row.account.name}
+              </span>
+              <span className="hidden min-w-0 flex-1 truncate text-micro text-muted sm:block">
+                {row.allocations.length > 0
+                  ? row.allocations.map((entry) => entry.delegation.name).join(', ')
+                  : 'Uncategorized'}
+                {row.pending && ' · Pending'}
+              </span>
+              <span className="money w-24 shrink-0 text-quiet font-semibold text-ink">
+                {formatCents(-BigInt(row.amountCents))}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {!rows.isPending && (
+        <div className="mt-3 flex items-center justify-between gap-2 text-quiet">
+          <span className="font-semibold text-ink">
+            <span className="money">{formatCents(spent)}</span> out
+          </span>
+          {/* The register, filtered to this day — the same calendar day, cut in
+              the household's zone by the server, so the two lists agree. */}
+          <Link to={`/transactions?day=${day}`} className="linkish">
+            Open in the register →
+          </Link>
+        </div>
       )}
     </Modal>
   );
@@ -473,7 +494,7 @@ function AllBillsDialog({ onClose }: { readonly onClose: () => void }): ReactNod
   const rows = bills.data?.bills ?? [];
 
   return (
-    <Modal label="Every recurring bill" title="All bills" onClose={onClose} width="lg">
+    <Modal label="Every recurring bill" title="All bills" onClose={onClose} width="lg" dismissible>
       {bills.isPending ? (
         <p className="text-quiet text-muted">Loading…</p>
       ) : rows.length === 0 ? (
@@ -655,10 +676,7 @@ function BacklogTile({
       note={days === null ? 'Waiting to be categorized.' : `Waiting, oldest ${days}d.`}
       tone="warning"
       action={
-        <Link
-          to="/transactions?uncategorized=true"
-          className="text-quiet font-semibold text-accent hover:underline"
-        >
+        <Link to="/transactions?uncategorized=true" className="linkish">
           Open the queue →
         </Link>
       }
@@ -1176,19 +1194,6 @@ function CashflowTile({
         <EmptyState>No cycle has been run yet.</EmptyState>
       ) : (
         <Sankey inflows={inflows} outflows={outflows} emptyMessage="Nothing came in yet." />
-      )}
-
-      {(uncategorizedIn > 0n || uncategorizedOut > 0n) && (
-        <div className="flex items-center gap-2 border-t border-line pt-2">
-          {/* Uncategorized is the one thing on this chart somebody can act on,
-              and until it is worked every other figure is wrong by that much. */}
-          <Link
-            to="/transactions?uncategorized=true"
-            className="text-quiet font-semibold text-accent hover:underline"
-          >
-            Categorize what is left →
-          </Link>
-        </div>
       )}
     </div>
   );

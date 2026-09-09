@@ -133,6 +133,20 @@ function chipsFor(transaction: TransactionDto): ChipKind[] {
   return kinds;
 }
 
+/**
+ * A calendar day, read as its own parts.
+ *
+ * Never through `new Date(iso)`: that is an instant, and formatting it in the
+ * browser's zone renders 2026-09-01 as "Aug 31" anywhere west of UTC.
+ */
+function dayLabel(day: string): string {
+  const [year, month, date] = day.split('-').map(Number);
+  return new Date(year!, month! - 1, date).toLocaleDateString(undefined, {
+    month: 'short',
+    day: 'numeric',
+  });
+}
+
 export function Transactions(): ReactNode {
   const queryClient = useQueryClient();
   /*
@@ -160,6 +174,25 @@ export function Transactions(): ReactNode {
    */
   const [searchParams, setSearchParams] = useSearchParams();
   const uncategorized = searchParams.get('uncategorized') === 'true';
+
+  /*
+   * One calendar day, from a cell on the Daily outflow band.
+   *
+   * In the URL for the same reason the queue is: it is a way of *arriving* here
+   * rather than a control on the page, and the two routes are the same
+   * component. The server resolves it in the household's zone, so the list is
+   * exactly the rows that drew the cell it was opened from.
+   */
+  const day = /^\d{4}-\d{2}-\d{2}$/.test(searchParams.get('day') ?? '')
+    ? searchParams.get('day')!
+    : null;
+
+  function clearDay(): void {
+    setOffset(0);
+    const next = new URLSearchParams(searchParams);
+    next.delete('day');
+    setSearchParams(next, { replace: true });
+  }
 
   function toggleUncategorized(): void {
     setOffset(0);
@@ -192,6 +225,7 @@ export function Transactions(): ReactNode {
   const query = {
     ...filters,
     ...(uncategorized ? { uncategorized: true } : {}),
+    ...(day === null ? {} : { day }),
     search,
     limit: PAGE_SIZE,
     offset,
@@ -350,14 +384,9 @@ export function Transactions(): ReactNode {
        * The count now lives on Settings → Sync, beside the connection that
        * produced it.
        */}
-      <PageHeader
-        title="Transactions"
-        actions={
-          <Button variant="primary" onClick={() => setAdding(true)}>
-            New transaction
-          </Button>
-        }
-      />
+      {/* No actions of its own: creating a transaction is the header's
+          "New …", on this page and every other. */}
+      <PageHeader title="Transactions" />
 
       {/*
         Gone.
@@ -388,6 +417,17 @@ export function Transactions(): ReactNode {
           className="field min-w-64 flex-1 rounded-lg border border-line bg-canvas px-3 text-base"
         />
 
+        {/*
+          A day is a filter somebody arrived with rather than one they set here,
+          so it is shown as a pressed control that says what it is doing and
+          clears itself — the alternative is a list that is silently short with
+          nothing on screen saying why.
+        */}
+        {day !== null && (
+          <Button variant="primary" onClick={clearDay}>
+            {dayLabel(day)} ✕
+          </Button>
+        )}
         <Button variant={uncategorized ? 'primary' : 'default'} onClick={toggleUncategorized}>
           Uncategorized
         </Button>

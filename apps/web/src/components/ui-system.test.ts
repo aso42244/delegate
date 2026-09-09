@@ -136,19 +136,42 @@ describe('disclosures', () => {
 });
 
 /**
- * Creating a thing is always `New <noun>`.
+ * Creating a thing happens in one place.
  *
  * The audit found Add, Create, New and "Set up" all in use — and both "Add
  * grouping" and "New grouping" for the same action, on two different screens.
+ * Naming them all `New <noun>` fixed the words; it did not fix that there were
+ * seven of them, each wherever its own page had room.
+ *
+ * So the entry point is `NewMenu`, in every page header, and a page no longer
+ * carries a create button at all. What a page keeps is anything that is not
+ * creating a thing — Delegate, Arrange, Run rules — and every row-level action.
  */
 describe('button labels', () => {
   it('name creation one way', () => {
-    // An entry point that opens a create flow is `New <noun>`. A submit button
-    // inside that flow is the bare verb — the dialog title already carries the
-    // noun, and repeating it is the extra word this whole pass is about.
+    // A submit button inside a create flow is the bare verb: the dialog title
+    // already carries the noun, and repeating it is the extra word this whole
+    // pass is about.
     const banned = /<Button[^>]*>\s*(?:Create\s+\w|Set up\s+\w|Add\s+an?\s)/g;
     const offenders = FILES.flatMap(({ path, text }) =>
       [...text.matchAll(banned)].map((match) => `${path}: ${match[0].slice(-32).trim()}`),
+    );
+    expect(offenders).toEqual([]);
+  });
+
+  it('put every create behind the one menu', () => {
+    /*
+     * `New <noun>` on a page is now a second route to something the header
+     * already offers, and two routes to one action are how "Add grouping" and
+     * "New grouping" came to exist in the first place.
+     *
+     * `NewMenu` itself is exempt: it is the menu, and its items are nouns
+     * without the word.
+     */
+    const banned = /<Button[^>]*>\s*New\s+\w/g;
+    const offenders = FILES.filter(({ path }) => !path.endsWith('NewMenu.tsx')).flatMap(
+      ({ path, text }) =>
+        [...text.matchAll(banned)].map((match) => `${path}: ${match[0].slice(-32).trim()}`),
     );
     expect(offenders).toEqual([]);
   });

@@ -205,6 +205,17 @@ model User {
   /// Not unique and not a credential: nothing is ever looked up by it.
   displayName String? @map("display_name")
 
+  /// Whether this person has ever arranged Overview.
+  ///
+  /// Not derivable from the tiles themselves: somebody who removes every tile
+  /// has arranged it to nothing, and a read that saw no rows would hand them the
+  /// default back — a tile deleted on purpose reappearing on the next reload.
+  ///
+  /// So the flag is about the *act*, not the result, and it is what separates
+  /// "never chose" from "chose nothing" — the same distinction `landing_page`
+  /// makes with null.
+  overviewArranged Boolean @default(false) @map("overview_arranged")
+
   /// Where this person lands when they open the application.
   ///
   /// Per person rather than per household: the two people using this budget read

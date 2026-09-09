@@ -87,7 +87,21 @@ function AppShell({ appName }: { appName: string }): ReactNode {
         {/* Nothing above the page any more. Every notification is a pill in the
             page header now, which `PageHeader` renders — so they still reach
             every screen, and none of them costs the screen a row. */}
-        <div className="mx-auto w-full max-w-[1200px]">
+        {/*
+          1600px, from 1200.
+
+          The cap was set when every page was a table and a column of cards, and
+          1200 is where a line of prose stops being comfortable. These pages are
+          not prose: Overview is a grid of tiles, Budget is a wide table, and the
+          register is a list of rows whose longest column has no upper bound. On
+          a modern desktop the old cap left a band of empty surface down each
+          side wider than the sidebar.
+
+          Still capped rather than full-bleed — an unbounded page turns a
+          three-tile row into a five-tile row on one monitor and a two on
+          another, and the arrangement is stored per person, not per screen.
+        */}
+        <div className="mx-auto w-full max-w-[1600px]">
           <Outlet />
         </div>
       </main>

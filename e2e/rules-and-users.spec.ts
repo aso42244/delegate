@@ -1,4 +1,4 @@
-import { expect, makeAccount, makeDelegation, test } from './fixtures.js';
+import { expect, makeAccount, makeDelegation, openNew, test } from './fixtures.js';
 import type { APIRequestContext, Locator, Page } from '@playwright/test';
 
 /**
@@ -23,7 +23,7 @@ async function makeTransaction(
 
 /** Creates a rule through the dialog, which is the only route now. */
 async function makeRule(page: Page, text: string, delegation: string): Promise<void> {
-  await page.getByRole('button', { name: 'New rule' }).click();
+  await openNew(page, 'Rule');
 
   const dialog = page.getByRole('dialog', { name: 'Create an auto-categorization rule' });
   await dialog.getByLabel('This text').fill(text);
@@ -60,7 +60,7 @@ test('a rule can label a transaction rather than categorize it', async ({ signed
   await makeTransaction(api, accountId, '320000', 'ACME PAYROLL DIRECT DEP');
 
   await signedIn.goto('/settings/rules');
-  await signedIn.getByRole('button', { name: 'New rule' }).click();
+  await openNew(signedIn, 'Rule');
 
   const dialog = signedIn.getByRole('dialog', { name: 'Create an auto-categorization rule' });
   await dialog.getByLabel('This text').fill('acme payroll');

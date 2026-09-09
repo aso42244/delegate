@@ -341,6 +341,31 @@ body {
 }
 
 /**
+ * A control that reads as a link.
+ *
+ * The way out of a tile, the way into a filtered list — a press that navigates
+ * rather than changes anything. It is often a `<button>` because it opens a
+ * dialog rather than following an href, and a button is what that is; this makes
+ * the two look identical, which is the point.
+ *
+ * **It was used before it was defined.** Half a dozen places wrote
+ * `className="linkish"` against no rule at all and rendered as plain ink, beside
+ * others that spelled the accent out by hand — so two controls doing the same
+ * job on the same screen were different colours. One definition, and everything
+ * that reads as a link points at it.
+ */
+.linkish {
+  color: var(--color-accent);
+  font-size: var(--text-quiet);
+  font-weight: 600;
+  text-align: left;
+}
+
+.linkish:hover {
+  text-decoration: underline;
+}
+
+/**
  * The `⋯` trigger on a row menu.
  *
  * Hidden until the row is hovered or something in it has focus, so a table of
