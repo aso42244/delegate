@@ -92,8 +92,11 @@ export function OverviewPanel({
         different on day 2 than on day 13.
       */}
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-line p-3">
-        <SegmentedControl size="sm" label="Panel" value={tab} options={TABS} onChange={onTab} />
+        {/* Where the cycle stands on the left, the tabs on the right: the tabs
+            are the control and controls sit where a control is looked for, which
+            on every other header here is the right-hand end. */}
         <CycleStamp cycle={data?.payCycle ?? null} />
+        <SegmentedControl size="sm" label="Panel" value={tab} options={TABS} onChange={onTab} />
       </div>
       <div className="min-h-0 flex-1 overflow-auto">{body}</div>
     </aside>

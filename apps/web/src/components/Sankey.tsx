@@ -230,22 +230,40 @@ export function Sankey({
   }
 
   return (
-    <div className="w-full overflow-x-auto">
+    /*
+     * `min-h-0` so this can be shorter than the drawing inside it. A flex item's
+     * minimum size is its content, which would keep the chart at full height and
+     * push it out of a row somebody had just dragged shorter.
+     */
+    <div className="h-full min-h-0 w-full overflow-x-auto">
       <svg
         viewBox={`0 0 ${WIDTH} ${height}`}
         /*
-         * Capped, because the drawing scales with its width and the page got
-         * 400px wider — the same chart that fitted a screen at 1200px ran off
-         * the bottom of one at 1600. `meet` keeps the proportions and centres
-         * what is left, so a tall flow shrinks rather than being cropped.
+         * It scales to the room it is given rather than scrolling inside it.
          *
-         * A row on Overview can be dragged taller than this, and then the tile
-         * gives it the room; this is only what it asks for unasked.
+         * `max-height: 100%` against a tile whose height was dragged, capped at
+         * 520px where nothing constrains it — the drawing scales with its width
+         * and the page got 400px wider, so the chart that fitted a screen at
+         * 1200px ran off the bottom of one at 1600.
+         *
+         * The default `xMidYMid meet` keeps the proportions and centres what is
+         * left, so a shorter row shrinks the flow rather than cropping it.
          */
-        className="block h-auto max-h-[520px] w-full min-w-[640px]"
+        className="block w-full min-w-[640px]"
         role="img"
         aria-label={`Cashflow: ${formatCents(total)} from ${left.length} sources to ${right.length} destinations`}
-        style={{ fontVariantNumeric: 'tabular-nums' }}
+        /*
+         * `height: 100%` with a pixel cap, which covers both cases with one
+         * rule: in a row whose height was dragged the chain is definite and this
+         * fills it, and where nothing constrains it the percentage goes
+         * indefinite, the drawing takes its intrinsic height, and the cap brings
+         * it back to 520.
+         *
+         * `min(520px, 100%)` was the first attempt and silently lost the cap —
+         * a `min()` containing an indefinite percentage is itself indefinite,
+         * so an unconstrained chart went back to 780px.
+         */
+        style={{ height: '100%', maxHeight: 520, fontVariantNumeric: 'tabular-nums' }}
       >
         {/* Ribbons first, so labels sit over them rather than under. */}
         {ribbons}

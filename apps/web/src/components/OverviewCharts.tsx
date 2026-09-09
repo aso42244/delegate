@@ -1,7 +1,6 @@
 import { formatCents } from '@budget/shared';
 import type { ReactNode } from 'react';
 import type {
-  AllocationSliceDto,
   BillAttentionDto,
   BillStatusDto,
   BillsThisCycleDto,
@@ -89,7 +88,7 @@ export function OutflowBand({
   const peak = all.reduce((max, value) => (value > max ? value : max), 0n);
 
   return (
-    <div className="flex flex-col gap-3">
+    <div className="flex min-h-0 flex-col gap-3 overflow-y-auto">
       {months.map((month, index) => (
         <MonthRow
           key={month.month}
@@ -276,7 +275,7 @@ export function BillAttentionList({
   readonly onOpenAll: () => void;
 }): ReactNode {
   return (
-    <div className="flex flex-col gap-2">
+    <div className="flex min-h-0 flex-col gap-2">
       {bills.length === 0 ? (
         <div className="flex flex-col items-center gap-1 py-5 text-center">
           <span className="text-quiet font-semibold text-ink">Everything arrived</span>
@@ -285,7 +284,7 @@ export function BillAttentionList({
           </span>
         </div>
       ) : (
-        <ul className="list-none p-0">
+        <ul className="min-h-0 list-none overflow-y-auto p-0">
           {bills.map((bill) => (
             <li
               key={bill.key}
@@ -394,7 +393,7 @@ export function UtilityTrends({
   }
 
   return (
-    <div className="flex flex-col gap-1">
+    <div className="flex min-h-0 flex-col gap-1 overflow-y-auto">
       {entries.map((entry) => {
         const values = entry.months.map((month) => Number(BigInt(month)));
         const low = Math.min(...values);
@@ -502,7 +501,7 @@ export function UtilitiesToAdjust({
   }
 
   return (
-    <ul className="list-none p-0">
+    <ul className="min-h-0 list-none overflow-y-auto p-0">
       {worth.map(({ entry, funded, actual, gap }) => (
         <li
           key={entry.delegationId}
@@ -551,8 +550,8 @@ export function OutstandingChecks({
   const total = checks.reduce((sum, check) => sum + BigInt(check.amountCents), 0n);
 
   return (
-    <div className="flex flex-col gap-2">
-      <ul className="list-none p-0">
+    <div className="flex min-h-0 flex-col gap-2">
+      <ul className="min-h-0 list-none overflow-y-auto p-0">
         {checks.map((check) => (
           <li
             key={check.id}
@@ -678,85 +677,15 @@ export function PaceChart({ points }: { readonly points: readonly PacePointDto[]
   );
 }
 
-const R = 52;
-const STROKE = 17;
-
-/** Where the money is delegated, as proportions. */
-export function AllocationDonut({
-  slices,
-  emptyMessage,
-}: {
-  readonly slices: readonly AllocationSliceDto[];
-  readonly emptyMessage: string;
-}): ReactNode {
-  const amounts = slices.map((slice) => BigInt(slice.amountCents));
-  const total = amounts.reduce((sum, value) => sum + value, 0n);
-  if (total <= 0n) return <p className="text-quiet text-muted">{emptyMessage}</p>;
-
-  const circumference = 2 * Math.PI * R;
-  let offset = 0;
-
-  return (
-    <div className="flex flex-wrap items-center gap-4">
-      <svg
-        viewBox="0 0 140 140"
-        className="h-32 w-32 shrink-0"
-        role="img"
-        aria-label={`Total ${formatCents(total)}`}
-      >
-        {slices.map((slice, index) => {
-          const length = (Number(amounts[index]!) / Number(total)) * circumference;
-          const dash = `${Math.max(length - 1.5, 0.5).toFixed(2)} ${(circumference - length + 1.5).toFixed(2)}`;
-          const element = (
-            <circle
-              key={slice.key}
-              r={R}
-              cx="70"
-              cy="70"
-              fill="none"
-              style={{ stroke: slice.color ?? 'var(--color-group-grey)' }}
-              strokeWidth={STROKE}
-              strokeDasharray={dash}
-              strokeDashoffset={-offset}
-              transform="rotate(-90 70 70)"
-            />
-          );
-          offset += length;
-          return element;
-        })}
-        <text
-          x="70"
-          y="68"
-          textAnchor="middle"
-          fontSize="15"
-          fontWeight="700"
-          style={{ fill: 'var(--color-ink)' }}
-        >
-          {formatCents(total)}
-        </text>
-      </svg>
-
-      {/* The figures as text: a proportion nobody can read is a proportion
-          nobody has. */}
-      <ul className="flex min-w-0 flex-1 list-none flex-col gap-1 p-0">
-        {slices.map((slice, index) => (
-          <li key={slice.key} className="flex items-baseline gap-2 text-quiet">
-            <i
-              aria-hidden="true"
-              className="inline-block h-2 w-2 shrink-0 rounded-sm"
-              style={{ background: slice.color ?? 'var(--color-group-grey)' }}
-            />
-            <span className="min-w-0 flex-1 truncate text-ink">{slice.name}</span>
-            <span className="money shrink-0 font-semibold">{formatCents(amounts[index]!)}</span>
-            <span className="money w-8 shrink-0 text-right text-micro text-muted">
-              {Math.round((Number(amounts[index]!) / Number(total)) * 100)}%
-            </span>
-          </li>
-        ))}
-      </ul>
-    </div>
-  );
-}
+/*
+ * The allocation donut that stood here is gone with the tile it drew.
+ *
+ * A donut answers "what share" and nothing else, and the legend beside it was
+ * already carrying every figure anybody read — in a column half the tile wide,
+ * on a page where a tile is a third of the width. The same rows as ranked bars
+ * are the shape every other tile here uses, sort largest first without a colour
+ * key, and read at the density the budget panel reads at.
+ */
 
 /** What is coming, from Bills. Everything here is inferred from the register. */
 export function UpcomingList({

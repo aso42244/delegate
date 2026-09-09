@@ -6,7 +6,40 @@ phase (`v0.1.0-phase1`, and so on).
 
 ## [Unreleased]
 
-Nothing yet.
+### Changed
+
+- **Ranked bars are one line: name, bar, figure**, at the same 28px row the
+  budget panel uses. They were a name and a figure with the bar on a second line
+  beneath, so a tile showed five readings where it now shows nine. The bars
+  start at the same x down the column, which is what makes them comparable.
+
+- **The Allocation tile is ranked bars, and the donut is gone.** A donut answers
+  "what share" and nothing else — the legend beside it was already carrying
+  every figure anybody read, in a column half the tile wide, on a page where a
+  tile is a third of the width. The same rows as bars sort largest first without
+  a colour key. Each row keeps its share of the total as a small figure, because
+  the bars are scaled to the largest row rather than to the total.
+
+- **Both tile switches sit in their tile's header** — Allocation's beside
+  Cashflow's. In the body the control stretched to the tile's full width,
+  because a flex column stretches its children.
+
+- **The budget panel's tabs moved to the right of its header**, with the cycle
+  on the left. The tabs are the control, and controls sit where a control is
+  looked for.
+
+### Fixed
+
+- **A row dragged short fits its content instead of clipping it.** The tile's
+  body was what scrolled, which takes the whole tile with it — so the Cashflow
+  chart kept its full height and scrolled, the Allocation donut was cut in half,
+  and rows of the spending lists were simply gone. The body holds the tile's
+  shape now: a chart scales to the room it is given and a list scrolls in place,
+  one scrollbar per overflow instead of two.
+
+  The Cashflow chart's cap was written as `max-height: min(520px, 100%)`, which
+  silently lost the cap — a `min()` containing an indefinite percentage is
+  itself indefinite. `height: 100%` with a plain pixel cap covers both cases.
 
 ## [0.64.0] — 2026-09-09
 
