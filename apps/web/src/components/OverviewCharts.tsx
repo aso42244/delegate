@@ -6,6 +6,7 @@ import type {
   BillStatusDto,
   BillsThisCycleDto,
   OutflowMonthDto,
+  OutstandingCheckDto,
   PacePointDto,
   UpcomingBillDto,
   UtilityComparisonDto,
@@ -147,7 +148,8 @@ function MonthRow({
       </div>
 
       <div
-        className="flex gap-[2px]"
+        // Room under the row for today's mark.
+        className="flex gap-[2px] pb-[3px]"
         role="img"
         aria-label={`${monthLabel(month.month)}: ${formatCents(total)} over ${month.days.length} days`}
       >
@@ -168,44 +170,61 @@ function MonthRow({
           const isFuture = day.date.slice(0, 10) > today;
 
           return (
-            <button
+            /*
+             * Today is marked *under* the cell, not around it.
+             *
+             * It was an outline, and so is a day that has not happened yet —
+             * one accent, one grey, but the same idiom, so on the row where
+             * today meets the future they read as two shades of the same thing.
+             * A border now means one thing only, "not yet", and today is a rule
+             * beneath the cell it belongs to.
+             */
+            <span
               key={day.date}
-              type="button"
-              /*
-               * A button rather than a span, so a day is openable by keyboard as
-               * well as by pointer. A day with nothing on it is disabled rather
-               * than hidden: it keeps its cell — the shape of the month depends
-               * on it — and pressing it would open an empty list.
-               */
-              disabled={value === 0n}
-              onClick={() => onPickDay(day.date)}
-              // Every cell says its own date and figure. The band shows the
-              // shape; this is how somebody reads one column off it.
-              title={
-                isFuture
-                  ? `${dayLabel(day.date)} · not yet`
-                  : `${dayLabel(day.date)} · ${formatCents(value)}`
-              }
-              aria-label={
-                isFuture
-                  ? `${dayLabel(day.date)}, not yet`
-                  : `${dayLabel(day.date)}, ${formatCents(value)}`
-              }
-              className={`h-4 rounded-sm p-0 enabled:cursor-pointer enabled:hover:outline enabled:hover:outline-1 enabled:hover:outline-offset-1 enabled:hover:outline-axis ${
-                isToday ? 'outline outline-2 outline-offset-1 outline-accent' : ''
-              }`}
-              style={{
-                // A fixed share of 31, so a short month stops early instead of
-                // stretching and taking the 1st out from over the 1st.
-                width: `calc(${100 / DAYS_IN_LONGEST_MONTH}% - 2px)`,
-                background: isFuture
-                  ? 'transparent'
-                  : value > 0n
-                    ? `color-mix(in srgb, var(--color-accent) ${Math.round((0.15 + share * 0.75) * 100)}%, var(--color-surface-2))`
-                    : 'var(--color-surface-2)',
-                ...(isFuture ? { border: '1px solid var(--color-line)' } : {}),
-              }}
-            />
+              className="relative block"
+              // A fixed share of 31, so a short month stops early instead of
+              // stretching and taking the 1st out from over the 1st.
+              style={{ width: `calc(${100 / DAYS_IN_LONGEST_MONTH}% - 2px)` }}
+            >
+              <button
+                type="button"
+                /*
+                 * A button rather than a span, so a day is openable by keyboard
+                 * as well as by pointer. A day with nothing on it is disabled
+                 * rather than hidden: it keeps its cell — the shape of the month
+                 * depends on it — and pressing it would open an empty list.
+                 */
+                disabled={value === 0n}
+                onClick={() => onPickDay(day.date)}
+                // Every cell says its own date and figure. The band shows the
+                // shape; this is how somebody reads one column off it.
+                title={
+                  isFuture
+                    ? `${dayLabel(day.date)} · not yet`
+                    : `${dayLabel(day.date)} · ${formatCents(value)}`
+                }
+                aria-label={
+                  isFuture
+                    ? `${dayLabel(day.date)}, not yet`
+                    : `${dayLabel(day.date)}, ${formatCents(value)}`
+                }
+                className="block h-4 w-full rounded-sm p-0 enabled:cursor-pointer enabled:hover:outline enabled:hover:outline-1 enabled:hover:outline-offset-1 enabled:hover:outline-axis"
+                style={{
+                  background: isFuture
+                    ? 'transparent'
+                    : value > 0n
+                      ? `color-mix(in srgb, var(--color-accent) ${Math.round((0.15 + share * 0.75) * 100)}%, var(--color-surface-2))`
+                      : 'var(--color-surface-2)',
+                  ...(isFuture ? { border: '1px solid var(--color-line)' } : {}),
+                }}
+              />
+              {isToday && (
+                <span
+                  aria-hidden="true"
+                  className="absolute inset-x-0 -bottom-[3px] h-[2px] rounded-full bg-accent"
+                />
+              )}
+            </span>
           );
         })}
       </div>
@@ -510,6 +529,56 @@ export function UtilitiesToAdjust({
         </li>
       ))}
     </ul>
+  );
+}
+
+/**
+ * What has been written and not yet cleared.
+ *
+ * A check is money that has left the budget but not the bank, so it is the one
+ * figure a statement and this application legitimately disagree about — and the
+ * disagreement is exactly this list. Number, what it was for, and how much.
+ */
+export function OutstandingChecks({
+  checks,
+}: {
+  readonly checks: readonly OutstandingCheckDto[];
+}): ReactNode {
+  if (checks.length === 0) {
+    return <p className="text-quiet text-muted">Nothing outstanding.</p>;
+  }
+
+  const total = checks.reduce((sum, check) => sum + BigInt(check.amountCents), 0n);
+
+  return (
+    <div className="flex flex-col gap-2">
+      <ul className="list-none p-0">
+        {checks.map((check) => (
+          <li
+            key={check.id}
+            className="row-cell flex items-center gap-2 border-b border-line last:border-b-0"
+            title={`Check ${check.checkNumber} · written ${dayLabel(check.issuedAt)}${
+              check.memo ? ` · ${check.memo}` : ''
+            }`}
+          >
+            {/* The number first and in figures: it is what somebody is reading
+                off a statement or a stub when they come to this list. */}
+            <span className="money w-16 shrink-0 text-quiet font-semibold text-ink">
+              {check.checkNumber}
+            </span>
+            <span className="min-w-0 flex-1 truncate text-quiet text-muted">
+              {check.memo ?? dayLabel(check.issuedAt)}
+            </span>
+            <span className="money shrink-0 text-quiet font-semibold text-ink">
+              {formatCents(BigInt(check.amountCents))}
+            </span>
+          </li>
+        ))}
+      </ul>
+      <p className="border-t border-line pt-2 text-micro text-muted">
+        {checks.length} outstanding · <span className="money">{formatCents(total)}</span>
+      </p>
+    </div>
   );
 }
 

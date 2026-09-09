@@ -102,6 +102,22 @@ That is what lets one stored arrangement serve both screens: rearranging on a
 phone rearranges the laptop too, because the thing being stored is the order and
 the grouping rather than a width that only means something on one of them.
 
+### Overview's rows
+
+**Three tiles to a row at `lg`, two at `md`, one below it.** The cap is
+arithmetic: a ranked bar with a name and a figure stops being readable at about
+300px, the page caps at 1600px and the budget panel takes 398 of it.
+
+**A row's height is dragged from the bottom edge of any tile in it**, between
+120px and 1600px, and the arrows move it 24px at a time because dragging is not
+reachable from a keyboard. It is stored on every tile in the row — a row is a
+number they share rather than a record of its own — and read back as the largest
+of them. **A tile moved to another row leaves the height behind:** heights belong
+to rows.
+
+Null is the tile's own height, which is what every row is until somebody drags
+one.
+
 ### Creating a thing
 
 **`New …` in every page header, and nowhere else**
