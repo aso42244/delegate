@@ -1,4 +1,12 @@
-import { DEFAULT_FIGURES, MAX_TILES_PER_ROW, OVERVIEW_COLUMNS } from '@budget/shared';
+import {
+  DEFAULT_FIGURES,
+  isOverviewRegion,
+  MAX_TILES_PER_ROW,
+  maxPerRowIn,
+  OVERVIEW_COLUMNS,
+  OVERVIEW_REGIONS,
+  type OverviewRegion,
+} from '@budget/shared';
 import type { FastifyPluginCallback } from 'fastify';
 import { Prisma } from '@prisma/client';
 import type { FigureKey } from '../domain/overview.js';
@@ -10,6 +18,9 @@ import {
   buildFigures,
   buildOutflow,
   buildPace,
+  delegationSeries,
+  monthBounds,
+  pickableSeries,
   buildOverview,
   buildPanel,
   isFigureKey,
@@ -20,6 +31,7 @@ import {
 } from '../domain/overview.js';
 import { payCycleAt } from '../domain/pay-cycle.js';
 import { findRecurringBills } from '../domain/recurring.js';
+import { accountSeries } from '../domain/snapshot-series.js';
 import { getBudgetSettings, householdTimezone } from '../domain/settings.js';
 import { centsOut, dateOut } from '../http/serialize.js';
 import { AUTHENTICATED } from '../plugins/auth.js';
@@ -67,6 +79,12 @@ const TILE_CONFIG: Partial<Record<string, z.ZodType>> = {
     window: z.enum(SPENDING_WINDOWS),
   }),
 
+  /** Which account the balance-history tile charts. */
+  account_balance_history: z.object({ accountId: z.string().uuid() }),
+
+  /** Which delegation the balance-history tile charts. */
+  delegation_balance_history: z.object({ delegationId: z.string().uuid() }),
+
   /** Which reading the allocation donut draws. */
   allocation: z.object({ mode: z.enum(['plan', 'position']) }),
 
@@ -87,6 +105,8 @@ const layoutSchema = z.object({
     .array(
       z.object({
         key: z.string(),
+        /** `main` or `sidebar`. Absent means main, which is every stored tile. */
+        region: z.enum(OVERVIEW_REGIONS).optional(),
         /** Which row. A row divides its width evenly among its members. */
         row: z.number().int().min(0).max(OVERVIEW_TILES.length),
         /** Order within that row. */
@@ -123,6 +143,7 @@ export const overviewRoutes: FastifyPluginCallback = (fastify, _options, done) =
       orderBy: [{ row: 'asc' }, { position: 'asc' }],
       select: {
         widgetKey: true,
+        region: true,
         row: true,
         position: true,
         display: true,
@@ -182,11 +203,20 @@ export const overviewRoutes: FastifyPluginCallback = (fastify, _options, done) =
      * placed and say nothing about it — and the width a fifth tile implies is
      * one the twelve-column grid cannot express anyway.
      */
-    const counts = new Map<number, number>();
-    for (const tile of tiles) counts.set(tile.row, (counts.get(tile.row) ?? 0) + 1);
-    const overfull = [...counts.entries()]
-      .filter(([, count]) => count > MAX_TILES_PER_ROW)
-      .map(([row]) => row);
+    /*
+     * Counted per region as well as per row: the two regions hold different
+     * numbers, so a row number alone does not say how full is too full.
+     */
+    const counts = new Map<string, { region: OverviewRegion; row: number; count: number }>();
+    for (const tile of tiles) {
+      const region = tile.region ?? 'main';
+      const key = `${region}:${tile.row}`;
+      const existing = counts.get(key);
+      counts.set(key, { region, row: tile.row, count: (existing?.count ?? 0) + 1 });
+    }
+    const overfull = [...counts.values()]
+      .filter((entry) => entry.count > maxPerRowIn(entry.region))
+      .map((entry) => entry.row);
     if (overfull.length > 0) {
       return { ok: false as const, overfullRows: overfull };
     }
@@ -221,6 +251,7 @@ export const overviewRoutes: FastifyPluginCallback = (fastify, _options, done) =
           data: {
             userId,
             widgetKey: tile.key,
+            region: tile.region ?? 'main',
             row: tile.row,
             position: tile.position,
             display: tile.display ?? null,
@@ -308,17 +339,48 @@ export const overviewRoutes: FastifyPluginCallback = (fastify, _options, done) =
     const keys = new Set(tiles);
     const bounds = cycle === null ? null : { start: cycle.start, end: cycle.end, timeZone };
 
-    const [outflow, pace, allocation, bills] = await Promise.all([
-      keys.has('daily_outflow') && bounds ? buildOutflow(prisma, bounds) : undefined,
-      keys.has('income_vs_spending_pace') && bounds ? buildPace(prisma, bounds) : undefined,
-      keys.has('allocation')
-        ? buildAllocation(
-            prisma,
-            readAllocationMode(stored.find((tile) => tile.widgetKey === 'allocation')?.config),
-          )
-        : undefined,
-      keys.has('upcoming_bills') ? findRecurringBills(prisma, timeZone) : undefined,
-    ]);
+    /*
+     * The outflow band is the one tile here drawn against the calendar month
+     * rather than the cycle, so it needs no anchor and works on a household that
+     * has never set one.
+     */
+    const month = monthBounds(new Date(), timeZone);
+
+    /*
+     * The two tiles that ask "which one". Their answer lives in the tile's own
+     * configuration; unset means nothing to draw and the tile says so, rather
+     * than picking one on somebody's behalf.
+     */
+    const accountId = readId(
+      stored.find((tile) => tile.widgetKey === 'account_balance_history')?.config,
+      'accountId',
+    );
+    const delegationId = readId(
+      stored.find((tile) => tile.widgetKey === 'delegation_balance_history')?.config,
+      'delegationId',
+    );
+    const wantsPickable =
+      keys.has('account_balance_history') || keys.has('delegation_balance_history');
+
+    const [outflow, pace, allocation, bills, accountHistory, delegationHistory, pickable] =
+      await Promise.all([
+        keys.has('daily_outflow') ? buildOutflow(prisma, { ...month, timeZone }) : undefined,
+        keys.has('income_vs_spending_pace') && bounds ? buildPace(prisma, bounds) : undefined,
+        keys.has('allocation')
+          ? buildAllocation(
+              prisma,
+              readAllocationMode(stored.find((tile) => tile.widgetKey === 'allocation')?.config),
+            )
+          : undefined,
+        keys.has('upcoming_bills') ? findRecurringBills(prisma, timeZone) : undefined,
+        keys.has('account_balance_history') && accountId
+          ? accountSeries(prisma, accountId, window)
+          : undefined,
+        keys.has('delegation_balance_history') && delegationId
+          ? delegationSeries(prisma, delegationId, cycle?.start ?? null)
+          : undefined,
+        wantsPickable ? pickableSeries(prisma) : undefined,
+      ]);
 
     const panelTile = stored.find((tile) => tile.widgetKey === 'delegations');
     const panel = await buildPanel(prisma, {
@@ -366,6 +428,27 @@ export const overviewRoutes: FastifyPluginCallback = (fastify, _options, done) =
             })),
           }
         : {}),
+      ...(accountHistory
+        ? {
+            account_balance_history: {
+              name: pickable?.accounts.find((entry) => entry.id === accountId)?.name ?? null,
+              points: accountHistory.points.map(point),
+            },
+          }
+        : {}),
+      ...(delegationHistory
+        ? {
+            delegation_balance_history: {
+              name: delegationHistory.name,
+              points: delegationHistory.points.map((entry) => ({
+                date: dateOut(entry.date),
+                provenance: entry.provenance,
+                balanceCents: centsOut(entry.balanceCents),
+              })),
+            },
+          }
+        : {}),
+      ...(pickable ? { pickable } : {}),
       ...(bills
         ? {
             upcoming_bills: bills
@@ -508,26 +591,44 @@ function point(entry: {
  * Reading order is preserved exactly. A row of four becomes two rows of two in
  * the order they were in, so the arrangement is narrowed rather than reshuffled.
  */
-function reflow<T extends { row: number; position: number }>(tiles: readonly T[]): T[] {
-  const ordered = [...tiles].sort((a, b) => a.row - b.row || a.position - b.position);
-
+function reflow<T extends { region: string; row: number; position: number }>(
+  tiles: readonly T[],
+): T[] {
   const out: T[] = [];
-  let row = -1;
-  let position = 0;
-  let previousStoredRow: number | null = null;
 
-  for (const tile of ordered) {
-    const startsNewRow =
-      previousStoredRow === null || tile.row !== previousStoredRow || position >= MAX_TILES_PER_ROW;
-    if (startsNewRow) {
-      row += 1;
-      position = 0;
+  // Per region: the two hold different numbers, and their rows are numbered
+  // independently, so re-flowing them together would interleave two sequences.
+  for (const region of OVERVIEW_REGIONS) {
+    const ordered = tiles
+      .filter((tile) => (isOverviewRegion(tile.region) ? tile.region : 'main') === region)
+      .sort((a, b) => a.row - b.row || a.position - b.position);
+
+    let row = -1;
+    let position = 0;
+    let previousStoredRow: number | null = null;
+
+    for (const tile of ordered) {
+      const startsNewRow =
+        previousStoredRow === null ||
+        tile.row !== previousStoredRow ||
+        position >= maxPerRowIn(region);
+      if (startsNewRow) {
+        row += 1;
+        position = 0;
+      }
+      out.push({ ...tile, row, position });
+      previousStoredRow = tile.row;
+      position += 1;
     }
-    out.push({ ...tile, row, position });
-    previousStoredRow = tile.row;
-    position += 1;
   }
   return out;
+}
+
+/** One id out of a tile's configuration, or null when it has not been pointed anywhere. */
+function readId(config: unknown, field: string): string | null {
+  if (config === null || typeof config !== 'object') return null;
+  const value = (config as Record<string, unknown>)[field];
+  return typeof value === 'string' ? value : null;
 }
 
 /** Which reading the donut draws. The plan unless told otherwise. */

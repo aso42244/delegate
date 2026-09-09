@@ -49,35 +49,23 @@ export async function resetDatabase(): Promise<void> {
     },
   });
 
-  await prisma.budgetSettings.upsert({
-    where: { id: 1 },
-    create: { id: 1, undoWindowHours: 12, identityToleranceCents: 500n },
-    // Every column, not only the ones a test happens to read: this row survives
-    // the truncate, so anything left out of here leaks into the next run.
-    update: {
-      undoWindowHours: 12,
-      identityToleranceCents: 500n,
-      goLiveAt: null,
-      // Every column, including this one. It leaked into every later test the
-      // day it was added — which is the failure the comment above describes.
-      nextPaydayOn: null,
-      // The product default. Left out of this list once already, which leaked a
-      // cadence from one test into the next and made the suggestion in the
-      // following test wrong for reasons nothing in it explained.
-      payCadence: 'biweekly',
-      remoteOverTorEnabled: false,
-      remoteOverTorEnabledAt: null,
-      // Null is the product default: follow SCHEDULE_TIMEZONE. A zone left here
-      // from a previous file would move every schedule in the next one.
-      scheduleTimezone: null,
-      bitcoinInBudgetAckAt: null,
-      // The product default. This row survives the truncate, so a value left
-      // here from one test silences the next one's notification.
-      recurringAlertsEnabled: true,
-      simplefinAccessUrlEncrypted: null,
-      simplefinConnectedAt: null,
-    },
-  });
+  /*
+   * Deleted and recreated rather than updated column by column.
+   *
+   * This row is pinned — the application updates it by id and never creates it
+   * — so it survives the truncate above and has to be reset in place. It used
+   * to be reset by listing every column, and a column left off that list leaked
+   * from one test into the next: the pay cadence did it once, the recurring
+   * alerts flag once, and the payday anchor a third time, each found as a
+   * confusing failure somewhere unrelated rather than as a missing name here.
+   *
+   * Recreating from the id alone lets the schema's own defaults apply, so a
+   * column added tomorrow is reset without anybody remembering. A column with no
+   * default would fail loudly here, at the moment it was added, rather than
+   * quietly leaking for a fortnight.
+   */
+  await prisma.budgetSettings.deleteMany({ where: { id: 1 } });
+  await prisma.budgetSettings.create({ data: { id: 1 } });
 }
 
 export async function makeUser(username = 'owner'): Promise<{ id: string }> {

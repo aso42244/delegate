@@ -53,6 +53,20 @@ const SPENDING_TOKENS = [
   'var(--color-series-8)',
 ];
 
+/**
+ * How much of a node's name fits beside its bar.
+ *
+ * SVG text does not wrap and cannot be ellipsised by CSS, so this is measured in
+ * characters rather than pixels — an approximation, and a generous one, because
+ * the cost of being wrong is a label a little short rather than one running
+ * across the ribbons. The whole name is on the hover either way.
+ */
+const LABEL_MAX = 28;
+
+function truncate(name: string): string {
+  return name.length > LABEL_MAX ? `${name.slice(0, LABEL_MAX - 1)}…` : name;
+}
+
 const WIDTH = 1000;
 /** Pixels of bar for the whole flow. One scale, both sides. */
 const BARS = 360;
@@ -68,12 +82,24 @@ interface Laid extends FlowNode {
   readonly color: string;
 }
 
-/** Rolls everything under `share` of the total into one node. */
+/**
+ * Rolls everything under `share` of the total into one node.
+ *
+ * **Uncategorized is never rolled up, whatever its size.** It is the one node on
+ * this chart somebody can act on, and until it is worked every other figure here
+ * is wrong by whatever it holds — so hiding it inside `Other` because it happens
+ * to be small is precisely backwards. Found with $1,048 of a real year's
+ * uncategorized income filed under `Other (8)`.
+ */
 function rollUp(nodes: readonly FlowNode[], total: bigint, share: number): FlowNode[] {
   if (total <= 0n) return [];
   const keep: FlowNode[] = [];
   const small: FlowNode[] = [];
   for (const node of nodes) {
+    if (node.tone === 'uncategorized') {
+      keep.push(node);
+      continue;
+    }
     // Integer comparison: value * 1000 against total * (share * 1000).
     const thousandths = Number((node.amountCents * 1000n) / total);
     (thousandths < share * 1000 ? small : keep).push(node);
@@ -239,10 +265,11 @@ export function Sankey({
             fontWeight="600"
             style={{ fill: 'var(--color-ink)' }}
           >
-            {node.name}{' '}
+            {truncate(node.name)}{' '}
             <tspan fontWeight="400" style={{ fill: 'var(--color-muted)' }}>
               {formatCents(node.amountCents)}
             </tspan>
+            <title>{`${node.name} — ${formatCents(node.amountCents)}`}</title>
           </text>
         ))}
         {rightStack.laid.map((node) => (
@@ -256,10 +283,11 @@ export function Sankey({
             fontWeight="600"
             style={{ fill: 'var(--color-ink)' }}
           >
-            {node.name}{' '}
+            {truncate(node.name)}{' '}
             <tspan fontWeight="400" style={{ fill: 'var(--color-muted)' }}>
               {formatCents(node.amountCents)}
             </tspan>
+            <title>{`${node.name} — ${formatCents(node.amountCents)}`}</title>
           </text>
         ))}
         <text

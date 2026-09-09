@@ -11,7 +11,9 @@ import { Link, useSearchParams } from 'react-router-dom';
 import { useMediaQuery } from '../useMediaQuery.js';
 import {
   overviewApi,
+  type BalanceHistoryDto,
   type OverviewDataDto,
+  type PickableDto,
   type SeriesPointDto,
   type OverviewLayoutDto,
   type OverviewTileDto,
@@ -29,7 +31,7 @@ import { OverviewPanel, type PanelTab } from '../components/OverviewPanel.jsx';
 import { Sankey, type FlowNode } from '../components/Sankey.jsx';
 import { CompositionBars, RankedBars, type RankedRow } from '../components/RankedBars.jsx';
 import { TimeSeriesChart, type TimePoint } from '../components/TimeSeries.jsx';
-import { Alert, Button, Modal, Toggle } from '../components/ui.jsx';
+import { Alert, Button, Modal, SelectField, Toggle } from '../components/ui.jsx';
 
 /**
  * Overview — the dashboard that replaces Insights.
@@ -105,10 +107,12 @@ const TILE_COPY: Record<string, { readonly title: string; readonly description?:
   home_equity_over_time: { title: 'Home equity' },
   debt_trajectory: { title: 'Debt trajectory' },
   figures: { title: 'Figures' },
-  daily_outflow: { title: 'Daily outflow', description: 'This cycle' },
+  daily_outflow: { title: 'Daily outflow', description: 'This month' },
   income_vs_spending_pace: { title: 'In against out', description: 'Running totals' },
   allocation: { title: 'Allocation' },
   upcoming_bills: { title: 'Upcoming', description: 'From Bills' },
+  account_balance_history: { title: 'Account balance' },
+  delegation_balance_history: { title: 'Delegation balance' },
   cashflow: { title: 'Cashflow', description: 'Where the money went' },
   delegations: { title: 'Delegations' },
   delegations_negative: { title: 'Over-spent lines' },
@@ -170,7 +174,7 @@ function TileShell({
     readonly onDragStart: () => void;
     readonly onDragOver: (event: React.DragEvent) => void;
     readonly onDrop: (event: React.DragEvent) => void;
-    readonly over: 'left' | 'right' | null;
+    readonly over: DropEdge | null;
   };
   readonly children: ReactNode;
 }): ReactNode {
@@ -189,12 +193,26 @@ function TileShell({
     >
       {/* The edge a drop would land on. Drawn on the tile rather than between
           tiles, because a gap is a target nobody can hit at 24px. */}
+      {/*
+        Where the drop would land, drawn on the edge it would land on.
+        
+        Four edges rather than two: left and right join this tile's row, top and
+        bottom make a new row above or below it. Without the horizontal pair
+        there was no gesture that meant "on its own line" — every drop joined a
+        row, and a tile could only be given its own by pressing ⤓ afterwards.
+      */}
       {drag.over !== null && (
         <span
           aria-hidden="true"
-          className={`absolute inset-y-0 w-1 rounded bg-accent ${
-            drag.over === 'left' ? '-left-1' : '-right-1'
-          }`}
+          className={
+            drag.over === 'left'
+              ? 'absolute inset-y-0 -left-1 w-1 rounded bg-accent'
+              : drag.over === 'right'
+                ? 'absolute inset-y-0 -right-1 w-1 rounded bg-accent'
+                : drag.over === 'above'
+                  ? 'absolute inset-x-0 -top-1 h-1 rounded bg-accent'
+                  : 'absolute inset-x-0 -bottom-1 h-1 rounded bg-accent'
+          }
         />
       )}
 
@@ -951,6 +969,74 @@ function CashflowTile({
 }
 
 /**
+ * One account's or one delegation's balance over time.
+ *
+ * The two tiles that ask "which one". The answer lives in the tile's own
+ * configuration, and until it is given the tile says so rather than picking on
+ * somebody's behalf — a chart of an account nobody chose is a chart nobody can
+ * trust at a glance.
+ *
+ * The picker offers only things that **have** history, so it can never point at
+ * something that draws an empty box. On a household whose snapshots start at the
+ * first night, a list of everything would make choosing wrong the default.
+ */
+function BalanceHistoryTile({
+  history,
+  options,
+  selectedId,
+  onSelect,
+  label,
+  emptyMessage,
+  preview = false,
+}: {
+  readonly history: BalanceHistoryDto | undefined;
+  readonly options: readonly PickableDto[];
+  readonly selectedId: string | null;
+  readonly onSelect: (id: string) => void;
+  readonly label: string;
+  readonly emptyMessage: string;
+  readonly preview?: boolean;
+}): ReactNode {
+  if (options.length === 0) {
+    return <p className="text-quiet text-muted">{emptyMessage}</p>;
+  }
+
+  return (
+    <div className="flex flex-col gap-3">
+      {!preview && (
+        <SelectField
+          label={label}
+          width="md"
+          value={selectedId ?? ''}
+          onChange={(next) => onSelect(next)}
+        >
+          {/* Present until something is chosen, and gone afterwards: an empty
+              option that stays is one somebody can select back into nothing. */}
+          {selectedId === null && <option value="">Choose one…</option>}
+          {options.map((option) => (
+            <option key={option.id} value={option.id}>
+              {option.name}
+            </option>
+          ))}
+        </SelectField>
+      )}
+
+      {history === undefined ? (
+        <p className="text-quiet text-muted">Nothing chosen yet.</p>
+      ) : (
+        <TimeSeriesChart
+          points={toPoints(history.points, ['balanceCents'])}
+          series={[{ key: 'balanceCents', name: history.name ?? 'Balance' }]}
+          includeZero
+          emptyMessage={NO_HISTORY}
+          label={`${history.name ?? 'Balance'} over time`}
+        />
+      )}
+    </div>
+  );
+}
+
+/**
  * Said once, by the three tiles that cannot be drawn without a payday.
  *
  * A band of days measured from a guessed payday would be a picture of the wrong
@@ -1008,6 +1094,73 @@ const ALLOCATION_MODES = [
   { value: 'plan' as const, label: 'Plan' },
   { value: 'position' as const, label: 'Now' },
 ];
+
+/**
+ * Which edge of a tile a drop would land on.
+ *
+ * The vertical thirds decide first: a pointer in the top or bottom quarter means
+ * a new row, and anywhere in the middle half means joining this one. Quarters
+ * rather than halves because joining is the commoner act and should have the
+ * larger target — and because a tile is much wider than it is tall, so a
+ * horizontal band of a quarter is still a comfortable thing to hit.
+ */
+export type DropEdge = 'left' | 'right' | 'above' | 'below';
+
+/**
+ * A target above everything in a region.
+ *
+ * The top edge of the first tile is a drop target, but only once a first tile
+ * exists — an empty sidebar could not be dropped into at all, and the strip of
+ * page above a full grid was dead space.
+ *
+ * **It reserves its 8px whether or not a drag is running.** Appearing only
+ * mid-drag pushed everything below it down by 32px at the moment somebody
+ * picked a tile up, so the tile they were aiming at moved out from under the
+ * pointer. A target that displaces what you are aiming at is worse than no
+ * target. It is invisible at rest and costs one row of 8px.
+ */
+function DropStrip({
+  label,
+  active,
+  dragging,
+  onOver,
+  onLeave,
+  onDrop,
+}: {
+  readonly label: string;
+  readonly active: boolean;
+  /** Visible only while something is being dragged; the space is always there. */
+  readonly dragging: boolean;
+  readonly onOver: () => void;
+  readonly onLeave: () => void;
+  readonly onDrop: () => void;
+}): ReactNode {
+  return (
+    <div
+      aria-label={label}
+      onDragOver={(event) => {
+        // Without this the browser refuses the drop outright.
+        event.preventDefault();
+        onOver();
+      }}
+      onDragLeave={onLeave}
+      onDrop={(event) => {
+        event.preventDefault();
+        onDrop();
+      }}
+      className={`h-2 rounded transition-colors ${
+        active ? 'bg-accent' : dragging ? 'bg-surface-2' : 'bg-transparent'
+      }`}
+    />
+  );
+}
+
+function edgeFor(box: DOMRect, x: number, y: number): DropEdge {
+  const band = box.height / 4;
+  if (y < box.top + band) return 'above';
+  if (y > box.bottom - band) return 'below';
+  return x < box.left + box.width / 2 ? 'left' : 'right';
+}
 
 /** Every figure the band can hold. Longer than the band is wide, deliberately. */
 const FIGURE_CATALOG = [
@@ -1176,6 +1329,10 @@ function TileBody({
   onChooseFigures,
   allocationMode,
   onAllocationMode,
+  accountId,
+  onAccount,
+  delegationId,
+  onDelegation,
   preview = false,
 }: {
   readonly tileKey: string;
@@ -1188,6 +1345,10 @@ function TileBody({
   readonly onChooseFigures?: () => void;
   readonly allocationMode?: 'plan' | 'position';
   readonly onAllocationMode?: (next: 'plan' | 'position') => void;
+  readonly accountId?: string | undefined;
+  readonly onAccount?: (id: string) => void;
+  readonly delegationId?: string | undefined;
+  readonly onDelegation?: (id: string) => void;
   /**
    * A picture of the tile, not the tile.
    *
@@ -1274,11 +1435,11 @@ function TileBody({
         />
       ) : null;
     case 'daily_outflow':
+      // The calendar month, so it needs no payday anchor and works on a
+      // household that has never set one.
       return data.daily_outflow ? (
         <OutflowBand days={data.daily_outflow} todayIso={new Date().toISOString()} />
-      ) : (
-        <NeedsPayday />
-      );
+      ) : null;
     case 'income_vs_spending_pace':
       return data.income_vs_spending_pace ? (
         <PaceChart points={data.income_vs_spending_pace} />
@@ -1294,6 +1455,30 @@ function TileBody({
           preview={preview}
         />
       ) : null;
+    case 'account_balance_history':
+      return (
+        <BalanceHistoryTile
+          history={data.account_balance_history}
+          options={data.pickable?.accounts ?? []}
+          selectedId={accountId ?? null}
+          onSelect={(id) => onAccount?.(id)}
+          label="Account"
+          emptyMessage="No account has history yet."
+          preview={preview}
+        />
+      );
+    case 'delegation_balance_history':
+      return (
+        <BalanceHistoryTile
+          history={data.delegation_balance_history}
+          options={data.pickable?.delegations ?? []}
+          selectedId={delegationId ?? null}
+          onSelect={(id) => onDelegation?.(id)}
+          label="Delegation"
+          emptyMessage="No delegation has history yet."
+          preview={preview}
+        />
+      );
     case 'upcoming_bills':
       return data.upcoming_bills ? <UpcomingList bills={data.upcoming_bills} /> : null;
     case 'cashflow':
@@ -1392,7 +1577,9 @@ export function Overview(): ReactNode {
   const [phoneView, setPhoneView] = useState<'overview' | PanelTab>('overview');
 
   const [dragging, setDragging] = useState<string | null>(null);
-  const [over, setOver] = useState<{ key: string; side: 'left' | 'right' } | null>(null);
+  /** Which region's top strip the pointer is over, while a drag is running. */
+  const [topTarget, setTopTarget] = useState<'main' | 'sidebar' | null>(null);
+  const [over, setOver] = useState<{ key: string; side: DropEdge } | null>(null);
 
   /** Every tile's figures, fetched only while the picker is open. */
   const preview = useQuery({
@@ -1509,14 +1696,48 @@ export function Overview(): ReactNode {
    * the chosen delegations and is drawn by the panel, so leaving it in would put
    * an empty tile in the grid beside the panel already showing its contents.
    */
+  const placed = useMemo(() => tiles.filter((tile) => tile.key !== 'delegations'), [tiles]);
   const rows = useMemo(
-    () => groupIntoRows(tiles.filter((tile) => tile.key !== 'delegations')),
-    [tiles],
+    () => groupIntoRows(placed.filter((tile) => tile.region !== 'sidebar')),
+    [placed],
   );
+  /** The sidebar is one column: every tile in it has a row to itself. */
+  const sidebarTiles = useMemo(() => placed.filter((tile) => tile.region === 'sidebar'), [placed]);
 
-  /** Writes rows back as tiles, renumbering so a gap left by a row closes. */
-  function saveRows(next: readonly (readonly OverviewTileDto[])[]): void {
-    save.mutate(flattenRows(next).map(({ row, position, tile }) => ({ ...tile, row, position })));
+  /**
+   * Writes rows back as tiles, renumbering so a gap left by a row closes.
+   *
+   * **The panel's own row is carried through explicitly.** It is filtered out of
+   * `rows` because it is drawn by the panel rather than in the grid, which meant
+   * every arrange operation wrote a layout without it — silently deleting the
+   * chosen delegations the moment anybody moved a tile. Losing a selection as a
+   * side effect of rearranging something else is the worst kind of data loss:
+   * nothing failed, and nothing said so.
+   */
+  function saveRows(
+    next: readonly (readonly OverviewTileDto[])[],
+    sidebar: readonly OverviewTileDto[] = sidebarTiles,
+  ): void {
+    const grid = flattenRows(next).map(({ row, position, tile }) => ({
+      ...tile,
+      region: 'main' as const,
+      row,
+      position,
+    }));
+    // The sidebar is one column, so its row number is its order and its
+    // position is always zero.
+    const aside = sidebar.map((tile, row) => ({
+      ...tile,
+      region: 'sidebar' as const,
+      row,
+      position: 0,
+    }));
+    const panel = tiles.find((tile) => tile.key === 'delegations');
+    save.mutate([
+      ...grid,
+      ...aside,
+      ...(panel ? [{ ...panel, region: 'main' as const, row: grid.length, position: 0 }] : []),
+    ]);
   }
 
   function locate(key: string): { row: number; index: number } | null {
@@ -1600,7 +1821,10 @@ export function Overview(): ReactNode {
   function add(key: string): void {
     // A new tile takes a row of its own at the foot. The data refetch is in the
     // mutation's `onSuccess`, not here — see the comment on it.
-    save.mutate([...tiles, { key, row: rows.length, position: 0, display: null, config: null }]);
+    save.mutate([
+      ...tiles,
+      { key, region: 'main' as const, row: rows.length, position: 0, display: null, config: null },
+    ]);
   }
 
   /**
@@ -1612,25 +1836,82 @@ export function Overview(): ReactNode {
    * leaves no gesture meaning "after this one", so the last place in a row
    * cannot be reached at all.
    */
-  function drop(targetKey: string, side: 'left' | 'right'): void {
+  /**
+   * Moves the dragged tile to an edge of `targetKey`.
+   *
+   * `region` is where the target lives, so one function serves both: dropping a
+   * main tile onto a sidebar tile moves it across, and the reverse brings it
+   * back. The sidebar is one column, so every drop there is a new row and the
+   * horizontal edges are the only ones it can offer.
+   */
+  function drop(targetKey: string, side: DropEdge, region: 'main' | 'sidebar'): void {
     if (dragging === null || dragging === targetKey) return;
-    const target = locate(targetKey);
-    const source = locate(dragging);
-    if (!target || !source) return;
 
-    const tile = rows[source.row]![source.index]!;
-    const next = without(dragging);
-    const destination = next[target.row]!;
+    const tile = placed.find((entry) => entry.key === dragging);
+    if (!tile) return;
 
+    // Out of wherever it was, in both regions, before deciding where it lands.
+    const grid = without(dragging);
+    const aside = sidebarTiles.filter((entry) => entry.key !== dragging);
+
+    if (region === 'sidebar') {
+      const at = aside.findIndex((entry) => entry.key === targetKey);
+      if (at < 0) return;
+      const insert = side === 'above' || side === 'left' ? at : at + 1;
+      saveRows(
+        grid.filter((row) => row.length > 0),
+        [...aside.slice(0, insert), tile, ...aside.slice(insert)],
+      );
+      return;
+    }
+
+    const compact = grid.filter((row) => row.length > 0);
+    const at = compact.findIndex((row) => row.some((entry) => entry.key === targetKey));
+    if (at < 0) return;
+
+    if (side === 'above' || side === 'below') {
+      // A row of its own, which is the gesture that did not exist before.
+      compact.splice(side === 'above' ? at : at + 1, 0, [tile]);
+      saveRows(compact, aside);
+      return;
+    }
+
+    const destination = compact[at]!;
     if (destination.length >= MAX_TILES_PER_ROW) return;
-
-    const at = destination.findIndex((entry) => entry.key === targetKey);
-    next[target.row] = [
-      ...destination.slice(0, side === 'left' ? at : at + 1),
+    const index = destination.findIndex((entry) => entry.key === targetKey);
+    compact[at] = [
+      ...destination.slice(0, side === 'left' ? index : index + 1),
       tile,
-      ...destination.slice(side === 'left' ? at : at + 1),
+      ...destination.slice(side === 'left' ? index : index + 1),
     ];
-    saveRows(next);
+    saveRows(compact, aside);
+  }
+
+  /**
+   * A drop above everything, for the one place no tile's edge can reach.
+   *
+   * The top edge of the first tile is a target, but only once there is a first
+   * tile in that region — an empty sidebar, or the strip above a full grid, had
+   * no way to be dropped onto at all.
+   */
+  function dropAtTop(region: 'main' | 'sidebar'): void {
+    if (dragging === null) return;
+    const tile = placed.find((entry) => entry.key === dragging);
+    if (!tile) return;
+
+    const grid = without(dragging).filter((row) => row.length > 0);
+    const aside = sidebarTiles.filter((entry) => entry.key !== dragging);
+
+    if (region === 'sidebar') saveRows(grid, [tile, ...aside]);
+    else saveRows([[tile], ...grid], aside);
+  }
+
+  /** What a picker tile has been pointed at, or undefined. */
+  function pickedId(key: string, field: string): string | undefined {
+    const config = tiles.find((tile) => tile.key === key)?.config;
+    if (config === null || config === undefined || typeof config !== 'object') return undefined;
+    const value = (config as Record<string, unknown>)[field];
+    return typeof value === 'string' ? value : undefined;
   }
 
   /** The delegation ids a tile has been told to show. */
@@ -1648,6 +1929,13 @@ export function Overview(): ReactNode {
     );
     // The refetch is in the mutation's `onSuccess`, which compares
     // configurations as well as keys — see the comment there.
+  }
+
+  /** Which account or delegation a balance-history tile charts. */
+  function setPicked(key: string, field: string, id: string): void {
+    save.mutate(
+      tiles.map((tile) => (tile.key === key ? { ...tile, config: { [field]: id } } : tile)),
+    );
   }
 
   /** The donut's reading, stored on its tile. */
@@ -1676,6 +1964,7 @@ export function Overview(): ReactNode {
           ...tiles,
           {
             key: 'delegations',
+            region: 'main' as const,
             // Off the end of the grid, and never drawn there anyway.
             row: rows.length,
             position: 0,
@@ -1861,6 +2150,21 @@ export function Overview(): ReactNode {
         className={`${phoneView === 'overview' ? '' : 'hidden lg:grid'} grid gap-6 lg:grid-cols-[minmax(0,1fr)_398px]`}
       >
         <div className="min-w-0">
+          <div className="mb-6">
+            <DropStrip
+              label="Move to the top"
+              active={topTarget === 'main'}
+              dragging={dragging !== null}
+              onOver={() => setTopTarget('main')}
+              onLeave={() => setTopTarget(null)}
+              onDrop={() => {
+                dropAtTop('main');
+                setDragging(null);
+                setTopTarget(null);
+              }}
+            />
+          </div>
+
           {layout.isPending || data.isPending ? null : tiles.length === 0 ? (
             <EmptyState>No tiles yet.</EmptyState>
           ) : (
@@ -1885,13 +2189,15 @@ export function Overview(): ReactNode {
                         // Without this the browser refuses the drop outright.
                         event.preventDefault();
                         const box = event.currentTarget.getBoundingClientRect();
-                        const side = event.clientX < box.left + box.width / 2 ? 'left' : 'right';
-                        setOver({ key: tile.key, side });
+                        setOver({
+                          key: tile.key,
+                          side: edgeFor(box, event.clientX, event.clientY),
+                        });
                       },
                       onDrop: (event) => {
                         event.preventDefault();
                         const side = over?.key === tile.key ? over.side : 'right';
-                        drop(tile.key, side);
+                        drop(tile.key, side, 'main');
                         setDragging(null);
                         setOver(null);
                       },
@@ -1909,6 +2215,12 @@ export function Overview(): ReactNode {
                       onChooseFigures={() => setPickingFigures(true)}
                       allocationMode={allocationMode}
                       onAllocationMode={setAllocationMode}
+                      accountId={pickedId('account_balance_history', 'accountId')}
+                      onAccount={(id) => setPicked('account_balance_history', 'accountId', id)}
+                      delegationId={pickedId('delegation_balance_history', 'delegationId')}
+                      onDelegation={(id) =>
+                        setPicked('delegation_balance_history', 'delegationId', id)
+                      }
                     />
                   </TileShell>
                 )),
@@ -1917,25 +2229,97 @@ export function Overview(): ReactNode {
           )}
         </div>
 
-        {/* Docked, and only on a pointer. Collapsed it is a single control that
-            gives the width back rather than a sliver of panel. */}
-        <div className="hidden lg:block">
+        {/*
+          The right column: the budget panel, pinned at the top, and whatever
+          tiles have been dragged in beneath it.
+
+          One column, always. It is about 400px wide, and two tiles across that
+          is neither — so every tile here has a row to itself and the only drop
+          edges it offers are the horizontal ones.
+        */}
+        <div className="hidden flex-col gap-6 lg:flex">
           {collapsed ? (
             <Button onClick={() => setPanelCollapsed(false)} aria-label="Open the budget panel">
               Budget
             </Button>
           ) : (
-            <div className="sticky top-0 max-h-[calc(100vh-96px)]">
-              <OverviewPanel
-                variant="docked"
-                tab={tab}
-                onTab={setTab}
-                data={data.data}
-                onChoose={() => setPicking('delegations')}
-                onCollapse={() => setPanelCollapsed(true)}
-              />
-            </div>
+            <OverviewPanel
+              variant="docked"
+              tab={tab}
+              onTab={setTab}
+              data={data.data}
+              onChoose={() => setPicking('delegations')}
+              onCollapse={() => setPanelCollapsed(true)}
+            />
           )}
+
+          {/* Above everything in this column, which no tile's own edge reaches
+              — and the only way to drop into an empty sidebar at all. */}
+          <DropStrip
+            label="Move to the top of the sidebar"
+            active={topTarget === 'sidebar'}
+            dragging={dragging !== null}
+            onOver={() => setTopTarget('sidebar')}
+            onLeave={() => setTopTarget(null)}
+            onDrop={() => {
+              dropAtTop('sidebar');
+              setDragging(null);
+              setTopTarget(null);
+            }}
+          />
+
+          {sidebarTiles.map((tile) => (
+            <TileShell
+              key={tile.key}
+              tile={tile}
+              columns={12}
+              rowSize={1}
+              arranging={arranging}
+              draggable={pointer}
+              onMove={() => undefined}
+              onRemove={() => remove(tile.key)}
+              onSplit={() => undefined}
+              onJoin={() => undefined}
+              drag={{
+                onDragStart: () => setDragging(tile.key),
+                onDragOver: (event) => {
+                  if (dragging === null || dragging === tile.key) return;
+                  event.preventDefault();
+                  const box = event.currentTarget.getBoundingClientRect();
+                  // One column, so only above or below can mean anything here.
+                  setOver({
+                    key: tile.key,
+                    side: event.clientY < box.top + box.height / 2 ? 'above' : 'below',
+                  });
+                },
+                onDrop: (event) => {
+                  event.preventDefault();
+                  const side = over?.key === tile.key ? over.side : 'below';
+                  drop(tile.key, side, 'sidebar');
+                  setDragging(null);
+                  setOver(null);
+                },
+                over: over?.key === tile.key ? over.side : null,
+              }}
+            >
+              <TileBody
+                tileKey={tile.key}
+                data={data.data}
+                budget={budget.data}
+                chosen={chosenFor(tile)}
+                onChoose={() => setPicking(tile.key)}
+                cashflowWindow={data.data?.cashflowWindow ?? 'ytd'}
+                onCashflowWindow={(next) => setCashflowWindow(next)}
+                onChooseFigures={() => setPickingFigures(true)}
+                allocationMode={allocationMode}
+                onAllocationMode={setAllocationMode}
+                accountId={pickedId('account_balance_history', 'accountId')}
+                onAccount={(id) => setPicked('account_balance_history', 'accountId', id)}
+                delegationId={pickedId('delegation_balance_history', 'delegationId')}
+                onDelegation={(id) => setPicked('delegation_balance_history', 'delegationId', id)}
+              />
+            </TileShell>
+          ))}
         </div>
       </div>
     </>

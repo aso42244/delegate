@@ -1042,6 +1042,14 @@ model OverviewTile {
   /// tile. A phone ignores rows entirely and stacks everything full width.
   row       Int     @default(0)
 
+  /// Which side of the page this tile lives on: `main` or `sidebar`.
+  ///
+  /// Two regions of different shapes — the main grid holds up to two tiles a
+  /// row, the sidebar exactly one, beneath the budget panel. A column rather
+  /// than a convention over `row`, because a convention would be invisible to
+  /// anybody reading the table.
+  region    String  @default("main")
+
   /// Which chart this tile is drawn as. Null means the widget's own default.
   display   String?
 
@@ -1057,6 +1065,7 @@ model OverviewTile {
 
   @@unique([userId, widgetKey])
   @@index([userId, row, position])
+  @@index([userId, region, row, position])
   @@map("overview_tiles")
 }
 

@@ -299,3 +299,27 @@ describe('parseBitcoin', () => {
     expect(formatBitcoin(1n)).toBe('0.00000001');
   });
 });
+
+describe('whole dollars', () => {
+  it('rounds rather than truncating', () => {
+    // Truncating would understate every figure it touched — $0.99 as $0.
+    expect(formatCents(99n, { cents: false })).toBe('$1');
+    expect(formatCents(150n, { cents: false })).toBe('$2');
+    expect(formatCents(149n, { cents: false })).toBe('$1');
+    expect(formatCents(0n, { cents: false })).toBe('$0');
+  });
+
+  it('rounds a negative by magnitude, so the sign is not what decides', () => {
+    expect(formatCents(-99n, { cents: false })).toBe('-$1');
+    expect(formatCents(-149n, { cents: false })).toBe('-$1');
+  });
+
+  it('still groups thousands', () => {
+    expect(formatCents(72_500n, { cents: false })).toBe('$725');
+    expect(formatCents(123_456_789n, { cents: false })).toBe('$1,234,568');
+  });
+
+  it('leaves the default alone', () => {
+    expect(formatCents(72_553n)).toBe('$725.53');
+  });
+});

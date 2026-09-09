@@ -342,7 +342,25 @@ export interface BacklogSummary {
 }
 
 export async function buildBacklog(db: Db): Promise<BacklogSummary> {
-  const where = { archivedAt: null, kind: 'normal' as const, allocations: { none: {} } };
+  /*
+   * The same rows the queue itself shows, and `account.inBudget` is the part
+   * that was missing.
+   *
+   * ADR 050 made the budget boundary a wall: categorizing an off-budget row is
+   * refused, so an uncategorized charge on a retirement account can never leave
+   * the queue. Counting it here reported work nobody could do — a backlog of
+   * five against a queue showing none — and this figure feeds the notification
+   * pill as well as the tile, so it was saying it in two places.
+   *
+   * The queue's own filter has had this since ADR 050. This is the sibling that
+   * never got it.
+   */
+  const where = {
+    archivedAt: null,
+    kind: 'normal' as const,
+    allocations: { none: {} },
+    account: { inBudget: true },
+  };
 
   const [count, oldest] = await Promise.all([
     db.transaction.count({ where }),
