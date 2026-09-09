@@ -144,17 +144,15 @@ export const overviewRoutes: FastifyPluginCallback = (fastify, _options, done) =
        * writes, so a gap left by an emptied row closes on the next change
        * rather than being repaired on every read.
        */
-      tiles: chosen
-        .filter((tile) => isOverviewTile(tile.widgetKey))
-        .map((tile) => ({
-          key: tile.widgetKey,
-          row: tile.row,
-          position: tile.position,
-          display: tile.display ?? null,
-          // Null means nothing configured, which is not an empty selection: one
-          // invites a choice and the other is a choice.
-          config: tile.config ?? null,
-        })),
+      tiles: reflow(chosen.filter((tile) => isOverviewTile(tile.widgetKey))).map((tile) => ({
+        key: tile.widgetKey,
+        row: tile.row,
+        position: tile.position,
+        display: tile.display ?? null,
+        // Null means nothing configured, which is not an empty selection: one
+        // invites a choice and the other is a choice.
+        config: tile.config ?? null,
+      })),
     };
   });
 
@@ -492,6 +490,46 @@ function point(entry: {
  * period rather than a figure — the worst a wrong one does is show a different
  * span of the same true numbers.
  */
+/**
+ * Re-flows a stored layout so no row holds more than the cap.
+ *
+ * **A stored arrangement outlives the rule that shaped it.** Rows of four were
+ * valid until the budget panel took the right of the page and the cap dropped to
+ * two; those layouts still existed, and every save of one was refused for a
+ * position the grid no longer allows — including the delegation picker, which
+ * re-sends the whole arrangement to change one thing. The page rendered
+ * correctly and nothing could be changed, which is the worst of both.
+ *
+ * Splitting on read rather than migrating in SQL, for the same reason an
+ * unrecognised widget key is filtered here: the cap is a property of the
+ * interface and may move again, and a migration would only fix the layouts that
+ * existed on the day it ran.
+ *
+ * Reading order is preserved exactly. A row of four becomes two rows of two in
+ * the order they were in, so the arrangement is narrowed rather than reshuffled.
+ */
+function reflow<T extends { row: number; position: number }>(tiles: readonly T[]): T[] {
+  const ordered = [...tiles].sort((a, b) => a.row - b.row || a.position - b.position);
+
+  const out: T[] = [];
+  let row = -1;
+  let position = 0;
+  let previousStoredRow: number | null = null;
+
+  for (const tile of ordered) {
+    const startsNewRow =
+      previousStoredRow === null || tile.row !== previousStoredRow || position >= MAX_TILES_PER_ROW;
+    if (startsNewRow) {
+      row += 1;
+      position = 0;
+    }
+    out.push({ ...tile, row, position });
+    previousStoredRow = tile.row;
+    position += 1;
+  }
+  return out;
+}
+
 /** Which reading the donut draws. The plan unless told otherwise. */
 function readAllocationMode(config: unknown): 'plan' | 'position' {
   if (config === null || typeof config !== 'object') return 'plan';

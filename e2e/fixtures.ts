@@ -237,6 +237,12 @@ export async function makeAccount(
    * default — is a feed that did not say, which is not the same as a fresh one.
    */
   feedBalanceAsOf: Date | null = null,
+  /**
+   * Off-budget accounts exist and behave differently. `in_budget` decides which
+   * accounts the identity sums, and ADR 050 made that a wall — a property is net
+   * worth rather than money the budget can allocate.
+   */
+  options: { readonly inBudget?: boolean } = {},
 ): Promise<string> {
   const account = await prisma.account.create({
     data: {
@@ -245,7 +251,7 @@ export async function makeAccount(
       source,
       ...(source === 'simplefin' ? { externalId: `e2e-${name}` } : {}),
       balanceCents,
-      inBudget: true,
+      inBudget: options.inBudget ?? true,
       inNetWorth: true,
       balanceAsOf: new Date(),
       feedBalanceAsOf,

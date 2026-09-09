@@ -1085,6 +1085,52 @@ describe('the figures band', () => {
   });
 });
 
+describe('a layout stored under an older cap', () => {
+  it('is re-flowed on read rather than left unsaveable', async () => {
+    const user = await prisma.user.findFirstOrThrow();
+    // Exactly what v0.58 allowed: four tiles sharing one row.
+    for (const [position, widgetKey] of [
+      'figures',
+      'cashflow',
+      'asset_debt_composition',
+      'spending_by_grouping',
+    ].entries()) {
+      await prisma.overviewTile.create({ data: { userId: user.id, widgetKey, row: 0, position } });
+    }
+
+    const tiles = (await get('/api/overview/layout')).json<LayoutBody>().tiles;
+
+    /*
+     * A stored arrangement outlives the rule that shaped it. Dropping the cap to
+     * two made every save of one of these refused for a position the grid no
+     * longer allows — including the delegation picker, which re-sends the whole
+     * arrangement to change one thing. The page rendered and nothing could be
+     * changed, which is the worst of both.
+     */
+    expect(tiles.map((tile) => [tile.row, tile.position])).toEqual([
+      [0, 0],
+      [0, 1],
+      [1, 0],
+      [1, 1],
+    ]);
+
+    // And what comes back is now saveable, which is the property that failed.
+    expect((await putLayout(tiles)).json<SaveBody>()).toEqual({ ok: true });
+  });
+
+  it('narrows the arrangement rather than reshuffling it', async () => {
+    const user = await prisma.user.findFirstOrThrow();
+    for (const [position, widgetKey] of ['figures', 'cashflow', 'allocation'].entries()) {
+      await prisma.overviewTile.create({ data: { userId: user.id, widgetKey, row: 0, position } });
+    }
+
+    const tiles = (await get('/api/overview/layout')).json<LayoutBody>().tiles;
+    // Reading order preserved exactly: a row of three becomes two rows in the
+    // order they were in, not a different arrangement.
+    expect(tiles.map((tile) => tile.key)).toEqual(['figures', 'cashflow', 'allocation']);
+  });
+});
+
 describe('access', () => {
   it('needs a session', async () => {
     const response = await app.inject({ method: 'GET', url: '/api/overview/layout' });

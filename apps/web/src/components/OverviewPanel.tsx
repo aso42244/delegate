@@ -276,13 +276,28 @@ function Row({
   );
 }
 
-/** Accounts and Debts: balances only, as the design specifies. */
+/**
+ * Accounts and Debts: balances only, and **only what the budget counts**.
+ *
+ * `in_budget` decides which accounts the identity sums, and ADR 050 made that a
+ * wall rather than a description after three places crossed it. This panel is
+ * the budget's, so it stands on the same side of that wall: a property and a
+ * retirement account are net worth, not money this budget can allocate, and
+ * listing them here put $350,000 of house in a column headed by what the
+ * household can spend.
+ *
+ * They have not gone anywhere — the composition tile beside this one is net
+ * worth's own reading and shows the property at equity, which is the figure
+ * design.md specifies for it.
+ */
 function BalancesTab({ kind }: { readonly kind: 'accounts' | 'debts' }): ReactNode {
   const accounts = useQuery({ queryKey: ['accounts'], queryFn: () => accountsApi.list() });
 
   const wanted = (accounts.data?.accounts ?? []).filter(
     (account: AccountDto) =>
-      account.archivedAt === null && account.type === (kind === 'debts' ? 'debt' : 'asset'),
+      account.archivedAt === null &&
+      account.inBudget &&
+      account.type === (kind === 'debts' ? 'debt' : 'asset'),
   );
 
   const total = wanted.reduce((sum, account) => sum + BigInt(account.balanceCents), 0n);
@@ -291,7 +306,9 @@ function BalancesTab({ kind }: { readonly kind: 'accounts' | 'debts' }): ReactNo
   if (wanted.length === 0) {
     return (
       <div className="p-3">
-        <EmptyState>{kind === 'debts' ? 'No debts.' : 'No accounts yet.'}</EmptyState>
+        <EmptyState>
+          {kind === 'debts' ? 'No debts in the budget.' : 'No accounts in the budget.'}
+        </EmptyState>
       </div>
     );
   }
@@ -318,10 +335,14 @@ function BalancesTab({ kind }: { readonly kind: 'accounts' | 'debts' }): ReactNo
         })}
       </ul>
       <div className="flex items-center justify-between gap-2 border-t border-line bg-surface px-3 py-2 text-quiet font-semibold">
-        <span>{kind === 'debts' ? 'Total debt' : 'Cash and investments'}</span>
+        <span>{kind === 'debts' ? 'Debts in the budget' : 'Accounts in the budget'}</span>
         <span className="money">{formatCents(total)}</span>
       </div>
-      <p className="p-3 text-micro text-muted">Balances only.</p>
+      {/* Said plainly, because a total that silently excluded a $350,000 house
+          would be a number somebody trusts and should not. */}
+      <p className="p-3 text-micro text-muted">
+        Balances only · what the budget counts, not net worth.
+      </p>
     </div>
   );
 }

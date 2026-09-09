@@ -6,7 +6,34 @@ phase (`v0.1.0-phase1`, and so on).
 
 ## [Unreleased]
 
-Nothing yet.
+### Fixed
+
+- **No arrangement could be saved on a layout made before v0.59.** Rows of four
+  were valid until the budget panel took the right of the page and the cap
+  dropped to two. Those layouts still existed, and every save of one was refused
+  for a position the grid no longer allows — including the delegation picker,
+  which re-sends the whole arrangement to change one thing. The page rendered
+  correctly and nothing on it could be changed, which is the worst of the two.
+
+  **A stored arrangement outlives the rule that shaped it**, and that is the
+  lesson rather than the cap. The layout is re-flowed on read now — a row of four
+  becomes two rows of two, in the order they were in, so the arrangement is
+  narrowed rather than reshuffled. Done on read rather than as a migration for
+  the same reason an unrecognised widget key is filtered there: the cap belongs
+  to the interface and may move again, and a migration would only fix the layouts
+  that existed on the day it ran.
+
+- **The budget panel listed accounts the budget does not count.** `in_budget`
+  decides which accounts the identity sums, and
+  [ADR 050](docs/decisions/050-the-budget-boundary-is-a-wall.md) made that a wall
+  after three places crossed it. This panel is the budget's and now stands on the
+  same side: a property and a retirement account are net worth rather than money
+  this budget can allocate, and listing them put $350,000 of house into a column
+  headed by what the household can spend.
+
+  Nothing is hidden — the composition tile beside it is net worth's own reading
+  and shows a property at equity, which is the figure design.md specifies. The
+  panel's total says what it counted rather than leaving it to be inferred.
 
 ## [0.59.0] — 2026-09-08
 
