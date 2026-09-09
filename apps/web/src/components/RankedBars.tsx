@@ -91,6 +91,18 @@ export function RankedBars({
 
   const peak = peakOf(rows);
 
+  /*
+   * The percentage column exists only where there are percentages.
+   *
+   * Reserved unconditionally it is 2.5rem of nothing on every tile that has no
+   * share to show, pushing the figures in from the edge they should be sitting
+   * on — and the tiles without one are most of them.
+   */
+  const hasAside = rows.some((row) => row.aside !== undefined);
+  const columns = hasAside
+    ? '[grid-template-columns:8rem_minmax(0,1fr)_2.5rem_auto]'
+    : '[grid-template-columns:8rem_minmax(0,1fr)_auto]';
+
   return (
     // `min-h-0` so it can be shorter than its rows, and scroll rather than
     // pushing the tile past the height somebody dragged it to.
@@ -124,50 +136,55 @@ export function RankedBars({
            * that is a column definition rather than whatever each name happens
            * to be wide.
            */
-          <li
-            key={row.key}
-            className="row-cell grid items-center gap-2 [grid-template-columns:8rem_minmax(0,1fr)_auto]"
-          >
+          <li key={row.key} className={`row-cell grid items-center gap-2 ${columns}`}>
             <span className="truncate text-quiet text-ink" title={row.name}>
               {row.name}
             </span>
 
-            {/* The track is the axis. On a signed chart the centre is the zero
-                line, so a bar's side is its sign — read before any figure is. */}
-            <span
-              className="block h-2 overflow-hidden rounded bg-surface-2"
-              // Presentational: the figure beside it already says the value, and
-              // a second announcement of the same number is noise.
-              aria-hidden="true"
-            >
+            {/*
+              A coloured bar inside a grey track, inset — the budget panel's
+              construction, which is the one people read every day.
+
+              The fill used to be the full height of the track, so a bar and its
+              remainder were two blocks meeting at a hard edge and the eye read
+              the *boundary* rather than the length. Inset, the track stays a
+              track and the bar sits in it.
+
+              Presentational: the figure beside it already says the value, and a
+              second announcement of the same number is noise.
+            */}
+            <span className="relative block h-2 rounded bg-surface-2" aria-hidden="true">
               {signed ? (
-                <span className="flex h-full w-full">
+                <span className="absolute inset-x-[2px] top-[2.5px] flex h-[3px]">
                   <span className="flex h-full w-1/2 justify-end">
                     {negative && (
-                      <span
-                        className="block h-full rounded-l"
-                        style={{ width, background: fill }}
-                      />
+                      <span className="block h-full rounded" style={{ width, background: fill }} />
                     )}
                   </span>
                   <span className="flex h-full w-1/2 justify-start">
                     {!negative && (
-                      <span
-                        className="block h-full rounded-r"
-                        style={{ width, background: fill }}
-                      />
+                      <span className="block h-full rounded" style={{ width, background: fill }} />
                     )}
                   </span>
                 </span>
               ) : (
-                <span className="block h-full rounded" style={{ width, background: fill }} />
+                <span
+                  className="absolute top-[2.5px] left-[2px] block h-[3px] rounded"
+                  style={{ width: `calc(${width} - 4px)`, minWidth: '2px', background: fill }}
+                />
               )}
             </span>
 
+            {/*
+              A column of its own, fixed width and right-aligned.
+
+              Beside the amount it moved with whatever the amount happened to be
+              wide, so a column of percentages was ragged — 35% sat somewhere
+              different from 3%. A grid column cannot do that.
+            */}
+            {hasAside && <span className="money text-micro text-muted">{row.aside ?? ''}</span>}
+
             <span className="flex shrink-0 items-baseline gap-2">
-              {row.aside !== undefined && (
-                <span className="money text-micro text-muted">{row.aside}</span>
-              )}
               {row.compare !== undefined && (
                 <span className="money text-micro text-muted">
                   {row.compare.valueCents === null ? '—' : formatCents(row.compare.valueCents)}

@@ -58,7 +58,9 @@ const authPlugin: FastifyPluginAsync<{ config: AppConfig }> = async (fastify, op
     // Each request pushes the expiry out, so an active session does not expire
     // mid-use while an abandoned one still ages out.
     rolling: true,
-    cookieName: 'budget_session',
+    // Configurable so a demo instance on the same host as a real one does not
+    // write a cookie the real one's browser also sends — see the note in config.
+    cookieName: config.SESSION_COOKIE_NAME,
     cookie: {
       httpOnly: true,
       // Plain http is the origin's permanent default (ADR 017): browsers never
@@ -88,6 +90,43 @@ export const auth = fp(authPlugin, { name: 'auth' });
  * whenever the cookie happens to expire.
  */
 export async function requireSession(request: FastifyRequest, reply: FastifyReply): Promise<void> {
+  /*
+   * A demo instance has one account and everybody arriving is it.
+   *
+   * There is no sign-in on a demo: the data is invented, the instance is
+   * read-only, and whoever is looking at it was let through by whatever sits in
+   * front. Asking them to hold credentials for a fictional household would be
+   * asking them to do something for no reason.
+   *
+   * No session row is written, deliberately. Attaching the user directly keeps
+   * this a read all the way down, and keeps the demo from accumulating a session
+   * per visitor for accounts that do not exist.
+   *
+   * The guard is the configuration flag, which a real deployment never sets and
+   * a test asserts is off by default — the cost of that being wrong is a
+   * household's own budget answering to anybody.
+   */
+  if (request.server.config.DELEGATE_DEMO) {
+    const only = await prisma.user.findFirst({
+      where: { archivedAt: null },
+      orderBy: { createdAt: 'asc' },
+      select: { id: true, username: true, displayName: true, landingPage: true, role: true },
+    });
+    if (!only) {
+      await reply
+        .code(503)
+        .send({ error: { code: 'demo_not_seeded', message: 'The demo has no data yet.' } });
+      return;
+    }
+    request.currentUser = {
+      ...only,
+      mustChangePassword: false,
+      // Nothing to enrol: there is no account to protect and no way in to gate.
+      hasTotp: true,
+    };
+    return;
+  }
+
   const userId = request.session.userId;
   if (!userId) {
     await reply.code(401).send({ error: { code: 'unauthenticated', message: 'Please sign in.' } });

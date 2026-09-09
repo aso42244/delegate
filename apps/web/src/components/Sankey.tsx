@@ -235,7 +235,7 @@ export function Sankey({
      * minimum size is its content, which would keep the chart at full height and
      * push it out of a row somebody had just dragged shorter.
      */
-    <div className="h-full min-h-0 w-full overflow-x-auto">
+    <div className="h-full min-h-0 w-full overflow-auto">
       <svg
         viewBox={`0 0 ${WIDTH} ${height}`}
         /*
@@ -263,7 +263,21 @@ export function Sankey({
          * a `min()` containing an indefinite percentage is itself indefinite,
          * so an unconstrained chart went back to 780px.
          */
-        style={{ height: '100%', maxHeight: 520, fontVariantNumeric: 'tabular-nums' }}
+        /*
+         * A floor as well as a cap.
+         *
+         * `meet` scales both dimensions together, so a short row shrank the
+         * whole drawing — width included — leaving a postage stamp between two
+         * bands of white. Below about 280px the labels stop being readable, and
+         * a chart nobody can read in a row somebody chose is worse than one that
+         * scrolls: the container gives it room and the row scrolls instead.
+         */
+        style={{
+          height: '100%',
+          minHeight: 280,
+          maxHeight: 520,
+          fontVariantNumeric: 'tabular-nums',
+        }}
       >
         {/* Ribbons first, so labels sit over them rather than under. */}
         {ribbons}

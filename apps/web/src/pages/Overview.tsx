@@ -651,12 +651,21 @@ function SpendingTile({
     return <EmptyState>No cycle has been run yet.</EmptyState>;
   }
 
-  const rows: RankedRow[] = spending.entries.map((entry) => ({
-    key: entry.key,
-    name: entry.name,
-    color: entry.color,
-    valueCents: BigInt(entry.spendCents),
-  }));
+  // Each row's share of what was spent in the window. The bars are scaled to the
+  // largest row rather than to the total, so the bar compares a line with the
+  // others and the percentage places it against everything.
+  const total = spending.entries.reduce((sum, entry) => sum + BigInt(entry.spendCents), 0n);
+
+  const rows: RankedRow[] = spending.entries.map((entry) => {
+    const amount = BigInt(entry.spendCents);
+    return {
+      key: entry.key,
+      name: entry.name,
+      color: entry.color,
+      valueCents: amount,
+      ...(total > 0n ? { aside: share(amount, total) } : {}),
+    };
+  });
 
   return <RankedBars rows={rows} emptyMessage="Nothing categorized in this window." />;
 }
