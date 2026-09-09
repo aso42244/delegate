@@ -6,6 +6,10 @@ phase (`v0.1.0-phase1`, and so on).
 
 ## [Unreleased]
 
+Nothing yet.
+
+## [0.59.1] — 2026-09-09
+
 ### Fixed
 
 - **No arrangement could be saved on a layout made before v0.59.** Rows of four
