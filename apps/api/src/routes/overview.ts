@@ -16,10 +16,9 @@ import { SPENDING_WINDOWS } from '../domain/insights.js';
 import {
   buildAllocation,
   buildFigures,
-  buildOutflow,
+  buildOutflowMonths,
   buildPace,
   delegationSeries,
-  monthBounds,
   pickableSeries,
   buildOverview,
   buildPanel,
@@ -99,6 +98,15 @@ const TILE_CONFIG: Partial<Record<string, z.ZodType>> = {
     delegationIds: z.array(z.string().uuid()).max(200),
   }),
 };
+
+/**
+ * How many months the outflow band draws: this one and the two before it.
+ *
+ * Three because the comparison needs a habit rather than a pair — two months
+ * make every difference look like a trend — and because a fourth row is another
+ * 24px in a 398px column that is already the page's densest.
+ */
+const OUTFLOW_MONTHS = 3;
 
 const layoutSchema = z.object({
   tiles: z
@@ -348,13 +356,6 @@ export const overviewRoutes: FastifyPluginCallback = (fastify, _options, done) =
     const bounds = cycle === null ? null : { start: cycle.start, end: cycle.end, timeZone };
 
     /*
-     * The outflow band is the one tile here drawn against the calendar month
-     * rather than the cycle, so it needs no anchor and works on a household that
-     * has never set one.
-     */
-    const month = monthBounds(new Date(), timeZone);
-
-    /*
      * The two tiles that ask "which one". Their answer lives in the tile's own
      * configuration; unset means nothing to draw and the tile says so, rather
      * than picking one on somebody's behalf.
@@ -372,7 +373,14 @@ export const overviewRoutes: FastifyPluginCallback = (fastify, _options, done) =
 
     const [outflow, pace, allocation, bills, accountHistory, delegationHistory, pickable] =
       await Promise.all([
-        keys.has('daily_outflow') ? buildOutflow(prisma, { ...month, timeZone }) : undefined,
+        /*
+         * The one tile drawn against the calendar month rather than the cycle,
+         * so it needs no anchor and works on a household that has never set one.
+         * Three months, newest first, on one shared scale.
+         */
+        keys.has('daily_outflow')
+          ? buildOutflowMonths(prisma, { timeZone, months: OUTFLOW_MONTHS })
+          : undefined,
         keys.has('income_vs_spending_pace') && bounds ? buildPace(prisma, bounds) : undefined,
         keys.has('allocation')
           ? buildAllocation(
@@ -410,9 +418,12 @@ export const overviewRoutes: FastifyPluginCallback = (fastify, _options, done) =
         : {}),
       ...(outflow
         ? {
-            daily_outflow: outflow.map((day) => ({
-              date: dateOut(day.date),
-              spentCents: centsOut(day.spentCents),
+            daily_outflow: outflow.map((entry) => ({
+              month: dateOut(entry.month),
+              days: entry.days.map((day) => ({
+                date: dateOut(day.date),
+                spentCents: centsOut(day.spentCents),
+              })),
             })),
           }
         : {}),

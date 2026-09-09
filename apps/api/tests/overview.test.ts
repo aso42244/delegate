@@ -112,7 +112,10 @@ interface DataBody {
     readonly plannedCents: string | null;
     readonly spentCents: string;
   }[];
-  readonly daily_outflow?: readonly { readonly date: string; readonly spentCents: string }[];
+  readonly daily_outflow?: readonly {
+    readonly month: string;
+    readonly days: readonly { readonly date: string; readonly spentCents: string }[];
+  }[];
   readonly income_vs_spending_pace?: readonly {
     readonly date: string;
     readonly observed: boolean;
@@ -1085,15 +1088,32 @@ describe('the cycle-shaped tiles', () => {
      * months — bills arrive on dates and statements close on dates — so it needs
      * no anchor and works on a household that has never set one.
      */
-    const days = body.daily_outflow ?? [];
-    const now = new Date();
-    const inMonth = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 0)).getUTCDate();
-    expect(days.length).toBe(inMonth);
+    const months = body.daily_outflow ?? [];
+    // This month and the two before it: a single band says how this month is
+    // going and nothing about whether that is unusual.
+    expect(months.length).toBe(3);
 
-    // Every day gets a cell, including the empty ones: skipping them would
-    // compress a quiet fortnight into the width of a busy one.
-    expect(days.every((day) => typeof day.spentCents === 'string')).toBe(true);
-    expect(days[0]?.date.slice(8, 10)).toBe('01');
+    const daysIn = (iso: string): number => {
+      const [year, month] = iso.slice(0, 7).split('-').map(Number);
+      return new Date(Date.UTC(year!, month, 0)).getUTCDate();
+    };
+
+    for (const entry of months) {
+      // Every month starts on the 1st and runs to its own length. They are not
+      // padded to a common one: the columns are days of the month, so a short
+      // month stops early rather than putting its 28th under another's 31st.
+      expect(entry.month.slice(8, 10)).toBe('01');
+      expect(entry.days.length).toBe(daysIn(entry.month));
+      expect(entry.days[0]?.date.slice(8, 10)).toBe('01');
+      // Every day gets a cell, including the empty ones: skipping them would
+      // compress a quiet fortnight into the width of a busy one.
+      expect(entry.days.every((day) => typeof day.spentCents === 'string')).toBe(true);
+    }
+
+    // Newest first, each one month before the last.
+    const keys = months.map((entry) => entry.month.slice(0, 7));
+    expect(new Set(keys).size).toBe(3);
+    expect([...keys].sort().reverse()).toEqual(keys);
   });
 
   it('stops the pace lines at today rather than carrying them flat', async () => {

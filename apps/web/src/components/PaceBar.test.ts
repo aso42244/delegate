@@ -97,6 +97,39 @@ describe('the fill', () => {
   });
 });
 
+describe('a transfer between two lines', () => {
+  /*
+   * The owner's own worked example, because this is the property that makes the
+   * bar trustworthy day to day and it is not obvious from the formula.
+   *
+   * What the cycle had is `spent + balance`, which is derived rather than
+   * assembled — so money moved between lines is already in it. There is no
+   * transfer term to add and nothing to keep in step: a transfer moves the
+   * balance, and the balance is half the sum.
+   */
+  it('takes a line out of the red without touching what it spent', () => {
+    // $55 delegated, $59.24 carried in, $134.24 spent: $20 past what it had.
+    const before = line(55, 134.24, -20);
+    expect(paceFill(before)).toBeGreaterThan(SPLIT);
+
+    // $20 transferred in. Spending is untouched; the balance is not.
+    const after = { ...before, balanceCents: 0n };
+    expect(paceFill(after)).toBe(SPLIT);
+    expect(paceSummary(after)).toContain('$134 spent of $134');
+  });
+
+  it('takes the same money off what the other line has to spend', () => {
+    const before = line(725, 565.53, 264.63);
+    const after = { ...before, balanceCents: before.balanceCents - d(20) };
+
+    // $830.16 to spend becomes $810.16 — and it moved without anything being
+    // spent, which is exactly what a transfer is.
+    expect(paceSummary(before)).toContain('of $830');
+    expect(paceSummary(after)).toContain('of $810');
+    expect(paceFill(after)).toBeGreaterThan(paceFill(before));
+  });
+});
+
 describe('what carried in', () => {
   it('is what there was, less what this cycle put in', () => {
     expect(carriedIn(line(725, 565.53, 264.63))).toBe(d(105.16));

@@ -445,24 +445,19 @@ test('the panel says there is no cycle pace until a payday is set', async ({ sig
    * progress bar — an empty bar reads as "nothing has happened yet", which is a
    * different and wrong answer.
    */
-  await expect(
-    signedIn.getByText('Set your next payday on Settings → Budget to see cycle pace.'),
-  ).toBeVisible();
+  await expect(signedIn.getByText('No payday set')).toBeVisible();
 });
 
-test('the panel collapses and gives the width back', async ({ signedIn }) => {
+test('the panel is always there', async ({ signedIn }) => {
   await signedIn.goto('/overview');
 
-  await signedIn.getByRole('button', { name: 'Collapse the budget panel' }).click();
-  await expect(signedIn.getByRole('complementary', { name: 'Budget' })).toHaveCount(0);
-
-  // Per device, like the sidebar's collapse: a fact about this screen rather
-  // than about the household's budget.
-  await signedIn.reload();
-  await expect(signedIn.getByRole('complementary', { name: 'Budget' })).toHaveCount(0);
-
-  await signedIn.getByRole('button', { name: 'Open the budget panel' }).click();
+  /*
+   * It used to collapse to a button, per device. The answer somebody opens this
+   * page for should not be behind one, and the width it gave back is the width
+   * the dashboard is laid out for — so there is no control here to find.
+   */
   await expect(signedIn.getByRole('complementary', { name: 'Budget' })).toBeVisible();
+  await expect(signedIn.getByRole('button', { name: /collapse the budget panel/i })).toHaveCount(0);
 });
 
 test('the cashflow chart carries its own period, separate from the page', async ({ signedIn }) => {
@@ -659,9 +654,7 @@ test('setting a payday turns the cycle on across the page', async ({ signedIn })
     band.getByText('Set your next payday on Settings → Budget to see this cycle.'),
   ).toBeVisible();
   await expect(
-    signedIn
-      .getByRole('complementary', { name: 'Budget' })
-      .getByText('Set your next payday on Settings → Budget to see cycle pace.'),
+    signedIn.getByRole('complementary', { name: 'Budget' }).getByText('No payday set'),
   ).toBeVisible();
 
   await signedIn.goto('/settings/budget');
@@ -675,13 +668,30 @@ test('setting a payday turns the cycle on across the page', async ({ signedIn })
    * One date, and every boundary around it follows. The panel now says where the
    * household sits between paydays, and the band has a cycle to draw.
    */
-  await expect(signedIn.getByText(/day \d+ of 14/)).toBeVisible();
+  // No "of 14": the cadence is a divisor and the length falls out of the
+  // anchor, so it told the household a number it already knows.
+  await expect(signedIn.getByText(/day \d+ · \d+% through/)).toBeVisible();
   await expect(
     signedIn
       .getByRole('heading', { name: 'In against out', level: 2 })
       .locator('../..')
       .getByText('Set your next payday on Settings → Budget to see this cycle.'),
   ).toHaveCount(0);
+});
+
+test('the panel leaves out accounts with nothing in them', async ({ signedIn }) => {
+  // A closed-but-not-archived card is the commonest of these, and an account at
+  // zero is one nothing can be decided about. The total is unchanged either way,
+  // because adding zero changes nothing.
+  await makeAccount('Everyday Checking', 'asset', 500_00n);
+  await makeAccount('Old Savings', 'asset', 0n);
+
+  await signedIn.goto('/overview');
+  const panel = signedIn.getByRole('complementary', { name: 'Budget' });
+  await panel.getByRole('radio', { name: 'Accounts' }).click();
+
+  await expect(panel.getByText('Everyday Checking')).toBeVisible();
+  await expect(panel.getByText('Old Savings')).toHaveCount(0);
 });
 
 test('the panel lists only accounts the budget counts', async ({ signedIn }) => {
@@ -770,7 +780,10 @@ test('the panel keeps its delegations when tiles are rearranged', async ({ signe
   ).toBeVisible();
 });
 
-test('the panel summary says budgeted, spent and remaining', async ({ signedIn, api }) => {
+test('the panel summary says what there is, what has gone and what is left', async ({
+  signedIn,
+  api,
+}) => {
   await makeDelegation(api, 'Grocery');
 
   await signedIn.goto('/overview');
@@ -780,9 +793,13 @@ test('the panel summary says budgeted, spent and remaining', async ({ signedIn, 
   await dialog.getByRole('switch', { name: 'Show Grocery' }).click();
   await dialog.getByRole('button', { name: 'Save' }).click();
 
-  // The household's words. "Held" was jargon and "planned" said something the
-  // amount to delegate does not quite mean.
-  await expect(panel.getByText('Budgeted')).toBeVisible();
+  /*
+   * The three subtract: what the lines had this cycle, less what has gone, is
+   * what is left. It said "Budgeted" — the sum of the amounts to delegate, which
+   * is what a press puts in rather than what there is, and on lines carrying
+   * surplus it came out *smaller* than Remaining.
+   */
+  await expect(panel.getByText('To spend')).toBeVisible();
   await expect(panel.getByText('Spent')).toBeVisible();
   await expect(panel.getByText('Remaining')).toBeVisible();
 
@@ -803,11 +820,21 @@ test('the outflow band draws the calendar month with no payday set', async ({ si
    * that has never set a payday, unlike everything else measured from one.
    */
   const tile = signedIn.getByRole('heading', { name: 'Daily outflow', level: 2 }).locator('../..');
-  await expect(tile.getByText('This month')).toBeVisible();
-  await expect(tile.getByText(/out · avg/)).toBeVisible();
   await expect(
     tile.getByText('Set your next payday on Settings → Budget to see this cycle.'),
   ).toHaveCount(0);
+
+  /*
+   * This month and the two before it, each row naming its own month and
+   * carrying its own total. One band says how this month is going and nothing
+   * about whether that is unusual, which is the question a spending pattern is
+   * actually asked.
+   */
+  await expect(tile.getByText(/out · avg/)).toHaveCount(3);
+  // One band per month, each labelled with its own month and day count. The
+  // name is asserted through the band's own label rather than built here, so
+  // the test does not depend on the browser's locale matching Node's.
+  await expect(tile.getByRole('img', { name: /over \d+ days/ })).toHaveCount(3);
 });
 
 test('a balance-history tile asks which one before it draws anything', async ({ signedIn }) => {

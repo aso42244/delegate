@@ -959,7 +959,7 @@ export function monthBounds(
 }
 
 /**
- * What went out on each day of the **calendar month**.
+ * What went out on each day, over the calendar month and the two before it.
  *
  * The one reading on this page that is not cycle-shaped, and deliberately so.
  * Everything else here answers "how am I doing against this cycle's plan", which
@@ -975,21 +975,39 @@ export function monthBounds(
  * It also needs no payday anchor, which makes it the one cycle-adjacent tile
  * that works on a household that has never set one.
  *
- * Every day in the month gets a cell, including the ones nothing happened on. A
+ * **Three months, not one.** A single band says how this month is going and
+ * nothing about whether that is unusual, which is the question a spending
+ * pattern is actually asked. Three stacked bands, on **one shared scale**, make
+ * the comparison the picture rather than something to work out: the darkest cell
+ * anywhere is the worst day of the quarter, wherever it falls.
+ *
+ * Every day in a month gets a cell, including the ones nothing happened on. A
  * band that skipped empty days would compress a quiet fortnight into the width
  * of a busy one and say something false about the shape of the month — the same
  * mistake the utility charts avoid by keeping an empty month between two bills.
+ *
+ * The months are **not** padded to a common length. Aligning them by day of the
+ * month is what makes a column comparable — the 1st over the 1st — so a 30-day
+ * month is a row of 30 against a row of 31, and stops one cell short. Padding
+ * them equal would put the 28th of February under the 30th of March.
  */
 export async function buildOutflow(
   db: Db,
-  options: { readonly start: Date; readonly end: Date; readonly timeZone: string },
+  options: {
+    readonly start: Date;
+    readonly end: Date;
+    readonly timeZone: string;
+  },
 ): Promise<OutflowDay[]> {
   const rows = await db.transaction.findMany({
     where: {
       archivedAt: null,
       kind: 'normal',
       amountCents: { lt: 0 },
-      postedAt: { gte: startOfLocalDay(options.start, options.timeZone) },
+      postedAt: {
+        gte: startOfLocalDay(options.start, options.timeZone),
+        lt: startOfLocalDay(options.end, options.timeZone),
+      },
     },
     select: { amountCents: true, postedAt: true },
   });
@@ -1009,6 +1027,40 @@ export async function buildOutflow(
     cursor.setUTCDate(cursor.getUTCDate() + 1);
   }
   return days;
+}
+
+export interface OutflowMonth {
+  /** First day of the month, as a day key. */
+  readonly month: Date;
+  readonly days: readonly OutflowDay[];
+}
+
+/**
+ * The band's months, newest first.
+ *
+ * One query per month rather than one for the span, because each month's bounds
+ * are its own and the alternative is slicing a flat list back into months by
+ * date arithmetic that `buildOutflow` already does correctly.
+ */
+export async function buildOutflowMonths(
+  db: Db,
+  options: { readonly timeZone: string; readonly months: number },
+  now: Date = new Date(),
+): Promise<OutflowMonth[]> {
+  const current = localMonthKey(now, options.timeZone);
+
+  return Promise.all(
+    Array.from({ length: options.months }, (_unused, back) => addMonthsToKey(current, -back)).map(
+      async (month) => ({
+        month,
+        days: await buildOutflow(db, {
+          start: month,
+          end: addMonthsToKey(month, 1),
+          timeZone: options.timeZone,
+        }),
+      }),
+    ),
+  );
 }
 
 export interface PacePoint {

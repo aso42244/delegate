@@ -129,6 +129,11 @@ spent beyond what the line had.
 **The hover text is figures, never a verdict.** Spent of available, and what
 carried in — "On pace" and "Out of money" were both proposed and refused.
 
+**What the cycle had is `spent + balance`, always.** Derived rather than
+assembled from delegation-plus-carry-in, which means it holds whether or not the
+press has run yet _and_ that money transferred between lines is already in it —
+there is no transfer term to add and nothing to keep in step.
+
 **No payday anchor means no tick.** A marker drawn from a guessed schedule is
 confidently in the wrong place, and every reading beside it is judged against it.
 

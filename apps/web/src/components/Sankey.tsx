@@ -60,11 +60,30 @@ const SPENDING_TOKENS = [
  * characters rather than pixels — an approximation, and a generous one, because
  * the cost of being wrong is a label a little short rather than one running
  * across the ribbons. The whole name is on the hover either way.
+ *
+ * Four characters shorter since the labels gained a percentage: the line is
+ * name, amount, then share, and the name is the part that can afford to give.
  */
-const LABEL_MAX = 28;
+const LABEL_MAX = 24;
 
 function truncate(name: string): string {
   return name.length > LABEL_MAX ? `${name.slice(0, LABEL_MAX - 1)}…` : name;
+}
+
+/**
+ * A node's share of the flow, to the nearest whole percent.
+ *
+ * The ribbon's thickness is the share, but a ribbon is only comparable against
+ * the ones beside it — the figure says how big a piece of the whole this is,
+ * which is the question somebody actually has of a cashflow chart. Integer
+ * arithmetic on cents, rounded rather than truncated, so a node at 7.6% does not
+ * read as 7.
+ */
+function share(amountCents: bigint, total: bigint): string {
+  if (total <= 0n) return '';
+  // Tenths of a percent in integer cents, then rounded to whole percent.
+  const tenths = Number((amountCents * 1000n) / total);
+  return tenths < 5 ? '<1%' : `${Math.round(tenths / 10)}%`;
 }
 
 const WIDTH = 1000;
@@ -191,7 +210,7 @@ export function Sankey({
         d={ribbon(leftX + BAR_W, leftTop + node.y, midX, cursor, node.h)}
         style={{ fill: colorOf(node), fillOpacity: 0.26 }}
       >
-        <title>{`${node.name} — ${formatCents(node.amountCents)}${node.detail ? ` · ${node.detail}` : ''}`}</title>
+        <title>{`${node.name} — ${formatCents(node.amountCents)} · ${share(node.amountCents, total)} of the flow${node.detail ? ` · ${node.detail}` : ''}`}</title>
       </path>,
     );
     cursor += node.h;
@@ -204,7 +223,7 @@ export function Sankey({
         d={ribbon(midX + BAR_W, cursor, rightX, rightTop + node.y, node.h)}
         style={{ fill: colorOf(node), fillOpacity: 0.26 }}
       >
-        <title>{`${node.name} — ${formatCents(node.amountCents)}${node.detail ? ` · ${node.detail}` : ''}`}</title>
+        <title>{`${node.name} — ${formatCents(node.amountCents)} · ${share(node.amountCents, total)} of the flow${node.detail ? ` · ${node.detail}` : ''}`}</title>
       </path>,
     );
     cursor += node.h;
@@ -268,8 +287,11 @@ export function Sankey({
             {truncate(node.name)}{' '}
             <tspan fontWeight="400" style={{ fill: 'var(--color-muted)' }}>
               {formatCents(node.amountCents)}
+            </tspan>{' '}
+            <tspan fontWeight="400" style={{ fill: 'var(--color-axis)' }}>
+              {share(node.amountCents, total)}
             </tspan>
-            <title>{`${node.name} — ${formatCents(node.amountCents)}`}</title>
+            <title>{`${node.name} — ${formatCents(node.amountCents)} · ${share(node.amountCents, total)} of the flow`}</title>
           </text>
         ))}
         {rightStack.laid.map((node) => (
@@ -286,8 +308,11 @@ export function Sankey({
             {truncate(node.name)}{' '}
             <tspan fontWeight="400" style={{ fill: 'var(--color-muted)' }}>
               {formatCents(node.amountCents)}
+            </tspan>{' '}
+            <tspan fontWeight="400" style={{ fill: 'var(--color-axis)' }}>
+              {share(node.amountCents, total)}
             </tspan>
-            <title>{`${node.name} — ${formatCents(node.amountCents)}`}</title>
+            <title>{`${node.name} — ${formatCents(node.amountCents)} · ${share(node.amountCents, total)} of the flow`}</title>
           </text>
         ))}
         <text
