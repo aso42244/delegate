@@ -129,7 +129,9 @@ test('enrols, then requires a code on the next sign-in', async ({ signedIn: page
   await page.getByLabel('Authentication code').fill(await generateOtp({ secret }));
   await page.getByRole('button', { name: 'Verify' }).click();
 
-  await page.waitForURL('/');
+  // Signing in lands on the page this person chose, which for an account that
+  // never chose is Overview. The root is a redirect, not a page.
+  await page.waitForURL('/overview');
 });
 
 test('a recovery code gets in when the phone is gone, and is then spent', async ({
@@ -157,7 +159,9 @@ test('a recovery code gets in when the phone is gone, and is then spent', async 
   await page.getByRole('button', { name: 'Sign in' }).click();
   await page.getByLabel('Authentication code').fill(recoveryCode);
   await page.getByRole('button', { name: 'Verify' }).click();
-  await page.waitForURL('/');
+  // Signing in lands on the page this person chose, which for an account that
+  // never chose is Overview. The root is a redirect, not a page.
+  await page.waitForURL('/overview');
 
   // Spent, not merely accepted: the count is what tells the household how many
   // ways back in they have left.

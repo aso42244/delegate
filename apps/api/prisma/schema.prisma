@@ -126,6 +126,18 @@ enum PayCadence {
   @@map("pay_cadence")
 }
 
+/// Where a person lands.
+///
+/// Two values, not every page: a landing page answers a whole question, and
+/// Overview and Budget are the two that do. Landing somebody on Rules is a
+/// setting nobody wants and one more thing to keep working.
+enum LandingPage {
+  overview
+  budget
+
+  @@map("landing_page")
+}
+
 enum UserRole {
   user
   admin
@@ -192,6 +204,17 @@ model User {
   ///
   /// Not unique and not a credential: nothing is ever looked up by it.
   displayName String? @map("display_name")
+
+  /// Where this person lands when they open the application.
+  ///
+  /// Per person rather than per household: the two people using this budget read
+  /// it for different reasons — one for a daily glance, one to work on it — and
+  /// a single household setting would make one of them wrong every day.
+  ///
+  /// Null is the default, which is Overview. Stored rather than defaulted in the
+  /// column so that "never chose" stays distinguishable from "chose Overview",
+  /// which is what lets the default move later without overriding a choice.
+  landingPage LandingPage? @map("landing_page")
 
   // Accounts created by an Admin start with a temporary password that must be
   // replaced at first login.

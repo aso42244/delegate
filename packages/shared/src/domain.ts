@@ -35,6 +35,30 @@ export type RuleDirection = (typeof RULE_DIRECTIONS)[number];
 export const USER_ROLES = ['user', 'admin', 'super_admin'] as const;
 export type UserRole = (typeof USER_ROLES)[number];
 
+/**
+ * Where a person lands when they open the application.
+ *
+ * Two values, not every page. A landing page answers a whole question, and these
+ * are the two that do: Overview is the daily glance, Budget is where the work
+ * happens. Landing somebody on Rules is a setting nobody wants and one more
+ * thing to keep working.
+ *
+ * Null anywhere this appears means "never chose", which is deliberately not the
+ * same as having chosen the default — it is what lets the default move later
+ * without overriding a decision somebody made.
+ */
+export const LANDING_PAGES = ['overview', 'budget'] as const;
+export type LandingPage = (typeof LANDING_PAGES)[number];
+
+/** Where somebody who has never chosen lands. */
+export const DEFAULT_LANDING_PAGE: LandingPage = 'overview';
+
+/** The address of each, so the router and the setting cannot drift apart. */
+export const LANDING_PATH: Record<LandingPage, string> = {
+  overview: '/overview',
+  budget: '/budget',
+};
+
 export const SYNC_RUN_STATUSES = ['running', 'succeeded', 'failed'] as const;
 export type SyncRunStatus = (typeof SYNC_RUN_STATUSES)[number];
 

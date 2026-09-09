@@ -44,7 +44,7 @@ async function choose(
 
 test('stacked is the default, and reads Assets, Debts, Delegations', async ({ signedIn, api }) => {
   await seed(api);
-  await signedIn.goto('/');
+  await signedIn.goto('/budget');
 
   await expectSections(signedIn, ['Assets', 'Debts', 'Delegations']);
 });
@@ -55,7 +55,7 @@ test('two columns puts the envelopes first and the accounts beside them', async 
 }) => {
   await seed(api);
   await choose(signedIn, 'Two columns');
-  await signedIn.goto('/');
+  await signedIn.goto('/budget');
 
   // The DOM order is the column order: Delegations is the left column, and
   // Assets and Debts are the right one, stacked within it.
@@ -87,7 +87,7 @@ test('on a phone, two columns becomes Delegations, Assets, Debts', async ({ sign
   await choose(signedIn, 'Two columns');
 
   await signedIn.setViewportSize({ width: 390, height: 844 });
-  await signedIn.goto('/');
+  await signedIn.goto('/budget');
 
   await expectSections(signedIn, ['Delegations', 'Assets', 'Debts']);
 
@@ -114,13 +114,13 @@ test('the choice survives a reload, because it is remembered on the device', asy
   await seed(api);
   await choose(signedIn, 'Two columns');
 
-  await signedIn.goto('/');
+  await signedIn.goto('/budget');
   await signedIn.reload();
   await expectSections(signedIn, ['Delegations', 'Assets', 'Debts']);
 
   // And back, so the control is not one-way.
   await choose(signedIn, 'Stacked');
-  await signedIn.goto('/');
+  await signedIn.goto('/budget');
   await expectSections(signedIn, ['Assets', 'Debts', 'Delegations']);
 });
 
@@ -134,7 +134,7 @@ test('a grouping still folds inside the left column', async ({ signedIn, api }) 
   await api.post('/api/groupings', { data: { name: 'Essentials', section: 'delegations' } });
 
   await choose(signedIn, 'Two columns');
-  await signedIn.goto('/');
+  await signedIn.goto('/budget');
 
   await signedIn.getByRole('button', { name: 'Options for Grocery' }).click();
   await signedIn.getByRole('menuitem', { name: 'Move to grouping' }).click();

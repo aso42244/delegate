@@ -1,4 +1,4 @@
-import { canModifyUser, type UserRole } from '@budget/shared';
+import { canModifyUser, type LandingPage, type UserRole } from '@budget/shared';
 import type { Db } from '../db/client.js';
 import { ConflictError, NotFoundError, ValidationError } from './errors.js';
 import { hashPassword, verifyAgainstDummyHash, verifyPassword } from './passwords.js';
@@ -17,6 +17,8 @@ export interface PublicUser {
   readonly username: string;
   /** What to call them on screen. Null falls back to the username. */
   readonly displayName: string | null;
+  /** Where they land. Null is "never chose", which is not the same as Overview. */
+  readonly landingPage: LandingPage | null;
   readonly role: UserRole;
   /** Whether a second factor is confirmed. Required of everyone, so this is
    *  "has finished setting up" rather than "has opted in". */
@@ -31,6 +33,7 @@ const PUBLIC_USER_SELECT = {
   id: true,
   username: true,
   displayName: true,
+  landingPage: true,
   role: true,
   totpConfirmedAt: true,
   mustChangePassword: true,
@@ -187,6 +190,7 @@ function present(row: {
   id: string;
   username: string;
   displayName: string | null;
+  landingPage: LandingPage | null;
   role: UserRole;
   totpConfirmedAt: Date | null;
   mustChangePassword: boolean;
@@ -242,6 +246,30 @@ export async function setOwnDisplayName(
     await db.user.update({
       where: { id },
       data: { displayName: normalizeDisplayName(displayName) },
+      select: PUBLIC_USER_SELECT,
+    }),
+  );
+}
+
+/**
+ * Where this person lands when they open the application.
+ *
+ * Beside the display name and outside user management, for the same reason:
+ * where you land is yours to set whatever role you hold, and there is no
+ * privilege here to protect. An Admin cannot set it for somebody else, which is
+ * the point — the two people using this budget read it for different reasons.
+ *
+ * Null clears the choice and returns to the default rather than storing one.
+ */
+export async function setOwnLandingPage(
+  db: Db,
+  id: string,
+  landingPage: LandingPage | null,
+): Promise<PublicUser> {
+  return present(
+    await db.user.update({
+      where: { id },
+      data: { landingPage },
       select: PUBLIC_USER_SELECT,
     }),
   );

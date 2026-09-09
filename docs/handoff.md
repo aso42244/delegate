@@ -956,6 +956,17 @@ in [ADR 053](decisions/053-a-pace-bar-reads-two-marks-not-one.md).
   Checked the same day: no other route in `apps/api/src/routes` selects a column
   and then drops it when mapping the response.
 
+- **A field added to a model is a field every narrow `select` has to be checked
+  against.** `landing_page` was added, written correctly, and read back as null
+  on every request — because `requireSession` builds `currentUser` from its own
+  select and that one had not been touched. The root then redirected to the
+  default however anybody chose. **This is the second time in two releases**:
+  `region` was stored, selected and re-flowed by, then dropped on the way out of
+  the layout response. Both were caught end-to-end rather than anywhere nearer.
+
+  Grep the model's field name across `apps/api/src` the same day you add it, and
+  read every `select` that comes back.
+
 - **Bills and Utilities are one page called Recurring**
   ([ADR 055](decisions/055-bills-and-utilities-are-one-page.md)). Two views —
   Due watches time, Cost judges amount — because neither answer is in the other,

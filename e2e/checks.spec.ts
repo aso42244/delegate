@@ -40,7 +40,7 @@ test('a check moves money out of its envelope and onto its own line', async ({
   // starts level and any drift caused by the check is visible immediately.
   await makeAccount('Everyday Checking', 'asset', 12000n);
   await makeDelegation(api, 'Piano Lessons', '12000');
-  await page.goto('/');
+  await page.goto('/budget');
 
   // Fund the envelope so there is something to write a check against.
   await fundPianoLessons(page);
@@ -59,7 +59,7 @@ test('a check moves money out of its envelope and onto its own line', async ({
 test('a check is voided back to where the money came from', async ({ signedIn: page, api }) => {
   await makeAccount('Everyday Checking', 'asset', 12000n);
   await makeDelegation(api, 'Piano Lessons', '12000');
-  await page.goto('/');
+  await page.goto('/budget');
   await fundPianoLessons(page);
 
   await writeCheck(page);
@@ -79,7 +79,7 @@ test('a check is settled by hand when the bank never named it', async ({ signedI
   const accountId = await makeAccount('Everyday Checking', 'asset', 100000n);
   await makeDelegation(api, 'Piano Lessons', '12000');
 
-  await page.goto('/');
+  await page.goto('/budget');
   await fundPianoLessons(page);
 
   await writeCheck(page);
@@ -103,7 +103,7 @@ test('a check is settled by hand when the bank never named it', async ({ signedI
 
   // The check is gone from the budget, and the spending landed on the envelope
   // rather than on a line called "Check 1062".
-  await page.goto('/');
+  await page.goto('/budget');
   await expect(page.getByText('Check 1062')).toBeHidden();
   await expect(page.getByRole('button', { name: 'Piano Lessons balance' })).toContainText('$0.00');
 });
@@ -119,7 +119,7 @@ test('a check the bank has cashed waits to be confirmed', async ({ signedIn: pag
   const accountId = await makeAccount('Everyday Checking', 'asset', 100000n);
   await makeDelegation(api, 'Piano Lessons', '12000');
 
-  await page.goto('/');
+  await page.goto('/budget');
   await fundPianoLessons(page);
   await writeCheck(page);
   await expect(page.getByText('Check 1062')).toBeVisible();
@@ -133,7 +133,7 @@ test('a check the bank has cashed waits to be confirmed', async ({ signedIn: pag
     },
   });
 
-  await page.goto('/');
+  await page.goto('/budget');
 
   // Proposed, and nothing more: the money is still on the check line. The
   // proposal is a pill beside the reading; what it says in full is its tooltip.
@@ -184,7 +184,7 @@ test('categorizing the payment as something else withdraws the proposal', async 
   await makeDelegation(api, 'Piano Lessons', '12000');
   await makeDelegation(api, 'Grocery');
 
-  await page.goto('/');
+  await page.goto('/budget');
   await fundPianoLessons(page);
   await writeCheck(page);
 
@@ -197,7 +197,7 @@ test('categorizing the payment as something else withdraws the proposal', async 
     },
   });
 
-  await page.goto('/');
+  await page.goto('/budget');
   await expect(page.getByRole('link', { name: '1 check to confirm' })).toBeVisible();
 
   await page.goto('/transactions');
@@ -211,7 +211,7 @@ test('categorizing the payment as something else withdraws the proposal', async 
   // the field itself empty to type into.
   await expect(picker).toHaveAttribute('placeholder', 'Grocery');
 
-  await page.goto('/');
+  await page.goto('/budget');
   await expect(page.getByRole('link', { name: '1 check to confirm' })).toHaveCount(0);
   // And the check is untouched, still holding its money.
   await expect(page.getByRole('button', { name: 'Check 1062 balance' })).toContainText('$120.00');

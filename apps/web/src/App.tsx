@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useState, type ReactNode } from 'react';
 import { Navigate, Outlet, Route, Routes, useLocation } from 'react-router-dom';
 import { api } from './api/client.js';
+import { DEFAULT_LANDING_PAGE, LANDING_PATH } from '@budget/shared';
 import { useSession } from './auth/SessionProvider.jsx';
 import { TabBar } from './components/TabBar.jsx';
 import { NARROW, useMediaQuery } from './useMediaQuery.js';
@@ -18,7 +19,6 @@ import { SettingsLayout } from './pages/settings/SettingsLayout.jsx';
 import { SyncSection } from './pages/settings/Sync.jsx';
 import { Transactions } from './pages/Transactions.jsx';
 import { Recurring } from './pages/Recurring.jsx';
-import { Insights } from './pages/Insights.jsx';
 import { Overview } from './pages/Overview.jsx';
 
 import { SignIn } from './pages/SignIn.jsx';
@@ -122,6 +122,20 @@ function RequireSession(): ReactNode {
   return <Outlet />;
 }
 
+/**
+ * Where this person lands.
+ *
+ * Read from the session rather than stored per device, because it is a fact
+ * about the person and not about the browser they happen to be sitting at. Null
+ * means they never chose, and the default applies — which is deliberately not
+ * the same as having chosen it, so the default can move later without
+ * overriding anybody's decision.
+ */
+function LandingRedirect(): ReactNode {
+  const { user } = useSession();
+  return <Navigate to={LANDING_PATH[user?.landingPage ?? DEFAULT_LANDING_PAGE]} replace />;
+}
+
 export function App(): ReactNode {
   const appName = useAppName();
   const { user } = useSession();
@@ -137,7 +151,17 @@ export function App(): ReactNode {
 
       <Route element={<RequireSession />}>
         <Route element={<AppShell appName={appName} />}>
-          <Route index element={<MainBudget />} />
+          {/*
+            The root is "wherever you land", not a page.
+
+            It was the Budget page's own address, which is exactly why a
+            per-person landing page could not work: a preference can only ever
+            redirect *away* from a root that is already something. Budget has its
+            own address now and the root resolves to whichever page this person
+            chose.
+          */}
+          <Route index element={<LandingRedirect />} />
+          <Route path="budget" element={<MainBudget />} />
           <Route path="transactions" element={<Transactions />} />
           <Route path="recurring" element={<Recurring />} />
           {/* Both old entries land on the half they named. A bookmark is a
@@ -145,9 +169,9 @@ export function App(): ReactNode {
           <Route path="bills" element={<Navigate to="/recurring" replace />} />
           <Route path="utilities" element={<Navigate to="/recurring?view=cost" replace />} />
           <Route path="rules" element={<Rules />} />
-          <Route path="insights" element={<Insights />} />
-          {/* Reachable by URL only while the tiles are ported in batches. It
-              joins the sidebar in the release that removes Insights. */}
+          {/* Overview replaced it. Same promise as /bills: the thing the
+              bookmark pointed at still exists, in better form. */}
+          <Route path="insights" element={<Navigate to="/overview" replace />} />
           <Route path="overview" element={<Overview />} />
           <Route path="settings" element={<SettingsLayout />}>
             <Route index element={<SettingsLanding />} />

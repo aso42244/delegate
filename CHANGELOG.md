@@ -8,6 +8,35 @@ phase (`v0.1.0-phase1`, and so on).
 
 ### Added
 
+- **Overview is the first destination and Budget the second**
+  ([ADR 056](docs/decisions/056-where-a-person-lands.md)). Overview is the daily
+  read and Budget is where the work happens, and the order is the order they are
+  used in.
+
+- **Where you land is yours to choose**, on Settings → Users beside your display
+  name. Per person and not per household: two people read this budget for
+  different reasons, so one setting would make one of them wrong every day. An
+  Admin cannot set it for somebody else.
+
+  Two choices, Overview and Budget, because a landing page answers a whole
+  question and those are the two that do. Never choosing is stored as null
+  rather than as the default, which is what lets the default move later without
+  overriding a decision somebody made.
+
+- **The root is a redirect, not a page.** `/` resolves to whichever page you
+  land on, and Budget has its own address at `/budget`. This is what a landing
+  preference needed: against a root that is already a page, a preference can
+  only ever redirect away from it.
+
+### Removed
+
+- **Insights.** Overview replaced it — the same catalogue, arranged per region
+  with per-tile configuration, a docked budget beside it, and its period in the
+  URL rather than in component state. `/insights` redirects to `/overview`. The
+  page, its routes and the tests that drove them went together;
+  `insight_layouts` stays in the database because dropping it would destroy an
+  arrangement somebody made.
+
 - **Recurring** — Bills and Utilities are one page with two views, Due and Cost
   ([ADR 055](docs/decisions/055-bills-and-utilities-are-one-page.md)). They were
   never redundant with each other: one watches whether a charge that should have

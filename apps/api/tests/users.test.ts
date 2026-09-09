@@ -556,6 +556,99 @@ describe('display names', () => {
  * that a second factor is required of every account, this is the only route
  * that does not involve a database prompt.
  */
+describe('where a person lands', () => {
+  it('is null until somebody chooses, which is not the same as the default', async () => {
+    const cookie = await setUpOwner();
+
+    const me = await app.inject({ method: 'GET', url: '/api/auth/me', headers: { cookie } });
+    /*
+     * The column stores no default, so "never chose" stays distinguishable from
+     * "chose Overview" — which is what lets the default move later without
+     * overriding a decision somebody made. The interface applies the default.
+     */
+    expect(userOf(me).landingPage).toBeNull();
+  });
+
+  it('is set on the same route as the display name, and each is applied alone', async () => {
+    const cookie = await setUpOwner();
+
+    await app.inject({
+      method: 'PATCH',
+      url: '/api/auth/me',
+      headers: { cookie },
+      payload: { displayName: 'Kenzie' },
+    });
+    const landed = await app.inject({
+      method: 'PATCH',
+      url: '/api/auth/me',
+      headers: { cookie },
+      payload: { landingPage: 'budget' },
+    });
+
+    /*
+     * Setting one leaves the other alone. Both fields on one route because both
+     * answer "what is mine to set about myself" — and optional, because a client
+     * that had to send the other back unchanged is how a display name gets
+     * cleared by a page that never showed it.
+     */
+    expect(userOf(landed).landingPage).toBe('budget');
+    expect(userOf(landed).displayName).toBe('Kenzie');
+  });
+
+  it('is cleared back to the default rather than storing one', async () => {
+    const cookie = await setUpOwner();
+    await app.inject({
+      method: 'PATCH',
+      url: '/api/auth/me',
+      headers: { cookie },
+      payload: { landingPage: 'budget' },
+    });
+
+    const cleared = await app.inject({
+      method: 'PATCH',
+      url: '/api/auth/me',
+      headers: { cookie },
+      payload: { landingPage: null },
+    });
+    expect(userOf(cleared).landingPage).toBeNull();
+  });
+
+  it('refuses a page that is not one of the two', async () => {
+    const cookie = await setUpOwner();
+    const response = await app.inject({
+      method: 'PATCH',
+      url: '/api/auth/me',
+      headers: { cookie },
+      // A landing page answers a whole question. Rules is not one of them.
+      payload: { landingPage: 'rules' },
+    });
+    expect(response.statusCode).toBe(400);
+  });
+
+  it("is each person's own — an administrator cannot set it for somebody else", async () => {
+    const cookie = await setUpOwner();
+    const created = await app.inject({
+      method: 'POST',
+      url: '/api/users',
+      headers: { cookie },
+      payload: {
+        username: 'partner',
+        temporaryPassword: 'temporary-pass-word',
+        role: 'user',
+        landingPage: 'budget',
+      },
+    });
+
+    /*
+     * The two people reading this budget read it for different reasons, and
+     * where somebody lands is theirs. User management has no field for it, so
+     * one sent here is ignored rather than honoured.
+     */
+    expect(created.statusCode).toBe(201);
+    expect(userOf(created).landingPage).toBeNull();
+  });
+});
+
 describe('resetting a second factor', () => {
   it('clears it, spends the recovery codes, and ends that account’s sessions', async () => {
     const cookie = await setUpOwner();

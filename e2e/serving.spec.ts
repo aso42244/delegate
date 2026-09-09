@@ -13,7 +13,7 @@ test('a hashed asset is served as JavaScript, not as the fallback page', async (
   request,
   page,
 }) => {
-  await page.goto('/');
+  await page.goto('/budget');
   const asset = await page.locator('script[type=module]').getAttribute('src');
   expect(asset).toBeTruthy();
 

@@ -15,7 +15,7 @@ test.describe('row density', () => {
     api,
   }) => {
     await makeDelegation(api, 'Grocery', '40000');
-    await page.goto('/');
+    await page.goto('/budget');
 
     const cell = page.locator('td.row-cell').first();
     const height = (): Promise<number> =>
@@ -34,7 +34,7 @@ test.describe('row density', () => {
       await page.goto('/settings/display');
       await page.getByLabel(label).check();
 
-      await page.goto('/');
+      await page.goto('/budget');
       expect(Math.round(await height()), label).toBe(expected);
 
       // Only the spacing changes. A "denser" setting that also shrank the type
@@ -61,7 +61,7 @@ test.describe('the budget on a phone', () => {
 
   test('shows one amount at a time, switched by the control', async ({ signedIn: page, api }) => {
     await makeDelegation(api, 'Grocery', '40000');
-    await page.goto('/');
+    await page.goto('/budget');
 
     // Remaining first: it is the number the budget is read for.
     await expect(page.getByRole('columnheader', { name: 'Remaining' })).toBeVisible();
@@ -75,7 +75,7 @@ test.describe('the budget on a phone', () => {
 
   test('swiping across the table switches the amount', async ({ signedIn: page, api }) => {
     await makeDelegation(api, 'Grocery', '40000');
-    await page.goto('/');
+    await page.goto('/budget');
 
     await expect(page.getByRole('columnheader', { name: 'Remaining' })).toBeVisible();
 
@@ -120,7 +120,7 @@ test.describe('the budget on a phone', () => {
 
   test('a vertical scroll does not change the amount', async ({ signedIn: page, api }) => {
     await makeDelegation(api, 'Grocery', '40000');
-    await page.goto('/');
+    await page.goto('/budget');
     await expect(page.getByRole('columnheader', { name: 'Remaining' })).toBeVisible();
 
     // Diagonal, but mostly vertical: someone scrolling with their thumb must not
@@ -146,7 +146,7 @@ test.describe('the budget on a phone', () => {
   test('both amounts show side by side once there is room', async ({ signedIn: page, api }) => {
     await makeDelegation(api, 'Grocery', '40000');
     await page.setViewportSize({ width: 1280, height: 800 });
-    await page.goto('/');
+    await page.goto('/budget');
 
     await expect(page.getByRole('columnheader', { name: 'Remaining' })).toBeVisible();
     await expect(page.getByRole('columnheader', { name: 'To delegate' })).toBeVisible();

@@ -137,7 +137,15 @@ export type PageIcon =
   | 'expand';
 
 export const PAGES = [
-  { to: '/', label: 'Budget', icon: 'budget', end: true },
+  /*
+   * Overview first, Budget second.
+   *
+   * Overview is the daily read and Budget is where the work happens — a quick
+   * review, then the full inspection. The order is the order somebody uses them
+   * in, which is also the owner's own description of what each is for.
+   */
+  { to: '/overview', label: 'Overview', icon: 'insights', end: false },
+  { to: '/budget', label: 'Budget', icon: 'budget', end: false },
   { to: '/transactions', label: 'Transactions', icon: 'transactions', end: false },
   /*
    * Beside Transactions rather than inside Settings.
@@ -155,7 +163,6 @@ export const PAGES = [
    * different ways.
    */
   { to: '/recurring', label: 'Recurring', icon: 'bills', end: false },
-  { to: '/insights', label: 'Insights', icon: 'insights', end: false },
   { to: '/settings', label: 'Settings', icon: 'settings', end: false },
 ] as const satisfies readonly { to: string; label: string; icon: PageIcon; end: boolean }[];
 

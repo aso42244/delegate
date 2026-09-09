@@ -1,6 +1,6 @@
 import fastifyCookie from '@fastify/cookie';
 import fastifySession from '@fastify/session';
-import { canManageSettings, canManageUsers, type UserRole } from '@budget/shared';
+import { canManageSettings, canManageUsers, type LandingPage, type UserRole } from '@budget/shared';
 import type { FastifyPluginAsync, FastifyReply, FastifyRequest } from 'fastify';
 import fp from 'fastify-plugin';
 import type { AppConfig } from '../config.js';
@@ -23,6 +23,8 @@ export interface RequestUser {
   readonly username: string;
   /** What to call them on screen. Null falls back to the username. */
   readonly displayName: string | null;
+  /** Where they land. Null is "never chose", which is not the same as the default. */
+  readonly landingPage: LandingPage | null;
   readonly role: UserRole;
   readonly mustChangePassword: boolean;
   /** Whether a confirmed second factor exists — see `requireTwoFactor`. */
@@ -98,6 +100,7 @@ export async function requireSession(request: FastifyRequest, reply: FastifyRepl
       id: true,
       username: true,
       displayName: true,
+      landingPage: true,
       role: true,
       mustChangePassword: true,
       archivedAt: true,
@@ -117,6 +120,7 @@ export async function requireSession(request: FastifyRequest, reply: FastifyRepl
     id: user.id,
     username: user.username,
     displayName: user.displayName,
+    landingPage: user.landingPage,
     role: user.role,
     mustChangePassword: user.mustChangePassword,
     hasTotp: user.totpConfirmedAt !== null,

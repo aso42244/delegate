@@ -26,7 +26,7 @@ test('a target is set, and changes nothing about what gets delegated', async ({
   api,
 }) => {
   await makeDelegation(api, 'Car Insurance', '10000');
-  await signedIn.goto('/');
+  await signedIn.goto('/budget');
 
   await signedIn.getByRole('button', { name: 'Options for Car Insurance' }).click();
   await signedIn.getByRole('menuitem', { name: 'Set a target' }).click();
@@ -58,7 +58,7 @@ test('the amount to delegate is marked when it will not make the date', async ({
   api,
 }) => {
   await makeDelegation(api, 'Car Insurance', '10000');
-  await signedIn.goto('/');
+  await signedIn.goto('/budget');
 
   await signedIn.getByRole('button', { name: 'Options for Car Insurance' }).click();
   await signedIn.getByRole('menuitem', { name: 'Set a target' }).click();
@@ -83,7 +83,7 @@ test('the amount to delegate is marked when it will not make the date', async ({
 
 test('the needed amount can be taken, in one deliberate press', async ({ signedIn, api }) => {
   await makeDelegation(api, 'Car Insurance', '10000');
-  await signedIn.goto('/');
+  await signedIn.goto('/budget');
 
   await signedIn.getByRole('button', { name: 'Options for Car Insurance' }).click();
   await signedIn.getByRole('menuitem', { name: 'Set a target' }).click();
@@ -112,7 +112,7 @@ test('the needed amount can be taken, in one deliberate press', async ({ signedI
  */
 test('a target can repeat, and works towards the next one', async ({ signedIn, api }) => {
   await makeDelegation(api, 'Home Insurance', '10000');
-  await signedIn.goto('/');
+  await signedIn.goto('/budget');
 
   await signedIn.getByRole('button', { name: 'Options for Home Insurance' }).click();
   await signedIn.getByRole('menuitem', { name: 'Set a target' }).click();
@@ -140,7 +140,7 @@ test('the calculated amount can be taken, or changed on the way past', async ({
   api,
 }) => {
   await makeDelegation(api, 'Home Insurance', '10000');
-  await signedIn.goto('/');
+  await signedIn.goto('/budget');
 
   await signedIn.getByRole('button', { name: 'Options for Home Insurance' }).click();
   await signedIn.getByRole('menuitem', { name: 'Set a target' }).click();
@@ -166,7 +166,7 @@ test('the calculated amount can be taken, or changed on the way past', async ({
 
 test('a target is removed from the same dialog', async ({ signedIn, api }) => {
   await makeDelegation(api, 'Car Insurance', '10000');
-  await signedIn.goto('/');
+  await signedIn.goto('/budget');
 
   await signedIn.getByRole('button', { name: 'Options for Car Insurance' }).click();
   await signedIn.getByRole('menuitem', { name: 'Set a target' }).click();

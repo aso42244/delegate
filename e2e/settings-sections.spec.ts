@@ -51,7 +51,7 @@ test('a delegation is edited from Settings and the Budget agrees', async ({ sign
   await signedIn.getByLabel('Note for Grocery').fill('Weekly shop');
   await signedIn.getByRole('table').getByRole('button', { name: 'Save' }).click();
 
-  await signedIn.goto('/');
+  await signedIn.goto('/budget');
   await expect(signedIn.getByRole('button', { name: 'Groceries balance' })).toBeVisible();
   await expect(
     signedIn.getByRole('button', { name: 'Groceries amount to delegate' }),
@@ -70,7 +70,7 @@ test('clearing the amount makes a line ad hoc rather than zero', async ({ signed
   await signedIn.getByLabel('Amount to delegate for Grocery').fill('');
   await signedIn.getByRole('table').getByRole('button', { name: 'Save' }).click();
 
-  await signedIn.goto('/');
+  await signedIn.goto('/budget');
   await expect(signedIn.getByRole('button', { name: 'Grocery amount to delegate' })).toContainText(
     '—',
   );
@@ -89,7 +89,7 @@ test('a grouping is created and renamed from Settings', async ({ signedIn }) => 
   await signedIn.getByLabel('Name of Essentials').fill('Household costs');
   await signedIn.getByLabel('Name of Essentials').blur();
 
-  await signedIn.goto('/');
+  await signedIn.goto('/budget');
   await expect(signedIn.getByRole('button', { name: /Household costs/ })).toBeVisible();
 });
 
@@ -130,7 +130,7 @@ test('an archived delegation is listed and can be restored', async ({ signedIn, 
   await expect(signedIn.getByText('Nothing is archived.')).toBeVisible();
 
   // Back on the budget, where it was before.
-  await signedIn.goto('/');
+  await signedIn.goto('/budget');
   await expect(signedIn.getByRole('button', { name: 'Grocery balance' })).toBeVisible();
 });
 
