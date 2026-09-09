@@ -11,7 +11,8 @@ import {
   type OverviewData,
   type OverviewTileKey,
 } from '../domain/overview.js';
-import { householdTimezone } from '../domain/settings.js';
+import { payCycleAt } from '../domain/pay-cycle.js';
+import { getBudgetSettings, householdTimezone } from '../domain/settings.js';
 import { centsOut, dateOut } from '../http/serialize.js';
 import { AUTHENTICATED } from '../plugins/auth.js';
 
@@ -252,8 +253,33 @@ export const overviewRoutes: FastifyPluginCallback = (fastify, _options, done) =
 
     const data = await buildOverview(prisma, { tiles, window, timeZone, cashflowWindow });
 
+    /*
+     * Where the household sits between paydays.
+     *
+     * Sent with the figures rather than fetched separately, because every pace
+     * bar on the page is read against it — a tick arriving a moment after the
+     * bars it judges would show every line as fully spent for that moment.
+     *
+     * Null when no anchor is set, and the client draws no tick at all rather
+     * than falling back to a guess.
+     */
+    const settings = await getBudgetSettings(prisma);
+    const cycle = payCycleAt(settings.nextPaydayOn, settings.payCadence, new Date(), timeZone);
+
     return {
       window,
+      payCycle:
+        cycle === null
+          ? null
+          : {
+              start: dateOut(cycle.start),
+              end: dateOut(cycle.end),
+              lengthDays: cycle.lengthDays,
+              elapsedDays: cycle.elapsedDays,
+              // Basis points, so the tick's position survives as an integer the
+              // whole way to the stylesheet.
+              progressBasisPoints: Math.round(cycle.progress * 10_000),
+            },
       // Only when that tile is on the page. The rest of this payload follows the
       // rule that an absent key means "not asked for"; a period belonging to a
       // tile nobody has would be the one field that did not.

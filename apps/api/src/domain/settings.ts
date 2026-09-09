@@ -25,6 +25,8 @@ export interface BudgetSettings {
    * about it schedules a Delegate run.
    */
   readonly payCadence: PayCadence;
+  /** One payday; every other is generated from it at the cadence. */
+  readonly nextPaydayOn: Date | null;
   readonly remoteOverTorEnabled: boolean;
   readonly remoteOverTorEnabledAt: Date | null;
   /**
@@ -56,6 +58,7 @@ export async function getBudgetSettings(db: Db): Promise<BudgetSettings> {
       identityToleranceCents: true,
       goLiveAt: true,
       payCadence: true,
+      nextPaydayOn: true,
       remoteOverTorEnabled: true,
       remoteOverTorEnabledAt: true,
       scheduleTimezone: true,
@@ -68,6 +71,7 @@ export async function getBudgetSettings(db: Db): Promise<BudgetSettings> {
     identityToleranceCents: settings?.identityToleranceCents ?? DEFAULT_IDENTITY_TOLERANCE_CENTS,
     goLiveAt: settings?.goLiveAt ?? null,
     payCadence: settings?.payCadence ?? DEFAULT_PAY_CADENCE,
+    nextPaydayOn: settings?.nextPaydayOn ?? null,
     // Off unless a row says otherwise. A missing settings row must not be a way
     // in from the internet.
     remoteOverTorEnabled: settings?.remoteOverTorEnabled ?? false,
@@ -119,6 +123,8 @@ export interface UpdateBudgetSettingsInput {
   readonly undoWindowHours?: number | undefined;
   readonly identityToleranceCents?: Cents | undefined;
   readonly payCadence?: PayCadence | undefined;
+  /** Null clears the anchor, which removes the tick rather than defaulting it. */
+  readonly nextPaydayOn?: Date | null | undefined;
   readonly remoteOverTorEnabled?: boolean | undefined;
   readonly recurringAlertsEnabled?: boolean | undefined;
   /** Null clears the choice and returns to following `SCHEDULE_TIMEZONE`. */
@@ -193,6 +199,7 @@ export async function updateBudgetSettings(
       undoWindowHours: input.undoWindowHours ?? DEFAULT_UNDO_WINDOW_HOURS,
       identityToleranceCents: input.identityToleranceCents ?? DEFAULT_IDENTITY_TOLERANCE_CENTS,
       payCadence: input.payCadence ?? DEFAULT_PAY_CADENCE,
+      nextPaydayOn: input.nextPaydayOn ?? null,
       remoteOverTorEnabled: input.remoteOverTorEnabled ?? false,
       scheduleTimezone: input.scheduleTimezone ?? null,
       recurringAlertsEnabled: input.recurringAlertsEnabled ?? true,
@@ -203,6 +210,7 @@ export async function updateBudgetSettings(
         ? {}
         : { identityToleranceCents: input.identityToleranceCents }),
       ...(input.payCadence === undefined ? {} : { payCadence: input.payCadence }),
+      ...(input.nextPaydayOn === undefined ? {} : { nextPaydayOn: input.nextPaydayOn }),
       // Null is a value here, not an absence: it clears the choice and returns
       // to following the environment variable.
       ...(input.scheduleTimezone === undefined ? {} : { scheduleTimezone: input.scheduleTimezone }),
@@ -222,6 +230,7 @@ export async function updateBudgetSettings(
       identityToleranceCents: true,
       goLiveAt: true,
       payCadence: true,
+      nextPaydayOn: true,
       remoteOverTorEnabled: true,
       remoteOverTorEnabledAt: true,
       scheduleTimezone: true,

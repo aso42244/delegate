@@ -19,17 +19,26 @@ the next hurried change.
 
 ## 1. The scale
 
-**Four spacing values. Nothing else.**
+**Five spacing values. Nothing else.**
 
 | Step | Tailwind | Used for                                                 |
 | ---- | -------- | -------------------------------------------------------- |
 | 4px  | `1`      | Label to control, control to hint                        |
 | 8px  | `2`      | Controls in a cluster, buttons in a row, chip to chip    |
+| 12px | `3`      | Tile to tile on a dashboard, rows inside a dense list    |
 | 16px | `4`      | Blocks inside a card, card padding, header to body       |
 | 24px | `6`      | Card to card, page header to content, section to section |
 
-`gap-3`, `gap-5`, `mb-3`, `mb-5`, `mb-8`, `mt-3`, `mt-5`, `space-y-3` and every
-other off-scale value are banned and tested for. Two exceptions, both allowed by
+**Twelve was added in v0.59**, with the Overview redesign, and the reason is
+worth keeping so it does not become a precedent for a sixth. Four values held
+while every screen was a table or a form. A dashboard of small cards has a real
+gap between _inside a card_ and _between blocks_, and forcing it to 8 or 16 made
+tiles either cramped or airy with nothing between. Thirty-two was proposed
+alongside it and left out: 24 already separates sections, and a scale with two
+values for the same job is a scale nobody can apply confidently.
+
+`gap-5`, `mb-8`, `mt-7`, `space-y-9` and every other off-scale value are banned
+and tested for. Two exceptions, both allowed by
 name in the test: grid gutters may use `gap-4`, and the sidebar keeps its own
 metrics from `design.md` §4.
 

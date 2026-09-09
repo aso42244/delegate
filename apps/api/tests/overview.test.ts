@@ -104,6 +104,13 @@ interface DataBody {
   readonly home_equity_over_time?: { readonly name: string | null };
   readonly debt_trajectory?: { readonly hasEnoughHistory: boolean };
   readonly cashflowWindow?: string;
+  readonly payCycle?: {
+    readonly start: string;
+    readonly end: string;
+    readonly lengthDays: number;
+    readonly elapsedDays: number;
+    readonly progressBasisPoints: number;
+  } | null;
   readonly cycles?: readonly { readonly surplusCents: string; readonly partial: boolean }[];
   readonly delegations_negative?: readonly { readonly name: string }[];
   readonly change_per_cycle?: readonly unknown[];
@@ -408,7 +415,11 @@ describe("a tile's own configuration", () => {
     // page already answers.
     await putLayout(rowed(['delegations']));
     const body = (await get('/api/overview')).json<DataBody>();
-    expect(Object.keys(body)).toEqual(['window']);
+
+    // Page-level fields are always there — the window, and where the household
+    // sits between paydays, which every pace bar is read against. What must be
+    // absent is tile data: this tile reads the budget's own model instead.
+    expect(Object.keys(body).sort()).toEqual(['payCycle', 'window']);
   });
 });
 
@@ -818,6 +829,60 @@ describe('cashflow', () => {
       { key: 'cashflow', row: 0, position: 0, config: { window: 'fortnight' } },
     ]);
     expect(response.json<SaveBody>()).toMatchObject({ ok: false, badConfig: ['cashflow'] });
+  });
+});
+
+describe('the pay cycle', () => {
+  it('is null until an anchor is set, rather than guessed', async () => {
+    const body = (await get('/api/overview')).json<DataBody>();
+    // A tick drawn from a guessed schedule is a confident marker in the wrong
+    // place, and every pace reading on the page is judged against it.
+    expect(body.payCycle).toBeNull();
+  });
+
+  it('reads from one anchor plus the cadence', async () => {
+    await app.inject({
+      method: 'PATCH',
+      url: '/api/settings',
+      headers: { cookie },
+      payload: { payCadence: 'biweekly', nextPaydayOn: '2099-01-09' },
+    });
+
+    const body = (await get('/api/overview')).json<DataBody>();
+    expect(body.payCycle?.lengthDays).toBe(14);
+    // Every boundary before and after the anchor is generated from it, so an
+    // anchor in the future still describes the cycle happening now.
+    expect(body.payCycle?.elapsedDays).toBeGreaterThanOrEqual(0);
+    expect(body.payCycle?.elapsedDays).toBeLessThanOrEqual(14);
+    expect(body.payCycle?.progressBasisPoints).toBeLessThanOrEqual(10_000);
+  });
+
+  it('refuses a timestamp where a date belongs', async () => {
+    const response = await app.inject({
+      method: 'PATCH',
+      url: '/api/settings',
+      headers: { cookie },
+      payload: { nextPaydayOn: '2099-01-09T12:00:00Z' },
+    });
+    // Which day the household is paid is a decided day, not an instant.
+    expect(response.statusCode).toBe(400);
+  });
+
+  it('clears back to no tick', async () => {
+    await app.inject({
+      method: 'PATCH',
+      url: '/api/settings',
+      headers: { cookie },
+      payload: { nextPaydayOn: '2099-01-09' },
+    });
+    await app.inject({
+      method: 'PATCH',
+      url: '/api/settings',
+      headers: { cookie },
+      payload: { nextPaydayOn: null },
+    });
+
+    expect((await get('/api/overview')).json<DataBody>().payCycle).toBeNull();
   });
 });
 

@@ -29,6 +29,19 @@ const updateSchema = z
     undoWindowHours: z.number().int().optional(),
     identityToleranceCents: centsIn.optional(),
     payCadence: z.enum(PAY_CADENCES).optional(),
+    /**
+     * One payday, as `YYYY-MM-DD`. Null clears it.
+     *
+     * A date rather than a timestamp: which day the household is paid is a
+     * decided day, not an instant — `domain/calendar.ts` keeps those two ideas
+     * apart by name, and sending this as a timestamp is how an anchor set in
+     * the evening would land on the following day.
+     */
+    nextPaydayOn: z
+      .string()
+      .regex(/^\d{4}-\d{2}-\d{2}$/, 'Must be a date, as YYYY-MM-DD')
+      .nullable()
+      .optional(),
     remoteOverTorEnabled: z.boolean().optional(),
     recurringAlertsEnabled: z.boolean().optional(),
     /**
@@ -70,6 +83,7 @@ function present(
     // The divisor the Utilities page uses, resolved here so the interface never
     // has to keep its own copy of the mapping.
     cyclesPerYear: CYCLES_PER_YEAR[settings.payCadence],
+    nextPaydayOn: dateOut(settings.nextPaydayOn),
     remoteOverTorEnabled: settings.remoteOverTorEnabled,
     remoteOverTorEnabledAt: dateOut(settings.remoteOverTorEnabledAt),
     recurringAlertsEnabled: settings.recurringAlertsEnabled,
@@ -184,9 +198,23 @@ export const settingsRoutes: FastifyPluginCallback = (fastify, _options, done) =
   );
 
   fastify.patch('/api/settings', { preHandler: [requireSettingsManagement] }, async (request) => {
-    const body = updateSchema.parse(request.body);
+    const { nextPaydayOn, ...body } = updateSchema.parse(request.body);
     const before = await getBudgetSettings(prisma);
-    const settings = await updateBudgetSettings(prisma, body);
+
+    const settings = await updateBudgetSettings(prisma, {
+      ...body,
+      /*
+       * `YYYY-MM-DD` becomes a UTC date key rather than a local instant.
+       * Parsing it as local time would push an anchor set west of Greenwich
+       * back a day the moment it was read — the same class of mistake ADR 037
+       * fixed for an evening charge landing in next month.
+       */
+      ...(nextPaydayOn === undefined
+        ? {}
+        : {
+            nextPaydayOn: nextPaydayOn === null ? null : new Date(`${nextPaydayOn}T00:00:00.000Z`),
+          }),
+    });
 
     /**
      * Rebuild the cron tasks when the zone moved.
