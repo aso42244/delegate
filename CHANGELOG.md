@@ -6,6 +6,10 @@ phase (`v0.1.0-phase1`, and so on).
 
 ## [Unreleased]
 
+Nothing yet.
+
+## [0.67.0] — 2026-09-09
+
 ### Added
 
 - **A read-only demo instance, at `/demo`**
