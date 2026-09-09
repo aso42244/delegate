@@ -68,6 +68,7 @@ interface LayoutBody {
   readonly maxPerRow: number;
   readonly tiles: readonly {
     readonly key: string;
+    readonly region: string;
     readonly row: number;
     readonly position: number;
     readonly config: unknown;
@@ -196,6 +197,39 @@ describe('the layout', () => {
       ['spending_by_grouping', 0, 1],
       ['delegations_negative', 1, 0],
     ]);
+  });
+
+  it('remembers which side of the page a tile is on', async () => {
+    /*
+     * Read back, not merely written.
+     *
+     * `region` was stored, selected, and re-flowed by — and then left out of the
+     * response, so every reload handed the whole layout back as `main` and the
+     * sidebar was empty again. The write path was innocent the whole time, which
+     * is why nothing in it caught this: a tile moved to the sidebar, the save
+     * succeeded, and the refresh put it back beside the grid.
+     *
+     * The owner found it by using the page. This is the assertion that would
+     * have found it first.
+     */
+    await putLayout([
+      { key: 'uncategorized_backlog', region: 'main', row: 0, position: 0 },
+      { key: 'daily_outflow', region: 'sidebar', row: 0, position: 0 },
+    ]);
+
+    const body = (await get('/api/overview/layout')).json<LayoutBody>();
+    expect(body.tiles.map((tile) => [tile.key, tile.region])).toEqual([
+      ['uncategorized_backlog', 'main'],
+      ['daily_outflow', 'sidebar'],
+    ]);
+  });
+
+  it('calls a tile saved without a region a main one', async () => {
+    // Every layout stored before the sidebar existed. Absent is not unknown.
+    await putLayout([{ key: 'uncategorized_backlog', row: 0, position: 0 }]);
+
+    const body = (await get('/api/overview/layout')).json<LayoutBody>();
+    expect(body.tiles.map((tile) => tile.region)).toEqual(['main']);
   });
 
   it('comes back in row and position order', async () => {

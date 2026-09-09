@@ -167,6 +167,14 @@ export const overviewRoutes: FastifyPluginCallback = (fastify, _options, done) =
        */
       tiles: reflow(chosen.filter((tile) => isOverviewTile(tile.widgetKey))).map((tile) => ({
         key: tile.widgetKey,
+        /*
+         * Which side of the page. It was stored, selected and re-flowed by, and
+         * then dropped here — so every reload read the whole layout back as
+         * `main` and the sidebar was empty again. The tile appeared to move, the
+         * write did land, and the reload undid it: a defect that only exists on
+         * the way out, which is why the write path looked innocent.
+         */
+        region: isOverviewRegion(tile.region) ? tile.region : 'main',
         row: tile.row,
         position: tile.position,
         display: tile.display ?? null,

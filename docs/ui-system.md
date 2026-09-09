@@ -109,19 +109,25 @@ The one construction wherever a budget line appears
 `--color-surface-2`, radius 4. Fill 3px, inset 2px from the left, the grouping's
 colour. Tick 1.5px × 6px in `--color-axis`.
 
-**The track splits at a fixed 75%**: this cycle's plan to the left, reserve to
-the right. The fill counts up from the left through the plan and on into the
-reserve, so crossing the split says "into reserve" without a word.
+**The track splits at a fixed 80%**
+([ADR 054](decisions/054-the-pace-bar-measures-what-the-cycle-had.md)). The
+first 80% is **what this line had to spend this cycle** — the delegation plus
+whatever surplus or deficit carried in, which is `spent + balance` and so needs
+no assumption about whether the press has run. The last 20% is overspending past
+that, drawn only when a line is actually there, and full at a quarter over.
 
-**The split does not move.** It is 75% on every row whatever the line holds,
+**The split does not move.** It is 80% on every row whatever the line holds,
 because the tick is a _time_ marker and has to read as one straight vertical
-down the column. Scaling each track to its own plan-plus-reserve would put the
-tick somewhere different on every row and turn a scannable list into twenty
-separate charts. The reserve zone therefore says only that there is reserve; the
-figure beside the bar says how much.
+down the column. The tick therefore only ever travels 0 → 80%.
 
-**Red is a negative balance**, never spent-exceeds-plan. In an envelope budget
-that second condition is ordinary and often correct.
+**Only the part past the split is red.** The fill keeps the grouping's colour
+the whole way along the cycle zone, so a line that spent more than its
+delegation but is still solvent stays its own colour — in an envelope budget
+that condition is ordinary and often correct. Red says one thing: this much was
+spent beyond what the line had.
+
+**The hover text is figures, never a verdict.** Spent of available, and what
+carried in — "On pace" and "Out of money" were both proposed and refused.
 
 **No payday anchor means no tick.** A marker drawn from a guessed schedule is
 confidently in the wrong place, and every reading beside it is judged against it.

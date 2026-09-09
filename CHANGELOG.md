@@ -6,7 +6,63 @@ phase (`v0.1.0-phase1`, and so on).
 
 ## [Unreleased]
 
-Nothing yet.
+### Changed
+
+- **The pace bar measures what the cycle had, and only overspending is red**
+  ([ADR 054](docs/decisions/054-the-pace-bar-measures-what-the-cycle-had.md),
+  amending 053 after the first version shipped and was used).
+
+  The track's first 80% is now one number — the delegation plus whatever surplus
+  or deficit carried in, which is what this line has to spend before the next
+  payday. The reserve zone is gone: two zones meant two scales, and at 8px tall
+  the same horizontal distance meaning different amounts on either side of a
+  boundary made a row harder to read rather than easier.
+
+  It is derived as `spent + balance` rather than assembled from
+  delegation-plus-carry-in, so it holds whether or not this cycle's press has
+  run yet.
+
+  **The tick travels 0–80% only**, so it lands at the same x on every row
+  whatever that row holds — one straight vertical down the column, which was the
+  owner's stated first priority.
+
+  **The 80–100% segment is overspending past everything the line had**, full at
+  a quarter over, and it is the only red on the bar. The fill keeps the
+  grouping's colour the whole way along the cycle zone, so a line that spent
+  more than its delegation but is still solvent stays its own colour. The first
+  version turned the whole bar red at once, which made two dollars over look
+  like two hundred and took away the colour somebody uses to find the row.
+
+  **The hover text states figures and never a verdict** — "$566 spent of $830 ·
+  $105 carried in". No "On pace", no "Out of money".
+
+  Remaining is unchanged: the line's actual balance, negative when the line is.
+
+### Fixed
+
+- **A tile moved to the sidebar stays there across a reload.**
+  `GET /api/overview/layout` stored `region`, selected it, and re-flowed by it —
+  and then left it out of the response. Every reload therefore read the whole
+  layout back as `main` and emptied the sidebar. The drag worked and the write
+  landed; the read undid it, which is why nothing in the write path looked
+  wrong. No test covered `region` at all, and there are two now: the round trip,
+  and a layout stored before the sidebar existed.
+
+  The client's `OverviewTileDto` declares `region` as required, so the missing
+  field type-checked perfectly and arrived as `undefined` — a hand-written
+  response interface is a claim about the server, not a check on it.
+
+- **The empty sidebar has a drop target somebody can hit.** It was an 8px
+  sliver. It is a proper zone now, drawn only where a region has nothing in it —
+  a populated region needs none, because the top edge of its first tile is the
+  same drop.
+
+- **The sidebar and the main column start at the same height.** That 8px strip
+  reserved 32px above the main column and pushed every tile in it below the
+  panel beside them.
+
+- **Overview's header no longer counts its own tiles.** "9 tiles." was a
+  subtitle stating something the page below it already shows.
 
 ## [0.60.0] — 2026-09-09
 

@@ -4,7 +4,7 @@ import { useEffect, type ReactNode } from 'react';
 import { accountsApi, type AccountDto } from '../api/accounts.js';
 import type { OverviewDataDto, PanelLineDto } from '../api/overview.js';
 import { EmptyState, SegmentedControl } from './layout.jsx';
-import { PaceBar } from './PaceBar.jsx';
+import { PaceBar, paceSummary } from './PaceBar.jsx';
 import { Button } from './ui.jsx';
 
 /**
@@ -262,6 +262,11 @@ function Row({
   const spent = BigInt(line.spentCents);
   const planned = BigInt(line.plannedCents ?? '0');
   const balance = BigInt(line.balanceCents);
+  const summary = paceSummary({
+    spentCents: spent,
+    plannedCents: planned,
+    balanceCents: balance,
+  });
 
   return (
     <li className="row-cell flex items-center gap-2 px-3 hover:bg-surface">
@@ -269,28 +274,23 @@ function Row({
         {line.name}
       </span>
       {/*
-        Spent-against-budgeted lives on the bar rather than beside it.
-        
+        Spent-against-available lives on the bar rather than beside it.
+
         Three money columns on a 400px panel left the name truncated to about ten
         characters — "Kenzie Perso…", "Medical Spen…" — to make room for a pair
         of figures that is the bar's own subject. The bar says the ratio; hovering
-        it says the amounts, rounded to the dollar because cents are noise in a
-        comparison. What stays in the column is the one figure somebody reads to
-        decide anything: what is left.
+        it says the amounts and what carried in, rounded to the dollar because
+        cents are noise in a comparison. What stays in the column is the one
+        figure somebody reads to decide anything: what is left.
       */}
-      <span
-        className="min-w-0 flex-1"
-        title={`${formatCents(spent, { cents: false })} spent of ${
-          planned === 0n ? 'no budget' : formatCents(planned, { cents: false })
-        }`}
-      >
+      <span className="min-w-0 flex-1" title={summary}>
         <PaceBar
           spentCents={spent}
           plannedCents={planned}
           balanceCents={balance}
           color={line.color}
           cycleProgressBasisPoints={tick}
-          label={`${line.name}: ${formatCents(spent)} spent of ${formatCents(planned)} budgeted`}
+          label={`${line.name}: ${summary}`}
         />
       </span>
       <span

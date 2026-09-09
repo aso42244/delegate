@@ -1107,30 +1107,43 @@ const ALLOCATION_MODES = [
 export type DropEdge = 'left' | 'right' | 'above' | 'below';
 
 /**
- * A target above everything in a region.
+ * Which edge of a tile a drop would land on.
  *
- * The top edge of the first tile is a drop target, but only once a first tile
- * exists — an empty sidebar could not be dropped into at all, and the strip of
- * page above a full grid was dead space.
- *
- * **It reserves its 8px whether or not a drag is running.** Appearing only
- * mid-drag pushed everything below it down by 32px at the moment somebody
- * picked a tile up, so the tile they were aiming at moved out from under the
- * pointer. A target that displaces what you are aiming at is worse than no
- * target. It is invisible at rest and costs one row of 8px.
+ * The vertical quarters decide first: a pointer in the top or bottom quarter
+ * means a new row, and anywhere in the middle half means joining this one.
+ * Quarters rather than halves because joining is the commoner act and should
+ * have the larger target — and because a tile is much wider than it is tall, so
+ * a horizontal band of a quarter is still comfortable to hit.
  */
-function DropStrip({
+function edgeFor(box: DOMRect, x: number, y: number): DropEdge {
+  const band = box.height / 4;
+  if (y < box.top + band) return 'above';
+  if (y > box.bottom - band) return 'below';
+  return x < box.left + box.width / 2 ? 'left' : 'right';
+}
+
+/**
+ * Where a tile goes when a region has none.
+ *
+ * It used to be an 8px sliver above every region, reserving its space so it did
+ * not shift the layout mid-drag. That solved one problem and created two: 8px is
+ * not a target anybody can hit — a tile dragged at it landed back in the grid —
+ * and the 32px it took above the main column pushed those tiles below the panel
+ * beside them.
+ *
+ * So it is drawn only when a region is **empty**, where it is the only way in,
+ * and it is a proper zone rather than a line. A populated region needs none: the
+ * top edge of its first tile already means "above this", which is the same drop.
+ */
+function EmptyRegionDrop({
   label,
   active,
-  dragging,
   onOver,
   onLeave,
   onDrop,
 }: {
   readonly label: string;
   readonly active: boolean;
-  /** Visible only while something is being dragged; the space is always there. */
-  readonly dragging: boolean;
   readonly onOver: () => void;
   readonly onLeave: () => void;
   readonly onDrop: () => void;
@@ -1148,18 +1161,13 @@ function DropStrip({
         event.preventDefault();
         onDrop();
       }}
-      className={`h-2 rounded transition-colors ${
-        active ? 'bg-accent' : dragging ? 'bg-surface-2' : 'bg-transparent'
+      className={`flex min-h-24 items-center justify-center rounded-lg border border-dashed p-4 text-quiet transition-colors ${
+        active ? 'border-accent bg-accent-soft text-accent' : 'border-line text-muted'
       }`}
-    />
+    >
+      {label}
+    </div>
   );
-}
-
-function edgeFor(box: DOMRect, x: number, y: number): DropEdge {
-  const band = box.height / 4;
-  if (y < box.top + band) return 'above';
-  if (y > box.bottom - band) return 'below';
-  return x < box.left + box.width / 2 ? 'left' : 'right';
 }
 
 /** Every figure the band can hold. Longer than the band is wide, deliberately. */
@@ -2011,17 +2019,6 @@ export function Overview(): ReactNode {
     <>
       <PageHeader
         title="Overview"
-        /*
-         * The subtitle states a fact the body does not already state. It said
-         * "No tiles yet." while the empty state below said exactly the same
-         * words — the text budget broken in the plainest way, and visible in the
-         * first screenshot of the page in real use.
-         */
-        subtitle={
-          tiles.length === 0
-            ? undefined
-            : `${tiles.length} ${tiles.length === 1 ? 'tile' : 'tiles'}.`
-        }
         actions={
           <>
             <SegmentedControl
@@ -2150,11 +2147,12 @@ export function Overview(): ReactNode {
         className={`${phoneView === 'overview' ? '' : 'hidden lg:grid'} grid gap-6 lg:grid-cols-[minmax(0,1fr)_398px]`}
       >
         <div className="min-w-0">
-          <div className="mb-6">
-            <DropStrip
-              label="Move to the top"
+          {layout.isPending || data.isPending ? null : rows.length === 0 ? (
+            /* Nothing here, so this is the only way in. Anywhere else, the top
+               edge of the first tile is the same drop. */
+            <EmptyRegionDrop
+              label={dragging === null ? 'No tiles yet.' : 'Drop here'}
               active={topTarget === 'main'}
-              dragging={dragging !== null}
               onOver={() => setTopTarget('main')}
               onLeave={() => setTopTarget(null)}
               onDrop={() => {
@@ -2163,10 +2161,6 @@ export function Overview(): ReactNode {
                 setTopTarget(null);
               }}
             />
-          </div>
-
-          {layout.isPending || data.isPending ? null : tiles.length === 0 ? (
-            <EmptyState>No tiles yet.</EmptyState>
           ) : (
             <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
               {rows.map((group) =>
@@ -2255,18 +2249,19 @@ export function Overview(): ReactNode {
 
           {/* Above everything in this column, which no tile's own edge reaches
               — and the only way to drop into an empty sidebar at all. */}
-          <DropStrip
-            label="Move to the top of the sidebar"
-            active={topTarget === 'sidebar'}
-            dragging={dragging !== null}
-            onOver={() => setTopTarget('sidebar')}
-            onLeave={() => setTopTarget(null)}
-            onDrop={() => {
-              dropAtTop('sidebar');
-              setDragging(null);
-              setTopTarget(null);
-            }}
-          />
+          {sidebarTiles.length === 0 && (
+            <EmptyRegionDrop
+              label={dragging === null ? 'Drag a tile here' : 'Drop here'}
+              active={topTarget === 'sidebar'}
+              onOver={() => setTopTarget('sidebar')}
+              onLeave={() => setTopTarget(null)}
+              onDrop={() => {
+                dropAtTop('sidebar');
+                setDragging(null);
+                setTopTarget(null);
+              }}
+            />
+          )}
 
           {sidebarTiles.map((tile) => (
             <TileShell

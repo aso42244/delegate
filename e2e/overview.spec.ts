@@ -347,6 +347,37 @@ test('tiles can be dragged into one row without entering Arrange', async ({ sign
   ).toHaveClass(/lg:col-span-6/);
 });
 
+test('a tile dragged into the empty sidebar stays there across a reload', async ({ signedIn }) => {
+  await signedIn.goto('/overview');
+  await addBothTiles(signedIn);
+  await signedIn.getByRole('button', { name: 'Done' }).click();
+
+  const backlog = signedIn
+    .getByRole('heading', { name: 'Waiting to be categorized', level: 2 })
+    .locator('../..');
+  await expect(backlog.getByText('Nothing waiting.')).toBeVisible();
+
+  /*
+   * The sidebar's only way in, while it holds nothing of its own.
+   *
+   * It used to be an 8px sliver, and the owner's report is what a target that
+   * small produces: the tile appears to move, the write never happens, and the
+   * refresh puts it back where it started. Nothing failed and nothing said so.
+   */
+  const zone = signedIn.getByText('Drag a tile here');
+  await expect(zone).toBeVisible();
+  await backlog.dragTo(zone);
+
+  await expect(signedIn.getByText('Drag a tile here')).toHaveCount(0);
+
+  // The whole point: a drop that only looked like it worked is the defect.
+  await signedIn.reload();
+  await expect(
+    signedIn.getByRole('heading', { name: 'Waiting to be categorized', level: 2 }),
+  ).toBeVisible();
+  await expect(signedIn.getByText('Drag a tile here')).toHaveCount(0);
+});
+
 test('the panel picks its lines in a dialog, and they survive a reload', async ({
   signedIn,
   api,

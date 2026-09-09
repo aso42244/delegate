@@ -940,12 +940,41 @@ in [ADR 053](decisions/053-a-pace-bar-reads-two-marks-not-one.md).
   exactly two a month, so it cannot be a fixed day-count, and a household paid on
   the 1st and 15th sees its second boundary land a day late.
 
-- **The pace bar splits at a fixed 75%** — this cycle's plan left, reserve right
-  — because Delegate's envelopes carry over and neither reading alone is enough.
-  The split does not move: the tick is a **time** marker and has to read as one
-  straight vertical down the column, which scaling each track to its own
-  plan-plus-reserve would destroy. **Red is a negative balance**, never
-  spent-exceeds-plan; in an envelope budget that second condition is ordinary.
+- **A hand-written response interface is a claim, not a check.** `region` was
+  stored, selected and re-flowed by, and then left out of the layout response —
+  so every reload read the sidebar back as empty. The client's
+  `OverviewTileDto` declares `region` as required, so the missing field
+  type-checked perfectly and arrived as `undefined`. The write path was innocent
+  and looked it; the defect lived entirely on the way out.
+
+  Two things follow. **A round-trip test is the only one that catches this** —
+  asserting on what a PUT returned proves nothing about what a GET gives back,
+  and there was no test touching `region` at all. And **the compiler agrees with
+  whatever the interface says**, so a field's presence in a DTO is not evidence
+  the server sends it.
+
+  Checked the same day: no other route in `apps/api/src/routes` selects a column
+  and then drops it when mapping the response.
+
+- **The pace bar splits at a fixed 80%** — what this cycle had to spend on the
+  left, overspending past it on the right ([ADR 054](decisions/054-the-pace-bar-measures-what-the-cycle-had.md),
+  amending 053, after the two-zone version shipped and the owner used it). What
+  the cycle had is `spent + balance`, derived rather than assembled from
+  delegation-plus-carry-in, so it holds whether or not the press has run yet.
+
+  The split does not move and the tick only ever travels 0 → 80%, so it lands at
+  the same x on every row: the tick is a **time** marker and has to read as one
+  straight vertical down the column.
+
+  **Only the segment past 80% is red.** The fill keeps the grouping's colour the
+  whole way, so a line that overspent its delegation but is still solvent stays
+  its own colour — ordinary and often correct in an envelope budget — and red's
+  _width_ now says how far past. The first version turned the whole bar red at
+  once, which made two dollars over look like two hundred and took away the
+  colour somebody uses to find the row.
+
+  **The hover text is figures, never a verdict.** "On pace" and "Out of money"
+  were both proposed and refused.
 
 - **The budget is docked beside the dashboard**, three tabs, keys 1–3,
   collapsible per device, and promoted to a segmented control on a phone. It is
