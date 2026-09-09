@@ -6,7 +6,37 @@ phase (`v0.1.0-phase1`, and so on).
 
 ## [Unreleased]
 
-Nothing yet.
+### Changed
+
+- **One bar, everywhere.** A grey track with a 3px coloured bar inset inside it —
+  the budget panel's construction, which is the most-read list in the
+  application. The ranked bars on Overview drew their fill at the full height of
+  the track, so a bar and its remainder were two blocks meeting at a hard edge
+  and the eye read the _boundary_ rather than the length. It is written into
+  `ui-system.md` as the one idiom.
+
+- **Spending by grouping and Spending by delegation show each row's share**, and
+  every percentage lines up. They sit in a grid column of their own, fixed width
+  and right-aligned — beside the amount they moved with whatever that amount
+  happened to be wide, so 35% sat somewhere different from 3%. The column is
+  reserved only on the tiles that have one.
+
+- **The Cashflow chart has a floor as well as a cap.** It scales both dimensions
+  together, so shortening its row shrank the width too and left a postage stamp
+  between two bands of white. Below 280px the labels stop being readable, so it
+  holds that and the row scrolls instead.
+
+### Added
+
+- **The groundwork for a read-only demo instance**, inert unless a deployment
+  asks for it. `DELEGATE_DEMO` refuses every write before it reaches a route —
+  the method is the test rather than a list of endpoints, so a route added
+  tomorrow is already covered — and signs the visitor in without a session,
+  because there is no account to protect and nothing to change. `SESSION_COOKIE_NAME`
+  keeps a demo's cookie from colliding with a real instance's on the same host.
+
+  Off by default, and a test asserts that: the cost of getting it wrong is a
+  household unable to touch its own budget.
 
 ## [0.65.0] — 2026-09-09
 

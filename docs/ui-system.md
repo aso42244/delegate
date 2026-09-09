@@ -102,6 +102,18 @@ That is what lets one stored arrangement serve both screens: rearranging on a
 phone rearranges the laptop too, because the thing being stored is the order and
 the grouping rather than a width that only means something on one of them.
 
+### Bars
+
+**One construction, everywhere.** A grey track, 8px tall with a 4px radius, and
+a **3px coloured bar inset 2px inside it**. The pace bar in the budget panel is
+where it started and it is the most-read list in the application; the ranked bars
+on Overview are the same thing without the tick and without the overspend zone,
+because those answer a question only the pace bar is asking.
+
+The fill used to be the full height of the track, so a bar and its remainder were
+two blocks meeting at a hard edge and the eye read the _boundary_ rather than the
+length. Inset, a track stays a track.
+
 ### Ranked bars
 
 **Name, bar, figure — on one line**, at the same 28px row the budget panel uses.
@@ -114,8 +126,13 @@ makes them comparable at a glance, and that is a column definition rather than
 whatever each name happens to be wide.
 
 No tick and no overspend zone — those belong to the pace bar, which is answering
-a different question. These bars are scaled to the largest row, so a small
-figure beside the amount carries a share of the total where one is worth having.
+a different question. These bars are scaled to the **largest row**, so the bar
+compares a line with the others and a percentage places it against the total.
+
+**A percentage is a column of its own**, fixed width and right-aligned, and it is
+reserved only on the tiles that have one. Beside the amount it moved with
+whatever that amount happened to be wide, so a column of shares came out ragged —
+35% sat somewhere different from 3%.
 
 **A row's own list is what scrolls**, never the tile's body. A body that scrolls
 takes the whole tile with it, so a row dragged short clips a chart halfway
