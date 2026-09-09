@@ -1,0 +1,23 @@
+-- One date, which turns a divisor into a schedule.
+--
+-- `pay_cadence` says how many paychecks arrive in a year. It was introduced as a
+-- divisor and nothing more — deliberately, because a cycle in Delegate is one
+-- Delegate press to the next and no amount is ever written because a date
+-- passed. That is still true and this column does not change it.
+--
+-- What it adds is the other half of a question the budget has never been able to
+-- answer: not "how much is left" but "how much is left *for how long*". A line
+-- that has spent 90% of its money is fine on the last day of a cycle and
+-- alarming on the second, and nothing on any screen could tell those apart.
+--
+-- A single anchor is enough. Every boundary before and after it is generated
+-- from the cadence, so there is no schedule to maintain and no second date to
+-- keep in step. Null means no anchor has been set, and that is read as "no tick"
+-- rather than as a default — a marker drawn from a guessed schedule would be
+-- confidently in the wrong place, and every pace reading on the page is judged
+-- against it.
+--
+-- A date rather than a timestamp: which day the household is paid is a decided
+-- day, not an instant, and `domain/calendar.ts` keeps those two ideas apart by
+-- name for exactly this reason.
+ALTER TABLE "budget_settings" ADD COLUMN "next_payday_on" DATE;

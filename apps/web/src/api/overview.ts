@@ -191,7 +191,72 @@ export interface CashflowDto {
   readonly totalInCents: string;
 }
 
+export interface PanelLineDto {
+  readonly id: string;
+  readonly name: string;
+  readonly groupingId: string | null;
+  readonly groupingName: string | null;
+  readonly color: string | null;
+  readonly balanceCents: string;
+  /** Null on an ad-hoc line with no standing amount. */
+  readonly plannedCents: string | null;
+  readonly spentCents: string;
+}
+
+export interface PayCycleDto {
+  readonly start: string;
+  readonly end: string;
+  readonly lengthDays: number;
+  readonly elapsedDays: number;
+  /** 0–10,000, so the tick's position stays an integer to the stylesheet. */
+  readonly progressBasisPoints: number;
+}
+
+export interface FigureDto {
+  readonly key: string;
+  /** Null where the figure is a count, or has no answer yet. */
+  readonly valueCents: string | null;
+  readonly count: number | null;
+}
+
+export interface OutflowDayDto {
+  readonly date: string;
+  readonly spentCents: string;
+}
+
+export interface PacePointDto {
+  readonly date: string;
+  readonly inflowCents: string;
+  readonly spentCents: string;
+  /** False after today: the future has no figure, and a flat line implies one. */
+  readonly observed: boolean;
+}
+
+export interface AllocationSliceDto {
+  readonly key: string;
+  readonly name: string;
+  readonly color: string | null;
+  readonly amountCents: string;
+}
+
+export interface UpcomingBillDto {
+  readonly key: string;
+  readonly name: string;
+  readonly expectedNextAt: string;
+  readonly typicalAmountCents: string;
+  readonly delegationName: string | null;
+}
+
 export interface OverviewDataDto {
+  readonly figures?: readonly FigureDto[];
+  readonly daily_outflow?: readonly OutflowDayDto[];
+  readonly income_vs_spending_pace?: readonly PacePointDto[];
+  readonly allocation?: readonly AllocationSliceDto[];
+  readonly upcoming_bills?: readonly UpcomingBillDto[];
+  /** The panel's chosen lines. Empty until somebody picks some. */
+  readonly panel?: readonly PanelLineDto[];
+  /** Null when no payday anchor is set — then no tick is drawn at all. */
+  readonly payCycle?: PayCycleDto | null;
   readonly cashflow?: CashflowDto;
   /** The cashflow tile's own period, which is not the page's. */
   readonly cashflowWindow?: string;

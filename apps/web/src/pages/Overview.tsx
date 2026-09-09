@@ -19,10 +19,17 @@ import {
 import { EmptyState, PageHeader, SegmentedControl } from '../components/layout.jsx';
 import { budgetApi, type BudgetViewDto } from '../api/budget.js';
 import { DelegationPickerDialog } from '../components/DelegationPickerDialog.jsx';
+import {
+  AllocationDonut,
+  OutflowBand,
+  PaceChart,
+  UpcomingList,
+} from '../components/OverviewCharts.jsx';
+import { OverviewPanel, type PanelTab } from '../components/OverviewPanel.jsx';
 import { Sankey, type FlowNode } from '../components/Sankey.jsx';
 import { CompositionBars, RankedBars, type RankedRow } from '../components/RankedBars.jsx';
 import { TimeSeriesChart, type TimePoint } from '../components/TimeSeries.jsx';
-import { Alert, Button } from '../components/ui.jsx';
+import { Alert, Button, Modal, Toggle } from '../components/ui.jsx';
 
 /**
  * Overview — the dashboard that replaces Insights.
@@ -59,6 +66,17 @@ const CASHFLOW_WINDOWS = [
   { value: 'all', label: 'All' },
 ] as const;
 
+/** Per device, like the sidebar's collapse: a fact about this screen. */
+const PANEL_KEY = 'budget.overview.panel-collapsed';
+
+/** A phone's four destinations. The panel's three tabs, plus the tiles. */
+const PHONE_VIEWS = [
+  { value: 'overview' as const, label: 'Overview' },
+  { value: 'delegations' as const, label: 'Delegations' },
+  { value: 'accounts' as const, label: 'Accounts' },
+  { value: 'debts' as const, label: 'Debts' },
+];
+
 const WINDOWS = [
   { value: 'cycle', label: 'Cycle' },
   { value: '30d', label: '30D' },
@@ -86,6 +104,11 @@ const TILE_COPY: Record<string, { readonly title: string; readonly description?:
   bitcoin_value_over_time: { title: 'Bitcoin over time' },
   home_equity_over_time: { title: 'Home equity' },
   debt_trajectory: { title: 'Debt trajectory' },
+  figures: { title: 'Figures' },
+  daily_outflow: { title: 'Daily outflow', description: 'This cycle' },
+  income_vs_spending_pace: { title: 'In against out', description: 'Running totals' },
+  allocation: { title: 'Allocation' },
+  upcoming_bills: { title: 'Upcoming', description: 'From Bills' },
   cashflow: { title: 'Cashflow', description: 'Where the money went' },
   delegations: { title: 'Delegations' },
   delegations_negative: { title: 'Over-spent lines' },
@@ -108,11 +131,16 @@ const NO_HISTORY = 'No history yet — the first night records one.';
  * a row holds at most four tiles — see `MAX_TILES_PER_ROW` and the arithmetic
  * behind it.
  */
+/**
+ * Whole class names, because Tailwind reads the source for the classes it emits
+ * and an interpolated one exists in the browser's stylesheet nowhere.
+ *
+ * Two entries, not four: a row holds at most two tiles now that the panel takes
+ * the right of the page.
+ */
 const COLUMN_CLASS: Record<number, string> = {
   12: 'lg:col-span-12',
   6: 'lg:col-span-6',
-  4: 'lg:col-span-4',
-  3: 'lg:col-span-3',
 };
 
 function TileShell({
@@ -823,10 +851,12 @@ function CashflowTile({
   cashflow,
   window,
   onWindow,
+  preview = false,
 }: {
   readonly cashflow: NonNullable<OverviewDataDto['cashflow']>;
   readonly window: string;
   readonly onWindow: (next: string) => void;
+  readonly preview?: boolean;
 }): ReactNode {
   const uncategorizedIn = BigInt(cashflow.uncategorizedInCents);
   const uncategorizedOut = BigInt(cashflow.uncategorizedOutCents);
@@ -885,16 +915,18 @@ function CashflowTile({
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex flex-wrap items-center gap-2">
-        <SegmentedControl
-          size="sm"
-          label="Cashflow period"
-          value={window}
-          options={CASHFLOW_WINDOWS}
-          onChange={onWindow}
-        />
-        <span className="text-quiet text-muted">This chart has its own period.</span>
-      </div>
+      {!preview && (
+        <div className="flex flex-wrap items-center gap-2">
+          <SegmentedControl
+            size="sm"
+            label="Cashflow period"
+            value={window}
+            options={CASHFLOW_WINDOWS}
+            onChange={onWindow}
+          />
+          <span className="text-quiet text-muted">This chart has its own period.</span>
+        </div>
+      )}
 
       {cashflow.cycleMissing ? (
         <EmptyState>No cycle has been run yet.</EmptyState>
@@ -919,6 +951,214 @@ function CashflowTile({
 }
 
 /**
+ * Said once, by the three tiles that cannot be drawn without a payday.
+ *
+ * A band of days measured from a guessed payday would be a picture of the wrong
+ * fortnight, so these draw nothing at all rather than something plausible.
+ */
+function NeedsPayday(): ReactNode {
+  return (
+    <p className="text-quiet text-muted">
+      Set your next payday on Settings → Budget to see this cycle.
+    </p>
+  );
+}
+
+/** The donut, and the switch between what it can say. */
+function AllocationTile({
+  slices,
+  mode,
+  onMode,
+  preview = false,
+}: {
+  readonly slices: NonNullable<OverviewDataDto['allocation']>;
+  readonly mode: 'plan' | 'position';
+  readonly onMode: (next: 'plan' | 'position') => void;
+  readonly preview?: boolean;
+}): ReactNode {
+  return (
+    <div className="flex flex-col gap-3">
+      {!preview && (
+        <SegmentedControl
+          size="sm"
+          label="Allocation reading"
+          value={mode}
+          options={ALLOCATION_MODES}
+          onChange={onMode}
+        />
+      )}
+      <AllocationDonut
+        slices={slices}
+        emptyMessage={
+          mode === 'plan' ? 'No amounts to delegate yet.' : 'Nothing in the envelopes yet.'
+        }
+      />
+    </div>
+  );
+}
+
+/**
+ * Two readings of one subject, which is why they are one tile with a switch.
+ *
+ * The plan is what every payday puts where — the household's priorities, stable
+ * enough to recognise at a glance. The position is where the money is sitting
+ * now, which drifts with the timing of bills rather than with anything decided.
+ */
+const ALLOCATION_MODES = [
+  { value: 'plan' as const, label: 'Plan' },
+  { value: 'position' as const, label: 'Now' },
+];
+
+/** Every figure the band can hold. Longer than the band is wide, deliberately. */
+const FIGURE_CATALOG = [
+  'inflow',
+  'spent',
+  'left_to_spend',
+  'uncategorized',
+  'safe_per_day',
+  'net_worth',
+  'days_to_payday',
+] as const;
+
+/** How many the band draws. Four columns on a desktop, two on a phone. */
+const FIGURE_SLOTS = 4;
+
+/**
+ * Which figures the band draws.
+ *
+ * Capped at four rather than scrolling: the band is a row across the top of a
+ * dashboard, and a fifth figure would either shrink the other four below
+ * readable or wrap into a second row that is no longer a band.
+ */
+function FigurePickerDialog({
+  selected,
+  onSave,
+  onClose,
+}: {
+  readonly selected: readonly string[];
+  readonly onSave: (keys: readonly string[]) => void;
+  readonly onClose: () => void;
+}): ReactNode {
+  const [chosen, setChosen] = useState<readonly string[]>(() => [...selected]);
+  const full = chosen.length >= FIGURE_SLOTS;
+
+  return (
+    <Modal
+      label="Choose which figures show"
+      title="Which figures show"
+      description={`Pick up to ${FIGURE_SLOTS}. They are drawn in the order you choose them.`}
+      onClose={onClose}
+      footer={
+        <div className="flex items-center gap-2">
+          <span className="text-quiet text-muted">
+            {chosen.length} of {FIGURE_SLOTS} chosen
+          </span>
+          <span className="ml-auto flex items-center gap-2">
+            <Button onClick={onClose}>Cancel</Button>
+            <Button variant="primary" onClick={() => onSave(chosen)}>
+              Save
+            </Button>
+          </span>
+        </div>
+      }
+    >
+      <ul className="flex list-none flex-col gap-1 p-0">
+        {FIGURE_CATALOG.map((key) => {
+          const on = chosen.includes(key);
+          return (
+            <li key={key} className="flex items-center gap-2">
+              <span className="min-w-0 flex-1 truncate text-base text-ink">
+                {FIGURE_COPY[key]?.label ?? key}
+              </span>
+              {/* A full band disables the unchosen rather than hiding them, so
+                  the cap is visible as a state rather than as options that
+                  vanished. */}
+              <Toggle
+                checked={on}
+                disabled={!on && full}
+                onChange={(next) =>
+                  setChosen((current) =>
+                    next ? [...current, key] : current.filter((entry) => entry !== key),
+                  )
+                }
+                label={`Show ${FIGURE_COPY[key]?.label ?? key}`}
+              />
+            </li>
+          );
+        })}
+      </ul>
+    </Modal>
+  );
+}
+
+/** What each figure is called, and how it is read. */
+const FIGURE_COPY: Record<string, { readonly label: string; readonly note?: string }> = {
+  inflow: { label: 'Inflow' },
+  spent: { label: 'Spent' },
+  left_to_spend: { label: 'Left to spend' },
+  uncategorized: { label: 'Uncategorized' },
+  safe_per_day: { label: 'Safe per day' },
+  net_worth: { label: 'Net worth' },
+  days_to_payday: { label: 'Days to payday' },
+};
+
+/**
+ * The band of figures across the top.
+ *
+ * One tile drawing up to four numbers rather than four tiles: a row holds two,
+ * so four separate tiles would take two full rows and fill the first screen
+ * before a chart appeared.
+ *
+ * A figure with no answer draws an em-dash rather than a zero. `Safe per day`
+ * has none until a payday anchor is set, and a confident $0.00 would be a
+ * different and wrong claim.
+ */
+function FiguresTile({
+  figures,
+  onChoose,
+  preview = false,
+}: {
+  readonly figures: NonNullable<OverviewDataDto['figures']>;
+  readonly onChoose: () => void;
+  readonly preview?: boolean;
+}): ReactNode {
+  return (
+    <div className="flex flex-col gap-3">
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        {figures.map((figure) => {
+          const copy = FIGURE_COPY[figure.key] ?? { label: figure.key };
+          const value =
+            figure.count !== null
+              ? String(figure.count)
+              : figure.valueCents === null
+                ? '—'
+                : formatCents(BigInt(figure.valueCents));
+          const negative = figure.valueCents !== null && BigInt(figure.valueCents) < 0n;
+
+          return (
+            <div key={figure.key} className="flex flex-col gap-1">
+              <span className="text-micro font-semibold tracking-[0.07em] text-muted uppercase">
+                {copy.label}
+              </span>
+              <span
+                className={`money text-figure font-bold ${negative ? 'text-negative' : 'text-ink'}`}
+              >
+                {value}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+      {!preview && (
+        <button type="button" className="linkish self-start" onClick={onChoose}>
+          Choose which figures show →
+        </button>
+      )}
+    </div>
+  );
+}
+
+/**
  * Which body a tile draws.
  *
  * A tile whose key is absent from the payload draws nothing at all, which is not
@@ -933,6 +1173,10 @@ function TileBody({
   onChoose,
   cashflowWindow,
   onCashflowWindow,
+  onChooseFigures,
+  allocationMode,
+  onAllocationMode,
+  preview = false,
 }: {
   readonly tileKey: string;
   readonly data: OverviewDataDto | undefined;
@@ -941,6 +1185,20 @@ function TileBody({
   readonly onChoose?: () => void;
   readonly cashflowWindow?: string;
   readonly onCashflowWindow?: (next: string) => void;
+  readonly onChooseFigures?: () => void;
+  readonly allocationMode?: 'plan' | 'position';
+  readonly onAllocationMode?: (next: 'plan' | 'position') => void;
+  /**
+   * A picture of the tile, not the tile.
+   *
+   * Previews build **no interactive elements**. Marking them
+   * `pointer-events-none` and `aria-hidden` stops them being used and does
+   * nothing about the markup: a `<button>` inside a `<button>` is invalid HTML,
+   * and the parser hoists the inner one out of its ancestor, which tears apart
+   * the structure around it. That is what a segmented control inside the
+   * picker's card was doing to the whole page.
+   */
+  readonly preview?: boolean;
 }): ReactNode {
   // The delegations tile reads the budget rather than this page's payload, so
   // it draws before — and without — anything the overview endpoint computes.
@@ -1007,12 +1265,44 @@ function TileBody({
       ) : null;
     case 'delegation_burn_rate':
       return data.delegation_burn_rate ? <BurnRateTile burn={data.delegation_burn_rate} /> : null;
+    case 'figures':
+      return data.figures ? (
+        <FiguresTile
+          figures={data.figures}
+          onChoose={onChooseFigures ?? (() => undefined)}
+          preview={preview}
+        />
+      ) : null;
+    case 'daily_outflow':
+      return data.daily_outflow ? (
+        <OutflowBand days={data.daily_outflow} todayIso={new Date().toISOString()} />
+      ) : (
+        <NeedsPayday />
+      );
+    case 'income_vs_spending_pace':
+      return data.income_vs_spending_pace ? (
+        <PaceChart points={data.income_vs_spending_pace} />
+      ) : (
+        <NeedsPayday />
+      );
+    case 'allocation':
+      return data.allocation ? (
+        <AllocationTile
+          slices={data.allocation}
+          mode={allocationMode ?? 'plan'}
+          onMode={onAllocationMode ?? (() => undefined)}
+          preview={preview}
+        />
+      ) : null;
+    case 'upcoming_bills':
+      return data.upcoming_bills ? <UpcomingList bills={data.upcoming_bills} /> : null;
     case 'cashflow':
       return data.cashflow ? (
         <CashflowTile
           cashflow={data.cashflow}
           window={cashflowWindow ?? 'ytd'}
           onWindow={onCashflowWindow ?? (() => undefined)}
+          preview={preview}
         />
       ) : null;
     case 'uncategorized_backlog':
@@ -1062,6 +1352,44 @@ export function Overview(): ReactNode {
 
   /** Which tile's picker is open, by key. Null is closed. */
   const [picking, setPicking] = useState<string | null>(null);
+
+  /*
+   * The panel: which tab, and whether it is docked open.
+   *
+   * Collapse is per device, like the sidebar's, because it describes the screen
+   * somebody is looking at rather than the household's budget. On a phone the
+   * panel is not docked at all, so the state is unused there.
+   */
+  /** Whether the figures band's own picker is open. */
+  const [pickingFigures, setPickingFigures] = useState(false);
+
+  const [tab, setTab] = useState<PanelTab>('delegations');
+  const [collapsed, setCollapsed] = useState(() => {
+    if (typeof globalThis.window === 'undefined') return false;
+    try {
+      return globalThis.window.localStorage.getItem(PANEL_KEY) === 'true';
+    } catch {
+      // A private window, or site data blocked. A missing preference is not an
+      // error; it means the default.
+      return false;
+    }
+  });
+
+  function setPanelCollapsed(next: boolean): void {
+    setCollapsed(next);
+    try {
+      globalThis.window.localStorage.setItem(PANEL_KEY, String(next));
+    } catch {
+      // Nothing to do: the panel still collapses for this session.
+    }
+  }
+
+  /*
+   * On a phone the panel's tabs are promoted onto the page and Overview becomes
+   * the fourth. There is no room to dock 398px beside anything at 390px wide,
+   * and the answer she opens the app for should not be behind a button.
+   */
+  const [phoneView, setPhoneView] = useState<'overview' | PanelTab>('overview');
 
   const [dragging, setDragging] = useState<string | null>(null);
   const [over, setOver] = useState<{ key: string; side: 'left' | 'right' } | null>(null);
@@ -1176,7 +1504,15 @@ export function Overview(): ReactNode {
   }
 
   /** The arrangement as rows, which is what every edit below works on. */
-  const rows = useMemo(() => groupIntoRows([...tiles]), [tiles]);
+  /*
+   * The grid's rows. The panel's own layout row is filtered out first: it holds
+   * the chosen delegations and is drawn by the panel, so leaving it in would put
+   * an empty tile in the grid beside the panel already showing its contents.
+   */
+  const rows = useMemo(
+    () => groupIntoRows(tiles.filter((tile) => tile.key !== 'delegations')),
+    [tiles],
+  );
 
   /** Writes rows back as tiles, renumbering so a gap left by a row closes. */
   function saveRows(next: readonly (readonly OverviewTileDto[])[]): void {
@@ -1314,6 +1650,43 @@ export function Overview(): ReactNode {
     // configurations as well as keys — see the comment there.
   }
 
+  /** The donut's reading, stored on its tile. */
+  function setAllocationMode(next: 'plan' | 'position'): void {
+    save.mutate(
+      tiles.map((tile) => (tile.key === 'allocation' ? { ...tile, config: { mode: next } } : tile)),
+    );
+  }
+
+  /** The figures band's own selection. */
+  function saveFigures(keys: readonly string[]): void {
+    save.mutate(
+      tiles.map((tile) =>
+        tile.key === 'figures' ? { ...tile, config: { keys: [...keys] } } : tile,
+      ),
+    );
+    setPickingFigures(false);
+  }
+
+  /** The panel's own selection, creating its layout row the first time. */
+  function savePanelChoice(delegationIds: readonly string[]): void {
+    const config = { delegationIds: [...delegationIds] };
+    const next = panelTile
+      ? tiles.map((tile) => (tile.key === 'delegations' ? { ...tile, config } : tile))
+      : [
+          ...tiles,
+          {
+            key: 'delegations',
+            // Off the end of the grid, and never drawn there anyway.
+            row: rows.length,
+            position: 0,
+            display: null,
+            config,
+          },
+        ];
+    save.mutate(next);
+    setPicking(null);
+  }
+
   function saveChoice(key: string, delegationIds: readonly string[]): void {
     save.mutate(
       tiles.map((tile) =>
@@ -1323,9 +1696,28 @@ export function Overview(): ReactNode {
     setPicking(null);
   }
 
-  const available = (layout.data?.catalog ?? []).filter(
-    (key) => !tiles.some((tile) => tile.key === key),
-  );
+  /** What the donut is currently drawing, read from its stored configuration. */
+  const allocationMode: 'plan' | 'position' =
+    (tiles.find((tile) => tile.key === 'allocation')?.config as { mode?: string } | null)?.mode ===
+    'position'
+      ? 'position'
+      : 'plan';
+
+  /*
+   * The panel's chosen lines are stored on the `delegations` layout row.
+   *
+   * That row is never drawn in the grid — the panel draws it instead — but it
+   * stays in the layout because it is where the selection lives, and a
+   * selection needs somewhere to be whether or not anything renders it. The
+   * grid filters it out below and the picker creates it on first save, so the
+   * panel works on a page that has never held a tile.
+   */
+  const panelTile = tiles.find((tile) => tile.key === 'delegations');
+
+  const available = (layout.data?.catalog ?? [])
+    // The panel is not a tile and must not be offered as one.
+    .filter((key) => key !== 'delegations')
+    .filter((key) => !tiles.some((tile) => tile.key === key));
   return (
     <>
       <PageHeader
@@ -1378,18 +1770,25 @@ export function Overview(): ReactNode {
           */}
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
             {available.map((key) => (
-              <button
+              <div
                 key={key}
-                type="button"
-                onClick={() => add(key)}
-                className="flex flex-col gap-2 rounded-lg border border-line bg-canvas p-4 text-left transition-colors hover:border-accent hover:bg-surface-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
-                aria-label={`Add ${TILE_COPY[key]?.title ?? key}`}
+                className="flex flex-col gap-2 rounded-lg border border-line bg-canvas p-4 text-left"
               >
                 <span className="flex items-baseline gap-2">
                   <span className="truncate text-section font-semibold text-ink">
                     {TILE_COPY[key]?.title ?? key}
                   </span>
-                  <span className="ml-auto shrink-0 text-quiet font-semibold text-accent">Add</span>
+                  {/* The action is its own control rather than the whole card.
+                      A card that is a button cannot contain one, and some tiles
+                      draw controls of their own. */}
+                  <Button
+                    variant="ghost"
+                    className="ml-auto"
+                    onClick={() => add(key)}
+                    aria-label={`Add ${TILE_COPY[key]?.title ?? key}`}
+                  >
+                    Add
+                  </Button>
                 </span>
                 {/* Not interactive, and not reachable: it is a picture of the
                     tile inside a button, and a control inside a control is a
@@ -1398,75 +1797,147 @@ export function Overview(): ReactNode {
                   {preview.isPending ? (
                     <span className="block text-quiet text-muted">Loading…</span>
                   ) : (
-                    <TileBody tileKey={key} data={preview.data} budget={budget.data} />
+                    <TileBody tileKey={key} data={preview.data} budget={budget.data} preview />
                   )}
                 </span>
-              </button>
+              </div>
             ))}
           </div>
         </section>
       )}
 
+      {pickingFigures && (
+        <FigurePickerDialog
+          /*
+           * What is actually on screen, not what the tile's configuration says.
+           *
+           * A band that has never been configured draws the server's defaults,
+           * so reading the stored config here opened the dialog empty beside a
+           * tile showing four figures — the picker and the thing it picks for
+           * disagreeing about the current state. The payload already names the
+           * keys it drew; that is the one answer.
+           */
+          selected={(data.data?.figures ?? []).map((figure) => figure.key)}
+          onSave={saveFigures}
+          onClose={() => setPickingFigures(false)}
+        />
+      )}
+
       {picking !== null && (
         <DelegationPickerDialog
           budget={budget.data}
-          selected={chosenFor(tiles.find((tile) => tile.key === picking) ?? tiles[0]!)}
-          onSave={(ids) => saveChoice(picking, ids)}
+          selected={panelTile ? chosenFor(panelTile) : []}
+          onSave={(ids) =>
+            picking === 'delegations' ? savePanelChoice(ids) : saveChoice(picking, ids)
+          }
           onClose={() => setPicking(null)}
         />
       )}
 
-      {layout.isPending || data.isPending ? null : tiles.length === 0 ? (
-        <EmptyState>No tiles yet.</EmptyState>
-      ) : (
-        <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
-          {rows.map((group) =>
-            group.map((tile) => (
-              <TileShell
-                key={tile.key}
-                tile={tile}
-                columns={columnsForRow(group.length)}
-                rowSize={group.length}
-                arranging={arranging}
-                draggable={pointer}
-                onMove={(step) => move(tile.key, step)}
-                onRemove={() => remove(tile.key)}
-                onSplit={() => split(tile.key)}
-                onJoin={() => join(tile.key)}
-                drag={{
-                  onDragStart: () => setDragging(tile.key),
-                  onDragOver: (event) => {
-                    if (dragging === null || dragging === tile.key) return;
-                    // Without this the browser refuses the drop outright.
-                    event.preventDefault();
-                    const box = event.currentTarget.getBoundingClientRect();
-                    const side = event.clientX < box.left + box.width / 2 ? 'left' : 'right';
-                    setOver({ key: tile.key, side });
-                  },
-                  onDrop: (event) => {
-                    event.preventDefault();
-                    const side = over?.key === tile.key ? over.side : 'right';
-                    drop(tile.key, side);
-                    setDragging(null);
-                    setOver(null);
-                  },
-                  over: over?.key === tile.key ? over.side : null,
-                }}
-              >
-                <TileBody
-                  tileKey={tile.key}
-                  data={data.data}
-                  budget={budget.data}
-                  chosen={chosenFor(tile)}
-                  onChoose={() => setPicking(tile.key)}
-                  cashflowWindow={data.data?.cashflowWindow ?? 'ytd'}
-                  onCashflowWindow={(next) => setCashflowWindow(next)}
-                />
-              </TileShell>
-            )),
-          )}
+      {/* The phone's four destinations. Below `lg` only: on a pointer the panel
+          is docked beside the tiles and none of this is drawn. */}
+      <div className="mb-4 lg:hidden">
+        <SegmentedControl
+          label="View"
+          value={phoneView}
+          options={PHONE_VIEWS}
+          onChange={setPhoneView}
+        />
+      </div>
+
+      {phoneView !== 'overview' && (
+        <div className="lg:hidden">
+          <OverviewPanel
+            variant="inline"
+            tab={phoneView}
+            onTab={setPhoneView}
+            data={data.data}
+            onChoose={() => setPicking('delegations')}
+          />
         </div>
       )}
+
+      <div
+        className={`${phoneView === 'overview' ? '' : 'hidden lg:grid'} grid gap-6 lg:grid-cols-[minmax(0,1fr)_398px]`}
+      >
+        <div className="min-w-0">
+          {layout.isPending || data.isPending ? null : tiles.length === 0 ? (
+            <EmptyState>No tiles yet.</EmptyState>
+          ) : (
+            <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
+              {rows.map((group) =>
+                group.map((tile) => (
+                  <TileShell
+                    key={tile.key}
+                    tile={tile}
+                    columns={columnsForRow(group.length)}
+                    rowSize={group.length}
+                    arranging={arranging}
+                    draggable={pointer}
+                    onMove={(step) => move(tile.key, step)}
+                    onRemove={() => remove(tile.key)}
+                    onSplit={() => split(tile.key)}
+                    onJoin={() => join(tile.key)}
+                    drag={{
+                      onDragStart: () => setDragging(tile.key),
+                      onDragOver: (event) => {
+                        if (dragging === null || dragging === tile.key) return;
+                        // Without this the browser refuses the drop outright.
+                        event.preventDefault();
+                        const box = event.currentTarget.getBoundingClientRect();
+                        const side = event.clientX < box.left + box.width / 2 ? 'left' : 'right';
+                        setOver({ key: tile.key, side });
+                      },
+                      onDrop: (event) => {
+                        event.preventDefault();
+                        const side = over?.key === tile.key ? over.side : 'right';
+                        drop(tile.key, side);
+                        setDragging(null);
+                        setOver(null);
+                      },
+                      over: over?.key === tile.key ? over.side : null,
+                    }}
+                  >
+                    <TileBody
+                      tileKey={tile.key}
+                      data={data.data}
+                      budget={budget.data}
+                      chosen={chosenFor(tile)}
+                      onChoose={() => setPicking(tile.key)}
+                      cashflowWindow={data.data?.cashflowWindow ?? 'ytd'}
+                      onCashflowWindow={(next) => setCashflowWindow(next)}
+                      onChooseFigures={() => setPickingFigures(true)}
+                      allocationMode={allocationMode}
+                      onAllocationMode={setAllocationMode}
+                    />
+                  </TileShell>
+                )),
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Docked, and only on a pointer. Collapsed it is a single control that
+            gives the width back rather than a sliver of panel. */}
+        <div className="hidden lg:block">
+          {collapsed ? (
+            <Button onClick={() => setPanelCollapsed(false)} aria-label="Open the budget panel">
+              Budget
+            </Button>
+          ) : (
+            <div className="sticky top-0 max-h-[calc(100vh-96px)]">
+              <OverviewPanel
+                variant="docked"
+                tab={tab}
+                onTab={setTab}
+                data={data.data}
+                onChoose={() => setPicking('delegations')}
+                onCollapse={() => setPanelCollapsed(true)}
+              />
+            </div>
+          )}
+        </div>
+      </div>
     </>
   );
 }

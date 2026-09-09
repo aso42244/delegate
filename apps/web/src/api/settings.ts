@@ -16,6 +16,11 @@ export interface BudgetSettingsDto {
   readonly goLiveAt: string | null;
   /** How often the household is paid. Divides the Utilities suggestion. */
   readonly payCadence: PayCadence;
+  /**
+   * One payday, as `YYYY-MM-DD`. Null means no anchor, and Overview then draws
+   * no cycle pace rather than a tick from a guessed schedule.
+   */
+  readonly nextPaydayOn: string | null;
   /** Payments a year at that cadence, resolved by the server. */
   readonly cyclesPerYear: number;
   /** Whether a request over the onion address is answered at all. */
@@ -68,6 +73,8 @@ export const settingsApi = {
     undoWindowHours?: number;
     identityToleranceCents?: string;
     payCadence?: PayCadence;
+    /** `YYYY-MM-DD`, or null to clear the anchor. */
+    nextPaydayOn?: string | null;
     remoteOverTorEnabled?: boolean;
     recurringAlertsEnabled?: boolean;
     /** Null clears the choice and goes back to following `SCHEDULE_TIMEZONE`. */

@@ -85,6 +85,26 @@ export function BudgetSection(): ReactNode {
     },
   });
 
+  /**
+   * One payday, from which every other is generated at the cadence above.
+   *
+   * Saved on change like the cadence, and it invalidates Overview because every
+   * pace bar there is read against the cycle it defines. Clearing it removes the
+   * tick rather than falling back to a guess — a marker drawn from a schedule
+   * nobody set would be confidently in the wrong place.
+   */
+  const paydaySave = useMutation({
+    mutationFn: (nextPaydayOn: string) =>
+      settingsApi.update({ nextPaydayOn: nextPaydayOn === '' ? null : nextPaydayOn }),
+    onSuccess: async () => {
+      setProblem(null);
+      await queryClient.invalidateQueries({ queryKey: ['settings'] });
+      await queryClient.invalidateQueries({ queryKey: ['overview'] });
+    },
+    onError: (error: unknown) =>
+      setProblem(error instanceof ApiError ? error.message : 'Could not save that.'),
+  });
+
   const cadenceSave = useMutation({
     mutationFn: (payCadence: string) => {
       if (!isPayCadence(payCadence)) {
@@ -209,6 +229,27 @@ export function BudgetSection(): ReactNode {
               </option>
             ))}
           </SelectField>
+
+          {/*
+            The anchor that turns the cadence into a schedule.
+
+            A date rather than a timestamp: which day the household is paid is a
+            decided day, not an instant. Empty means no anchor, and the hint says
+            what that costs rather than leaving it to be discovered on a page
+            with no tick on it.
+          */}
+          <TextField
+            label="Next payday"
+            type="date"
+            width="sm"
+            hint={
+              settings.data?.nextPaydayOn
+                ? 'Every other payday is worked out from this one.'
+                : 'Without one, Overview draws no cycle pace.'
+            }
+            value={settings.data?.nextPaydayOn?.slice(0, 10) ?? ''}
+            onChange={(event) => paydaySave.mutate(event.target.value)}
+          />
 
           {/*
             The zone the household keeps.

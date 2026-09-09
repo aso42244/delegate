@@ -26,11 +26,19 @@ export const OVERVIEW_COLUMNS = 12;
 /**
  * The most tiles one row can hold.
  *
- * Four, because a quarter of a 1200px page is 300px and a ranked bar with a name
- * and a figure stops being readable below about that. A fifth would divide
- * unevenly as well, which is the arithmetic saying the same thing.
+ * **Two**, since the budget panel took the right-hand 398px of the page.
+ *
+ * It was four while the tiles had the whole width: a quarter of 1200px is
+ * 300px, which is about where a ranked bar with a name and a figure stops being
+ * readable. With the panel docked, a 1440px window leaves roughly 1000px for
+ * tiles — a quarter of that is 250px, comfortably under the same floor, and a
+ * third is 330px which only just clears it.
+ *
+ * So the cap is the arithmetic rather than a preference, and it moved because
+ * the arithmetic did. A tile that wants to be small can still share a row; one
+ * that wants to be readable can have the row to itself.
  */
-export const MAX_TILES_PER_ROW = 4;
+export const MAX_TILES_PER_ROW = 2;
 
 /** How many columns each tile in a row of `size` takes. */
 export function columnsForRow(size: number): number {
@@ -80,3 +88,13 @@ export function flattenRows<T>(
     });
   return flat;
 }
+
+/**
+ * What the figures band shows before anybody opens its picker.
+ *
+ * Inflow, spent and left are the three the page exists to answer. The fourth is
+ * the backlog rather than a fifth money figure, because it is the only number
+ * here somebody can *act* on — and until it is worked, every other figure on the
+ * page is wrong by whatever it holds.
+ */
+export const DEFAULT_FIGURES = ['inflow', 'spent', 'left_to_spend', 'uncategorized'] as const;

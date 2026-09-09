@@ -37,14 +37,22 @@ const FILES = sourceFiles(WEB_SRC).map((path) => ({
 }));
 
 /**
- * 4, 8, 16, 24 and nothing else.
+ * 4, 8, 12, 16, 24 and nothing else.
+ *
+ * **Twelve was added deliberately in v0.59**, with the Overview redesign. Four
+ * values held while every screen was a table or a form; a dashboard of small
+ * cards has a real gap between "inside a card" (8) and "between blocks" (16),
+ * and forcing it to one or the other made tiles either cramped or airy with
+ * nothing in between. It is one more value, not an open door: 20, 28 and 32 are
+ * still refused, and 32 was in the original proposal and left out because 24
+ * already separates sections.
  *
  * `gap-x-6` and `gap-y-2` are on the scale and pass by construction. The
  * fractional paddings inside the segmented control and the Toggle are part of a
  * control's own geometry rather than layout spacing, so they are not swept up:
  * the pattern only matches whole numbers.
  */
-const OFF_SCALE = /\b(?:gap|gap-x|gap-y|space-y|space-x|mt|mb|pt|pb)-(?:3|5|7|8|9|10|11|12)\b/g;
+const OFF_SCALE = /\b(?:gap|gap-x|gap-y|space-y|space-x|mt|mb|pt|pb)-(?:5|7|8|9|10|11)\b/g;
 
 /**
  * The app shell keeps its own metrics from design.md §4 — a 232px sidebar and a

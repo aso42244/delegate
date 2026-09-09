@@ -17,6 +17,18 @@
   --color-surface-2: #f0efed;
   --color-line: #e6e5e3;
 
+  /*
+   * Chart furniture: axis ticks, gridline labels, a legend's small print.
+   *
+   * A third text tone was proposed at #a9a6a0 and refused — it measures about
+   * 2.4:1 on canvas, under both the 4.5 AA needs for text and the 3 WCAG asks
+   * of non-text boundaries. This is that idea darkened until it clears 3:1, and
+   * it is **only** for marks the chart could be read without. Anything a person
+   * has to read stays `--color-muted`; the three-tier look comes from weight,
+   * case and size instead.
+   */
+  --color-axis: #8f8c86;
+
   --color-accent: #2783de;
   --color-accent-soft: #e5f2fc;
   /* Text and icons sitting on the accent fill. Its own token because the accent
@@ -83,6 +95,16 @@
    * spacing turns a header into a row of gaps rather than a word.
    */
   --tracking-label: 0.05em;
+
+  /*
+   * 10px, the dashboard's uppercase micro label.
+   *
+   * Below `--text-label`, and it earns the extra step because it is only ever
+   * used for two or three tracked, uppercase, 600-weight words above a figure —
+   * a shape the eye reads as a label before it reads it as text. It is never
+   * used for anything somebody has to read as a sentence.
+   */
+  --text-micro: 0.625rem;
 
   --text-label: 0.6875rem; /* 11px column headers */
   --text-quiet: 0.8125rem; /* 13px de-emphasised data and menu items */
@@ -184,6 +206,8 @@
   --color-surface: #141312;
   --color-surface-2: #262523;
   --color-line: #34322f;
+  /* Chart furniture on the dark ground; clears 3:1 the same way. */
+  --color-axis: #7e7a74;
 
   --color-accent: #62aef2;
   --color-accent-soft: #16283a;

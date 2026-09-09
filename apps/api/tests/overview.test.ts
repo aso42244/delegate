@@ -104,6 +104,32 @@ interface DataBody {
   readonly home_equity_over_time?: { readonly name: string | null };
   readonly debt_trajectory?: { readonly hasEnoughHistory: boolean };
   readonly cashflowWindow?: string;
+  readonly panel?: readonly {
+    readonly name: string;
+    readonly groupingName: string | null;
+    readonly balanceCents: string;
+    readonly plannedCents: string | null;
+    readonly spentCents: string;
+  }[];
+  readonly daily_outflow?: readonly { readonly date: string; readonly spentCents: string }[];
+  readonly income_vs_spending_pace?: readonly {
+    readonly date: string;
+    readonly observed: boolean;
+  }[];
+  readonly allocation?: readonly { readonly name: string; readonly amountCents: string }[];
+  readonly upcoming_bills?: readonly { readonly name: string }[];
+  readonly figures?: readonly {
+    readonly key: string;
+    readonly valueCents: string | null;
+    readonly count: number | null;
+  }[];
+  readonly payCycle?: {
+    readonly start: string;
+    readonly end: string;
+    readonly lengthDays: number;
+    readonly elapsedDays: number;
+    readonly progressBasisPoints: number;
+  } | null;
   readonly cycles?: readonly { readonly surplusCents: string; readonly partial: boolean }[];
   readonly delegations_negative?: readonly { readonly name: string }[];
   readonly change_per_cycle?: readonly unknown[];
@@ -145,7 +171,7 @@ describe('the layout', () => {
     expect(body.catalog).toContain('spending_by_grouping');
     // Twelve columns so a row of 1, 2, 3 or 4 divides with nothing left over.
     expect(body.columns).toBe(12);
-    expect(body.maxPerRow).toBe(4);
+    expect(body.maxPerRow).toBe(2);
   });
 
   it('stores which row each tile is in, and its place within it', async () => {
@@ -202,20 +228,20 @@ describe('the layout', () => {
     const response = await putLayout([
       { key: 'spending_by_grouping', row: 0, position: 0 },
       { key: 'spending_by_delegation', row: 0, position: 1 },
-      { key: 'asset_debt_composition', row: 0, position: 2 },
-      { key: 'utilities_vs_delegated', row: 0, position: 3 },
-      { key: 'delegation_movers', row: 0, position: 0 },
+      // A third in the same row, at a position the row cannot hold.
+      { key: 'asset_debt_composition', row: 0, position: 0 },
     ]);
     expect(response.json<SaveBody>()).toMatchObject({ ok: false, overfullRows: [0] });
     expect((await get('/api/overview/layout')).json<LayoutBody>().tiles).toEqual([]);
   });
 
-  it('allows exactly four in one row', async () => {
+  it('allows exactly two in one row', async () => {
+    // Two, since the budget panel took the right of the page: a quarter of what
+    // is left is about 250px, and a ranked bar with a name and a figure stops
+    // being readable below roughly 300.
     const response = await putLayout([
       { key: 'spending_by_grouping', row: 0, position: 0 },
       { key: 'spending_by_delegation', row: 0, position: 1 },
-      { key: 'asset_debt_composition', row: 0, position: 2 },
-      { key: 'utilities_vs_delegated', row: 0, position: 3 },
     ]);
     expect(response.json<SaveBody>()).toEqual({ ok: true });
   });
@@ -402,13 +428,16 @@ describe("a tile's own configuration", () => {
     });
   });
 
-  it('computes nothing for the Delegations tile', async () => {
-    // It reads the budget's own model instead — a second query ordering
-    // delegations by grouping would be a second answer to a question the Budget
-    // page already answers.
+  it('draws the Delegations key as the panel, not as a tile', async () => {
     await putLayout(rowed(['delegations']));
     const body = (await get('/api/overview')).json<DataBody>();
-    expect(Object.keys(body)).toEqual(['window']);
+
+    /*
+     * Three page-level fields and no tile data. The panel is not a tile — it is
+     * docked beside them and carries its own lines, so a chart key here would
+     * mean the same list was being drawn twice on one screen.
+     */
+    expect(Object.keys(body).sort()).toEqual(['panel', 'payCycle', 'window']);
   });
 });
 
@@ -818,6 +847,241 @@ describe('cashflow', () => {
       { key: 'cashflow', row: 0, position: 0, config: { window: 'fortnight' } },
     ]);
     expect(response.json<SaveBody>()).toMatchObject({ ok: false, badConfig: ['cashflow'] });
+  });
+});
+
+describe('the pay cycle', () => {
+  it('is null until an anchor is set, rather than guessed', async () => {
+    const body = (await get('/api/overview')).json<DataBody>();
+    // A tick drawn from a guessed schedule is a confident marker in the wrong
+    // place, and every pace reading on the page is judged against it.
+    expect(body.payCycle).toBeNull();
+  });
+
+  it('reads from one anchor plus the cadence', async () => {
+    await app.inject({
+      method: 'PATCH',
+      url: '/api/settings',
+      headers: { cookie },
+      payload: { payCadence: 'biweekly', nextPaydayOn: '2099-01-09' },
+    });
+
+    const body = (await get('/api/overview')).json<DataBody>();
+    expect(body.payCycle?.lengthDays).toBe(14);
+    // Every boundary before and after the anchor is generated from it, so an
+    // anchor in the future still describes the cycle happening now.
+    expect(body.payCycle?.elapsedDays).toBeGreaterThanOrEqual(0);
+    expect(body.payCycle?.elapsedDays).toBeLessThanOrEqual(14);
+    expect(body.payCycle?.progressBasisPoints).toBeLessThanOrEqual(10_000);
+  });
+
+  it('refuses a timestamp where a date belongs', async () => {
+    const response = await app.inject({
+      method: 'PATCH',
+      url: '/api/settings',
+      headers: { cookie },
+      payload: { nextPaydayOn: '2099-01-09T12:00:00Z' },
+    });
+    // Which day the household is paid is a decided day, not an instant.
+    expect(response.statusCode).toBe(400);
+  });
+
+  it('clears back to no tick', async () => {
+    await app.inject({
+      method: 'PATCH',
+      url: '/api/settings',
+      headers: { cookie },
+      payload: { nextPaydayOn: '2099-01-09' },
+    });
+    await app.inject({
+      method: 'PATCH',
+      url: '/api/settings',
+      headers: { cookie },
+      payload: { nextPaydayOn: null },
+    });
+
+    expect((await get('/api/overview')).json<DataBody>().payCycle).toBeNull();
+  });
+});
+
+describe('the panel', () => {
+  async function spend(delegationId: string, cents: bigint, postedAt: Date): Promise<void> {
+    const account = await prisma.account.findFirstOrThrow();
+    const transaction = await makeTransaction({
+      accountId: account.id,
+      amountCents: -cents,
+      postedAt,
+    });
+    await categorizeTransaction(prisma, transaction.id, delegationId);
+  }
+
+  it('is empty until lines are chosen', async () => {
+    await makeDelegation({ name: 'Grocery' });
+    await putLayout(rowed(['delegations']));
+    expect((await get('/api/overview')).json<DataBody>().panel).toEqual([]);
+  });
+
+  it('carries what a pace bar needs for each chosen line', async () => {
+    await makeAccount({ name: 'Everyday', type: 'asset', balanceCents: 5_000_000n });
+    const grocery = await makeDelegation({ name: 'Grocery', amountToDelegateCents: 78_000n });
+    await spend(grocery.id, 51_200n, new Date());
+
+    await putLayout([
+      { key: 'delegations', row: 0, position: 0, config: { delegationIds: [grocery.id] } },
+    ]);
+
+    const [line] = (await get('/api/overview')).json<DataBody>().panel ?? [];
+    expect(line?.name).toBe('Grocery');
+    // Spending is stored signed and negative; a bar reads a magnitude.
+    expect(line?.spentCents).toBe('51200');
+    expect(line?.plannedCents).toBe('78000');
+    expect(line?.balanceCents).toBeDefined();
+  });
+
+  it('reports no spending rather than negative when a line was refunded', async () => {
+    await makeAccount({ name: 'Everyday', type: 'asset', balanceCents: 5_000_000n });
+    const line = await makeDelegation({ name: 'Refunded' });
+    await spend(line.id, -10_000n, new Date());
+
+    await putLayout([
+      { key: 'delegations', row: 0, position: 0, config: { delegationIds: [line.id] } },
+    ]);
+
+    // A line that netted positive over the window has not spent a negative
+    // amount; it has spent none.
+    expect((await get('/api/overview')).json<DataBody>().panel?.[0]?.spentCents).toBe('0');
+  });
+
+  it('leaves out an archived line rather than drawing an empty row', async () => {
+    const gone = await makeDelegation({ name: 'Archived' });
+    await putLayout([
+      { key: 'delegations', row: 0, position: 0, config: { delegationIds: [gone.id] } },
+    ]);
+    await prisma.delegation.update({ where: { id: gone.id }, data: { archivedAt: new Date() } });
+
+    expect((await get('/api/overview')).json<DataBody>().panel).toEqual([]);
+  });
+
+  it("orders by the budget's own arrangement, never alphabetically", async () => {
+    // Named so the two orders disagree: the owner's groupings are "3 - Food"
+    // and "5 - Home" precisely because ordering was the thing missing.
+    const zed = await makeDelegation({ name: 'Zucchini' });
+    const apple = await makeDelegation({ name: 'Apples' });
+    await prisma.delegation.update({ where: { id: zed.id }, data: { position: 0 } });
+    await prisma.delegation.update({ where: { id: apple.id }, data: { position: 1 } });
+
+    await putLayout([
+      {
+        key: 'delegations',
+        row: 0,
+        position: 0,
+        config: { delegationIds: [apple.id, zed.id] },
+      },
+    ]);
+
+    expect((await get('/api/overview')).json<DataBody>().panel?.map((line) => line.name)).toEqual([
+      'Zucchini',
+      'Apples',
+    ]);
+  });
+});
+
+describe('the cycle-shaped tiles', () => {
+  async function anchorPayday(on: string): Promise<void> {
+    await app.inject({
+      method: 'PATCH',
+      url: '/api/settings',
+      headers: { cookie },
+      payload: { payCadence: 'biweekly', nextPaydayOn: on },
+    });
+  }
+
+  it('draws nothing at all without a payday, rather than guessing one', async () => {
+    await putLayout(rowed(['daily_outflow', 'income_vs_spending_pace']));
+    const body = (await get('/api/overview')).json<DataBody>();
+
+    // A band of days measured from a guessed payday is a picture of the wrong
+    // fortnight. Absent is the honest answer.
+    expect(body.daily_outflow).toBeUndefined();
+    expect(body.income_vs_spending_pace).toBeUndefined();
+  });
+
+  it('gives every day of the cycle a cell, including the empty ones', async () => {
+    await anchorPayday('2099-01-15');
+    await putLayout(rowed(['daily_outflow']));
+
+    const body = (await get('/api/overview')).json<DataBody>();
+    // Fourteen days, whatever happened on them. Skipping the quiet ones would
+    // compress a quiet fortnight into the width of a busy one.
+    expect(body.daily_outflow).toHaveLength(14);
+    expect(body.daily_outflow?.every((day) => typeof day.spentCents === 'string')).toBe(true);
+  });
+
+  it('stops the pace lines at today rather than carrying them flat', async () => {
+    await anchorPayday('2099-01-15');
+    await putLayout(rowed(['income_vs_spending_pace']));
+
+    const points = (await get('/api/overview')).json<DataBody>().income_vs_spending_pace ?? [];
+    // A flat tail to the end of the cycle would draw a fortnight of spending
+    // nothing, which is a claim about the future rather than a record.
+    expect(points.some((point) => point.observed)).toBe(true);
+    expect(points.some((point) => !point.observed)).toBe(true);
+  });
+});
+
+describe('allocation', () => {
+  it('reads the plan by default and the position when told', async () => {
+    await makeDelegation({ name: 'Grocery', amountToDelegateCents: 78_000n });
+
+    await putLayout(rowed(['allocation']));
+    const plan = (await get('/api/overview')).json<DataBody>().allocation ?? [];
+    expect(plan[0]?.amountCents).toBe('78000');
+
+    await putLayout([{ key: 'allocation', row: 0, position: 0, config: { mode: 'position' } }]);
+    const position = (await get('/api/overview')).json<DataBody>().allocation ?? [];
+    // The line holds nothing yet, so the position has no slice at all — which is
+    // a different answer from a plan of $780, and the point of the switch.
+    expect(position).toEqual([]);
+  });
+
+  it('refuses a reading it cannot draw', async () => {
+    const response = await putLayout([
+      { key: 'allocation', row: 0, position: 0, config: { mode: 'sideways' } },
+    ]);
+    expect(response.json<SaveBody>()).toMatchObject({ ok: false, badConfig: ['allocation'] });
+  });
+});
+
+describe('the figures band', () => {
+  it('draws the defaults before anybody configures it', async () => {
+    await putLayout(rowed(['figures']));
+    const figures = (await get('/api/overview')).json<DataBody>().figures ?? [];
+
+    // Inflow, spent and left are what the page exists to answer. The fourth is
+    // the backlog, because it is the only one somebody can act on.
+    expect(figures.map((figure) => figure.key)).toEqual([
+      'inflow',
+      'spent',
+      'left_to_spend',
+      'uncategorized',
+    ]);
+  });
+
+  it('has no answer for safe-per-day without a payday, and says so with a null', async () => {
+    await putLayout([{ key: 'figures', row: 0, position: 0, config: { keys: ['safe_per_day'] } }]);
+
+    const [figure] = (await get('/api/overview')).json<DataBody>().figures ?? [];
+    // Null rather than zero: with no cycle to spread it over there is no figure,
+    // and a confident $0.00 would be a different and wrong claim.
+    expect(figure?.key).toBe('safe_per_day');
+    expect(figure?.valueCents).toBeNull();
+  });
+
+  it('refuses a figure it cannot draw', async () => {
+    const response = await putLayout([
+      { key: 'figures', row: 0, position: 0, config: { keys: ['vibes'] } },
+    ]);
+    expect(response.json<SaveBody>()).toMatchObject({ ok: false, badConfig: ['figures'] });
   });
 });
 

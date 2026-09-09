@@ -1287,6 +1287,16 @@ model BudgetSettings {
   /// was configurable; an existing budget's numbers must not move on upgrade.
   payCadence PayCadence @default(biweekly) @map("pay_cadence")
 
+  /// One payday, from which every other is generated at the cadence above.
+  ///
+  /// Turns the divisor into a schedule, which is what lets a pace bar say
+  /// whether a line is being spent faster than time is passing. Nothing is
+  /// scheduled by it and no money moves because a date arrives — a cycle is
+  /// still one Delegate press to the next.
+  ///
+  /// Null means no anchor, read as "no tick" rather than as a default.
+  nextPaydayOn DateTime? @map("next_payday_on") @db.Date
+
   // Recorded when the owner commits the go-live Reconcile screen, so history
   // before this date can be understood as backfill.
   goLiveAt DateTime? @map("go_live_at")

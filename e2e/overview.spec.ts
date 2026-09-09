@@ -273,8 +273,12 @@ test('the picker draws each tile rather than naming it', async ({ signedIn }) =>
    * endpoint's "only what you have" rule — by definition nobody has a tile they
    * are deciding whether to add.
    */
-  const card = signedIn.getByRole('button', { name: 'Add What it is all made of' });
-  await expect(card).toBeVisible();
+  // The card is not itself a button: a card that is a button cannot contain
+  // one, and some tiles draw controls of their own. The Add control sits inside
+  // it, and the preview beside that.
+  const add = signedIn.getByRole('button', { name: 'Add What it is all made of' });
+  await expect(add).toBeVisible();
+  const card = add.locator('../..');
   await expect(card.getByText('$2,500.00', { exact: true })).toBeVisible();
 });
 
@@ -320,43 +324,39 @@ test('tiles can be dragged into one row without entering Arrange', async ({ sign
   ).toHaveClass(/lg:col-span-6/);
 });
 
-test('the delegations tile picks its lines in a dialog on the tile', async ({ signedIn, api }) => {
+test('the panel picks its lines in a dialog, and they survive a reload', async ({
+  signedIn,
+  api,
+}) => {
   await makeDelegation(api, 'Grocery');
   await makeDelegation(api, 'Fuel');
 
   await signedIn.goto('/overview');
-  await signedIn.getByRole('button', { name: 'Arrange', exact: true }).click();
-  await signedIn.getByRole('button', { name: 'Add Delegations' }).click();
-  await expect(signedIn.getByRole('heading', { name: 'Delegations', level: 2 })).toBeVisible();
-  await signedIn.getByRole('button', { name: 'Done' }).click();
-
-  // Added and never configured — which invites a choice rather than showing an
-  // empty table.
-  const tile = signedIn.getByRole('heading', { name: 'Delegations', level: 2 }).locator('../..');
-  await expect(tile.getByText('No delegations chosen yet.')).toBeVisible();
 
   /*
-   * The choice is made on the tile, not in Settings. That also sidesteps a real
-   * permission problem: household settings are administrator-only, so a shared
-   * setting would be one a `user` account could not change.
+   * The panel is docked and always present — it is not a tile and is never
+   * added from the picker. Its lines are chosen from the panel itself, which is
+   * also why the selection can exist on a page holding no tiles at all.
    */
-  await tile.getByRole('button', { name: 'Choose which delegations show →' }).click();
-  const dialog = signedIn.getByRole('dialog');
-  await expect(dialog).toBeVisible();
+  const panel = signedIn.getByRole('complementary', { name: 'Budget' });
+  await expect(panel).toBeVisible();
+  await expect(panel.getByText('No delegations chosen yet.')).toBeVisible();
 
+  await panel.getByRole('button', { name: 'Choose which delegations show →' }).click();
+  const dialog = signedIn.getByRole('dialog');
   await dialog.getByRole('switch', { name: 'Show Grocery' }).click();
   await dialog.getByRole('button', { name: 'Save' }).click();
-
   await expect(dialog).toHaveCount(0);
-  await expect(tile.getByText('Grocery')).toBeVisible();
-  await expect(tile.getByText('Fuel')).toHaveCount(0);
+
+  await expect(panel.getByText('Grocery')).toBeVisible();
+  await expect(panel.getByText('Fuel')).toHaveCount(0);
 
   // The risk an optimistic write introduces is one that never reaches the
   // server: perfect on screen until the page is loaded again.
   await signedIn.reload();
   await expect(
-    signedIn.getByRole('heading', { name: 'Delegations', level: 2 }).locator('../..'),
-  ).toContainText('Grocery');
+    signedIn.getByRole('complementary', { name: 'Budget' }).getByText('Grocery'),
+  ).toBeVisible();
 });
 
 test('the picker lists delegations under their groupings, in the budget order', async ({
@@ -364,24 +364,51 @@ test('the picker lists delegations under their groupings, in the budget order', 
   api,
 }) => {
   // Named so alphabetical and positional order disagree: the owner's groupings
-  // are named "3 - Food" and "5 - Home" precisely because ordering was the
-  // thing missing, and a picker that sorted by name would undo that.
+  // are "3 - Food" and "5 - Home" precisely because ordering was the thing
+  // missing, and a picker that sorted by name would undo that.
   await makeDelegation(api, 'Zucchini');
   await makeDelegation(api, 'Apples');
 
   await signedIn.goto('/overview');
-  await signedIn.getByRole('button', { name: 'Arrange', exact: true }).click();
-  await signedIn.getByRole('button', { name: 'Add Delegations' }).click();
-  await signedIn.getByRole('button', { name: 'Done' }).click();
+  await signedIn
+    .getByRole('complementary', { name: 'Budget' })
+    .getByRole('button', { name: 'Choose which delegations show →' })
+    .click();
 
-  await signedIn.getByRole('button', { name: 'Choose which delegations show →' }).click();
   const dialog = signedIn.getByRole('dialog');
-
   // A 1:1 mirror because it reads `GET /api/budget` — the same call, the same
   // cache entry and the same ordering the Budget page draws.
   await expect(dialog.getByRole('switch', { name: 'Show Zucchini' })).toBeVisible();
   await expect(dialog.getByRole('switch', { name: 'Show Apples' })).toBeVisible();
   await expect(dialog.getByText('No grouping')).toBeVisible();
+});
+
+test('the panel says there is no cycle pace until a payday is set', async ({ signedIn }) => {
+  await signedIn.goto('/overview');
+
+  /*
+   * No anchor means no tick, and the panel says so rather than drawing an empty
+   * progress bar — an empty bar reads as "nothing has happened yet", which is a
+   * different and wrong answer.
+   */
+  await expect(
+    signedIn.getByText('Set your next payday on Settings → Budget to see cycle pace.'),
+  ).toBeVisible();
+});
+
+test('the panel collapses and gives the width back', async ({ signedIn }) => {
+  await signedIn.goto('/overview');
+
+  await signedIn.getByRole('button', { name: 'Collapse the budget panel' }).click();
+  await expect(signedIn.getByRole('complementary', { name: 'Budget' })).toHaveCount(0);
+
+  // Per device, like the sidebar's collapse: a fact about this screen rather
+  // than about the household's budget.
+  await signedIn.reload();
+  await expect(signedIn.getByRole('complementary', { name: 'Budget' })).toHaveCount(0);
+
+  await signedIn.getByRole('button', { name: 'Open the budget panel' }).click();
+  await expect(signedIn.getByRole('complementary', { name: 'Budget' })).toBeVisible();
 });
 
 test('the cashflow chart carries its own period, separate from the page', async ({ signedIn }) => {
@@ -432,6 +459,171 @@ test('the cashflow chart says nothing came in rather than drawing an empty flow'
 
   const tile = signedIn.getByRole('heading', { name: 'Cashflow', level: 2 }).locator('../..');
   await expect(tile.getByText('Nothing came in yet.')).toBeVisible();
+});
+
+test('the figures band draws four numbers and its own picker', async ({ signedIn }) => {
+  await signedIn.goto('/overview');
+  await signedIn.getByRole('button', { name: 'Arrange', exact: true }).click();
+  await signedIn.getByRole('button', { name: 'Add Figures' }).click();
+  await expect(signedIn.getByRole('heading', { name: 'Figures', level: 2 })).toBeVisible();
+  await signedIn.getByRole('button', { name: 'Done' }).click();
+
+  const tile = signedIn.getByRole('heading', { name: 'Figures', level: 2 }).locator('../..');
+
+  /*
+   * One tile drawing four figures, not four tiles. A row holds two, so four
+   * separate tiles would take two full rows and fill the first screen before a
+   * chart appeared.
+   */
+  await expect(tile.getByText('Inflow')).toBeVisible();
+  await expect(tile.getByText('Spent')).toBeVisible();
+  await expect(tile.getByText('Left to spend')).toBeVisible();
+  await expect(tile.getByText('Uncategorized')).toBeVisible();
+
+  await tile.getByRole('button', { name: 'Choose which figures show →' }).click();
+  const dialog = signedIn.getByRole('dialog');
+
+  // Four chosen, so the rest are refused rather than hidden — the cap reads as
+  // a state somebody reached, not as options that vanished.
+  await expect(dialog.getByRole('switch', { name: 'Show Net worth' })).toBeDisabled();
+
+  await dialog.getByRole('switch', { name: 'Show Uncategorized' }).click();
+  await dialog.getByRole('switch', { name: 'Show Net worth' }).click();
+  await dialog.getByRole('button', { name: 'Save' }).click();
+  await expect(dialog).toHaveCount(0);
+
+  await expect(tile.getByText('Net worth')).toBeVisible();
+  await expect(tile.getByText('Uncategorized')).toHaveCount(0);
+
+  await signedIn.reload();
+  await expect(
+    signedIn.getByRole('heading', { name: 'Figures', level: 2 }).locator('../..'),
+  ).toContainText('Net worth');
+});
+
+test('a figure with no answer draws a dash, never a confident zero', async ({ signedIn }) => {
+  await signedIn.goto('/overview');
+  await signedIn.getByRole('button', { name: 'Arrange', exact: true }).click();
+  await signedIn.getByRole('button', { name: 'Add Figures' }).click();
+  await signedIn.getByRole('button', { name: 'Done' }).click();
+
+  const tile = signedIn.getByRole('heading', { name: 'Figures', level: 2 }).locator('../..');
+  await tile.getByRole('button', { name: 'Choose which figures show →' }).click();
+  const dialog = signedIn.getByRole('dialog');
+
+  // Clear the band, then take the one figure that has no answer without a
+  // payday anchor.
+  for (const label of ['Inflow', 'Spent', 'Left to spend', 'Uncategorized']) {
+    await dialog.getByRole('switch', { name: `Show ${label}` }).click();
+  }
+  await dialog.getByRole('switch', { name: 'Show Safe per day' }).click();
+  await dialog.getByRole('button', { name: 'Save' }).click();
+
+  // No anchor means no cycle to spread it over. A $0.00 would be a different
+  // and wrong claim.
+  await expect(tile.getByText('—')).toBeVisible();
+});
+
+test('the cycle-shaped tiles say they need a payday rather than guessing one', async ({
+  signedIn,
+}) => {
+  await signedIn.goto('/overview');
+  await signedIn.getByRole('button', { name: 'Arrange', exact: true }).click();
+  await signedIn.getByRole('button', { name: 'Add Daily outflow' }).click();
+  await signedIn.getByRole('button', { name: 'Add In against out' }).click();
+  await signedIn.getByRole('button', { name: 'Done' }).click();
+
+  /*
+   * Both are measured from payday, and there is no anchor. A band of days drawn
+   * from a guessed payday would be a picture of the wrong fortnight, so they
+   * draw nothing at all rather than something plausible.
+   */
+  await expect(
+    signedIn.getByText('Set your next payday on Settings → Budget to see this cycle.'),
+  ).toHaveCount(2);
+});
+
+test('the donut switches between the plan and the position', async ({ signedIn }) => {
+  await signedIn.goto('/overview');
+  await signedIn.getByRole('button', { name: 'Arrange', exact: true }).click();
+  await signedIn.getByRole('button', { name: 'Add Allocation' }).click();
+  await signedIn.getByRole('button', { name: 'Done' }).click();
+
+  const tile = signedIn.getByRole('heading', { name: 'Allocation', level: 2 }).locator('../..');
+
+  // Two readings of one subject, which is why they are one tile with a switch
+  // rather than two tiles. The plan is the default: it is the proportion that
+  // says something about the household rather than about the timing of bills.
+  await expect(tile.getByRole('radio', { name: 'Plan' })).toHaveAttribute('aria-checked', 'true');
+  await expect(tile.getByText('No amounts to delegate yet.')).toBeVisible();
+
+  await tile.getByRole('radio', { name: 'Now' }).click();
+  await expect(tile.getByText('Nothing in the envelopes yet.')).toBeVisible();
+
+  // Stored on the tile, so it survives a reload the way the cashflow period does.
+  await signedIn.reload();
+  await expect(
+    signedIn
+      .getByRole('heading', { name: 'Allocation', level: 2 })
+      .locator('../..')
+      .getByRole('radio', { name: 'Now' }),
+  ).toHaveAttribute('aria-checked', 'true');
+});
+
+test('upcoming says nothing is scheduled rather than drawing an empty list', async ({
+  signedIn,
+}) => {
+  await signedIn.goto('/overview');
+  await signedIn.getByRole('button', { name: 'Arrange', exact: true }).click();
+  await signedIn.getByRole('button', { name: 'Add Upcoming' }).click();
+  await signedIn.getByRole('button', { name: 'Done' }).click();
+
+  const tile = signedIn.getByRole('heading', { name: 'Upcoming', level: 2 }).locator('../..');
+  await expect(tile.getByText('Nothing scheduled.')).toBeVisible();
+});
+
+test('setting a payday turns the cycle on across the page', async ({ signedIn }) => {
+  await signedIn.goto('/overview');
+  await signedIn.getByRole('button', { name: 'Arrange', exact: true }).click();
+  await signedIn.getByRole('button', { name: 'Add Daily outflow' }).click();
+  await signedIn.getByRole('button', { name: 'Done' }).click();
+
+  /*
+   * Nothing to draw yet: the cadence says how many paychecks a year arrive and
+   * nothing about when, so there is no cycle to measure a band of days against.
+   *
+   * Scoped to the tile and the panel rather than the page: the Arrange picker
+   * draws previews of the other cycle-shaped tiles, which say the same thing for
+   * the same reason, so an unscoped locator matches whatever happens to be open.
+   */
+  const band = signedIn.getByRole('heading', { name: 'Daily outflow', level: 2 }).locator('../..');
+  await expect(
+    band.getByText('Set your next payday on Settings → Budget to see this cycle.'),
+  ).toBeVisible();
+  await expect(
+    signedIn
+      .getByRole('complementary', { name: 'Budget' })
+      .getByText('Set your next payday on Settings → Budget to see cycle pace.'),
+  ).toBeVisible();
+
+  await signedIn.goto('/settings/budget');
+  await signedIn.getByLabel('Next payday').fill('2099-01-15');
+  // Saved on change, like the cadence beside it.
+  await expect(signedIn.getByText('Every other payday is worked out from this one.')).toBeVisible();
+
+  await signedIn.goto('/overview');
+
+  /*
+   * One date, and every boundary around it follows. The panel now says where the
+   * household sits between paydays, and the band has a cycle to draw.
+   */
+  await expect(signedIn.getByText(/day \d+ of 14/)).toBeVisible();
+  await expect(
+    signedIn
+      .getByRole('heading', { name: 'Daily outflow', level: 2 })
+      .locator('../..')
+      .getByText('Set your next payday on Settings → Budget to see this cycle.'),
+  ).toHaveCount(0);
 });
 
 test('the arrange controls are hidden until asked for', async ({ signedIn }) => {

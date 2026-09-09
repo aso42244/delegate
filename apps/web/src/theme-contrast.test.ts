@@ -164,6 +164,29 @@ describe.each(THEMES)('%s', (selector, name) => {
     ).toBeGreaterThanOrEqual(floorFor(name, 'on-accent on accent'));
   });
 
+  /*
+   * Chart furniture, at the 3:1 WCAG asks of non-text boundaries rather than the
+   * 4.5 it asks of text.
+   *
+   * `--color-axis` exists *because* of a contrast decision: the spec proposed a
+   * third text tone at #a9a6a0, which measures about 2.4:1 and clears neither
+   * bar. Leaving the darkened replacement unmeasured would put it in exactly the
+   * state this file was written to end — a colour nobody is checking, chosen for
+   * a reason nobody can verify.
+   *
+   * It is held to 3:1 and no higher deliberately: anything a person has to
+   * *read* uses `--color-muted`, and this is only for marks the chart could be
+   * read without.
+   */
+  it(`${name}: chart furniture clears 3:1 on both grounds`, () => {
+    for (const ground of GROUNDS) {
+      expect(
+        contrast(palette['--color-axis']!, palette[ground]!),
+        `axis on ${ground}`,
+      ).toBeGreaterThanOrEqual(3);
+    }
+  });
+
   it(`${name}: a negative amount clears 4.5:1 where it is printed`, () => {
     // Red text on the canvas, and on a tinted grouping row — the second is the
     // one that gets missed, because it is only ever seen inside a grouping.
