@@ -6,6 +6,10 @@ phase (`v0.1.0-phase1`, and so on).
 
 ## [Unreleased]
 
+Nothing yet.
+
+## [0.61.0] — 2026-09-09
+
 ### Changed
 
 - **The pace bar measures what the cycle had, and only overspending is red**
