@@ -24,7 +24,7 @@ import {
   verifySecondFactor,
   type SecondFactorResult,
 } from '../domain/totp.js';
-import { AUTHENTICATED, requireSession } from '../plugins/auth.js';
+import { requireSession } from '../plugins/auth.js';
 import { authRateLimit } from '../plugins/security.js';
 import { pruneAuthEvents, recordAuthEvent } from '../domain/auth-events.js';
 import { describeAttemptedUsername } from '../domain/auth-subject.js';
@@ -480,23 +480,6 @@ export const authRoutes: FastifyPluginCallback = (fastify, _options, done) => {
     }
     return { user: presentUser(updated) };
   });
-
-  /**
-   * Is this browser signed in? Nothing else.
-   *
-   * For a reverse proxy to ask before it forwards a request somewhere else — the
-   * demo instance mounted under `/demo` is gated on this. 204 or 401, no body:
-   * a gate should say yes or no and nothing about who.
-   *
-   * **Behind the full chain**, deliberately. `/api/auth/me` would have been the
-   * obvious thing to point at and it carries only `requireSession`, so a session
-   * that has not finished enrolling a second factor passes it. A gate that means
-   * something weaker than the rest of the application is a gate that will be
-   * wrong exactly once, in the direction nobody wants.
-   */
-  fastify.get('/api/auth/gate', { preHandler: [...AUTHENTICATED] }, async (_request, reply) =>
-    reply.code(204).send(),
-  );
 
   fastify.get('/api/auth/totp', { preHandler: [requireSession] }, async (request) => {
     const status = await totpStatus(prisma, request.currentUser!.id);

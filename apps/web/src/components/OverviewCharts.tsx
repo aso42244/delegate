@@ -161,12 +161,19 @@ function MonthRow({
           /*
            * A day that has not happened yet is an outline, not a filled cell.
            *
+           * **A day with money on it has happened**, whatever the calendar here
+           * says. The API's day keys are cut in the household's zone and this
+           * compares them against the browser's — two clocks that can disagree
+           * by a day, and did: a charge posted this evening landed on a cell the
+           * interface drew as "not yet" and disabled, so the day somebody most
+           * wants to open was the one they could not.
+           *
            * Drawn in the same grey as a day that cost nothing, the rest of the
            * month read as three weeks of spending nothing — a claim about the
            * future rather than a record of the past, and the same mistake the
            * pace chart avoids by stopping its lines at today.
            */
-          const isFuture = day.date.slice(0, 10) > today;
+          const isFuture = day.date.slice(0, 10) > today && value === 0n;
 
           return (
             /*
