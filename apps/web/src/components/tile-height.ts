@@ -24,10 +24,11 @@ export function useTileRoom(): number | undefined {
 }
 
 /**
- * The tile's own furniture: 16px of padding top and bottom, a heading of about
- * 24, and the 16px gap under it.
+ * The tile's own furniture: 16px of padding top and bottom, the heading, and the
+ * 16px gap under it.
  *
- * A constant rather than a measurement, and deliberately so — see above. It is
- * approximate, and being a few pixels out costs a few pixels of chart.
+ * A constant rather than a measurement, and deliberately so — see above. Measured
+ * at 76 across three tile widths; carrying one spare pixel, because being a pixel
+ * short of the chart costs nothing and being a pixel over clips it.
  */
-const TILE_CHROME = 72;
+const TILE_CHROME = 77;

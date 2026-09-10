@@ -585,7 +585,7 @@ function AllBillsDialog({ onClose }: { readonly onClose: () => void }): ReactNod
   const rows = bills.data?.bills ?? [];
 
   return (
-    <Modal label="Every recurring bill" title="All bills" onClose={onClose} width="lg" dismissible>
+    <Modal label="Every recurring bill" title="All bills" onClose={onClose} width="xl" dismissible>
       {bills.isPending ? (
         <p className="text-quiet text-muted">Loading…</p>
       ) : rows.length === 0 ? (
@@ -598,17 +598,29 @@ function AllBillsDialog({ onClose }: { readonly onClose: () => void }): ReactNod
               className="row-cell flex items-center gap-3 border-b border-line"
               title={`${bill.name} · ${bill.cadence} · next ${shortDate(bill.expectedNextAt)}`}
             >
-              <span className="min-w-0 flex-1">
-                <span className="block truncate text-quiet text-ink">{bill.name}</span>
-                <span className="block truncate text-micro text-muted">
-                  {bill.cadence}
-                  {bill.delegationName !== null && ` · ${bill.delegationName}`}
-                </span>
+              {/*
+                The day dialog's row, because they are the same kind of row.
+
+                The cadence and the delegation used to sit on a second line under
+                the name, inside a cell whose height is fixed by `row-cell` — so
+                the second line overflowed it and struck the divider below.
+                Across, they fit; and the two dialogs a household opens from the
+                same page now read the same way: what it is, how often, where it
+                is filed, when, how much.
+              */}
+              <span className="min-w-0 flex-[2] truncate text-quiet text-ink" title={bill.name}>
+                {bill.name}
+              </span>
+              <span className="hidden min-w-0 flex-1 truncate text-micro text-muted sm:block">
+                {bill.cadence}
+              </span>
+              <span className="hidden min-w-0 flex-1 truncate text-micro text-muted sm:block">
+                {bill.delegationName ?? 'Unfiled'}
               </span>
               <span className="w-20 shrink-0 text-right text-micro text-muted">
                 {shortDate(bill.expectedNextAt)}
               </span>
-              <span className="money w-20 shrink-0 text-right text-quiet font-semibold text-ink">
+              <span className="money w-24 shrink-0 text-quiet font-semibold text-ink">
                 {formatCents(BigInt(bill.typicalAmountCents))}
               </span>
             </li>

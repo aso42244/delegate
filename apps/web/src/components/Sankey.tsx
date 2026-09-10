@@ -90,40 +90,39 @@ const WIDTH = 1000;
 const TOP = 24;
 
 /**
- * User units of bar for the whole flow, when nothing constrains the height.
+ * The viewBox height used when nothing constrains this chart.
  *
- * One scale, both sides. This is the *default*: given a definite height to draw
- * into, the chart lays itself out to fill it rather than being scaled to fit —
- * see `barsFor`.
+ * Everything below is in viewBox user units. The viewBox is a fixed 1000 units
+ * wide and the element is always the full width of its tile, so one unit is a
+ * constant number of pixels and the drawing never has to be scaled to fit — it
+ * is *laid out* to fit, which is what keeps the type one size as the tile grows.
  */
-const BARS = 360;
+const ROOM = 408;
 
 /**
- * Below this the labels sit on top of one another whatever is done with them.
- * A row dragged shorter than this scrolls instead.
+ * Below this the arithmetic stops meaning anything.
+ *
+ * Low on purpose. A row dragged to the bottom of its range draws a smear, and
+ * that is the trade asked for: the whole chart inside the tile matters more than
+ * any of it being readable.
  */
-const MIN_BARS = 180;
+const MIN_ROOM = 24;
 
 /**
- * How much bar to draw, for a box of a given shape.
+ * The height to draw into, for a box of a given shape.
  *
- * The chart is laid out **to** the height rather than scaled to it. Scaling is
- * what `preserveAspectRatio` does and it moves both dimensions together, so
- * dragging a row shorter also made the drawing narrower — a postage stamp
- * between two bands of white, while the tile it sits in stayed the same width.
- *
- * Because the viewBox is a fixed 1000 units wide and the element is always the
- * full width of its tile, one user unit is a constant number of pixels. So the
- * type never changes size, the ribbons keep their proportions, and what a
- * shorter row actually does is give the flow less room — which is what somebody
- * dragging it is asking for.
+ * Converts the pixels the tile has into the units the viewBox measures width in.
+ * The result becomes the viewBox height exactly, so the drawing's own height in
+ * pixels comes back to the number that went in and nothing is ever clipped.
  */
-function barsFor(width: number, height: number | null): number {
-  if (width === 0 || height === null || height === 0) return BARS;
-  // The height in the same units the viewBox measures width in.
-  const inUnits = (height * WIDTH) / width;
-  return Math.max(MIN_BARS, Math.round(inUnits - TOP * 2));
+function roomFor(width: number, heightPx: number | null): number {
+  // Only an *absent* height falls back to the default. A height that is merely
+  // very small is an answer, and treating it as no answer made the shortest
+  // rows jump back to a full-size chart.
+  if (width === 0 || heightPx === null) return ROOM;
+  return Math.max(MIN_ROOM, (heightPx * WIDTH) / width);
 }
+
 const BAR_W = 12;
 const GAP = 8;
 /** The least vertical room a node needs for its label not to touch the next. */
@@ -175,6 +174,8 @@ function rollUp(nodes: readonly FlowNode[], total: bigint, share: number): FlowN
 function stack(
   nodes: readonly FlowNode[],
   perCent: number,
+  slot: number,
+  gap: number,
   colorAt: (index: number) => string,
 ): { laid: Laid[]; height: number } {
   let y = 0;
@@ -182,10 +183,68 @@ function stack(
     const h = Math.max(Number(node.amountCents) * perCent, 1.5);
     const entry: Laid = { ...node, y, h, color: colorAt(index) };
     // The bar is proportional; the *slot* has a floor, so two labels never touch.
-    y += Math.max(h, MIN_SLOT) + GAP;
+    y += Math.max(h, slot) + gap;
     return entry;
   });
-  return { laid, height: Math.max(y - GAP, 0) };
+  return { laid, height: Math.max(y - gap, 0) };
+}
+
+/** What a column of nodes comes to at a given scale, gaps and floors included. */
+function stackHeight(
+  nodes: readonly FlowNode[],
+  perCent: number,
+  slot: number,
+  gap: number,
+): number {
+  if (nodes.length === 0) return 0;
+  let height = gap * (nodes.length - 1);
+  for (const node of nodes) height += Math.max(Number(node.amountCents) * perCent, slot);
+  return height;
+}
+
+/**
+ * How much to shrink the furniture — slot floors, gaps, type — to fit `drawing`.
+ *
+ * A column of eight nodes needs eight slot floors and seven gaps whatever the
+ * amounts are, and below some height that alone is taller than the tile. The
+ * chart is asked to fit the window rather than stay legible, so the furniture
+ * gives way: 1 where there is room, and proportionally less where there is not.
+ */
+function furnitureFit(counts: readonly number[], drawing: number): number {
+  const needed = Math.max(
+    ...counts.map((count) => (count === 0 ? 0 : MIN_SLOT * count + GAP * (count - 1))),
+  );
+  return needed <= 0 ? 1 : Math.min(1, drawing / needed);
+}
+
+/**
+ * The largest scale at which every column still fits the height available.
+ *
+ * Found by bisection rather than arithmetic, because a column's height is not
+ * linear in the scale: a node whose ribbon is thinner than the slot floor stops
+ * contributing as the scale falls, so there is no closed form to rearrange. The
+ * height is monotonic in the scale, though, which is all bisection needs.
+ *
+ * This is the fix for a chart that was reliably too tall for its tile. The scale
+ * used to be set from the middle bar alone, and every column then added its gaps
+ * and floors on top — about 56 units of overflow for eight nodes, clipped off the
+ * bottom of the tile at every size.
+ */
+function scaleToFit(
+  sides: readonly (readonly FlowNode[])[],
+  total: bigint,
+  drawing: number,
+  slot: number,
+  gap: number,
+): number {
+  let low = 0;
+  let high = drawing / Number(total);
+  for (let step = 0; step < 40; step += 1) {
+    const mid = (low + high) / 2;
+    if (sides.every((nodes) => stackHeight(nodes, mid, slot, gap) <= drawing)) low = mid;
+    else high = mid;
+  }
+  return low;
 }
 
 function ribbon(x0: number, y0: number, x1: number, y1: number, thickness: number): string {
@@ -255,26 +314,50 @@ export function Sankey({
     return <p className="text-quiet text-muted">{emptyMessage}</p>;
   }
 
-  const bars = barsFor(width, heightPx ?? null);
-
   const left = rollUp(inflows, total, 0.01);
   const right = rollUp(outflows, total, 0.01);
 
+  /*
+   * The whole drawing is fitted to the room, in this order:
+   *
+   *   1. the room, in user units — this becomes the viewBox height exactly, so
+   *      the chart's height in pixels is the height it was given;
+   *   2. headroom for the total above the middle bar, which gives way first;
+   *   3. how far the furniture has to shrink for the columns to fit at all;
+   *   4. the largest scale at which they actually do.
+   *
+   * Nothing is scaled afterwards. `preserveAspectRatio` would move both
+   * dimensions together, which is what used to make a shorter row draw a
+   * narrower chart inside a tile that was exactly as wide as before.
+   */
+  const height = roomFor(width, heightPx ?? null);
+  const top = Math.min(TOP, height * 0.06);
+  const drawing = Math.max(height - top * 2, 1);
+
+  const fit = furnitureFit([left.length, right.length], drawing);
+  const slot = MIN_SLOT * fit;
+  const gap = GAP * fit;
+
   // One scale for both sides, so the middle bar is exactly each column's sum.
-  const perCent = bars / Number(total);
+  const perCent = scaleToFit([left, right], total, drawing, slot, gap);
 
-  const leftStack = stack(left, perCent, () => '');
-  const rightStack = stack(right, perCent, (index) => SPENDING_TOKENS[index % 8] ?? '');
+  const leftStack = stack(left, perCent, slot, gap, () => '');
+  const rightStack = stack(right, perCent, slot, gap, (index) => SPENDING_TOKENS[index % 8] ?? '');
 
-  const tallest = Math.max(leftStack.height, rightStack.height, bars);
-  const height = tallest + TOP * 2;
+  const bars = Number(total) * perCent;
 
   const leftX = 8;
   const midX = 470;
   const rightX = WIDTH - 8 - BAR_W;
-  const leftTop = TOP + (tallest - leftStack.height) / 2;
-  const rightTop = TOP + (tallest - rightStack.height) / 2;
-  const midTop = TOP + (tallest - bars) / 2;
+  const leftTop = top + (drawing - leftStack.height) / 2;
+  const rightTop = top + (drawing - rightStack.height) / 2;
+  const midTop = top + (drawing - bars) / 2;
+
+  /* Type is furniture too. Held at 4 units at the bottom: past that it is a
+     smudge, and a smudge that still says where the labels are is worth more
+     than nothing at all. */
+  const labelSize = Math.max(13 * fit, 4);
+  const totalSize = Math.max(11 * fit, 4);
 
   const colorOf = (node: Laid): string =>
     node.tone === 'spending' ? node.color || TONE.spending : TONE[node.tone];
@@ -313,7 +396,7 @@ export function Sankey({
      * minimum size is its content, which would keep the chart at full height and
      * push it out of a row somebody had just dragged shorter.
      */
-    <div ref={box} className="h-full min-h-0 w-full overflow-auto">
+    <div ref={box} className="h-full min-h-0 w-full overflow-hidden">
       <svg
         viewBox={`0 0 ${WIDTH} ${height}`}
         /*
@@ -327,7 +410,7 @@ export function Sankey({
          * The default `xMidYMid meet` keeps the proportions and centres what is
          * left, so a shorter row shrinks the flow rather than cropping it.
          */
-        className="block w-full min-w-[640px]"
+        className="block w-full"
         role="img"
         aria-label={`Cashflow: ${formatCents(total)} from ${left.length} sources to ${right.length} destinations`}
         /*
@@ -388,7 +471,7 @@ export function Sankey({
             x={leftX + BAR_W + 10}
             y={leftTop + node.y + node.h / 2}
             dominantBaseline="middle"
-            fontSize="13"
+            fontSize={labelSize}
             fontWeight="600"
             style={{ fill: 'var(--color-ink)' }}
           >
@@ -409,7 +492,7 @@ export function Sankey({
             y={rightTop + node.y + node.h / 2}
             textAnchor="end"
             dominantBaseline="middle"
-            fontSize="13"
+            fontSize={labelSize}
             fontWeight="600"
             style={{ fill: 'var(--color-ink)' }}
           >
@@ -425,9 +508,9 @@ export function Sankey({
         ))}
         <text
           x={midX + BAR_W / 2}
-          y={midTop - 8}
+          y={midTop - 4 * fit - totalSize / 2}
           textAnchor="middle"
-          fontSize="11"
+          fontSize={totalSize}
           fontWeight="600"
           letterSpacing="0.05em"
           style={{ fill: 'var(--color-muted)' }}
