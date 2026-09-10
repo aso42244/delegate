@@ -6,7 +6,12 @@ phase (`v0.1.0-phase1`, and so on).
 
 ## [Unreleased]
 
-Nothing yet.
+### Fixed
+
+- **Figures sit on the right of their column.** Sharing one grid across a list
+  made the figure column as wide as the longest figure in it, and the shorter
+  ones then sat against its left edge — `$153.00` adrift under `$2,201.00`. Both
+  the figure and the share are flush right now, each in a column of its own.
 
 ## [0.68.2] — 2026-09-09
 
