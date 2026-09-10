@@ -6,6 +6,10 @@ phase (`v0.1.0-phase1`, and so on).
 
 ## [Unreleased]
 
+Nothing yet.
+
+## [0.69.0] — 2026-09-10
+
 ### Changed
 
 - **One tag.** Chips, state tags and alert pills were four families that had
