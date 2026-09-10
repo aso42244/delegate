@@ -6,6 +6,10 @@ phase (`v0.1.0-phase1`, and so on).
 
 ## [Unreleased]
 
+Nothing yet.
+
+## [0.68.0] — 2026-09-09
+
 ### Added
 
 - **A demo, at `/demo`.** The same pages drawing invented numbers, behind the
