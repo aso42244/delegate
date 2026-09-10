@@ -6,7 +6,28 @@ phase (`v0.1.0-phase1`, and so on).
 
 ## [Unreleased]
 
-Nothing yet.
+### Fixed
+
+- **The cashflow chart fits its tile.** It was drawn about fifty pixels taller
+  than the room it had at every size, so the bottom of the flow — usually a
+  whole destination — was clipped off. The scale came from the middle bar alone,
+  and each column then added its gaps and label floors on top of it; the scale
+  is fitted to the columns now, furniture included.
+
+  Dragged shorter, the chart gives way rather than overflowing: the gaps, the
+  label floors and the type all shrink together, and past a point it is a smear
+  rather than a chart. That is the trade — the whole flow inside the tile is
+  worth more than any part of it being readable.
+
+- **A column of percentages is a column.** Every row of a ranked bar carried its
+  own grid, so the width of that row's amount decided where its percentage
+  landed — `34%` and `6%` ended up eight pixels apart down the same tile. All
+  the tiles that draw ranked bars are affected, and all of them are fixed.
+
+- **All bills reads like the daily-outflow list.** The cadence and delegation
+  sat on a second line under each name, inside a row whose height is fixed — so
+  the second line overflowed it and struck the divider below. Across the row,
+  they fit.
 
 ## [0.68.1] — 2026-09-09
 

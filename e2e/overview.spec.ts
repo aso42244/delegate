@@ -1015,6 +1015,7 @@ test('a tile dragged by its body does not move', async ({ signedIn }) => {
 
 test('the bill tiles open every bill in the middle of the page', async ({ signedIn }) => {
   await signedIn.goto('/overview');
+  await signedIn.goto('/overview');
   await openArrange(signedIn);
   await signedIn.getByRole('button', { name: 'Add Needs a look' }).click();
   await signedIn.getByRole('button', { name: 'Done' }).click();
@@ -1188,49 +1189,182 @@ test('the arrange controls are hidden until asked for', async ({ signedIn }) => 
 });
 
 /*
- * A row dragged shorter gives the chart less room. It does not make it narrower.
+ * The chart fits its tile, at every size, in both directions.
  *
- * The chart used to be scaled to fit, which `preserveAspectRatio` does by moving
- * both dimensions together: a shorter row produced a postage stamp between two
- * bands of white, inside a tile that was exactly as wide as before. It is now
- * laid out *to* the height instead, so the type stays one size and the flow gets
- * the room it was given.
+ * Three separate defects live behind this one test, and each was visible on the
+ * owner's screen before it was visible here.
  *
- * Two later attempts at that read the height back off the page — first from the
- * chart's own container, then from the tile body around it — and both fed back:
- * a taller chart makes a taller box makes a taller chart, past 3,800px from a
- * row somebody had just dragged shorter. The height is a stored number now, and
- * this test is what says so.
+ * **It used to be scaled to fit**, which `preserveAspectRatio` does by moving
+ * both dimensions together: a shorter row drew a postage stamp between two bands
+ * of white, in a tile exactly as wide as before. It is laid out *to* the room
+ * now, so the width is always the tile's width.
  *
- * On the demo route because it has a flow to draw, and because a pointer drag
- * previews live without needing the layout saved.
+ * **Then it was measured off the page** — first from the chart's own container,
+ * then from the tile body around it — and both fed back, because the box is as
+ * tall as the drawing inside it. It reached 3,883px from a row dragged shorter.
+ * The height is a stored number now; see `tile-height.ts`.
+ *
+ * **And then it was reliably too tall anyway.** The scale came from the middle
+ * bar alone, and each column added its gaps and slot floors on top — about 56
+ * units of overflow for eight nodes, clipped off the bottom at every size. The
+ * scale is fitted to the columns now, furniture included.
+ *
+ * So this asserts the property rather than any of the three fixes: the drawing
+ * is inside the tile, and as wide as it, however the row is dragged. On the demo
+ * route because it has a flow to draw, and because a pointer drag previews live
+ * without needing the layout saved.
  */
-test('a shorter row shortens the cashflow chart without narrowing it', async ({ signedIn }) => {
+test('the cashflow chart fits its tile at every height', async ({ signedIn }) => {
   await signedIn.setViewportSize({ width: 1680, height: 1000 });
   await signedIn.goto('/demo/overview');
 
   const svg = signedIn.locator('svg[role="img"]').first();
   await expect(svg).toBeVisible();
 
-  const box = async (): Promise<{ w: number; h: number }> => {
-    const at = (await svg.boundingBox())!;
-    return { w: Math.round(at.width), h: Math.round(at.height) };
-  };
+  /** The drawing, and the box it has to stay inside. */
+  const boxes = async (): Promise<{
+    readonly drawn: { readonly w: number; readonly h: number };
+    readonly room: { readonly w: number; readonly h: number };
+  }> =>
+    svg.evaluate((node) => {
+      const body = node.parentElement!.parentElement!;
+      const drawn = node.getBoundingClientRect();
+      const room = body.getBoundingClientRect();
+      return {
+        drawn: { w: Math.round(drawn.width), h: Math.round(drawn.height) },
+        room: { w: Math.round(room.width), h: Math.round(room.height) },
+      };
+    });
 
-  const before = await box();
+  const before = await boxes();
+  expect(before.drawn.h).toBeLessThanOrEqual(before.room.h);
+  expect(before.drawn.w).toBe(before.room.w);
 
   const handle = signedIn.getByRole('separator', { name: /Height of the row holding Cashflow/ });
   const grip = (await handle.boundingBox())!;
   await signedIn.mouse.move(grip.x + grip.width / 2, grip.y + grip.height / 2);
   await signedIn.mouse.down();
-  await signedIn.mouse.move(grip.x + grip.width / 2, grip.y - 300, { steps: 12 });
-  await signedIn.waitForTimeout(300);
 
-  const after = await box();
+  // Including further than the row can actually go, which is the case that used
+  // to clip: the chart must give way rather than overflow.
+  for (const drag of [-150, -300, -420]) {
+    await signedIn.mouse.move(grip.x + grip.width / 2, grip.y + drag, { steps: 6 });
+    await signedIn.waitForTimeout(200);
+
+    const at = await boxes();
+    expect(at.drawn.h, `height at drag ${drag}`).toBeLessThanOrEqual(at.room.h);
+    expect(at.drawn.w, `width at drag ${drag}`).toBe(at.room.w);
+  }
+
+  const shortest = await boxes();
   await signedIn.mouse.up();
 
-  expect(after.w).toBe(before.w);
-  expect(after.h).toBeLessThan(before.h);
-  // And not collapsed to nothing: below this the labels sit on one another.
-  expect(after.h).toBeGreaterThan(150);
+  // And it did shorten, rather than fitting by having never changed.
+  expect(shortest.drawn.h).toBeLessThan(before.drawn.h);
+});
+
+/*
+ * A column of percentages is a column.
+ *
+ * Every row used to carry its own `grid`, so `max-content` on the figure was
+ * resolved against that row's figure alone — and every column before it landed
+ * wherever that left it. `34%` and `6%` ended eight pixels apart down the same
+ * tile, which is the whole thing the share column exists to prevent. The list
+ * is one grid now and the rows take its tracks.
+ *
+ * Asserted as a shared edge rather than by reading text, for the reason the
+ * span assertions above give: a test that only looks for words passes just as
+ * happily while the layout is wrong.
+ */
+test('the percentages in a tile share one right edge', async ({ signedIn }) => {
+  await signedIn.setViewportSize({ width: 1680, height: 1000 });
+  await signedIn.goto('/demo/overview');
+  await expect(signedIn.getByRole('heading', { name: 'Allocation', level: 2 })).toBeVisible();
+
+  const edges = await signedIn.evaluate(() => {
+    const found: Record<string, number[]> = {};
+    for (const cell of Array.from(document.querySelectorAll('li > span.money'))) {
+      if (!/^\d{1,3}%$/.test((cell.textContent ?? '').trim())) continue;
+      const tile = cell.closest('section[data-tile]')?.querySelector('h2')?.textContent?.trim();
+      if (tile === undefined) continue;
+      found[tile] = [...(found[tile] ?? []), Math.round(cell.getBoundingClientRect().right)];
+    }
+    return found;
+  });
+
+  // The demo draws three of these, and a run that found none would otherwise
+  // pass by having nothing to check.
+  expect(Object.keys(edges).length).toBeGreaterThanOrEqual(2);
+  for (const [tile, rights] of Object.entries(edges)) {
+    expect(rights.length, `${tile} has percentages`).toBeGreaterThan(1);
+    expect([...new Set(rights)], `${tile} percentages share an edge`).toHaveLength(1);
+  }
+});
+
+/*
+ * All bills reads like the day dialog, because they are the same kind of list.
+ *
+ * The cadence and the delegation used to sit on a second line under the name,
+ * inside a cell whose height `row-cell` fixes — so the second line overflowed it
+ * and struck the divider below. Across, they fit.
+ *
+ * The assertion is that a row is one line: every cell in it shares a centre. A
+ * stacked row fails that by construction, which a text assertion would not.
+ */
+test('every row of All bills is a single line', async ({ signedIn, api }) => {
+  const accountId = await makeAccount('Everyday', 'asset', 250000n);
+  const home = await makeDelegation(api, 'Home & Grounds');
+
+  // Three arrivals a month apart is what makes a charge a bill.
+  for (const [amountCents, description] of [
+    ['-6286', 'BLUEPEAK INTERNET'],
+    ['-10853', 'XCEL ENERGY'],
+  ] as const) {
+    for (let back = 3; back >= 1; back -= 1) {
+      const date = new Date();
+      date.setUTCDate(date.getUTCDate() - back * 30);
+      await api.post('/api/transactions', {
+        data: {
+          accountId,
+          amountCents,
+          description,
+          postedAt: `${date.toISOString().slice(0, 10)}T15:00:00Z`,
+        },
+      });
+    }
+  }
+
+  const listed = await api.get('/api/transactions?limit=100');
+  const body = (await listed.json()) as { transactions: { id: string }[] };
+  for (const transaction of body.transactions) {
+    await api.post(`/api/transactions/${transaction.id}/categorize`, {
+      data: { delegationId: home },
+    });
+  }
+
+  await signedIn.goto('/overview');
+  await openArrange(signedIn);
+  await signedIn.getByRole('button', { name: 'Add Needs a look' }).click();
+  await signedIn.getByRole('button', { name: 'Done' }).click();
+
+  await signedIn.getByRole('button', { name: 'All bills →' }).first().click();
+  const dialog = signedIn.getByRole('dialog');
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByText('BLUEPEAK INTERNET')).toBeVisible();
+
+  const rows = await dialog.evaluate((node) =>
+    Array.from(node.querySelectorAll('li')).map((row) =>
+      Array.from(row.children).map((cell) => {
+        const box = cell.getBoundingClientRect();
+        return Math.round(box.top + box.height / 2);
+      }),
+    ),
+  );
+
+  expect(rows.length).toBeGreaterThan(0);
+  for (const centres of rows) {
+    expect(centres.length).toBeGreaterThan(3);
+    // One line: within a pixel of each other, whatever the type sizes are.
+    expect(Math.max(...centres) - Math.min(...centres)).toBeLessThanOrEqual(1);
+  }
 });

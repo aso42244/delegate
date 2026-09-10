@@ -119,9 +119,19 @@ export function RankedBars({
     : '[grid-template-columns:minmax(0,6rem)_minmax(2.5rem,1fr)_max-content]';
 
   return (
-    // `min-h-0` so it can be shorter than its rows, and scroll rather than
-    // pushing the tile past the height somebody dragged it to.
-    <ul className="min-h-0 list-none overflow-y-auto p-0">
+    /*
+     * One grid for the whole list, not one per row.
+     *
+     * Every row used to carry its own `grid`, so `max-content` on the figure was
+     * resolved against *that row's* figure — and the columns before it landed
+     * wherever that left them. A list of percentages was ragged by up to eight
+     * pixels down the column, which is the whole reason the share is in a column
+     * of its own.
+     *
+     * `min-h-0` so it can be shorter than its rows, and scroll rather than
+     * pushing the tile past the height somebody dragged it to.
+     */
+    <ul className={`grid min-h-0 list-none content-start overflow-y-auto p-0 gap-x-2 ${columns}`}>
       {rows.map((row) => {
         const negative = row.valueCents < 0n;
         const width = widthOf(row.valueCents, peak);
@@ -151,7 +161,13 @@ export function RankedBars({
            * that is a column definition rather than whatever each name happens
            * to be wide.
            */
-          <li key={row.key} className={`row-cell grid items-center gap-2 ${columns}`}>
+          <li
+            key={row.key}
+            /* `subgrid` rather than `display: contents`, which drops the list
+               semantics a screen reader needs. The row takes the list's tracks
+               instead of computing its own. */
+            className="row-cell col-span-full grid grid-cols-subgrid items-center gap-x-2"
+          >
             <span className="truncate text-quiet text-ink" title={row.name}>
               {row.name}
             </span>
