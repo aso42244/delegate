@@ -6,6 +6,10 @@ phase (`v0.1.0-phase1`, and so on).
 
 ## [Unreleased]
 
+Nothing yet.
+
+## [0.68.1] — 2026-09-09
+
 ### Fixed
 
 - **The cashflow chart keeps its width when its row changes height.** Dragging
