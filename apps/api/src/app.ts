@@ -7,7 +7,6 @@ import { auth } from './plugins/auth.js';
 import { configPlugin } from './plugins/config.js';
 import { schedulesPlugin } from './plugins/schedules.js';
 import { csrf } from './plugins/csrf.js';
-import { demo } from './plugins/demo.js';
 import { remoteAccess } from './plugins/remote-access.js';
 import { security } from './plugins/security.js';
 import { spa } from './plugins/spa.js';
@@ -140,15 +139,6 @@ export async function buildApp(config: AppConfig = getConfig()): Promise<Fastify
   // their per-route limits, and the headers apply to every response including
   // the SPA fallback.
   await app.register(security, { config });
-  /*
-   * Before everything that could act on a request.
-   *
-   * A demo instance is read-only, and refusing a write here rather than in a
-   * route is what makes that one rule instead of a promise repeated in every
-   * handler. Ahead of CSRF and the session too: a write that will be refused
-   * whatever it carries should not cost a token check or a session lookup.
-   */
-  await app.register(demo);
   // Ahead of the session plugin: a forged request should be refused before it
   // costs a session lookup.
   await app.register(csrf, { config });

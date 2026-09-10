@@ -63,41 +63,6 @@ const environmentSchema = z
     SESSION_COOKIE_SECURE: booleanFromString.default(false),
 
     /**
-     * The name of the session cookie.
-     *
-     * Configurable for exactly one reason: a demo instance served from a path on
-     * the same host as a real one. Cookies are scoped by host and path, not by
-     * port or by process, so two Delegates on one domain both writing
-     * `budget_session` produce two cookies the browser sends together — and the
-     * one that arrives first belongs to the wrong instance, signed with a secret
-     * this one cannot verify. A distinct name is what keeps them apart.
-     *
-     * Never change it on an existing deployment for any other reason: every
-     * signed-in browser is holding the old one, and renaming it signs everybody
-     * out.
-     */
-    SESSION_COOKIE_NAME: z
-      .string()
-      .regex(/^[A-Za-z0-9_-]+$/, 'SESSION_COOKIE_NAME may hold letters, digits, _ and - only.')
-      .max(64)
-      .default('budget_session'),
-
-    /**
-     * Whether this instance is a demo: invented data, and read-only.
-     *
-     * **It is a wall, not a mode.** Every request that is not a read is refused
-     * before it reaches a route, so "read-only" is one rule somebody can audit
-     * rather than a promise spread across every button in the interface. The
-     * interface hides what it cannot do, but the interface is not what enforces
-     * it.
-     *
-     * Off unless a deployment says otherwise, and the real container never sets
-     * it. A test asserts that the default is off, because the failure mode of
-     * getting this wrong is a household unable to touch its own budget.
-     */
-    DELEGATE_DEMO: booleanFromString.default(false),
-
-    /**
      * The key protecting secrets at rest, kept apart from the one that signs
      * sessions.
      *

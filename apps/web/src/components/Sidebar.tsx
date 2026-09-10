@@ -5,6 +5,7 @@ import { authApi, syncApi } from '../api/client.js';
 import { useSession } from '../auth/SessionProvider.jsx';
 import { Button } from './ui.jsx';
 import { useIsDemo } from '../useDemo.js';
+import { pathFor } from '../demo/is-demo.js';
 
 /**
  * The left sidebar: 232px, collapsible to a 64px icon rail.
@@ -167,6 +168,14 @@ export const PAGES = [
   { to: '/settings', label: 'Settings', icon: 'settings', end: false },
 ] as const satisfies readonly { to: string; label: string; icon: PageIcon; end: boolean }[];
 
+/**
+ * The pages the demo has data for.
+ *
+ * Only these: a link to a page whose figures are not invented is a link to an
+ * empty screen, which looks like a fault rather than a boundary.
+ */
+const DEMO_PAGES = new Set(['/overview', '/budget']);
+
 function useCollapsed(): [boolean, (value: boolean) => void] {
   const [collapsed, setCollapsed] = useState(() => {
     if (typeof window === 'undefined') return false;
@@ -198,8 +207,19 @@ export function Sidebar({ appName }: { appName: string }): ReactNode {
    * live, and neither is worth showing to a room. Sync is a write, which the
    * server refuses anyway — this is about not offering it.
    */
+  /*
+   * On the demo, the navigation stays on the demo.
+   *
+   * Every link is rewritten under `/demo`, because the first press of "Budget"
+   * otherwise lands somebody in their own money halfway through showing
+   * somebody else's. Settings goes entirely: it is where the bank-feed
+   * credential lives and there is nothing there worth showing to a room.
+   */
   const demo = useIsDemo();
-  const pages = demo ? PAGES.filter((page) => page.to !== '/settings') : PAGES;
+  const pages = (demo ? PAGES.filter((page) => DEMO_PAGES.has(page.to)) : PAGES).map((page) => ({
+    ...page,
+    to: pathFor(page.to, demo),
+  }));
 
   const [collapsed, setCollapsed] = useCollapsed();
   const { user } = useSession();

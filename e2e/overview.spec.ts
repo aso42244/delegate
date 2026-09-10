@@ -954,6 +954,16 @@ test('a day on the outflow band opens what was spent that day', async ({ signedI
    * shape of the month depends on their cells — so the only enabled one is the
    * day this charge landed.
    */
+  /*
+   * Enabled even though the household's zone may have filed it on a date the
+   * browser has not reached yet.
+   *
+   * The API cuts its day keys in the household's zone and the interface compares
+   * them against the browser's — two clocks that can disagree by a day. A charge
+   * posted this evening landed on a cell drawn as "not yet" and disabled, so the
+   * day somebody most wants to open was the one they could not. A day with money
+   * on it has happened, whatever the calendar here says.
+   */
   const day = tile.getByRole('button', { name: /\$42\.10/ });
   await expect(day).toBeEnabled();
   await day.click();

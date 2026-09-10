@@ -6,7 +6,32 @@ phase (`v0.1.0-phase1`, and so on).
 
 ## [Unreleased]
 
-Nothing yet.
+### Added
+
+- **A demo, at `/demo`.** The same pages drawing invented numbers, behind the
+  same sign-in as everything else — because it _is_ the application, and the
+  only thing that differs is where the figures come from. Eighteen months of
+  history, dated backwards from today, so it is current whenever it is shown.
+
+  No database, no second container, no configuration. The whole application
+  makes exactly one `fetch`, and on a demo page that one answers from a fixture
+  computed in the browser.
+
+### Fixed
+
+- **A day with money on it is never drawn as one that has not happened.** The
+  API cuts its day keys in the household's zone and the interface compared them
+  against the browser's — two clocks that can disagree by a day. A charge posted
+  in the evening could land on a cell drawn as "not yet" and disabled, so the day
+  somebody most wants to open was the one they could not.
+
+### Removed
+
+- **The demo's second instance**, added earlier the same day and never
+  deployed. It was a second container with its own database, its own migrations,
+  a seed, a Caddy gate and four environment variables — the right shape for a
+  demo the public can reach, and the wrong one for a demo behind the household's
+  own sign-in. That is a page, and a page needs data rather than a deployment.
 
 ## [0.67.0] — 2026-09-09
 

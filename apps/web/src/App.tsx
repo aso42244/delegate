@@ -1,6 +1,7 @@
 import { useState, type ReactNode } from 'react';
 import { Navigate, Outlet, Route, Routes, useLocation } from 'react-router-dom';
-import { useAppInfo } from './useDemo.js';
+import { useQuery } from '@tanstack/react-query';
+import { api } from './api/client.js';
 import { DEFAULT_LANDING_PAGE, LANDING_PATH } from '@budget/shared';
 import { useSession } from './auth/SessionProvider.jsx';
 import { TabBar } from './components/TabBar.jsx';
@@ -31,7 +32,12 @@ import { SignIn } from './pages/SignIn.jsx';
  */
 
 function useAppName(): string {
-  return useAppInfo().appName;
+  const query = useQuery({
+    queryKey: ['app-name'],
+    queryFn: () => api.get<{ appName: string }>('/api/app'),
+    staleTime: Infinity,
+  });
+  return query.data?.appName ?? 'Delegate';
 }
 
 /**
@@ -181,6 +187,21 @@ export function App(): ReactNode {
               bookmark pointed at still exists, in better form. */}
           <Route path="insights" element={<Navigate to="/overview" replace />} />
           <Route path="overview" element={<Overview />} />
+
+          {/*
+            The demo: the same pages, drawing invented numbers.
+            
+            Not a separate build and not a separate deployment — a route. It is
+            behind the same sign-in as everything else because it *is* everything
+            else, and the only thing that differs is where the figures come from:
+            see `demo/responses.ts`, which answers the one fetch this application
+            makes.
+          */}
+          <Route path="demo">
+            <Route index element={<Navigate to="/demo/overview" replace />} />
+            <Route path="overview" element={<Overview />} />
+            <Route path="budget" element={<MainBudget />} />
+          </Route>
           <Route path="settings" element={<SettingsLayout />}>
             <Route index element={<SettingsLanding />} />
             <Route path="sync" element={<SyncSection />} />
