@@ -10,6 +10,7 @@ import { useMemo, useRef, useState, type ReactNode } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { useMediaQuery } from '../useMediaQuery.js';
 import { useIsDemo } from '../useDemo.js';
+import { TileRowHeight, useTileRoom } from '../components/tile-height.js';
 import {
   overviewApi,
   type BalanceHistoryDto,
@@ -394,7 +395,9 @@ function TileShell({
             : 'flex min-h-0 flex-1 flex-col overflow-hidden'
         }
       >
-        {children}
+        {/* The row's height, passed down as the number it is. Nothing here
+            measures the page — see `tile-height.ts`. */}
+        <TileRowHeight.Provider value={height ?? undefined}>{children}</TileRowHeight.Provider>
       </div>
 
       {/*
@@ -1230,6 +1233,14 @@ function CashflowTile({
 }: {
   readonly cashflow: NonNullable<OverviewDataDto['cashflow']>;
 }): ReactNode {
+  /*
+   * How much room the chart has, from the shell that can honestly say.
+   *
+   * Taken here rather than beside the chart itself, because the chart is drawn
+   * in one branch of a conditional and a hook cannot be.
+   */
+  const room = useTileRoom();
+
   const uncategorizedIn = BigInt(cashflow.uncategorizedInCents);
   const uncategorizedOut = BigInt(cashflow.uncategorizedOutCents);
   const surplus = BigInt(cashflow.surplusCents);
@@ -1292,7 +1303,12 @@ function CashflowTile({
       {cashflow.cycleMissing ? (
         <EmptyState>No cycle has been run yet.</EmptyState>
       ) : (
-        <Sankey inflows={inflows} outflows={outflows} emptyMessage="Nothing came in yet." />
+        <Sankey
+          inflows={inflows}
+          outflows={outflows}
+          emptyMessage="Nothing came in yet."
+          heightPx={room}
+        />
       )}
     </div>
   );

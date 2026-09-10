@@ -6,7 +6,19 @@ phase (`v0.1.0-phase1`, and so on).
 
 ## [Unreleased]
 
-Nothing yet.
+### Fixed
+
+- **The cashflow chart keeps its width when its row changes height.** Dragging
+  the row shorter used to shrink the whole drawing — a postage stamp between two
+  bands of white, in a tile that was exactly as wide as before. It is now laid
+  out _to_ the height it is given rather than scaled to fit, so the type stays
+  one size and a shorter row simply gives the flow less room.
+
+  Two attempts at that read the height back off the page, and both fed back: a
+  taller chart makes a taller box makes a taller chart. The height is a stored
+  number now — the one the household dragged — and nothing about the drawing can
+  change it. An end-to-end test drags the row and holds both facts at once: the
+  width identical, the height smaller.
 
 ## [0.68.0] — 2026-09-09
 

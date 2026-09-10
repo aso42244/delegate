@@ -1,5 +1,5 @@
 import { formatCents } from '@budget/shared';
-import type { ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 
 /**
  * Where the money came from and where it went.
@@ -87,13 +87,47 @@ function share(amountCents: bigint, total: bigint): string {
 }
 
 const WIDTH = 1000;
-/** Pixels of bar for the whole flow. One scale, both sides. */
+const TOP = 24;
+
+/**
+ * User units of bar for the whole flow, when nothing constrains the height.
+ *
+ * One scale, both sides. This is the *default*: given a definite height to draw
+ * into, the chart lays itself out to fill it rather than being scaled to fit —
+ * see `barsFor`.
+ */
 const BARS = 360;
+
+/**
+ * Below this the labels sit on top of one another whatever is done with them.
+ * A row dragged shorter than this scrolls instead.
+ */
+const MIN_BARS = 180;
+
+/**
+ * How much bar to draw, for a box of a given shape.
+ *
+ * The chart is laid out **to** the height rather than scaled to it. Scaling is
+ * what `preserveAspectRatio` does and it moves both dimensions together, so
+ * dragging a row shorter also made the drawing narrower — a postage stamp
+ * between two bands of white, while the tile it sits in stayed the same width.
+ *
+ * Because the viewBox is a fixed 1000 units wide and the element is always the
+ * full width of its tile, one user unit is a constant number of pixels. So the
+ * type never changes size, the ribbons keep their proportions, and what a
+ * shorter row actually does is give the flow less room — which is what somebody
+ * dragging it is asking for.
+ */
+function barsFor(width: number, height: number | null): number {
+  if (width === 0 || height === null || height === 0) return BARS;
+  // The height in the same units the viewBox measures width in.
+  const inUnits = (height * WIDTH) / width;
+  return Math.max(MIN_BARS, Math.round(inUnits - TOP * 2));
+}
 const BAR_W = 12;
 const GAP = 8;
 /** The least vertical room a node needs for its label not to touch the next. */
 const MIN_SLOT = 22;
-const TOP = 24;
 
 interface Laid extends FlowNode {
   readonly y: number;
@@ -169,26 +203,70 @@ export function Sankey({
   inflows,
   outflows,
   emptyMessage,
+  heightPx,
 }: {
   readonly inflows: readonly FlowNode[];
   readonly outflows: readonly FlowNode[];
   readonly emptyMessage: string;
+  /**
+   * How tall to draw, in pixels — the height of the row this sits in.
+   *
+   * Absent where nothing constrains it, and then the chart takes its own
+   * default. **Given rather than measured**, and that is the point: the height
+   * of the box this is drawn into depends on what is drawn into it, so reading
+   * it back and laying out to it is a loop. It ran to 3,883px.
+   */
+  readonly heightPx?: number | undefined;
 }): ReactNode {
+  /*
+   * How wide the chart is, measured. How tall it should be, given.
+   *
+   * **Only the width is observed**, and that asymmetry is the whole of this.
+   * The element is the full width of its tile whatever is drawn inside it, so
+   * measuring the width is safe. The height is not: it comes from the drawing,
+   * so measuring it and then laying out to it feeds back — a taller chart makes
+   * a taller box makes a taller chart.
+   *
+   * The height comes from `heightPx` instead, from the row that actually knows,
+   * because somebody dragged it.
+   *
+   * 0 until the first measurement, and `barsFor` falls back to the default for
+   * that one frame.
+   */
+  const box = useRef<HTMLDivElement>(null);
+  const [width, setWidth] = useState(0);
+
+  useEffect(() => {
+    const element = box.current;
+    if (!element) return undefined;
+
+    const observer = new ResizeObserver(([entry]) => {
+      if (!entry) return;
+      // Rounded, so a sub-pixel reflow does not redraw the whole chart.
+      const measured = Math.round(entry.contentRect.width);
+      setWidth((was) => (was === measured ? was : measured));
+    });
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, []);
+
   const total = inflows.reduce((sum, node) => sum + node.amountCents, 0n);
   if (total <= 0n) {
     return <p className="text-quiet text-muted">{emptyMessage}</p>;
   }
 
+  const bars = barsFor(width, heightPx ?? null);
+
   const left = rollUp(inflows, total, 0.01);
   const right = rollUp(outflows, total, 0.01);
 
   // One scale for both sides, so the middle bar is exactly each column's sum.
-  const perCent = BARS / Number(total);
+  const perCent = bars / Number(total);
 
   const leftStack = stack(left, perCent, () => '');
   const rightStack = stack(right, perCent, (index) => SPENDING_TOKENS[index % 8] ?? '');
 
-  const tallest = Math.max(leftStack.height, rightStack.height, BARS);
+  const tallest = Math.max(leftStack.height, rightStack.height, bars);
   const height = tallest + TOP * 2;
 
   const leftX = 8;
@@ -196,7 +274,7 @@ export function Sankey({
   const rightX = WIDTH - 8 - BAR_W;
   const leftTop = TOP + (tallest - leftStack.height) / 2;
   const rightTop = TOP + (tallest - rightStack.height) / 2;
-  const midTop = TOP + (tallest - BARS) / 2;
+  const midTop = TOP + (tallest - bars) / 2;
 
   const colorOf = (node: Laid): string =>
     node.tone === 'spending' ? node.color || TONE.spending : TONE[node.tone];
@@ -235,7 +313,7 @@ export function Sankey({
      * minimum size is its content, which would keep the chart at full height and
      * push it out of a row somebody had just dragged shorter.
      */
-    <div className="h-full min-h-0 w-full overflow-auto">
+    <div ref={box} className="h-full min-h-0 w-full overflow-auto">
       <svg
         viewBox={`0 0 ${WIDTH} ${height}`}
         /*
@@ -253,31 +331,20 @@ export function Sankey({
         role="img"
         aria-label={`Cashflow: ${formatCents(total)} from ${left.length} sources to ${right.length} destinations`}
         /*
-         * `height: 100%` with a pixel cap, which covers both cases with one
-         * rule: in a row whose height was dragged the chain is definite and this
-         * fills it, and where nothing constrains it the percentage goes
-         * indefinite, the drawing takes its intrinsic height, and the cap brings
-         * it back to 520.
+         * Full width, always; the height is whatever the layout came to.
          *
-         * `min(520px, 100%)` was the first attempt and silently lost the cap —
-         * a `min()` containing an indefinite percentage is itself indefinite,
-         * so an unconstrained chart went back to 780px.
-         */
-        /*
-         * A floor as well as a cap.
+         * Nothing here scales. The viewBox is a fixed 1000 units wide and the
+         * element is always the full width of its tile, so one user unit is a
+         * constant number of pixels — and `barsFor` has already decided how much
+         * chart fits the height available.
          *
-         * `meet` scales both dimensions together, so a short row shrank the
-         * whole drawing — width included — leaving a postage stamp between two
-         * bands of white. Below about 280px the labels stop being readable, and
-         * a chart nobody can read in a row somebody chose is worse than one that
-         * scrolls: the container gives it room and the row scrolls instead.
+         * Setting a height here as well would hand the drawing back to
+         * `preserveAspectRatio`, which moves both dimensions together: that is
+         * the whole reason dragging a row shorter used to make the chart
+         * narrower, a postage stamp between two bands of white while the tile it
+         * sits in stayed exactly as wide as before.
          */
-        style={{
-          height: '100%',
-          minHeight: 280,
-          maxHeight: 520,
-          fontVariantNumeric: 'tabular-nums',
-        }}
+        style={{ fontVariantNumeric: 'tabular-nums' }}
       >
         {/* Ribbons first, so labels sit over them rather than under. */}
         {ribbons}
@@ -308,7 +375,7 @@ export function Sankey({
           x={midX}
           y={midTop}
           width={BAR_W}
-          height={BARS}
+          height={bars}
           rx="2"
           style={{ fill: 'var(--color-accent)' }}
         />
