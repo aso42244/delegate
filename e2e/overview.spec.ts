@@ -1186,3 +1186,51 @@ test('the arrange controls are hidden until asked for', async ({ signedIn }) => 
   ).toHaveCount(0);
   await expect(signedIn.getByRole('heading', { name: 'Spending by grouping' })).toBeVisible();
 });
+
+/*
+ * A row dragged shorter gives the chart less room. It does not make it narrower.
+ *
+ * The chart used to be scaled to fit, which `preserveAspectRatio` does by moving
+ * both dimensions together: a shorter row produced a postage stamp between two
+ * bands of white, inside a tile that was exactly as wide as before. It is now
+ * laid out *to* the height instead, so the type stays one size and the flow gets
+ * the room it was given.
+ *
+ * Two later attempts at that read the height back off the page — first from the
+ * chart's own container, then from the tile body around it — and both fed back:
+ * a taller chart makes a taller box makes a taller chart, past 3,800px from a
+ * row somebody had just dragged shorter. The height is a stored number now, and
+ * this test is what says so.
+ *
+ * On the demo route because it has a flow to draw, and because a pointer drag
+ * previews live without needing the layout saved.
+ */
+test('a shorter row shortens the cashflow chart without narrowing it', async ({ signedIn }) => {
+  await signedIn.setViewportSize({ width: 1680, height: 1000 });
+  await signedIn.goto('/demo/overview');
+
+  const svg = signedIn.locator('svg[role="img"]').first();
+  await expect(svg).toBeVisible();
+
+  const box = async (): Promise<{ w: number; h: number }> => {
+    const at = (await svg.boundingBox())!;
+    return { w: Math.round(at.width), h: Math.round(at.height) };
+  };
+
+  const before = await box();
+
+  const handle = signedIn.getByRole('separator', { name: /Height of the row holding Cashflow/ });
+  const grip = (await handle.boundingBox())!;
+  await signedIn.mouse.move(grip.x + grip.width / 2, grip.y + grip.height / 2);
+  await signedIn.mouse.down();
+  await signedIn.mouse.move(grip.x + grip.width / 2, grip.y - 300, { steps: 12 });
+  await signedIn.waitForTimeout(300);
+
+  const after = await box();
+  await signedIn.mouse.up();
+
+  expect(after.w).toBe(before.w);
+  expect(after.h).toBeLessThan(before.h);
+  // And not collapsed to nothing: below this the labels sit on one another.
+  expect(after.h).toBeGreaterThan(150);
+});
