@@ -215,7 +215,19 @@ export function RankedBars({
             */}
             {hasAside && <span className="money text-micro text-muted">{row.aside ?? ''}</span>}
 
-            <span className="flex shrink-0 items-baseline gap-2">
+            {/*
+              `justify-end`, because the column is now wider than most of what
+              goes in it.
+
+              While every row had its own grid, the figure's column was exactly
+              as wide as that row's figure and there was nothing to align within.
+              Shared across the list it is as wide as the *longest* figure, and a
+              flex row lays its children out from the start — so `$153.00` sat
+              against the left edge of a column sized for `$2,201.00`, with the
+              `text-align: right` on the figure itself doing nothing, the span
+              being only as wide as its own text.
+            */}
+            <span className="flex shrink-0 items-baseline justify-end gap-2">
               {row.compare !== undefined && (
                 <span className="money text-micro text-muted">
                   {row.compare.valueCents === null ? '—' : formatCents(row.compare.valueCents)}

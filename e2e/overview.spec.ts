@@ -1276,28 +1276,48 @@ test('the cashflow chart fits its tile at every height', async ({ signedIn }) =>
  * span assertions above give: a test that only looks for words passes just as
  * happily while the layout is wrong.
  */
-test('the percentages in a tile share one right edge', async ({ signedIn }) => {
+test('the percentages and the figures in a tile each share one right edge', async ({
+  signedIn,
+}) => {
   await signedIn.setViewportSize({ width: 1680, height: 1000 });
   await signedIn.goto('/demo/overview');
   await expect(signedIn.getByRole('heading', { name: 'Allocation', level: 2 })).toBeVisible();
 
   const edges = await signedIn.evaluate(() => {
-    const found: Record<string, number[]> = {};
-    for (const cell of Array.from(document.querySelectorAll('li > span.money'))) {
-      if (!/^\d{1,3}%$/.test((cell.textContent ?? '').trim())) continue;
-      const tile = cell.closest('section[data-tile]')?.querySelector('h2')?.textContent?.trim();
+    const shares: Record<string, number[]> = {};
+    const figures: Record<string, number[]> = {};
+
+    for (const row of Array.from(document.querySelectorAll('li'))) {
+      const tile = row.closest('section[data-tile]')?.querySelector('h2')?.textContent?.trim();
       if (tile === undefined) continue;
-      found[tile] = [...(found[tile] ?? []), Math.round(cell.getBoundingClientRect().right)];
+
+      for (const cell of Array.from(row.querySelectorAll(':scope > span.money'))) {
+        if (!/^\d{1,3}%$/.test((cell.textContent ?? '').trim())) continue;
+        shares[tile] = [...(shares[tile] ?? []), Math.round(cell.getBoundingClientRect().right)];
+      }
+
+      // The figure is the last cell in the row, and it is the one that used to
+      // sit against the left of a column sized for a longer number.
+      const figure = row.querySelector(':scope > span:last-child .money');
+      if (figure !== null) {
+        figures[tile] = [
+          ...(figures[tile] ?? []),
+          Math.round(figure.getBoundingClientRect().right),
+        ];
+      }
     }
-    return found;
+    return { shares, figures };
   });
 
-  // The demo draws three of these, and a run that found none would otherwise
+  // The demo draws several of these, and a run that found none would otherwise
   // pass by having nothing to check.
-  expect(Object.keys(edges).length).toBeGreaterThanOrEqual(2);
-  for (const [tile, rights] of Object.entries(edges)) {
+  expect(Object.keys(edges.shares).length).toBeGreaterThanOrEqual(2);
+  for (const [tile, rights] of Object.entries(edges.shares)) {
     expect(rights.length, `${tile} has percentages`).toBeGreaterThan(1);
     expect([...new Set(rights)], `${tile} percentages share an edge`).toHaveLength(1);
+  }
+  for (const [tile, rights] of Object.entries(edges.figures)) {
+    expect([...new Set(rights)], `${tile} figures share an edge`).toHaveLength(1);
   }
 });
 
