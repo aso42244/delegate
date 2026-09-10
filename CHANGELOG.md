@@ -6,6 +6,10 @@ phase (`v0.1.0-phase1`, and so on).
 
 ## [Unreleased]
 
+Nothing yet.
+
+## [0.68.3] — 2026-09-09
+
 ### Fixed
 
 - **Figures sit on the right of their column.** Sharing one grid across a list
