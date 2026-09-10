@@ -1,5 +1,6 @@
 import { formatCents } from '@budget/shared';
 import type { ReactNode } from 'react';
+import { Tag, type TagTone } from './Tag.js';
 import type {
   BillAttentionDto,
   BillStatusDto,
@@ -242,25 +243,18 @@ function MonthRow({
  * Words as well as colour — `design.md` §9, and the same map the Bills page
  * uses. A chip says what a state is; the colour is how fast it is read.
  */
-const BILL_CHIP: Record<BillStatusDto, { readonly text: string; readonly tone: string }> = {
-  overdue: { text: 'Overdue', tone: 'bg-negative-soft text-negative' },
-  due: { text: 'Due now', tone: 'bg-accent-soft text-accent' },
+const BILL_CHIP: Record<BillStatusDto, { readonly text: string; readonly tone: TagTone }> = {
+  overdue: { text: 'Overdue', tone: 'negative' },
+  due: { text: 'Due now', tone: 'info' },
   // The money has gone and the bank has not finished with it.
-  arrived: { text: 'Paid', tone: 'bg-surface-2 text-positive' },
-  expected: { text: 'Expected', tone: 'bg-surface-2 text-muted' },
-  lapsed: { text: 'Stopped?', tone: 'bg-surface-2 text-muted' },
+  arrived: { text: 'Paid', tone: 'quiet' },
+  expected: { text: 'Expected', tone: 'quiet' },
+  lapsed: { text: 'Stopped?', tone: 'quiet' },
 };
 
 function BillChip({ status }: { readonly status: BillStatusDto }): ReactNode {
   const chip = BILL_CHIP[status];
-  return (
-    <span
-      className={`shrink-0 rounded-full px-[6px] text-micro font-semibold ${chip.tone}`}
-      style={{ lineHeight: '18px' }}
-    >
-      {chip.text}
-    </span>
-  );
+  return <Tag tone={chip.tone}>{chip.text}</Tag>;
 }
 
 /**

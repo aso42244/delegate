@@ -14,7 +14,6 @@ import { ApiError } from '../api/client.js';
 import { AccountRowMenu } from '../components/AccountRowMenu.jsx';
 import { useBudgetLayout } from '../budget-layout.js';
 import { PageHeader } from '../components/layout.jsx';
-import { BalanceReading } from '../components/BalanceReading.jsx';
 import { AbsorbDialog } from '../components/AbsorbDialog.jsx';
 import { BudgetSection } from '../components/BudgetSection.jsx';
 import { CheckRowMenu } from '../components/CheckRowMenu.jsx';
@@ -647,7 +646,6 @@ export function MainBudget(): ReactNode {
           line, because `min-w-0` lets it give up everything to the controls. */}
       <PageHeader
         title="Budget"
-        beside={<BalanceReading view={view.data} />}
         /*
          * Only the undo offer, and only while there is one.
          *

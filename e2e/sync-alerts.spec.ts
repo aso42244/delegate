@@ -51,7 +51,9 @@ test('a feed complaint reaches every page, and names the bank', async ({ signedI
  * than a bank wanting a fresh login — which is true, and is why it is red and
  * why it says so in words. None of that needed a row of the Budget page.
  */
-test('a failing sync is a red pill, and nothing sits above the page', async ({ signedIn }) => {
+test('a failing sync is a red tag in the sidebar, not a band above the page', async ({
+  signedIn,
+}) => {
   await makeSyncFailure('connection refused');
   await signedIn.reload();
 
@@ -62,11 +64,22 @@ test('a failing sync is a red pill, and nothing sits above the page', async ({ s
     'Balances and transactions are not up to date',
   );
 
-  // The header, not a band above it: the pill sits on the same line as the title.
+  /*
+   * In the sidebar, and nothing above the page.
+   *
+   * The original assertion was that the pill sat on the title's line, which was
+   * the point when the alternative was a full-width band pushing the budget down
+   * the screen. The band is still the thing being ruled out; the pill has simply
+   * moved to the foot of the navigation, so the assertion is that it is inside
+   * the sidebar and that the heading is still at the top of the page.
+   */
+  const nav = await signedIn.getByRole('navigation', { name: 'Main' }).boundingBox();
   const heading = await signedIn.getByRole('heading', { name: 'Budget' }).boundingBox();
   const box = await pill.boundingBox();
-  expect(box!.y).toBeGreaterThan(heading!.y - heading!.height);
-  expect(box!.y).toBeLessThan(heading!.y + heading!.height);
+  expect(box!.x).toBeGreaterThanOrEqual(nav!.x);
+  expect(box!.x + box!.width).toBeLessThanOrEqual(nav!.x + nav!.width);
+  // Nothing has been inserted above the title.
+  expect(heading!.y).toBeLessThan(120);
 
   await pill.click();
   await expect(signedIn).toHaveURL(/\/settings\/sync$/);
@@ -87,4 +100,46 @@ test('no notification offers a dismissal', async ({ signedIn }) => {
 
   await expect(signedIn.getByRole('link', { name: 'Sync failing' })).toBeVisible();
   await expect(signedIn.getByRole('button', { name: /^Dismiss:/ })).toHaveCount(0);
+});
+
+/**
+ * The reading is the last row, and nothing widens the sidebar.
+ *
+ * The budget's own reading is always the bottom of the stack, so it is in the
+ * same place whatever else the application has to say today, and a long alert
+ * gives way rather than pushing the navigation wider.
+ *
+ * The *ordering* between severities is proved in `Alerts.test.ts` instead. It
+ * cannot be staged here: the API reports the worst sync condition rather than
+ * all of them, and it suppresses "not reporting" while a sync is failing
+ * outright — both right, and between them there is no way to have two severities
+ * on screen at once.
+ */
+test('the budget reading is the last alert, and none of them widen the sidebar', async ({
+  signedIn,
+}) => {
+  await makeSyncFailure('connection refused');
+  await signedIn.reload();
+
+  const nav = signedIn.getByRole('navigation', { name: 'Main' });
+  await expect(nav.getByRole('link', { name: 'Sync failing' })).toBeVisible();
+
+  const stack = await nav.evaluate((node) =>
+    Array.from(node.querySelectorAll('[aria-describedby]')).map((el) => {
+      const box = el.getBoundingClientRect();
+      return { text: (el.textContent ?? '').trim(), top: Math.round(box.top), right: box.right };
+    }),
+  );
+
+  // Rendered order is top to bottom, so the array order is the reading order.
+  const tops = stack.map((entry) => entry.top);
+  expect([...tops].sort((a, b) => a - b)).toEqual(tops);
+
+  expect(stack.length).toBeGreaterThan(1);
+  expect(stack[stack.length - 1]!.text).toMatch(/Balanced|To delegate|Over-delegated/);
+
+  const box = (await nav.boundingBox())!;
+  for (const entry of stack) {
+    expect(entry.right).toBeLessThanOrEqual(box.x + box.width);
+  }
 });

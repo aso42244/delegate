@@ -1,7 +1,7 @@
 import { classifyIdentity, formatCents, formatIdentityLabel } from '@budget/shared';
 import { useId, type ReactNode } from 'react';
 import type { BudgetViewDto } from '../api/budget.js';
-import { HeaderPill, type PillTone } from './HeaderPill.jsx';
+import { AlertTag, type PillTone } from './AlertTag.jsx';
 
 /**
  * The bottom-line reading, beside the page title.
@@ -22,9 +22,9 @@ import { HeaderPill, type PillTone } from './HeaderPill.jsx';
  * has to be read. Yellow and red are for over-delegation, the direction that is
  * genuinely wrong. See docs/design.md, decision 3.
  *
- * The pill itself is `HeaderPill`, shared with the notifications that sit
- * beside it. This file decides what the reading says and how alarmed to be; it
- * does not decide what a pill looks like, because there is now more than one.
+ * The face itself is `AlertTag`, shared with the notifications stacked above
+ * it. This file decides what the reading says and how alarmed to be; it does not
+ * decide what a tag looks like, because every tag in the application is one.
  */
 
 export function BalanceReading({ view }: { view: BudgetViewDto }): ReactNode {
@@ -83,5 +83,5 @@ export function BalanceReading({ view }: { view: BudgetViewDto }): ReactNode {
     </>
   );
 
-  return <HeaderPill tone={tone} label={message} detail={working} detailId={workingId} />;
+  return <AlertTag tone={tone} label={message} detail={working} detailId={workingId} />;
 }
