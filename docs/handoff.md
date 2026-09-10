@@ -313,11 +313,13 @@ a test until it was written to be.
   must stay reachable from anywhere in the body. **Nothing inside a dialog
   scrolls itself**; one scroll container, and an inner cap in `vh` is a cap
   against the viewport the keyboard just invalidated
-- **Every notification is a pill in the page header**
+- **Every notification is a tag at the foot of the sidebar**
   ([ADR 039](decisions/039-a-bar-is-for-what-costs-data.md),
-  [ADR 040](decisions/040-every-notification-is-a-pill.md)). There is no banner
-  and nothing renders above the page — `NotificationPills` is rendered by
-  `PageHeader`, so they reach every screen. Two or three words on the face
+  [ADR 040](decisions/040-every-notification-is-a-pill.md),
+  [ADR 059](decisions/059-one-tag.md)). There is no banner and nothing renders
+  above the page — `Alerts` is rendered by `Sidebar`, above the sync button, most
+  urgent lowest and the budget's own reading always last. A phone has no sidebar,
+  so below `sm` they fall back to `PageHeader`. Two or three words on the face
   (`pill` on the DTO), the whole message on hover or focus, and a press goes
   where the condition is dealt with. **Red is a pill too**: severity is carried
   by the colour and by the words, the way every other state here carries it, and

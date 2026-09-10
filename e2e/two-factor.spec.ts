@@ -222,7 +222,7 @@ test('the setup key is folded away until asked for, then offered to be copied', 
 
   await page.context().grantPermissions(['clipboard-read', 'clipboard-write']);
   await page.getByRole('button', { name: 'Copy the setup key' }).click();
-  await expect(page.getByRole('status')).toContainText('Copied.');
+  await expect(page.getByRole('main').getByRole('status')).toContainText('Copied.');
 
   // What lands on the clipboard is the key without the spaces. A password
   // manager given "ABCD EFGH" may keep the space, and a second factor producing
@@ -264,7 +264,9 @@ test('the copy button still says something useful where there is no clipboard AP
 
   // Either it copied by selection or it asked the reader to press the key. What
   // it must never do is nothing at all, silently.
-  await expect(page.getByRole('status')).toContainText(/Copied|press .* to copy it/);
+  await expect(page.getByRole('main').getByRole('status')).toContainText(
+    /Copied|press .* to copy it/,
+  );
 
   // Selected either way, so the keystroke it names actually works.
   const selected = await page.evaluate(() => window.getSelection()?.toString() ?? '');

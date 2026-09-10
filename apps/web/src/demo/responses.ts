@@ -1,3 +1,4 @@
+import type { BudgetRowDto, BudgetViewDto } from '../api/budget.js';
 import {
   GROUPINGS,
   LINES,
@@ -248,6 +249,17 @@ export function demoResponse(path: string): unknown {
 
   if (route === '/api/overview/layout') return layout();
 
+  /*
+   * The invented household's budget.
+   *
+   * This was written when the demo was built and never wired in, which meant a
+   * demo page asking for `/api/budget` fell through to the real one — the demo
+   * is signed in as a real user, so the request succeeds and answers with the
+   * owner's own figures. Nothing read it until the sidebar's reading moved out
+   * of the page header and started asking on every page.
+   */
+  if (route === '/api/budget') return demoBudget();
+
   if (route === '/api/overview' || route === '/api/overview/preview') {
     return {
       window: 'cycle',
@@ -266,53 +278,134 @@ export function demoResponse(path: string): unknown {
   return undefined;
 }
 
-/** What the Budget page reads. Exported so the page can be shown too. */
-export function demoBudget(): Record<string, unknown> {
+/**
+ * One budget row, complete.
+ *
+ * Every field of the DTO, defaulted, so a caller states only what makes this row
+ * different. The alternative is what was here before: a handful of fields that
+ * happened to be enough for whatever read them at the time.
+ */
+function row(
+  id: string,
+  name: string,
+  balance: number,
+  toDelegate: number | null,
+  groupingId: string | null,
+): BudgetRowDto {
+  return {
+    id,
+    name,
+    groupingId,
+    balanceCents: cents(balance),
+    amountToDelegateCents: toDelegate === null ? null : cents(toDelegate),
+    type: null,
+    isUtility: false,
+    notes: null,
+    source: 'manual',
+    managedAs: 'none',
+    inBudget: true,
+    inNetWorth: true,
+    needsReview: false,
+    balanceAsOf: null,
+    feedBalanceAsOf: null,
+    feedLastSeenAt: null,
+    stalenessIntervalDays: null,
+    standbyCents: '0',
+    kind: 'envelope',
+    checkNumber: null,
+    checkMemo: null,
+    checkIssuedAt: null,
+    target: null,
+  };
+}
+
+/**
+ * What the Budget page reads.
+ *
+ * **Typed as the DTO rather than as a bag**, which is the whole reason this is
+ * now correct: it was a `Record<string, unknown>` written against an older shape
+ * and nothing ever read it, so it drifted silently. The first thing that asked
+ * for it got `BigInt(undefined)` and took the page down. The compiler answers
+ * that question now.
+ */
+export function demoBudget(): BudgetViewDto {
   const held = balances();
   const delegated = [...held.values()].reduce((total, amount) => total + amount, 0);
   const waiting = waitingToDelegate();
 
   return {
     assets: {
+      section: 'assets',
       groupings: [
         {
           id: 'accounts',
           name: 'Accounts',
           color: null,
           collapsed: false,
-          rows: [
-            {
-              id: 'checking',
-              name: 'Everyday Checking',
-              kind: 'account',
-              balanceCents: cents(delegated + waiting),
-              amountToDelegateCents: null,
-            },
-          ],
+          position: 0,
+          systemKey: null,
+          balanceCents: cents(delegated + waiting),
+          amountToDelegateCents: null,
+          rows: [row('checking', 'Everyday Checking', delegated + waiting, null, 'accounts')],
         },
       ],
       ungrouped: [],
-      totalCents: cents(delegated + waiting),
+      totalBalanceCents: cents(delegated + waiting),
+      totalAmountToDelegateCents: null,
     },
-    debts: { groupings: [], ungrouped: [], totalCents: '0' },
-    delegations: {
-      groupings: GROUPINGS.map((group) => ({
-        id: group.key,
-        name: group.name,
-        color: group.color,
-        collapsed: false,
-        rows: LINES.filter((line) => line.grouping === group.key).map((line) => ({
-          id: line.id,
-          name: line.name,
-          kind: 'delegation',
-          balanceCents: cents(held.get(line.id) ?? 0),
-          amountToDelegateCents: cents(perCycleFor(line.id)),
-        })),
-      })),
+    debts: {
+      section: 'debts',
+      groupings: [],
       ungrouped: [],
-      totalCents: cents(delegated),
+      totalBalanceCents: '0',
+      totalAmountToDelegateCents: null,
     },
-    identity: { differenceCents: cents(waiting), balanced: waiting === 0 },
+    delegations: {
+      section: 'delegations',
+      groupings: GROUPINGS.map((group, index) => {
+        const lines = LINES.filter((line) => line.grouping === group.key);
+        const held7 = lines.reduce((total, line) => total + (held.get(line.id) ?? 0), 0);
+        const plan = lines.reduce((total, line) => total + perCycleFor(line.id), 0);
+        return {
+          id: group.key,
+          name: group.name,
+          position: index,
+          color: group.color,
+          collapsed: false,
+          systemKey: null,
+          balanceCents: cents(held7),
+          amountToDelegateCents: cents(plan),
+          rows: lines.map((line) =>
+            row(line.id, line.name, held.get(line.id) ?? 0, perCycleFor(line.id), group.key),
+          ),
+        };
+      }),
+      ungrouped: [],
+      totalBalanceCents: cents(delegated),
+      totalAmountToDelegateCents: cents(
+        LINES.reduce((total, line) => total + perCycleFor(line.id), 0),
+      ),
+    },
+    /*
+     * The whole identity, not two fields of it.
+     *
+     * This fixture was written against an older shape and never exercised —
+     * nothing read `/api/budget` on a demo page until the budget's reading moved
+     * into the sidebar, where it is asked for on every page. `BalanceReading`
+     * reads all seven of these, and `BigInt(undefined)` on the missing ones took
+     * the whole application down rather than the one tag.
+     */
+    identity: {
+      assetsCents: cents(delegated + waiting),
+      debtsCents: '0',
+      delegationsCents: cents(delegated),
+      pendingCents: '0',
+      differenceCents: cents(waiting),
+      // A cent, matching the server's default: the reading is "balanced" only
+      // when it is exactly so, and the demo is deliberately not.
+      toleranceCents: '1',
+      status: waiting === 0 ? 'balanced' : 'to_delegate',
+    },
     cycleStartedAt: iso(payDays()[payDays().length - 2] ?? daysAgo(19)),
   };
 }

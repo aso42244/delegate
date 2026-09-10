@@ -6,7 +6,33 @@ phase (`v0.1.0-phase1`, and so on).
 
 ## [Unreleased]
 
-Nothing yet.
+### Changed
+
+- **One tag.** Chips, state tags and alert pills were four families that had
+  drifted into four objects — three radii, three sizes, two colour recipes. They
+  are all `Tag` now: fully rounded, a soft fill and the same hue for the text,
+  **no border**, in one of two sizes. The border was the one that mattered; it
+  was the single thing making an alert read as a different species rather than a
+  louder one. See [ADR 059](docs/decisions/059-one-tag.md).
+
+- **The alerts moved to the foot of the sidebar.** They were beside the page
+  title, where they were not facts about the page they sat on and pushed its own
+  controls around as they came and went. They now stand above the sync button,
+  ordered so the most urgent is lowest and **the budget's own reading is always
+  last** — so the reading you look for is in the same place whatever else the
+  application has to say. A long alert gives way rather than widening the
+  sidebar.
+
+  A phone has no sidebar, so below `sm` they stay in the header where they were.
+  The budget's reading is now on every screen rather than only on Budget.
+
+### Fixed
+
+- **The demo no longer falls through to the real budget.** `/api/budget` had no
+  demo answer — the fixture was written and never wired in — so a demo page
+  asking for it got the household's own figures. Nothing had asked until the
+  reading moved into the sidebar. The fixture is typed as the DTO now, which is
+  what had let it drift.
 
 ## [0.68.3] — 2026-09-09
 

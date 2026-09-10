@@ -1,31 +1,24 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
+import { tagFace, type TagTone } from './Tag.js';
 
 /**
- * A reading in the page header, beside the title.
+ * Something the application needs to say about itself, as a tag.
  *
  * The budget's own reading — Balanced, To delegate, Over-delegated — was the
  * first of these, and the notifications became the rest. They were full-width
- * bars until now: a yellow one and a blue one stacked above the page pushed the
- * budget a third of the way down the screen to say two things that fit in six
- * words between them. The bar is reserved for what can cost the household its
- * data; everything else is this.
+ * bars, then pills beside the page title, and they now sit at the foot of the
+ * sidebar: a standing column of what is true, in the one place that is on every
+ * screen and is not competing with the page's own heading.
  *
- * One component, so they are the same object rather than two things that
- * resemble each other. 28px like every other control on a row, its detail one
- * hover or one focus away.
+ * The face is `Tag`, the same object as every chip and state tag in the
+ * application. It used to carry a 1px border that nothing else had, which was
+ * the single thing making these read as a different species; colour carries it
+ * now, as it does everywhere else. What is still particular to this one is the
+ * *detail* — the whole sentence, one hover or one focus away.
  */
 
-export type PillTone = 'info' | 'positive' | 'confirm' | 'warning' | 'danger';
-
-const TONES: Record<PillTone, string> = {
-  info: 'border-accent bg-accent-soft text-accent',
-  positive: 'border-positive bg-positive-soft text-positive',
-  // Purple: worked out, not yet acted on, waiting on a person.
-  confirm: 'border-confirm-line bg-confirm-soft text-confirm',
-  warning: 'border-warning-line bg-warning-soft text-warning',
-  danger: 'border-danger-line bg-danger-soft text-danger',
-};
+export type PillTone = Extract<TagTone, 'info' | 'positive' | 'confirm' | 'warning' | 'danger'>;
 
 /**
  * How wide the detail is allowed to be.
@@ -103,7 +96,7 @@ function useDetailOffset(): {
   return { ref, offsetPx };
 }
 
-export function HeaderPill({
+export function AlertTag({
   tone,
   label,
   detail,
@@ -120,7 +113,10 @@ export function HeaderPill({
   /** Given, the pill is a link to where the condition is dealt with. */
   readonly to?: string;
 }): ReactNode {
-  const face = `inline-flex min-h-[28px] items-center rounded-lg border px-3 text-quiet font-semibold ${TONES[tone]}`;
+  // `truncate` because this sits in a fixed-width column now: a long reading has
+  // to give way rather than widen the sidebar, and the whole of it is in the
+  // detail below and in the `title` either way.
+  const face = `${tagFace(tone, 'md')} truncate`;
   const { ref, offsetPx } = useDetailOffset();
 
   return (

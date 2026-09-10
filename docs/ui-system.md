@@ -395,17 +395,33 @@ Money right-aligned in `.money`.
 
 A table's own top rule is the separator. It never also gets a margin above it.
 
-## 9. Header pills
+## 9. Tags
 
-`HeaderPill`. 28px, `rounded-lg`, a 1px border and a soft fill in its tone,
-`text-quiet font-semibold`, `px-3`. The same object whether it is the budget's
-own reading or something the application needs to say, because they sit on one
-row and anything else reads as two kinds of thing pretending to be one.
+**`Tag` is the only small mark.** Chips, state tags and alerts are all it:
+`rounded-full`, a soft fill and the same hue for the text, **no border**, and one
+of two sizes — `sm` (11px, `px-[6px]`, 18px line) inside a data row, `md` (13px,
+`px-2`, 20px line) standing on its own. Tones: `quiet`, `info`, `positive`,
+`confirm`, `warning`, `danger`, `negative`.
+
+There were four of these and they had drifted into four objects: 4px letter
+chips, 10px fully-rounded bill states, 4px Asset/Debt tags, and 8px alert pills
+with a 1px border nothing else had. Three radii, three sizes, two colour
+recipes. The border was the one that mattered — it was the single thing making
+the alerts read as a different species — and colour carries them now, as it does
+everywhere else.
+
+`AlertTag` adds the one thing particular to an alert: the whole sentence, one
+hover or one focus away. It is a `Tag` face and nothing more.
 
 **Every notification is one of these, at every severity.** There is no bar and
-nothing renders above the page. A pill's tone and its words carry how serious it
+nothing renders above the page. A tag's tone and its words carry how serious it
 is — the same way every other state in this system carries it — and floor space
 is not asked to say it a third time.
+
+**They live at the foot of the sidebar**, above the sync button and its
+separator, ordered so the most urgent is lowest and the budget's own reading is
+always last. Below `sm` there is no sidebar, so they fall back to the page
+header, where they used to live.
 
 **Two or three words, and a count is the most detail one carries.** `Sync issue`,
 `4 new transactions`, `1 check to confirm`. Which bank, which accounts, how old —

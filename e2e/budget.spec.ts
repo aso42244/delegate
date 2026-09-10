@@ -612,9 +612,18 @@ test('every pill keeps its detail inside the viewport', async ({ signedIn, api }
   await signedIn.setViewportSize({ width: 1280, height: 800 });
   await signedIn.goto('/budget');
 
-  // Notification pills are links and the budget's own reading is a status, so
-  // the thing they share is the detail they describe — not a role.
-  const pills = signedIn.locator('header [aria-describedby]');
+  /*
+   * In the sidebar, which is where these live above `sm`. They are links and the
+   * budget's own reading is a status, so the thing they share is the detail they
+   * describe — not a role.
+   *
+   * Near the *left* edge now rather than wherever the page title left them,
+   * which is the mirror of the case this test was written for: the detail is
+   * 384px wide and the sidebar is about 190, so anchoring it to the tag's left
+   * edge is fine here and it is the right edge that has to be checked. Both are,
+   * below.
+   */
+  const pills = signedIn.locator('nav[aria-label="Main"] [aria-describedby]');
   // Waited for before counting: `count()` does not retry, and the reading is
   // rendered from a query rather than being in the first paint.
   await expect(pills.first()).toBeVisible();
@@ -640,7 +649,14 @@ test('every pill keeps its detail inside the viewport', async ({ signedIn, api }
   }
 });
 
-/** The same, on a phone, where there is far less room to be wrong in. */
+/**
+ * The same, on a phone, where there is far less room to be wrong in.
+ *
+ * Still in the header here, and deliberately: below `sm` there is no sidebar at
+ * all — the tab bar is the navigation — so the alerts fall back to where they
+ * used to live. A phone losing the sync-failure alert entirely would be the
+ * quiet half of this move.
+ */
 test('a pill keeps its detail inside a phone screen', async ({ signedIn, api }) => {
   await makeAccount('Plains Commerce Bank (SD) PLAINS+ CHECKING (7173)', 'asset', 100_000n);
   await makeDelegation(api, 'Grocery', '40000');

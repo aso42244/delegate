@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
-import { CHIPS, type ChipKind, type ChipTone } from './chips.js';
+import { CHIPS, type ChipKind } from './chips.js';
+import { tagFace } from './Tag.js';
 
 /**
  * One mark beside a row's name.
@@ -14,20 +15,16 @@ import { CHIPS, type ChipKind, type ChipTone } from './chips.js';
  * merely not painted always works.
  */
 
-const TONES: Record<ChipTone, string> = {
-  quiet: 'bg-surface-2 text-muted',
-  warning: 'bg-warning-soft text-warning',
-};
-
 export function Chip({ kind }: { readonly kind: ChipKind }): ReactNode {
   const { mark, meaning, tone } = CHIPS[kind];
 
   return (
     <span
       title={meaning}
-      // `min-w-5` so a one-letter chip and `btc` read as the same family rather
-      // than as a dot and a word.
-      className={`inline-flex min-w-5 shrink-0 items-center justify-center rounded px-1 py-0.5 text-label font-semibold ${TONES[tone]}`}
+      // `min-w-5` and centred so a one-letter chip and `btc` read as the same
+      // family rather than as a dot and a word — a single letter comes out as a
+      // circle, which is what the shape is for.
+      className={`${tagFace(tone, 'sm')} min-w-5 justify-center px-1`}
     >
       <span aria-hidden>{mark}</span>
       <span className="sr-only">{meaning}</span>

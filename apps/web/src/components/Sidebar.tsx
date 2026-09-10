@@ -3,6 +3,7 @@ import { useEffect, useState, type ReactNode } from 'react';
 import { NavLink } from 'react-router-dom';
 import { authApi, syncApi } from '../api/client.js';
 import { useSession } from '../auth/SessionProvider.jsx';
+import { Alerts } from './Alerts.jsx';
 import { Button } from './ui.jsx';
 import { useIsDemo } from '../useDemo.js';
 import { pathFor } from '../demo/is-demo.js';
@@ -342,6 +343,13 @@ export function Sidebar({ appName }: { appName: string }): ReactNode {
           </li>
         ))}
       </ul>
+
+      {/*
+        What the application has to say, at the foot of the navigation and above
+        everything that acts. `mt-auto` puts the whole group at the bottom
+        whatever the page list comes to.
+      */}
+      <div className="mt-auto">{!collapsed && <Alerts />}</div>
 
       {/* The bank feed, whole. A demo has no feed to sync and no caption worth
           writing about one — invented data does not come from anywhere. */}
