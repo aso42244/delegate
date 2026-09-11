@@ -758,14 +758,11 @@ export interface PanelLine {
 export async function buildPanel(
   db: Db,
   options: {
-    readonly delegationIds: readonly string[];
     readonly since: Date | null;
     readonly timeZone: string;
   },
   now: Date = new Date(),
 ): Promise<PanelLine[]> {
-  if (options.delegationIds.length === 0) return [];
-
   const since =
     options.since ??
     (await windowStart(db, 'cycle', options.timeZone, now).then((start) =>
@@ -774,7 +771,7 @@ export async function buildPanel(
 
   const [lines, allocations] = await Promise.all([
     db.delegation.findMany({
-      where: { id: { in: [...options.delegationIds] }, archivedAt: null },
+      where: { archivedAt: null },
       select: {
         id: true,
         name: true,
@@ -786,7 +783,6 @@ export async function buildPanel(
     }),
     db.transactionAllocation.findMany({
       where: {
-        delegationId: { in: [...options.delegationIds] },
         transaction: {
           archivedAt: null,
           kind: 'normal',

@@ -345,8 +345,17 @@ export interface OverviewDataDto {
   readonly upcoming_bills?: readonly UpcomingBillDto[];
   readonly bills_attention?: readonly BillAttentionDto[];
   readonly bills_this_cycle?: BillsThisCycleDto;
-  /** The panel's chosen lines. Empty until somebody picks some. */
+  /**
+   * Every delegation, with what it has spent this cycle.
+   *
+   * The band draws its rows from `GET /api/budget` — the same call the Budget
+   * page makes, which is what keeps the two from ever disagreeing — and takes
+   * only the spending from here, because that is the one figure a pace bar needs
+   * and the budget view does not carry.
+   */
   readonly panel?: readonly PanelLineDto[];
+  /** Which lines the household chose to watch. Empty until somebody picks some. */
+  readonly panelSelected?: readonly string[];
   /** Null when no payday anchor is set — then no tick is drawn at all. */
   readonly payCycle?: PayCycleDto | null;
   readonly cashflow?: CashflowDto;

@@ -608,9 +608,17 @@ export const overviewRoutes: FastifyPluginCallback = (fastify, _options, done) =
         wantsPickable ? pickableSeries(prisma) : undefined,
       ]);
 
+    /*
+     * Every line, always.
+     *
+     * The panel used to compute spending for the chosen lines only, because the
+     * chosen lines were all it drew. The band draws the whole budget when it is
+     * showing all of them, and a pace bar needs this cycle's spending — so the
+     * selection decides what is *shown* rather than what is *computed*, and it
+     * travels beside the figures rather than deciding them.
+     */
     const panelTile = stored.find((tile) => tile.widgetKey === 'delegations');
     const panel = await buildPanel(prisma, {
-      delegationIds: readDelegationIds(panelTile?.config),
       since: cycle?.start ?? null,
       timeZone,
     });
@@ -756,6 +764,8 @@ export const overviewRoutes: FastifyPluginCallback = (fastify, _options, done) =
               })),
           }
         : {}),
+      /** Which of them the household chose to watch. Empty until somebody picks. */
+      panelSelected: readDelegationIds(panelTile?.config),
       panel: panel.map((line) => ({
         id: line.id,
         name: line.name,

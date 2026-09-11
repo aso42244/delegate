@@ -422,34 +422,36 @@ test('tiles can be dragged into one row without entering Arrange', async ({ sign
   ).toHaveClass(/lg:col-span-6/);
 });
 
-test('a tile dragged into the empty sidebar stays there across a reload', async ({ signedIn }) => {
+/*
+ * The sidebar region is gone with the docked panel it sat under.
+ *
+ * `region` stays in the database and is still read, so this is the case that
+ * matters: an arrangement stored before the band existed has to open with every
+ * tile it had. Losing one silently, because the half of the page it lived on no
+ * longer exists, is the worst kind of data loss — nothing fails and nothing says
+ * so.
+ */
+test('a tile stored in the old sidebar comes back in the grid', async ({ signedIn, api }) => {
+  await api.put('/api/overview/layout', {
+    data: {
+      tiles: [
+        { key: 'spending_by_grouping', region: 'main', row: 0, position: 0 },
+        { key: 'uncategorized_backlog', region: 'sidebar', row: 0, position: 0 },
+      ],
+    },
+  });
+
   await signedIn.goto('/overview');
-  await addBothTiles(signedIn);
-  await signedIn.getByRole('button', { name: 'Done' }).click();
 
-  const backlog = signedIn
-    .getByRole('heading', { name: 'Waiting to be categorized', level: 2 })
-    .locator('../..');
-  await expect(backlog.getByText('Nothing waiting.')).toBeVisible();
-
-  /*
-   * The sidebar's only way in, while it holds nothing of its own.
-   *
-   * It used to be an 8px sliver, and the owner's report is what a target that
-   * small produces: the tile appears to move, the write never happens, and the
-   * refresh puts it back where it started. Nothing failed and nothing said so.
-   */
-  const zone = signedIn.getByText('Drag a tile here');
-  await expect(zone).toBeVisible();
-  await backlog.locator('[data-grip]').dragTo(zone);
-
-  await expect(signedIn.getByText('Drag a tile here')).toHaveCount(0);
-
-  // The whole point: a drop that only looked like it worked is the defect.
-  await signedIn.reload();
+  await expect(
+    signedIn.getByRole('heading', { name: 'Spending by grouping', level: 2 }),
+  ).toBeVisible();
   await expect(
     signedIn.getByRole('heading', { name: 'Waiting to be categorized', level: 2 }),
   ).toBeVisible();
+
+  // And there is nowhere left to drag one to: the band is pinned and the page
+  // has one grid.
   await expect(signedIn.getByText('Drag a tile here')).toHaveCount(0);
 });
 
@@ -467,7 +469,7 @@ test('the panel picks its lines in a dialog, and they survive a reload', async (
    * added from the picker. Its lines are chosen from the panel itself, which is
    * also why the selection can exist on a page holding no tiles at all.
    */
-  const panel = signedIn.getByRole('complementary', { name: 'Budget' });
+  const panel = signedIn.getByRole('region', { name: 'Budget' });
   await expect(panel).toBeVisible();
   await expect(panel.getByText('No delegations chosen yet.')).toBeVisible();
 
@@ -483,9 +485,7 @@ test('the panel picks its lines in a dialog, and they survive a reload', async (
   // The risk an optimistic write introduces is one that never reaches the
   // server: perfect on screen until the page is loaded again.
   await signedIn.reload();
-  await expect(
-    signedIn.getByRole('complementary', { name: 'Budget' }).getByText('Grocery'),
-  ).toBeVisible();
+  await expect(signedIn.getByRole('region', { name: 'Budget' }).getByText('Grocery')).toBeVisible();
 });
 
 test('the picker lists delegations under their groupings, in the budget order', async ({
@@ -500,7 +500,7 @@ test('the picker lists delegations under their groupings, in the budget order', 
 
   await signedIn.goto('/overview');
   await signedIn
-    .getByRole('complementary', { name: 'Budget' })
+    .getByRole('region', { name: 'Budget' })
     .getByRole('button', { name: 'Choose which delegations show' })
     .click();
 
@@ -531,7 +531,7 @@ test('the panel is always there', async ({ signedIn }) => {
    * page for should not be behind one, and the width it gave back is the width
    * the dashboard is laid out for — so there is no control here to find.
    */
-  await expect(signedIn.getByRole('complementary', { name: 'Budget' })).toBeVisible();
+  await expect(signedIn.getByRole('region', { name: 'Budget' })).toBeVisible();
   await expect(signedIn.getByRole('button', { name: /collapse the budget panel/i })).toHaveCount(0);
 });
 
@@ -747,7 +747,7 @@ test('setting a payday turns the cycle on across the page', async ({ signedIn })
     band.getByText('Set your next payday on Settings → Budget to see this cycle.'),
   ).toBeVisible();
   await expect(
-    signedIn.getByRole('complementary', { name: 'Budget' }).getByText('No payday set'),
+    signedIn.getByRole('region', { name: 'Budget' }).getByText('No payday set'),
   ).toBeVisible();
 
   await signedIn.goto('/settings/budget');
@@ -780,8 +780,8 @@ test('the panel leaves out accounts with nothing in them', async ({ signedIn }) 
   await makeAccount('Old Savings', 'asset', 0n);
 
   await signedIn.goto('/overview');
-  const panel = signedIn.getByRole('complementary', { name: 'Budget' });
-  await panel.getByRole('radio', { name: 'Accounts' }).click();
+  const panel = signedIn.getByRole('region', { name: 'Budget' });
+  await panel.getByRole('radio', { name: 'Accounts & Debts' }).click();
 
   await expect(panel.getByText('Everyday Checking')).toBeVisible();
   await expect(panel.getByText('Old Savings')).toHaveCount(0);
@@ -795,15 +795,19 @@ test('the panel lists only accounts the budget counts', async ({ signedIn }) => 
   await makeAccount('The house', 'asset', 35_000_000n, 'manual', null, { inBudget: false });
 
   await signedIn.goto('/overview');
-  const panel = signedIn.getByRole('complementary', { name: 'Budget' });
-  await panel.getByRole('radio', { name: 'Accounts' }).click();
+  const panel = signedIn.getByRole('region', { name: 'Budget' });
+  await panel.getByRole('radio', { name: 'Accounts & Debts' }).click();
 
   await expect(panel.getByText('Everyday Checking')).toBeVisible();
   await expect(panel.getByText('The house')).toHaveCount(0);
 
-  // And the total says what it counted, because a figure that silently excluded
-  // a house is one somebody trusts and should not.
-  await expect(panel.getByText('Accounts in the budget')).toBeVisible();
+  /*
+   * And the total says what it counted, because a figure that silently excluded
+   * a house is one somebody trusts and should not. $500.00 rather than
+   * $350,500.00: the house is not money this budget can allocate.
+   */
+  const accounts = panel.getByRole('heading', { name: /^Accounts/ });
+  await expect(accounts).toContainText('$500.00');
 });
 
 test('a tile can be dropped onto its own row, and at the very top', async ({ signedIn }) => {
@@ -852,7 +856,7 @@ test('the panel keeps its delegations when tiles are rearranged', async ({ signe
   await makeDelegation(api, 'Grocery');
 
   await signedIn.goto('/overview');
-  const panel = signedIn.getByRole('complementary', { name: 'Budget' });
+  const panel = signedIn.getByRole('region', { name: 'Budget' });
   await panel.getByRole('button', { name: 'Choose which delegations show' }).click();
   const dialog = signedIn.getByRole('dialog');
   await dialog.getByRole('switch', { name: 'Show Grocery' }).click();
@@ -875,16 +879,14 @@ test('the panel keeps its delegations when tiles are rearranged', async ({ signe
    */
   await expect(panel.getByText('Grocery')).toBeVisible();
   await signedIn.reload();
-  await expect(
-    signedIn.getByRole('complementary', { name: 'Budget' }).getByText('Grocery'),
-  ).toBeVisible();
+  await expect(signedIn.getByRole('region', { name: 'Budget' }).getByText('Grocery')).toBeVisible();
 });
 
 test('the panel carries no summary band, only the lines', async ({ signedIn, api }) => {
   await makeDelegation(api, 'Grocery');
 
   await signedIn.goto('/overview');
-  const panel = signedIn.getByRole('complementary', { name: 'Budget' });
+  const panel = signedIn.getByRole('region', { name: 'Budget' });
   await panel.getByRole('button', { name: 'Choose which delegations show' }).click();
   const dialog = signedIn.getByRole('dialog');
   await dialog.getByRole('switch', { name: 'Show Grocery' }).click();
@@ -907,7 +909,7 @@ test('the panel carries no summary band, only the lines', async ({ signedIn, api
 
 test('the picker link sits at the right of the panel', async ({ signedIn }) => {
   await signedIn.goto('/overview');
-  const panel = signedIn.getByRole('complementary', { name: 'Budget' });
+  const panel = signedIn.getByRole('region', { name: 'Budget' });
 
   /*
    * Measured rather than read: every assertion that only looks for the words
@@ -923,8 +925,9 @@ test('the picker link sits at the right of the panel', async ({ signedIn }) => {
   const gapRight = box!.x + box!.width - (link!.x + link!.width);
   const gapLeft = link!.x - box!.x;
   expect(gapRight).toBeLessThan(gapLeft);
-  // The 12px padding the panel puts round everything else in it.
-  expect(gapRight).toBeLessThanOrEqual(16);
+  // The tile's own 16px padding, plus its 1px border. Anything beyond that is
+  // the link having drifted off the edge it is supposed to sit against.
+  expect(gapRight).toBeLessThanOrEqual(20);
 });
 
 test('the outflow band draws the calendar month with no payday set', async ({ signedIn }) => {
@@ -1263,6 +1266,9 @@ test('the cashflow chart fits its tile at every height', async ({ signedIn }) =>
   expect(before.drawn.w).toBe(before.room.w);
 
   const handle = signedIn.getByRole('separator', { name: /Height of the row holding Cashflow/ });
+  // The band is the page's first block now, so the tiles start further down than
+  // one viewport. A grip below the fold has a box and cannot be pressed.
+  await handle.scrollIntoViewIfNeeded();
   const grip = (await handle.boundingBox())!;
   await signedIn.mouse.move(grip.x + grip.width / 2, grip.y + grip.height / 2);
   await signedIn.mouse.down();

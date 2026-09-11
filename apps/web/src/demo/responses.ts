@@ -199,14 +199,19 @@ function cashflow(): Record<string, unknown> {
 
 /** The arrangement the demo opens on. Nobody can change it, so it is chosen. */
 function layout(): Record<string, unknown> {
-  const tiles: [string, 'main' | 'sidebar', number, number][] = [
+  /*
+   * Every tile is in the one grid now. The `sidebar` region went with the docked
+   * panel it sat under — the budget is the band across the top, and there is no
+   * right-hand column for a second region to mean anything in.
+   */
+  const tiles: [string, 'main', number, number][] = [
     ['spending_by_grouping', 'main', 0, 0],
     ['spending_by_delegation', 'main', 0, 1],
     ['allocation', 'main', 0, 2],
     ['cashflow', 'main', 1, 0],
-    ['delegations', 'main', 2, 0],
-    ['daily_outflow', 'sidebar', 0, 0],
-    ['delegations_negative', 'sidebar', 1, 0],
+    ['daily_outflow', 'main', 2, 0],
+    ['delegations_negative', 'main', 3, 0],
+    ['delegations', 'main', 4, 0],
   ];
 
   return {
@@ -271,6 +276,7 @@ export function demoResponse(path: string): unknown {
       daily_outflow: [outflowMonth(0), outflowMonth(1), outflowMonth(2)],
       delegations_negative: negative(),
       panel: panel(),
+      panelSelected: LINES.slice(0, 8).map((line) => line.id),
       payCycle: payCycle(),
     };
   }
