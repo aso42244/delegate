@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { byUrgency } from './Alerts.js';
+import { byUrgency } from './notifications.js';
 
 /**
  * The column ends at the loudest thing.

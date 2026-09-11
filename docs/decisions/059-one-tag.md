@@ -1,6 +1,6 @@
 # 059 — One tag, and the alerts live in the sidebar
 
-**Status:** accepted
+**Status:** accepted, amended by [063](063-the-feed-reports-in-its-own-button.md)
 **Date:** 2026-09-10
 
 Extends [ADR 039](039-a-bar-is-for-what-costs-data.md) and

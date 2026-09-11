@@ -1,4 +1,11 @@
-import { expect, makeAccount, makeDelegation, makePendingSpend, test } from './fixtures.js';
+import {
+  expect,
+  makeAccount,
+  makeDelegation,
+  makePendingSpend,
+  makeSyncFailure,
+  test,
+} from './fixtures.js';
 
 /**
  * Delegate on a phone.
@@ -28,6 +35,102 @@ test.describe('on a phone', () => {
 
     await tabs.getByRole('link', { name: 'Settings' }).click();
     await expect(page.getByRole('heading', { name: 'Settings' })).toBeVisible();
+  });
+
+  /**
+   * The header is one line of controls, and Arrange is not on it.
+   *
+   * Overview on a phone is the band and nothing else, so every row the header
+   * spends is a row the band does not get. Three things were competing for that
+   * row — the create menu, Delegate, the period, and Arrange — and the alert
+   * pills beside the title were wrapping it onto a third line before any of them
+   * had started.
+   *
+   * Arrange went because one full-width column is not an arrangement. The pills
+   * became one dot. What is left fits across 390px, which is the claim here: same
+   * `y`, and nothing off the side of the screen.
+   */
+  test('the header puts New…, the period and Delegate on one line, without Arrange', async ({
+    signedIn: page,
+  }) => {
+    await page.goto('/overview');
+    await expect(page.getByRole('heading', { name: 'Overview' })).toBeVisible();
+
+    await expect(page.getByRole('button', { name: 'Arrange' })).toHaveCount(0);
+
+    const boxes = await Promise.all([
+      page.getByRole('button', { name: 'New …' }).boundingBox(),
+      page.getByRole('button', { name: 'Delegate' }).boundingBox(),
+      page.getByRole('radiogroup', { name: 'Time window' }).boundingBox(),
+    ]);
+
+    const tops = boxes.map((box) => Math.round(box!.y));
+    // One line. Two pixels of slack: a radiogroup and a button are centred
+    // against each other rather than sharing a top edge exactly.
+    expect(Math.max(...tops) - Math.min(...tops)).toBeLessThanOrEqual(2);
+
+    for (const box of boxes) expect(box!.x + box!.width).toBeLessThanOrEqual(390);
+    // And the page itself does not scroll sideways.
+    const scrollWidth = await page.evaluate(() => document.documentElement.scrollWidth);
+    expect(scrollWidth).toBeLessThanOrEqual(390);
+  });
+
+  /**
+   * The alerts are one dot, and pressing it opens all of them.
+   *
+   * Every notification has to reach the small screen — there is no sidebar here
+   * and no Sync button folding the feed's own away — but three tags wrapped the
+   * header onto three lines, and a tag's detail is a tooltip, which a
+   * touchscreen has no way to open at all.
+   */
+  test('every alert is behind one dot, and a press opens the list', async ({ signedIn: page }) => {
+    await makeSyncFailure('connection refused');
+    await page.goto('/overview');
+
+    // No tag of its own: the face is the dot, and its name is the count.
+    await expect(page.getByRole('link', { name: 'Sync failing' })).toHaveCount(0);
+    const dot = page.getByRole('button', { name: /^\d+ alerts?$/ });
+    await expect(dot).toBeVisible();
+
+    await dot.click();
+    const sheet = page.getByRole('dialog', { name: 'Alerts' });
+    await expect(sheet).toContainText('Sync failing');
+    await expect(sheet).toContainText('Balances and transactions are not up to date');
+
+    // And each row goes where its condition is dealt with.
+    await sheet.getByRole('link', { name: /Sync failing/ }).click();
+    await expect(page).toHaveURL(/\/settings\/sync$/);
+  });
+
+  /**
+   * The band's two controls are stacked hard right, tabs on top.
+   *
+   * They come to about 330px together, which is the whole of a phone — so they
+   * cannot share a line with each other or with the cycle stamp. Stacked, in the
+   * order they are decided in, and both flush with the tile's right edge, which
+   * is where the eye already is for the second of them. The stamp keeps the left.
+   */
+  test('the band stacks its controls on the right, with the reading on the left', async ({
+    signedIn: page,
+  }) => {
+    await page.goto('/overview');
+    const band = page.getByRole('region', { name: 'Budget' });
+
+    const tabs = (await band.getByRole('radiogroup', { name: 'Panel' }).boundingBox())!;
+    const scope = (await band
+      .getByRole('radiogroup', { name: 'Which delegations' })
+      .boundingBox())!;
+    const stamp = (await band
+      .getByText(/No payday set|through$/)
+      .first()
+      .boundingBox())!;
+
+    // Stacked, tabs above the scope.
+    expect(tabs.y + tabs.height).toBeLessThanOrEqual(scope.y);
+    // Both flush right, against each other.
+    expect(Math.abs(tabs.x + tabs.width - (scope.x + scope.width))).toBeLessThanOrEqual(1);
+    // And the reading is on the left of both.
+    expect(stamp.x).toBeLessThan(tabs.x);
   });
 
   /**

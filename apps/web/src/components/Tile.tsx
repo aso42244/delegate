@@ -80,6 +80,7 @@ export function TileColumn({
 
 export function Tile({
   title,
+  lead,
   description,
   headingLevel = 2,
   actions,
@@ -97,6 +98,20 @@ export function Tile({
    * column it totals (the budget's tables) is a surface and nothing more.
    */
   readonly title?: string;
+  /**
+   * A reading in the header's left-hand track, for a tile whose name is carried
+   * somewhere other than a heading.
+   *
+   * The budget band is the one of these: it is the page's first block and says
+   * so by being it, so its header's left side is free for the fact a reader
+   * wants there — which payday cycle this is and how far through it. Left,
+   * because it is being read; the controls stay right, where a control is
+   * looked for.
+   *
+   * Never both this and `title`: they occupy the same track, and a tile that
+   * wants a heading and a reading wants `description`.
+   */
+  readonly lead?: ReactNode;
   /** One line, at most, and the current fact rather than an instruction. */
   readonly description?: string;
   /**
@@ -175,7 +190,7 @@ export function Tile({
         belongs to a page or to a tile — and it was three shapes before, with the
         description beside the title on Overview and under it on Settings.
       */}
-      {(title !== undefined || actions !== undefined) && (
+      {(title !== undefined || lead !== undefined || actions !== undefined) && (
         /*
          * One row that wraps, rather than a title row nested inside a header
          * block. Flat on purpose: the heading is a direct child of the tile's
@@ -194,6 +209,7 @@ export function Tile({
             ) : (
               <h2 className="min-w-0 truncate text-section font-semibold text-ink">{title}</h2>
             ))}
+          {lead !== undefined && <div className="min-w-0">{lead}</div>}
           {/* `col-start-2`, so a tile with controls and no title — the register,
               whose page header already says "Transactions" — still puts them on
               the right rather than in the title's track. */}

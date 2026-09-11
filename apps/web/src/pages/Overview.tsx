@@ -8,7 +8,7 @@ import {
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useMemo, useRef, useState, type ReactNode } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { useMediaQuery } from '../useMediaQuery.js';
+import { NARROW, useMediaQuery } from '../useMediaQuery.js';
 import { useIsDemo } from '../useDemo.js';
 import { TileRowHeight, useTileRoom } from '../components/tile-height.js';
 import {
@@ -1200,7 +1200,7 @@ function DelegationsTile({
       )}
       <div className="mt-auto flex items-center gap-2 border-t border-line pt-2">
         <button type="button" className="linkish" onClick={onChoose}>
-          Choose which delegations show →
+          Select Delegations →
         </button>
       </div>
     </div>
@@ -1915,7 +1915,22 @@ export function Overview(): ReactNode {
     queryFn: () => overviewApi.data(window),
   });
 
-  const arranging = params.get('arrange') === 'true';
+  const narrow = useMediaQuery(NARROW);
+
+  /*
+   * Arranging is a laptop's job, and the button is gone from a phone.
+   *
+   * Every tile is full width below `sm` and the band above them is pinned, so
+   * the only thing left to arrange there is the order of a single column — for
+   * which the page charges a button in the one header that has the least room
+   * for one. The layout is still the household's; it is edited on the machine
+   * that can see the grid it describes.
+   *
+   * Read from the URL *and* from the width, so a window dragged narrow while
+   * Arrange is open does not strand somebody in a mode whose "Done" is no
+   * longer on screen.
+   */
+  const arranging = params.get('arrange') === 'true' && !narrow;
 
   /*
    * What is being dragged, and where a drop would land.
@@ -2522,14 +2537,28 @@ export function Overview(): ReactNode {
         actions={
           <>
             <SegmentedControl
+              /*
+               * `sm` on a phone, `md` everywhere else.
+               *
+               * The one exception to §5's "one size", recorded under
+               * `ui-system.md`'s Overview's band: at `md` these four
+               * options are 212px, and beside New… and Delegate that is 378px
+               * on a 343px line — so the row wrapped and the header ate three
+               * lines of a screen whose whole point is the band below it. At
+               * `sm` the three sit on one line with room to spare. A control
+               * that has to be scrolled sideways to find "YTD" is worse than a
+               * smaller one.
+               */
+              size={narrow ? 'sm' : 'md'}
               label="Time window"
               value={window}
               options={WINDOWS}
               onChange={setWindow}
             />
             {/* Arranging writes a layout, which a read-only demo refuses.
-                What it opens on is what it has. */}
-            {!demo && (
+                What it opens on is what it has — and it is a laptop's control:
+                see `arranging` above. */}
+            {!demo && !narrow && (
               <Button
                 variant={arranging ? 'primary' : 'default'}
                 onClick={() => setArranging(!arranging)}

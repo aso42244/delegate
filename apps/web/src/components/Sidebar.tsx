@@ -1,11 +1,19 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useEffect, useState, type ReactNode } from 'react';
-import { NavLink } from 'react-router-dom';
+import { useEffect, useId, useState, type ReactNode } from 'react';
+import { Link, NavLink } from 'react-router-dom';
 import { authApi, syncApi, type SyncStatus } from '../api/client.js';
 import { useSession } from '../auth/SessionProvider.jsx';
 import { Alerts } from './Alerts.jsx';
 import { DelegateControl } from './DelegateControl.jsx';
+import { Tag } from './Tag.jsx';
 import { Button } from './ui.jsx';
+import {
+  byUrgency,
+  loudest,
+  SYNC_KINDS,
+  useNotifications,
+  type NotificationDto,
+} from './notifications.js';
 import { useIsDemo } from '../useDemo.js';
 import { pathFor } from '../demo/is-demo.js';
 
@@ -192,13 +200,13 @@ function useCollapsed(): [boolean, (value: boolean) => void] {
 }
 
 /**
- * What the Sync button has to say about itself, if anything.
+ * What the last run itself says, if anything.
  *
- * There is no caption under it any more. "Synced 12m ago" was a figure nobody
- * acts on, and "Last sync failed" was a second line saying what a colour can say
- * on the control somebody would press about it. The button carries both states
- * now: yellow when the most recent run failed, with the bridge's own error one
- * hover away.
+ * Read from `/api/sync/status` rather than from the notifications, and kept
+ * beside them, because it is the fresher of the two: the status is re-checked
+ * every minute and the notifications every five, so a run that has just failed
+ * shows here first. `SyncControl` folds it in only when the notification for it
+ * has not caught up, so the same failure is never listed twice.
  *
  * The error is whatever the run recorded. A failed run with nothing written down
  * still has to say something, or the colour would be unexplained.
@@ -207,6 +215,154 @@ function describeSync(status: SyncStatus | undefined): string | null {
   if (status?.failing !== true) return null;
   const error = status.runs[0]?.error?.trim();
   return error ? `Last sync failed: ${error}` : 'The last sync failed.';
+}
+
+/** Which button a severity paints. Only these two are ever loud enough. */
+function variantFor(tone: ReturnType<typeof loudest>): 'default' | 'warning' | 'danger' {
+  if (tone === 'danger') return 'danger';
+  if (tone === 'warning') return 'warning';
+  return 'default';
+}
+
+/**
+ * Sync SimpleFIN, carrying everything the bank feed has to say.
+ *
+ * The feed's conditions used to be five separate tags in the column above this
+ * button — "Sync failing", "1 account not reporting", "2 stale balances", "1 new
+ * account" — each a yellow pill sitting directly over a yellow button, all of
+ * them answered by looking at the same connection. That is one sentence said
+ * five times, and it crowded out the alerts the feed has nothing to do with.
+ *
+ * They are inside the button now. It takes the colour of the loudest of them,
+ * and the whole list opens on hover and on focus, **most significant first**.
+ *
+ * **The list is reachable, not merely visible.** Every row is still a link to
+ * where its condition is dealt with, so the panel takes the pointer rather than
+ * refusing it — which is why it hangs from a padded wrapper: a gap between the
+ * button and the card would drop `:hover` as the mouse crossed it, and the panel
+ * would close on the way to the thing being reached for.
+ *
+ * **Not on a phone.** There is no sidebar below `sm` and so no button to fold
+ * into; `Alerts inline` keeps the feed's own alongside the rest there.
+ */
+function SyncControl({ collapsed }: { readonly collapsed: boolean }): ReactNode {
+  const queryClient = useQueryClient();
+  const detailId = useId();
+
+  const syncStatus = useQuery({
+    queryKey: ['sync', 'status'],
+    queryFn: syncApi.status,
+    // A sync takes seconds and runs hourly on its own; this keeps the button's
+    // colour honest without polling hard.
+    refetchInterval: 60_000,
+  });
+
+  const runSync = useMutation({
+    mutationFn: syncApi.run,
+    onSettled: async () => {
+      // Balances, transactions and the budget view can all have moved.
+      await queryClient.invalidateQueries();
+    },
+  });
+
+  const notifications = useNotifications();
+  const reported = (notifications.data?.notifications ?? []).filter((row) =>
+    SYNC_KINDS.has(row.kind),
+  );
+
+  /*
+   * The live status, when the notifications have not said it yet.
+   *
+   * Five minutes is a long time to look green after a run has failed, and the
+   * status endpoint already knows. Matched on `kind`, so once the notification
+   * arrives with its own fuller message this drops out rather than doubling it.
+   */
+  const detail = describeSync(syncStatus.data);
+  const live: readonly NotificationDto[] =
+    detail !== null && !reported.some((row) => row.kind === 'sync_failing')
+      ? [
+          {
+            kind: 'sync_failing',
+            severity: 'danger',
+            pill: 'Sync failing',
+            message: detail,
+            actionPath: '/settings/sync',
+          },
+        ]
+      : [];
+
+  // Loudest first: the panel is read downwards, unlike the column above it.
+  const folded = [...byUrgency([...reported, ...live])].reverse();
+  const tone = loudest(folded);
+
+  /*
+   * A `title` only on the rail, and only to name the control.
+   *
+   * Collapsed, the button is a glyph and its `title` is the only name it has.
+   * Expanded it names itself, and a native tooltip would open on the same hover
+   * as the panel below and sit on top of it saying less.
+   */
+  const title = collapsed ? 'Sync SimpleFIN' : undefined;
+
+  return (
+    <div className="group relative">
+      <Button
+        /*
+         * The button is the state.
+         *
+         * A caption under it said how long ago the last sync was, which is a
+         * figure nobody acts on, and a second line appeared under that when a
+         * run failed. Both are gone, and so are the feed's tags: what the
+         * connection has to say is the colour of the thing somebody would press
+         * about it, with the words one hover away.
+         */
+        variant={variantFor(tone)}
+        onClick={() => runSync.mutate()}
+        disabled={runSync.isPending || syncStatus.data?.syncing === true}
+        className="w-full"
+        title={title}
+        {...(folded.length > 0 ? { 'aria-describedby': detailId } : {})}
+      >
+        {collapsed ? '⟳' : runSync.isPending ? 'Syncing…' : 'Sync SimpleFIN'}
+      </Button>
+
+      {folded.length > 0 && (
+        /*
+         * Upwards, because the button is at the foot of the sidebar, and wider
+         * than the sidebar because these are sentences — the same 384px that
+         * holds prose everywhere else (`ui-system.md` §2), capped so it cannot
+         * run off a narrow window.
+         *
+         * `pb-1` on the wrapper rather than `mb-1` on the card: the offset has
+         * to be *inside* the hover target, or the 4px between the two is a strip
+         * that closes the panel on the way into it.
+         */
+        <div
+          id={detailId}
+          role="tooltip"
+          className="absolute bottom-full left-0 z-20 hidden w-96 max-w-[calc(100vw-2rem)] pb-1 group-hover:block group-focus-within:block"
+        >
+          {/* The same card `AlertTag` hangs its detail from — one floating
+              reading, not a second shape for one. Notably *not* the tile
+              surface, which `ui-system.test.ts` reserves for `Tile`. */}
+          <div className="flex flex-col gap-2 rounded-lg border border-line bg-canvas px-3 py-2 shadow-lg">
+            {folded.map((row) => (
+              <Link
+                key={row.kind}
+                to={row.actionPath}
+                className="-mx-2 flex flex-col items-start gap-1 rounded-md px-2 py-1 hover:bg-surface-2"
+              >
+                <Tag tone={row.severity} size="md">
+                  {row.pill}
+                </Tag>
+                <span className="text-quiet text-ink">{row.message}</span>
+              </Link>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
 }
 
 export function Sidebar({ appName }: { appName: string }): ReactNode {
@@ -233,34 +389,6 @@ export function Sidebar({ appName }: { appName: string }): ReactNode {
 
   const [collapsed, setCollapsed] = useCollapsed();
   const { user } = useSession();
-  const queryClient = useQueryClient();
-
-  const syncStatus = useQuery({
-    queryKey: ['sync', 'status'],
-    queryFn: syncApi.status,
-    // A sync takes seconds and runs hourly on its own; this keeps the caption
-    // honest without polling hard.
-    refetchInterval: 60_000,
-  });
-
-  const runSync = useMutation({
-    mutationFn: syncApi.run,
-    onSettled: async () => {
-      // Balances, transactions and the budget view can all have moved.
-      await queryClient.invalidateQueries();
-    },
-  });
-
-  const syncDetail = describeSync(syncStatus.data);
-  const syncFailing = syncDetail !== null;
-  /*
-   * Collapsed, the button is a glyph and its `title` is the only name it has, so
-   * the detail is appended rather than substituted — a rail that said only
-   * "Last sync failed" would leave nothing naming the control.
-   */
-  const syncTitle = collapsed
-    ? [`Sync SimpleFIN`, syncDetail].filter((part) => part !== null).join(' — ')
-    : (syncDetail ?? undefined);
 
   const [signingOut, setSigningOut] = useState(false);
 
@@ -383,29 +511,9 @@ export function Sidebar({ appName }: { appName: string }): ReactNode {
       <div className="flex flex-col gap-2 border-t border-line px-2 py-3">
         <DelegateControl collapsed={collapsed} />
 
-        {/* The bank feed. A demo has no feed to sync — invented data does not
-            come from anywhere. */}
-        {!demo && (
-          <Button
-            /*
-             * The button is the state.
-             *
-             * A caption under it said how long ago the last sync was, which is a
-             * figure nobody acts on, and a second line appeared under that when
-             * a run failed. Both are gone: a failing feed turns this yellow, and
-             * the error the bridge gave is on hover and in the button's own
-             * description. What to do about it is press the thing that is
-             * yellow.
-             */
-            variant={syncFailing ? 'warning' : 'default'}
-            onClick={() => runSync.mutate()}
-            disabled={runSync.isPending || syncStatus.data?.syncing === true}
-            className="w-full"
-            title={syncTitle}
-          >
-            {collapsed ? '⟳' : runSync.isPending ? 'Syncing…' : 'Sync SimpleFIN'}
-          </Button>
-        )}
+        {/* The bank feed, and everything it has to say about itself. A demo has
+            no feed to sync — invented data does not come from anywhere. */}
+        {!demo && <SyncControl collapsed={collapsed} />}
       </div>
 
       <div className="border-t border-line px-3 py-3">

@@ -105,10 +105,31 @@ export function OverviewPanel({
     <Tile
       span="full"
       aria-label="Budget"
+      /*
+       * Read on the left, act on the right.
+       *
+       * The cycle stamp was between the two controls, which put a *reading*
+       * inside a row of things to press and left the two controls unable to hold
+       * a fixed position between them. It is the header's left-hand track now
+       * and the controls are both on the right, in one order: what the band is
+       * showing, then how much of it — so **Show selected / Show all** is the
+       * last thing on the line at every width.
+       */
+      lead={<CycleStamp cycle={data?.payCycle ?? null} />}
       actions={
-        <div className="flex flex-wrap items-center gap-2">
+        /*
+         * One row where the tile is wide, stacked and right-justified where it
+         * is not.
+         *
+         * A container query rather than a breakpoint: this asks how wide *this
+         * tile* is, which is the question (`ui-system.md` §2). On a phone the
+         * two controls come to about 330px and the reading beside them has
+         * nowhere to go, so they stack — tabs on top, because that is the choice
+         * made first — and both stay hard right, which is where the eye already
+         * is for the second of them.
+         */
+        <div className="flex flex-col items-end gap-2 @xl:flex-row @xl:items-center">
           <SegmentedControl size="sm" label="Panel" value={tab} options={TABS} onChange={onTab} />
-          <CycleStamp cycle={data?.payCycle ?? null} />
           {control}
         </div>
       }
@@ -139,8 +160,14 @@ function CycleStamp({ cycle }: { readonly cycle: OverviewDataDto['payCycle'] }):
   const day = (iso: string): string =>
     new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
 
+  /*
+   * Wrapping, not `whitespace-nowrap`. It held one line while it sat among the
+   * controls and could push them along; in the header's left-hand track on a
+   * phone it has about 160px, and a line that refuses to break there is a line
+   * that squeezes the controls beside it instead of giving way.
+   */
   return (
-    <span className="text-micro whitespace-nowrap text-muted">
+    <span className="text-micro text-muted">
       {day(cycle.start)}–{day(cycle.end)} · day {cycle.elapsedDays} · {percent}% through
     </span>
   );
@@ -238,12 +265,16 @@ function DelegationsBand({
 /**
  * Right, with the figures it belongs to, rather than adrift under the left edge
  * of a column whose content is all right-aligned.
+ *
+ * **"Select Delegations"**, which is what it does. "Choose which delegations
+ * show" described the dialog's contents rather than naming the act, and it was
+ * long enough on a phone to wrap under the table it belongs to.
  */
 function ChooseLink({ onChoose }: { readonly onChoose: () => void }): ReactNode {
   return (
     <div className="flex justify-end">
       <button type="button" className="linkish" onClick={onChoose}>
-        Choose which delegations show
+        Select Delegations
       </button>
     </div>
   );

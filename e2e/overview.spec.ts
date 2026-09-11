@@ -473,7 +473,7 @@ test('the panel picks its lines in a dialog, and they survive a reload', async (
   await expect(panel).toBeVisible();
   await expect(panel.getByText('No delegations chosen yet.')).toBeVisible();
 
-  await panel.getByRole('button', { name: 'Choose which delegations show' }).click();
+  await panel.getByRole('button', { name: 'Select Delegations' }).click();
   const dialog = signedIn.getByRole('dialog');
   await dialog.getByRole('switch', { name: 'Show Grocery' }).click();
   await dialog.getByRole('button', { name: 'Save' }).click();
@@ -501,7 +501,7 @@ test('the picker lists delegations under their groupings, in the budget order', 
   await signedIn.goto('/overview');
   await signedIn
     .getByRole('region', { name: 'Budget' })
-    .getByRole('button', { name: 'Choose which delegations show' })
+    .getByRole('button', { name: 'Select Delegations' })
     .click();
 
   const dialog = signedIn.getByRole('dialog');
@@ -857,7 +857,7 @@ test('the panel keeps its delegations when tiles are rearranged', async ({ signe
 
   await signedIn.goto('/overview');
   const panel = signedIn.getByRole('region', { name: 'Budget' });
-  await panel.getByRole('button', { name: 'Choose which delegations show' }).click();
+  await panel.getByRole('button', { name: 'Select Delegations' }).click();
   const dialog = signedIn.getByRole('dialog');
   await dialog.getByRole('switch', { name: 'Show Grocery' }).click();
   await dialog.getByRole('button', { name: 'Save' }).click();
@@ -887,7 +887,7 @@ test('the panel carries no summary band, only the lines', async ({ signedIn, api
 
   await signedIn.goto('/overview');
   const panel = signedIn.getByRole('region', { name: 'Budget' });
-  await panel.getByRole('button', { name: 'Choose which delegations show' }).click();
+  await panel.getByRole('button', { name: 'Select Delegations' }).click();
   const dialog = signedIn.getByRole('dialog');
   await dialog.getByRole('switch', { name: 'Show Grocery' }).click();
   await dialog.getByRole('button', { name: 'Save' }).click();
@@ -917,9 +917,7 @@ test('the picker link sits at the right of the panel', async ({ signedIn }) => {
    * change was about. The link ends within a few pixels of the panel's own
    * padded edge instead of starting at its left one.
    */
-  const link = await panel
-    .getByRole('button', { name: 'Choose which delegations show' })
-    .boundingBox();
+  const link = await panel.getByRole('button', { name: 'Select Delegations' }).boundingBox();
   const box = await panel.boundingBox();
 
   const gapRight = box!.x + box!.width - (link!.x + link!.width);
