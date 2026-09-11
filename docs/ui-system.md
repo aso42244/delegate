@@ -411,14 +411,32 @@ invitation to reach for the wrong control, which is the hazard the confirmation
 dialog already exists to catch. Both are `default` now. What is coloured in that
 zone is a button reporting a **state**, and Delegate has none.
 
-`warning` and `danger` on a control that still works mean it is reporting
-something, and **Sync SimpleFIN is the only one**. It takes the colour of the
-loudest condition the bank feed currently has, and the whole list of them opens
-on hover and on focus — see §9.
+**A soft fill on a control means it is reporting a state**, and the sidebar's
+control zone is where that rule lives (§12,
+[ADR 064](decisions/064-the-corner-answers-one-question.md)). Two controls have
+one:
+
+- **The budget's reading** — `positive` green when balanced, `info` blue when
+  there is money to delegate, `danger` red when over-delegated. Three states,
+  three colours, always one of them.
+- **Sync SimpleFIN** — `warning` or `danger`, whichever the loudest condition the
+  bank feed currently has is, with the whole list one hover or one focus away
+  (§9).
 
 `danger` otherwise appears only inside a dialog or a row menu, never sitting on a
 page — with one exception, Undo Delegation, which replaces Delegate in that slot
 while a run can still be taken back.
+
+**A `hover` tint is a different axis from `variant`.** `variant` is the state a
+control is _in_; `hover` is what pressing it will _do_, shown only while somebody
+is reaching for it. Delegate tints `accent`, Sign out tints `danger`. Background
+and text only — the outline stays `border-line`, which is what makes the plain
+buttons read as one set. Collapsing the two would make blue mean both "there is
+money to delegate" and "this button delegates it".
+
+**`buttonFace()` is the button's face as a string**, for the one thing that wears
+it without being a button: the reading is a `Link`, because it goes to Overview.
+A link drawn by hand beside three buttons is how a set stops looking like a set.
 
 `ghost` is for a control that must recede: a disclosure toggle, a tertiary
 escape.
@@ -546,9 +564,12 @@ nothing renders above the page. A tag's tone and its words carry how serious it
 is — the same way every other state in this system carries it — and floor space
 is not asked to say it a third time.
 
-**They live at the foot of the sidebar**, above the sync button and its
-separator, ordered so the most urgent is lowest and the budget's own reading is
-always last.
+**They live at the foot of the sidebar**, above the control zone, ordered so the
+most urgent is lowest. The budget's own reading used to be the last row of that
+column and is not a tag any more: it is the first **control** of the zone below
+(§12, [ADR 064](decisions/064-the-corner-answers-one-question.md)). With nothing
+to report the column renders nothing at all, where it used to have the reading as
+a floor.
 
 **Except the bank feed's own, which are folded into Sync SimpleFIN**
 ([ADR 063](decisions/063-the-feed-reports-in-its-own-button.md)).
@@ -568,6 +589,10 @@ clear, an overdue bill, a line behind its target, a stale Bitcoin price, a
 failing backup, a stalled snapshot — none of those is anything the bridge did,
 and burying them inside a button about the bank would be hiding them. Nor is the
 budget's own reading, which is the thing the household opens the application for.
+
+The reading keeps a tag on a phone, where there is no control zone to be a button
+in — one tone and one set of words with the button, computed once so two screens
+cannot disagree about one budget.
 
 **Below `sm` there is no sidebar, and no Sync button to fold into**, so the phone
 keeps every notification — and shows them as **one coloured dot** beside the page
@@ -705,28 +730,45 @@ anything anybody navigates to.
 
 ### The control zone
 
-Below the alerts and the budget's reading, above the sign-out block: the two acts
-on the household, 8px apart, **Delegate then Sync SimpleFIN**. Neither is a fact
-about the page underneath — the argument ADR 059 used to move the alerts out of
-the page header — and Delegate sits directly under the reading it acts on, which
-is the whole reason it is here rather than on Budget.
+**Four controls, one group, one rule above it** — the reading, Delegate, Sync
+SimpleFIN, Sign out, 8px apart, same 28px face, same `border-line` outline
+([ADR 064](decisions/064-the-corner-answers-one-question.md)). There is no
+divider inside it and no identity block: the signed-in address and the account's
+role are on Settings → Users, which is where an account is administered.
 
-**Both ask before they do anything.** They are one control apart and the upper
-one moves a pay packet, so a misclick costs a dialog rather than a distribution.
-That includes Undo Delegation, which fired on the press until it moved here.
+**The reading is first and is the only one always coloured.** Green, blue or red,
+and a press goes to Overview whatever it says — not only when something is wrong,
+because a control that is a link on the bad days and inert on the good ones is
+one nobody learns to press. Everything under it is plain unless hovered or unless
+the bank feed is reporting something, so the corner of the screen answers one
+question at a glance.
 
-**Neither is coloured.** Delegate was the accent until v0.73.0; §5 says why it is
-not. The one thing that paints a button in this zone is a condition it is
-reporting, and only Sync has any.
+Then the two acts on the household. Neither is a fact about the page underneath —
+the argument ADR 059 used to move the alerts out of the page header — and
+Delegate sits directly under the reading it acts on, which is the whole reason it
+is here rather than on Budget.
+
+**All four ask before they do anything.** They are one control apart and they
+distribute a pay packet, roll one back, fetch the bank, and end the session. That
+includes Undo Delegation, which fired on the press until it moved here, and Sign
+out, which is the strongest case of the four: a full page load, so a misclick
+costs the session and everything typed into it with nothing to come back to.
 
 **There is no caption under Sync.** "Synced 12m ago" was a figure nobody acts on
 and "Last sync failed" was a line saying what the button's own colour says. The
 button carries its state, and now the bank feed's whole list with it (§5, §9).
 
-**Below `sm` there is no sidebar**, so Delegate falls back to `PageHeader` — the
-same rule and the same reason as the alerts (§9). Sync does not: it has no phone
-fallback today and did not gain one here, which is exactly why the alerts it
-folds are unfolded again on a phone.
+**`ControlPopover` is what a control in this zone says.** Sync's folded alerts
+and the reading's arithmetic are one object: a panel hanging **above** the
+control, `w-96` because these are sentences, with the 4px offset as padding on
+the wrapper rather than a margin on the card — a bare gap is a dead strip that
+drops `:hover` on the way into a panel whose links have to be reachable.
+
+**Below `sm` there is no sidebar**, so Delegate and the reading fall back to
+`PageHeader` — the same rule and the same reason as the alerts (§9); the reading
+is a tag again there, with one tone and one set of words shared with the button.
+Sync does not fall back: it has no phone home today and did not gain one here,
+which is exactly why the alerts it folds are unfolded again on a phone.
 
 ## 13. Themes
 

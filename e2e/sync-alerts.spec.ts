@@ -129,50 +129,55 @@ test('no notification offers a dismissal', async ({ signedIn }) => {
 });
 
 /**
- * The reading is the last row of the column, and nothing widens the sidebar.
+ * The reading is a control now, not the last row of a column.
  *
- * The budget's own reading is always the bottom of the stack, so it is in the
- * same place whatever else the application has to say today, and a long alert
- * gives way rather than pushing the navigation wider. It is deliberately *not*
- * folded into Sync: Balanced / To delegate / Over-delegated is the reading the
- * household opens the application for, and it is nothing the bank feed did.
+ * Balanced / To delegate / Over-delegated was the bottom tag of the alert stack.
+ * It is the top of the **control zone** — always coloured, always a link to
+ * Overview — while everything under it stays plain unless it has something to
+ * report. That is what makes the corner of the screen answer one question at a
+ * glance (ADR 064).
  *
- * The *ordering* between severities is proved in `notifications.test.ts`
- * instead. It cannot be staged here: the API reports the worst sync condition
- * rather than all of them, and it suppresses "not reporting" while a sync is
- * failing outright — both right, and between them there is no way to have two
- * severities on screen at once.
+ * The *ordering* between notification severities is proved in
+ * `notifications.test.ts` instead. It cannot be staged here: the API reports the
+ * worst sync condition rather than all of them, and it suppresses "not
+ * reporting" while a sync is failing outright — both right, and between them
+ * there is no way to have two severities on screen at once.
  */
-test('the budget reading stays a tag in the sidebar, and nothing widens it', async ({
-  signedIn,
-}) => {
+test('the reading sits above Delegate, is coloured, and goes to Overview', async ({ signedIn }) => {
   await makeSyncFailure('connection refused');
-  await signedIn.reload();
+  await signedIn.goto('/budget');
 
   const nav = signedIn.getByRole('navigation', { name: 'Main' });
+  const reading = nav.getByRole('link', { name: /Balanced|To delegate|Over-delegated/ });
+  await expect(reading).toBeVisible();
 
-  const stack = await nav.evaluate((node) =>
-    /*
-     * The tags, not the control that now describes itself with one too: Sync
-     * carries `aria-describedby` for its folded panel, and it is the thing this
-     * assertion is proving the column no longer contains.
-     */
-    Array.from(node.querySelectorAll('[role="status"], [aria-describedby]'))
-      .filter((el) => el.tagName !== 'BUTTON' && el.getAttribute('role') !== 'tooltip')
-      .map((el) => {
-        const box = el.getBoundingClientRect();
-        return { text: (el.textContent ?? '').trim(), top: Math.round(box.top), right: box.right };
-      }),
+  // Coloured, and the only one in the zone that is: a failing sync paints Sync
+  // itself, but Delegate and Sign out stay plain.
+  await expect(reading).toHaveClass(/bg-(positive|accent|danger)-soft/);
+  await expect(nav.getByRole('button', { name: 'Delegate' })).toHaveClass(/bg-canvas/);
+  await expect(nav.getByRole('button', { name: 'Sign out' })).toHaveClass(/bg-canvas/);
+
+  // Directly above Delegate, and above Sync and Sign out under that.
+  const order = await Promise.all(
+    [
+      reading,
+      nav.getByRole('button', { name: 'Delegate' }),
+      nav.getByRole('button', { name: /Sync SimpleFIN/ }),
+      nav.getByRole('button', { name: 'Sign out' }),
+    ].map(async (control) => Math.round((await control.boundingBox())!.y)),
   );
+  expect([...order].sort((a, b) => a - b)).toEqual(order);
 
-  expect(stack.length).toBeGreaterThan(0);
-  // Rendered order is top to bottom, so the array order is the reading order.
-  const tops = stack.map((entry) => entry.top);
-  expect([...tops].sort((a, b) => a - b)).toEqual(tops);
-  expect(stack[stack.length - 1]!.text).toMatch(/Balanced|To delegate|Over-delegated/);
+  // Nothing separates Sign out from the button above it any more, and the
+  // signed-in address and role are gone — both live in Settings.
+  await expect(nav.getByText('e2e-owner@example.test')).toHaveCount(0);
+  await expect(nav.getByText('Super Admin')).toHaveCount(0);
 
-  const box = (await nav.boundingBox())!;
-  for (const entry of stack) {
-    expect(entry.right).toBeLessThanOrEqual(box.x + box.width);
-  }
+  // The working is still one hover away.
+  await reading.hover();
+  await expect(signedIn.getByRole('tooltip')).toContainText('Assets');
+
+  // And it goes to Overview whatever it currently says.
+  await reading.click();
+  await expect(signedIn).toHaveURL(/\/overview/);
 });

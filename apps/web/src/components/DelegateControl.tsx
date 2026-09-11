@@ -101,17 +101,21 @@ export function DelegateControl({
       ) : (
         <Button
           /*
-           * Not blue.
+           * Plain, with the blue on the hover.
            *
-           * It was the accent, from when it was the Budget page's own primary
-           * action and the only loud thing on that screen. In the sidebar it is
-           * one of two buttons 8px apart, and the blue one was the one that
-           * moves a pay packet while the neutral one below it is the one pressed
-           * daily — an invitation to reach for the wrong control, which is the
-           * hazard the confirmation dialog already exists to catch. Both are
-           * plain now; what is coloured here is a button reporting a *state*,
-           * and Delegate has none.
+           * It was the accent fill, from when it was the Budget page's own
+           * primary action and the only loud thing on that screen. In the
+           * sidebar's control zone it is one of four buttons 8px apart, and a
+           * filled blue one there was the one that moves a pay packet sitting
+           * over the one pressed daily — an invitation to reach for the wrong
+           * control, which is the hazard the confirmation dialog already exists
+           * to catch.
+           *
+           * Colour in that zone means a control is reporting a **state**, and
+           * Delegate has none. What it *will do* shows on the way to pressing
+           * it: `ui-system.md` §5 has the split.
            */
+          hover="accent"
           className={width}
           onClick={() => setDialog('delegate')}
           title={collapsed ? 'Delegate' : undefined}

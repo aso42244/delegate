@@ -6,7 +6,58 @@ phase (`v0.1.0-phase1`, and so on).
 
 ## [Unreleased]
 
-Nothing yet.
+### Changed
+
+- **The corner of the screen answers one question**
+  ([ADR 064](docs/decisions/064-the-corner-answers-one-question.md)). The foot of
+  the sidebar had four things in it drawn as three groups. It is one group of
+  four now — the budget's reading, Delegate, Sync SimpleFIN, Sign out — 8px
+  apart, one face, one outline, under one rule.
+
+- **The budget's reading is a button, and the only thing in that group that is
+  always coloured.** Green when balanced, blue when there is money to delegate,
+  red when over-delegated — and a press goes to Overview whatever it says, not
+  only when something is wrong. It was a 13px pill, the same object as "1 account
+  not reporting", sitting above two larger bordered buttons: the thing the
+  household opens the application for looked like an annotation on the things
+  that act, and it went nowhere.
+
+  **Three states, three colours.** Over-delegation used to be yellow inside twice
+  the tolerance and red beyond it. That split is gone: over-delegated is the
+  direction that is genuinely wrong at any size, and this is read at a glance now
+  rather than compared against its own past.
+
+  On a phone it stays a tag beside the page title — there is no sidebar and so no
+  control zone — with one tone and one set of words shared with the button, so
+  the two screens cannot disagree about one budget.
+
+- **Sign out looks like the buttons above it and asks before it runs.** It was
+  borderless, in a block of its own under a second rule, and it was the only
+  control in that corner that did nothing to stop a misclick — 8px under the bank
+  sync that gets pressed several times a day, with a full page load and no undo
+  behind it. The copy on Settings → Users is deliberately left unconfirmed: it is
+  three navigations deep and on a phone it is the only route there is.
+
+- **Delegate tints blue on hover and Sign out tints red.** Colour in that group
+  means a control is reporting a **state**; a hover tint means what pressing it
+  will _do_. Neither has a state, but one distributes a pay packet and the other
+  ends the session, and 8px apart they should not look identical right up to the
+  moment they are clicked.
+
+### Removed
+
+- **The signed-in address and the account's role are gone from the sidebar**,
+  along with the divider above them. Both are on Settings → Users, which is where
+  an account is administered, and neither is a question anybody has while looking
+  at a budget.
+
+### Fixed
+
+- The budget's reading announced as an **unnamed link** once it became one:
+  `role="status"` does not support name from content, so the words inside it
+  never reached the link. It carries an explicit name now. Caught by the
+  end-to-end suite being unable to find it by name either — which is exactly what
+  a screen reader would have found.
 
 ## [0.73.0] — 2026-09-11
 

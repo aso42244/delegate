@@ -89,20 +89,25 @@ export function Alerts({ inline = false }: { readonly inline?: boolean }): React
   }
 
   /*
+   * The notifications, and only those.
+   *
+   * The budget's own reading used to be the last row here. It is a **control**
+   * now — the top of the sidebar's control zone, always coloured, always a way
+   * to Overview (ADR 064) — so it is drawn by `Sidebar` rather than by the
+   * column of things the application is reporting.
+   *
    * `items-start` so a short tag is as wide as its words rather than as wide as
    * the column — these are tags, not buttons. `min-w-0` so the long ones
    * truncate instead of widening the sidebar, which is the whole reason the face
    * carries `truncate` and the detail carries the sentence.
    */
+  if (rows.length === 0) return null;
+
   return (
     <div className="flex min-w-0 flex-col items-start gap-1 px-3 pb-3">
       {rows.map((notification) => (
         <Notification key={notification.kind} notification={notification} />
       ))}
-      {/* Always last in the source, so it is the bottom of the column: the
-          reading somebody looks for sits in the same place whatever else the
-          application has to say today. */}
-      {view !== null && <BalanceReading view={view} />}
     </div>
   );
 }
