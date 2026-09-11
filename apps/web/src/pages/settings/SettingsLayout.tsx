@@ -2,6 +2,7 @@ import type { ReactNode } from 'react';
 import { Link, NavLink, Outlet, useLocation } from 'react-router-dom';
 import { NARROW, useMediaQuery } from '../../useMediaQuery.js';
 import { PageHeader } from '../../components/layout.jsx';
+import { TileGrid } from '../../components/Tile.jsx';
 import { useSettingsTabs } from '../../settings-tabs.js';
 import { SettingsIndex } from './SettingsIndex.jsx';
 
@@ -66,21 +67,17 @@ export function SettingsLayout(): ReactNode {
     );
 
   /*
-   * The cards, as a three-column grid on a wide screen.
+   * The cards, in the one tile grid.
    *
-   * Six columns, so a card can be a third, a half, two-thirds or the whole row —
-   * three columns could not express "two side by side", and a half is not a
-   * whole number of thirds. A card states what it needs with `span` and the
-   * default is the whole row, so nothing that has not thought about it changed.
+   * Twelve columns, the same grid Overview lays its tiles on, so a card can be a
+   * third, a half, two-thirds or the whole row and each of those words means the
+   * same thing on both pages. It was six here and twelve there, which is how
+   * `half` came to mean `col-span-3` on one screen and `col-span-6` on another.
    *
    * Items stretch rather than starting at the top, so cards on one line end
    * level with each other.
    */
-  const body = (
-    <div className="grid grid-cols-1 gap-6 lg:grid-cols-6">
-      {narrow && atIndex ? <SettingsIndex /> : <Outlet />}
-    </div>
-  );
+  const body = <TileGrid>{narrow && atIndex ? <SettingsIndex /> : <Outlet />}</TileGrid>;
 
   const links = SECTIONS.map((section) => (
     <NavLink

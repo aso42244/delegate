@@ -119,8 +119,18 @@ red are reserved for over-delegation — the direction that is genuinely wrong.
 
 ### Tables
 
-Borderless spreadsheet style: no card box, a 2px near-black rule across the top
-of each table, then 1px `#E6E5E3` row dividers. No fill on the header row.
+A 2px near-black rule across the top of each table, then 1px `#E6E5E3` row
+dividers. No fill on the header row.
+
+**Each section sits on a tile**, since
+[ADR 061](decisions/061-every-page-is-a-page-of-tiles.md). This said "no card
+box" and was written when Budget was the only page — the contrast it was
+reaching for was against nothing, and beside a dashboard of tiles it read as the
+one screen that had not been designed. The table itself is unchanged: the 2px
+rule is still the separator, the dividers are still hairlines, and the section's
+total is still the first row of its own table so each figure lands in the column
+it sums. The tile carries no heading of its own, because that total row already
+carries one.
 
 Rows are **40px tall**, with a **32px compact** setting in Settings → Display.
 Only the spacing differs; the type size is the same in both, so compact is denser
@@ -991,10 +1001,23 @@ Drawn under the name in small grey it put a line of feed text on every renamed
 row, which is the exact noise renaming was for. It is still searchable, so a bill
 is findable by the only name a statement knows.
 
-**Hidden bills live under a fold at the foot of the page**, with the count on the
-summary. A list of corrections is not what anybody comes to the page for, but a
-correction nobody can find is one nobody can undo — and the row it hid is
-invisible by design.
+**Hidden bills live on Settings → Budget**, since
+[ADR 061](decisions/061-every-page-is-a-page-of-tiles.md). They were a fold at
+the foot of this page and left it at the owner's request: a list of corrections
+is not what anybody comes here for, and Due is a tile beside another tile now
+with nowhere sensible for a fold. The rule that put them somewhere still holds —
+**a correction nobody can find is one nobody can undo** — which is why they
+moved rather than went.
+
+**Not Settings → Archived**, which was tried first and reversed inside the hour.
+"Archived" means something exact here, `archived_at` on a row, and a list of
+hidden bills under that heading reads as a claim that the charges were archived
+too. They are not: `bill_overrides` holds a refusal keyed on the merchant and
+touches no transaction, so every charge stays in the register, still
+categorized, still searchable, still counted in every figure it was in before.
+The card's description says exactly that, and so does the row menu — "The
+charges stay." — because that is the sentence somebody needs at the moment they
+press it.
 
 **Status is a word before it is a colour.** `Overdue`, `Due now`, `Expected`,
 `Stopped?` — §9 says never to convey state by colour alone, and the colour here
@@ -1184,6 +1207,14 @@ pointed at still exists, in better form.
 where there were eight, and the tab bar's columns still come from the page list
 rather than a number written beside it — six tabs at 390px give each 65px, which
 is what the list was sized for.
+
+**And they are one screen, not two views**
+([ADR 061](decisions/061-every-page-is-a-page-of-tiles.md)). Due and Cost sit
+side by side, two-thirds and a third, stacking below `lg`. The segmented control
+between them is gone and so is `?view=cost`: neither answer is in the other, so a
+switch made somebody press it to find out which half they had wanted, and the
+page could only ever say half of what it knows. Both old addresses still resolve
+to the screen carrying both.
 
 **Where somebody lands is per person, and it is a redirect rather than a page.**
 `/` was the Budget page's own address, which is exactly why a landing preference

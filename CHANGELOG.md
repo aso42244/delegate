@@ -6,14 +6,87 @@ phase (`v0.1.0-phase1`, and so on).
 
 ## [Unreleased]
 
-Nothing yet.
+### Changed
+
+- **Every page is a page of tiles.** There were three implementations of one box
+  — Overview's tile, Settings' card, and a bordered `<section>` five files wrote
+  out by hand — at two paddings, two heading sizes and two places for the
+  description. And two grids: Settings counted in sixths, Overview in twelfths,
+  so `span="half"` meant two different widths depending which file you were in.
+  There is one `Tile`, one twelve-column grid at 24px, and one header shape,
+  which is `PageHeader`'s. The Budget page's tables, the register, and the
+  duplicate and pair panels are on it too.
+  See [ADR 061](docs/decisions/061-every-page-is-a-page-of-tiles.md).
+
+- **Recurring shows Due and Cost at once**, two-thirds and a third, instead of
+  two views behind a switch. Neither answer is in the other, so the switch made
+  somebody press it to find out which half they had wanted — and the page could
+  only ever say half of what it knows. Both old addresses still land on it;
+  `?view=cost` is gone with the control it selected.
+
+- **The Cost half is two tiles of rows** rather than a grid of one card per
+  utility, which put the third utility below the fold. The per-cycle comparison
+  is one tile and twelve months with the monthly average is the other, in the
+  same dense rows "Spending by grouping" and "Coming up" use. Every figure still
+  names its unit: the tile's heading carries it for a column, and a row's hover
+  text carries both where a row has two.
+
+- **The Due half stops counting itself.** "10 recurring, 1 overdue." was a fact
+  about how long the household has been running rather than about the list
+  somebody came to work through — the same argument that took "494 transactions"
+  off the register. The overdue pill still says it, away from the page, which is
+  where saying it is useful.
+
+- **Hidden bills moved to Settings → Budget**, and the fold at the foot of
+  Recurring is gone. The card's description says the thing somebody actually
+  wants to know — **their charges stay in the register** — and so does the row
+  menu that hides one. Nothing is archived by hiding a bill: `bill_overrides`
+  holds a refusal keyed on the merchant and touches no transaction.
+
+- **Every dialog is `Modal`.** Transfer was the last hand-rolled overlay from
+  before ADR 038, and the Delegate and Undo confirmations moved into the sidebar
+  in 0.70.0 carrying a new one. On a phone all three were centred cards rather
+  than sheets and were measured against the window rather than the visible
+  rectangle — which put Transfer's amount field and its confirm button underneath
+  the software keyboard. Escape closes all of them now, and the backdrop closes
+  the two that are only a reading.
+
+  The confirmations were hand-rolled on the reasoning that neither holds a typed
+  figure. That is an argument for `dismissible` rather than for a second frame,
+  and it matters most there of anywhere: Delegate sits in the page header on a
+  phone, so the confirmation a small screen reaches most easily is **Undo
+  Delegation** — the destructive one.
+
+### Fixed
+
+- **The Rules page starts where every other page does.** It wrapped `PageHeader`
+  — which owns the 24px step so that no caller has to — in a column with a gap of
+  its own, so its tile began 48px below the title while Overview's began 24px
+  below. Invisible on that page alone.
+
+- **A row's `⋯` and its "Move surplus here" appear on that row alone.** The tile
+  shell carried a bare `group` class, which is the same group the table rows use
+  — so hovering anywhere over the budget drew the absorb button on every line at
+  once, and a press into the register's search box revealed fifty row menus.
+  Every test passed through it: the controls were always in the DOM, and only
+  when they appear changed.
+
+- **Widths inside a tile ask how wide the tile is**, not how wide the window is.
+  The bills and register tables and the Overview figures band were still asking
+  the window, which stopped being the same question in v0.49 when a tile stopped
+  being the whole row.
+
+- **Four more rules in the gate**, one per defect above: one tile surface, one
+  dialog implementation, no doubled step under a page title, and container
+  queries for widths. `ui-system.md` §1 is corrected with them — it recorded the
+  tile-to-tile step as 12px while both grids had been drawn at 24 since v0.59.
 
 ## [0.70.0] — 2026-09-11
 
 ### Changed
 
 - **Delegate is in the sidebar now, directly above Sync SimpleFIN**
-  ([ADR 060](docs/decisions/060-the-sidebar-holds-the-acts-on-the-household.md)).
+  ([ADR 061](docs/decisions/060-the-sidebar-holds-the-acts-on-the-household.md)).
   It was the Budget page's primary button, which was right while Budget was the
   only screen it could be pressed from — and the figure that says whether to
   press it has been at the foot of the sidebar, on every screen, since v0.69.0.

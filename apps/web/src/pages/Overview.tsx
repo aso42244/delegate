@@ -36,6 +36,7 @@ import {
   UtilityTrends,
 } from '../components/OverviewCharts.jsx';
 import { OverviewPanel, type PanelTab } from '../components/OverviewPanel.jsx';
+import { Tile, TileGrid, type TileSpan } from '../components/Tile.jsx';
 import { Sankey, type FlowNode } from '../components/Sankey.jsx';
 import { CompositionBars, RankedBars, type RankedRow } from '../components/RankedBars.jsx';
 import { TimeSeriesChart, type TimePoint } from '../components/TimeSeries.jsx';
@@ -166,25 +167,26 @@ const NO_HISTORY = 'No history yet — the first night records one.';
  * class names and `lg:col-span-${n}` is a string it never sees.
  */
 /*
- * How wide a tile is, at each width the page has.
+ * How wide a tile is, said in the one vocabulary every page uses.
  *
  * Three steps down rather than one: a row of three becomes two at `md` and one
  * below it, and a row of two becomes one. A tile that keeps a third of the width
  * on a laptop is 300px of ranked bars with the names truncated to nothing, which
  * is the floor the row cap is derived from in the first place.
  *
- * Written out rather than interpolated, because Tailwind reads the source for
- * class names and `lg:col-span-${n}` is a string it never sees.
+ * The classes themselves live in `Tile`, because a span is a property of the
+ * grid rather than of this page — see ADR 061.
  */
-const COLUMN_CLASS: Record<number, string> = {
-  12: 'lg:col-span-12',
-  6: 'md:col-span-6 lg:col-span-6',
-  4: 'md:col-span-6 lg:col-span-4',
+const COLUMN_SPAN: Record<number, TileSpan> = {
+  12: 'full',
+  6: 'half',
+  4: 'third',
 };
 
 function TileShell({
   tile,
   columns,
+  stacked = false,
   arranging,
   draggable,
   rowSize,
@@ -200,6 +202,13 @@ function TileShell({
 }: {
   readonly tile: OverviewTileDto;
   readonly columns: number;
+  /**
+   * The sidebar stacks its tiles in a flex column rather than laying them on the
+   * grid, so they declare no span — and a tile without one takes its own height
+   * rather than the column's. See `Tile`: `h-full` in a stretched flex column
+   * makes every tile as tall as the whole row, one drawn over the next.
+   */
+  readonly stacked?: boolean;
   readonly arranging: boolean;
   /** Pointer devices only — HTML5 drag fires no events under a thumb. */
   readonly draggable: boolean;
@@ -246,19 +255,22 @@ function TileShell({
    */
   const fromGrip = useRef(false);
 
+  const sized = height !== null && height !== undefined;
+
   return (
-    <section
-      className={`group relative col-span-1 flex min-w-0 flex-col gap-4 rounded-lg border border-line bg-canvas p-4 ${
-        COLUMN_CLASS[columns] ?? 'lg:col-span-12'
-      }`}
+    <Tile
+      {...(stacked ? {} : { span: COLUMN_SPAN[columns] ?? 'full' })}
+      title={copy.title}
+      {...(copy.description === undefined ? {} : { description: copy.description })}
       // A fixed height turns the body into the thing that scrolls, so a tile
       // dragged shorter than its content stays a tile rather than a clipped one.
-      style={height === null || height === undefined ? undefined : { height }}
+      filled={sized}
+      {...(sized ? { style: { height } } : {})}
       draggable={draggable}
-      onPointerDown={(event) => {
+      onPointerDown={(event: React.PointerEvent) => {
         fromGrip.current = (event.target as HTMLElement).closest('[data-grip]') !== null;
       }}
-      onDragStart={(event) => {
+      onDragStart={(event: React.DragEvent) => {
         if (!fromGrip.current) {
           event.preventDefault();
           return;
@@ -268,65 +280,11 @@ function TileShell({
       onDragOver={drag.onDragOver}
       onDrop={drag.onDrop}
       data-tile={tile.key}
-    >
-      {/* The edge a drop would land on. Drawn on the tile rather than between
-          tiles, because a gap is a target nobody can hit at 24px. */}
-      {/*
-        Where the drop would land, drawn on the edge it would land on.
-        
-        Four edges rather than two: left and right join this tile's row, top and
-        bottom make a new row above or below it. Without the horizontal pair
-        there was no gesture that meant "on its own line" — every drop joined a
-        row, and a tile could only be given its own by pressing ⤓ afterwards.
-      */}
-      {drag.over !== null && (
-        <span
-          aria-hidden="true"
-          className={
-            drag.over === 'left'
-              ? 'absolute inset-y-0 -left-1 w-1 rounded bg-accent'
-              : drag.over === 'right'
-                ? 'absolute inset-y-0 -right-1 w-1 rounded bg-accent'
-                : drag.over === 'above'
-                  ? 'absolute inset-x-0 -top-1 h-1 rounded bg-accent'
-                  : 'absolute inset-x-0 -bottom-1 h-1 rounded bg-accent'
-          }
-        />
-      )}
-
-      {/*
-        Says the tile can be pulled. Revealed on hover rather than drawn
-        permanently, because it is an affordance for an occasional act on a page
-        of figures.
-
-        **Out of the flow, in the tile's own padding.** It used to sit before the
-        heading as an `opacity-0` box that still took its width, which indented
-        every title by a glyph and a gap — so no heading lined up with the bars
-        and figures beneath it. Taking it out of the flow keeps the header from
-        reflowing on hover *and* puts the title on the tile's left edge.
-      */}
-      {draggable && (
-        <span
-          aria-hidden="true"
-          data-grip="true"
-          className="absolute top-4 left-1 cursor-grab text-quiet text-faint opacity-0 transition-opacity group-hover:opacity-100"
-        >
-          ⠿
-        </span>
-      )}
-
-      <div className="flex min-w-0 items-baseline gap-2">
-        <h2 className="min-w-0 truncate text-section font-semibold text-ink">{copy.title}</h2>
-        {copy.description !== undefined && (
-          <p className="truncate text-quiet text-muted">{copy.description}</p>
-        )}
-        {/* A control that belongs to this tile rather than to the page: the
-            cashflow period, on the header's right where a tile's own control is
-            looked for. Hidden while arranging, which needs the same room. */}
-        {controls !== undefined && !arranging && (
-          <div className="ml-auto flex shrink-0 items-center gap-2">{controls}</div>
-        )}
-        {arranging && (
+      actions={
+        /* A control that belongs to this tile rather than to the page: the
+           cashflow period, on the header's right where a tile's own control is
+           looked for. Hidden while arranging, which needs the same room. */
+        arranging ? (
           /*
            * Every control names the tile it acts on. A grid of tiles each
            * carrying "Move earlier" gives a screen reader a column of identical
@@ -337,7 +295,7 @@ function TileShell({
            * reachable by keyboard and does nothing under a thumb. Drag is the
            * fast way; this is the way that always works.
            */
-          <div className="ml-auto flex shrink-0 items-center gap-2">
+          <>
             <Button
               variant="ghost"
               onClick={onJoin}
@@ -372,78 +330,108 @@ function TileShell({
             <Button variant="ghost" onClick={onRemove} aria-label={`Remove ${copy.title}`}>
               ×
             </Button>
-          </div>
-        )}
-      </div>
-      {/*
-        The body holds the tile's shape; whatever is inside it decides what gives.
+          </>
+        ) : (
+          controls
+        )
+      }
+      overlay={
+        <>
+          {/*
+            Where the drop would land, drawn on the edge it would land on.
 
-        `min-h-0` because a flex item's minimum is its content, which would
-        otherwise push the tile back to its natural height whatever the row was
-        dragged to.
+            On the tile rather than between tiles, because a gap is a target
+            nobody can hit at 24px. Four edges rather than two: left and right
+            join this tile's row, top and bottom make a new row above or below
+            it. Without the horizontal pair there was no gesture that meant "on
+            its own line" — every drop joined a row, and a tile could only be
+            given its own by pressing ⤓ afterwards.
+          */}
+          {drag.over !== null && (
+            <span
+              aria-hidden="true"
+              className={
+                drag.over === 'left'
+                  ? 'absolute inset-y-0 -left-1 w-1 rounded bg-accent'
+                  : drag.over === 'right'
+                    ? 'absolute inset-y-0 -right-1 w-1 rounded bg-accent'
+                    : drag.over === 'above'
+                      ? 'absolute inset-x-0 -top-1 h-1 rounded bg-accent'
+                      : 'absolute inset-x-0 -bottom-1 h-1 rounded bg-accent'
+              }
+            />
+          )}
 
-        `overflow-hidden` rather than `auto`, because a scrolling body and a
-        scrolling list inside it are two scrollbars for one overflow — and the
-        outer one takes the whole tile with it, so a short row clipped its donut
-        halfway instead of shortening the legend beside it. A chart scales to the
-        room it is given; a list scrolls in place.
-      */}
-      <div
-        className={
-          height === null || height === undefined
-            ? 'flex min-h-0 flex-col'
-            : 'flex min-h-0 flex-1 flex-col overflow-hidden'
-        }
-      >
-        {/* The row's height, passed down as the number it is. Nothing here
-            measures the page — see `tile-height.ts`. */}
-        <TileRowHeight.Provider value={height ?? undefined}>{children}</TileRowHeight.Provider>
-      </div>
+          {/*
+            Says the tile can be pulled. Revealed on hover rather than drawn
+            permanently, because it is an affordance for an occasional act on a
+            page of figures.
 
-      {/*
-        The row's height, dragged from the bottom edge.
+            **Out of the flow, in the tile's own padding.** It used to sit before
+            the heading as an `opacity-0` box that still took its width, which
+            indented every title by a glyph and a gap — so no heading lined up
+            with the bars and figures beneath it.
+          */}
+          {draggable && (
+            <span
+              aria-hidden="true"
+              data-grip="true"
+              className="absolute top-4 left-1 cursor-grab text-quiet text-faint opacity-0 transition-opacity group-hover/tile:opacity-100"
+            >
+              ⠿
+            </span>
+          )}
 
-        On every tile in the row rather than on the row, because a row is not an
-        element here — it is a col-span relationship inside one grid. Dragging
-        any member resizes all of them, which is also the behaviour somebody
-        expects: the edge under the pointer is the edge that moves.
-      */}
-      {onResize !== undefined && (
-        <span
-          role="separator"
-          aria-label={`Height of the row holding ${copy.title}`}
-          aria-orientation="horizontal"
-          tabIndex={0}
-          className="absolute inset-x-0 -bottom-1 z-10 h-2 cursor-ns-resize rounded-full opacity-0 transition-opacity group-hover:opacity-100 hover:bg-accent focus-visible:opacity-100 focus-visible:bg-accent"
-          onPointerDown={(event) => {
-            event.preventDefault();
-            const handle = event.currentTarget;
-            const start = event.clientY;
-            const from = handle.closest('section')?.getBoundingClientRect().height ?? 0;
-            handle.setPointerCapture(event.pointerId);
+          {/*
+            The row's height, dragged from the bottom edge.
 
-            const move = (moved: PointerEvent): void =>
-              onResize(Math.round(from + (moved.clientY - start)), false);
-            const up = (ended: PointerEvent): void => {
-              onResize(Math.round(from + (ended.clientY - start)), true);
-              handle.removeEventListener('pointermove', move);
-              handle.removeEventListener('pointerup', up);
-            };
-            handle.addEventListener('pointermove', move);
-            handle.addEventListener('pointerup', up);
-          }}
-          /* Dragging is not reachable by keyboard, so the arrows are — 24px a
-             press, which is a row height somebody can actually land on. */
-          onKeyDown={(event) => {
-            if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') return;
-            event.preventDefault();
-            const box = event.currentTarget.closest('section')?.getBoundingClientRect();
-            if (!box) return;
-            onResize(Math.round(box.height + (event.key === 'ArrowDown' ? 24 : -24)), true);
-          }}
-        />
-      )}
-    </section>
+            On every tile in the row rather than on the row, because a row is not
+            an element here — it is a col-span relationship inside one grid.
+            Dragging any member resizes all of them, which is also the behaviour
+            somebody expects: the edge under the pointer is the edge that moves.
+          */}
+          {onResize !== undefined && (
+            <span
+              role="separator"
+              aria-label={`Height of the row holding ${copy.title}`}
+              aria-orientation="horizontal"
+              tabIndex={0}
+              className="absolute inset-x-0 -bottom-1 z-10 h-2 cursor-ns-resize rounded-full opacity-0 transition-opacity group-hover/tile:opacity-100 hover:bg-accent focus-visible:opacity-100 focus-visible:bg-accent"
+              onPointerDown={(event) => {
+                event.preventDefault();
+                const handle = event.currentTarget;
+                const start = event.clientY;
+                const from = handle.closest('section')?.getBoundingClientRect().height ?? 0;
+                handle.setPointerCapture(event.pointerId);
+
+                const move = (moved: PointerEvent): void =>
+                  onResize(Math.round(from + (moved.clientY - start)), false);
+                const up = (ended: PointerEvent): void => {
+                  onResize(Math.round(from + (ended.clientY - start)), true);
+                  handle.removeEventListener('pointermove', move);
+                  handle.removeEventListener('pointerup', up);
+                };
+                handle.addEventListener('pointermove', move);
+                handle.addEventListener('pointerup', up);
+              }}
+              /* Dragging is not reachable by keyboard, so the arrows are — 24px a
+                 press, which is a row height somebody can actually land on. */
+              onKeyDown={(event) => {
+                if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') return;
+                event.preventDefault();
+                const box = event.currentTarget.closest('section')?.getBoundingClientRect();
+                if (!box) return;
+                onResize(Math.round(box.height + (event.key === 'ArrowDown' ? 24 : -24)), true);
+              }}
+            />
+          )}
+        </>
+      }
+    >
+      {/* The row's height, passed down as the number it is. Nothing here
+          measures the page — see `tile-height.ts`. */}
+      <TileRowHeight.Provider value={height ?? undefined}>{children}</TileRowHeight.Provider>
+    </Tile>
   );
 }
 
@@ -1675,7 +1663,9 @@ function FiguresTile({
 }): ReactNode {
   return (
     <div className="flex flex-col gap-3">
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+      {/* `@lg`, not `lg`: this asks how wide *this tile* is, and the band is
+          a third of a row as often as it is the whole of one. */}
+      <div className="grid grid-cols-2 gap-3 @lg:grid-cols-4">
         {figures.map((figure) => {
           const copy = FIGURE_COPY[figure.key] ?? { label: figure.key };
           const value =
@@ -2576,26 +2566,25 @@ export function Overview(): ReactNode {
           */}
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
             {available.map((key) => (
-              <div
+              <Tile
                 key={key}
-                className="flex flex-col gap-2 rounded-lg border border-line bg-canvas p-4 text-left"
-              >
-                <span className="flex items-baseline gap-2">
-                  <span className="truncate text-section font-semibold text-ink">
-                    {TILE_COPY[key]?.title ?? key}
-                  </span>
-                  {/* The action is its own control rather than the whole card.
-                      A card that is a button cannot contain one, and some tiles
-                      draw controls of their own. */}
+                title={TILE_COPY[key]?.title ?? key}
+                /* Under "Add a tile", so `h3` — and so a picker card does not
+                   answer to the same accessible name as a real tile. */
+                headingLevel={3}
+                actions={
+                  /* The action is its own control rather than the whole tile.
+                     A tile that is a button cannot contain one, and some tiles
+                     draw controls of their own. */
                   <Button
                     variant="ghost"
-                    className="ml-auto"
                     onClick={() => add(key)}
                     aria-label={`Add ${TILE_COPY[key]?.title ?? key}`}
                   >
                     Add
                   </Button>
-                </span>
+                }
+              >
                 {/* Not interactive, and not reachable: it is a picture of the
                     tile inside a button, and a control inside a control is a
                     target nobody can aim at. */}
@@ -2606,7 +2595,7 @@ export function Overview(): ReactNode {
                     <TileBody tileKey={key} data={preview.data} budget={budget.data} preview />
                   )}
                 </span>
-              </div>
+              </Tile>
             ))}
           </div>
         </section>
@@ -2686,7 +2675,7 @@ export function Overview(): ReactNode {
               }}
             />
           ) : (
-            <div className="grid grid-cols-1 gap-6 md:grid-cols-12 lg:grid-cols-12">
+            <TileGrid>
               {rows.map((group) =>
                 group.map((tile) => (
                   <TileShell
@@ -2745,7 +2734,7 @@ export function Overview(): ReactNode {
                   </TileShell>
                 )),
               )}
-            </div>
+            </TileGrid>
           )}
         </div>
 
@@ -2792,6 +2781,7 @@ export function Overview(): ReactNode {
               key={tile.key}
               tile={tile}
               columns={12}
+              stacked
               rowSize={1}
               arranging={arranging}
               draggable={pointer}

@@ -19,6 +19,7 @@ import { NARROW, useMediaQuery } from '../useMediaQuery.js';
 import { Chips } from './Chip.jsx';
 import type { ChipKind } from './chips.js';
 import { MoneyCell } from './MoneyCell.jsx';
+import { Tile } from './Tile.jsx';
 import { describeTarget } from './target-text.js';
 
 /**
@@ -525,7 +526,23 @@ export function BudgetSection({
   const columnCount = 1 + (showRemaining ? 1 : 0) + (showToDelegate ? 1 : 0) + (rowMenu ? 1 : 0);
 
   return (
-    <section className="mb-6">
+    /*
+     * A tile, like every other box in this application (ADR 061).
+     *
+     * design.md §5 called this a borderless spreadsheet with no card box, and
+     * that was written when the Budget page was the only page — the contrast it
+     * was reaching for was against nothing. Beside a dashboard of tiles it read
+     * as the one screen that had not been designed. The table itself is
+     * unchanged: the 2px rule across the top is still the separator, the
+     * dividers are still hairlines, and the section's total is still the first
+     * row of its own table so that each figure lands in the column it sums.
+     *
+     * **No tile title**, deliberately. The heading is inside the table, in the
+     * cell above the name column, and a tile heading repeating "Delegations" a
+     * few pixels above it would be the same word twice — the drift this whole
+     * pass exists to delete.
+     */
+    <Tile>
       <table className="w-full" onTouchStart={onTouchStart} onTouchEnd={onTouchEnd}>
         {/*
           The section's total is a row of this table rather than a heading above
@@ -763,6 +780,6 @@ export function BudgetSection({
           )}
         </tbody>
       </table>
-    </section>
+    </Tile>
   );
 }

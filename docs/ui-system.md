@@ -21,13 +21,18 @@ the next hurried change.
 
 **Five spacing values. Nothing else.**
 
-| Step | Tailwind | Used for                                                 |
-| ---- | -------- | -------------------------------------------------------- |
-| 4px  | `1`      | Label to control, control to hint                        |
-| 8px  | `2`      | Controls in a cluster, buttons in a row, chip to chip    |
-| 12px | `3`      | Tile to tile on a dashboard, rows inside a dense list    |
-| 16px | `4`      | Blocks inside a card, card padding, header to body       |
-| 24px | `6`      | Card to card, page header to content, section to section |
+| Step | Tailwind | Used for                                                     |
+| ---- | -------- | ------------------------------------------------------------ |
+| 4px  | `1`      | Label to control, control to hint, title to description      |
+| 8px  | `2`      | Controls in a cluster, buttons in a row, chip to chip        |
+| 12px | `3`      | Blocks inside a tile, rows inside a dense list               |
+| 16px | `4`      | Blocks inside a card, tile padding, header to body           |
+| 24px | `6`      | **Tile to tile**, page header to content, section to section |
+
+**Tile to tile is 24px, not 12.** This table said 12 from v0.59 while both grids
+had been drawn at `gap-6` the whole time — the document was wrong and the code
+was consistent, which is the better way round to find it. Corrected in v0.71 with
+ADR 061, when the two grids became one.
 
 **Twelve was added in v0.59**, with the Overview redesign, and the reason is
 worth keeping so it does not become a precedent for a sixth. Four values held
@@ -77,21 +82,32 @@ the figure it replaces was sitting.
 moves the caret and the rows beside it while somebody is typing. That is the
 convention for a column of editable figures and the reason for it.
 
-### Overview's grid
+### The tile grid
 
-**Tiles form rows, and a row divides its width evenly among its members.** One
-tile is full width, two are halves, three thirds, four quarters. A tile does not
-declare a width — it belongs to a row, and the width falls out of that.
+**One grid, twelve columns, `gap-6`, four names** — `third`, `half`,
+`two-thirds`, `full`. `TileGrid` draws it and `Tile` takes a `span`.
 
-This replaced a per-tile `span` borrowed from `SettingsCard`. That vocabulary is
-right for a page of independent cards and wrong for a dashboard, because it
-cannot express _these three share a row_: two tiles each declaring `half` only
-look like a row by coincidence, and inserting a third between them produces an
-arrangement nobody asked for. Stating the relationship and deriving the width
-means the two can never disagree.
+**Twelve columns everywhere.** Settings counted in sixths and Overview in
+twelfths until ADR 061, so `span="half"` emitted `lg:col-span-3` on one page and
+`lg:col-span-6` on the other — one word, two meanings, and nothing at a call site
+to tell them apart. Twelve divides by 2, 3 and 4 with nothing left over, which is
+every fraction either page ever wanted.
 
-**Twelve columns, not the six Settings uses.** Twelve divides by 1, 2, 3 and 4
-with nothing left over; six cannot express a quarter without half a column.
+**`TileColumn` is a grid cell holding tiles stacked down it**, for tiles that
+belong together — the Cost half of Recurring. A column, not two tiles each
+declaring a third: two spans only look like a column by coincidence, and
+inserting anything between them produces an arrangement nobody asked for.
+
+### Overview's rows
+
+**On Overview a tile does not declare a width.** Tiles form rows, a row divides
+its width evenly among its members, and the span falls out of that: one tile is
+full, two are halves, three thirds.
+
+That is the one place the `span` vocabulary is wrong on its own — it cannot
+express _these three share a row_, and a dashboard is rearranged by dragging. So
+Overview stores the relationship and derives the span, and the two can never
+disagree.
 
 **Four to a row at most.** A quarter of a 1200px page is 300px, and a ranked bar
 with a name and a figure stops being readable below about that. The arithmetic
@@ -349,21 +365,53 @@ in use, twice for the same action.
 Buttons in a row: `gap-2`, primary last, destructive never adjacent to the
 confirm.
 
-## 6. Cards
+## 6. The tile
 
-`rounded-lg border border-line bg-canvas p-4`.
+**One box, and `components/Tile.tsx` is the only place it is written.** A card,
+a tile and a bordered panel are the same object; there were three of them, at two
+paddings and two heading sizes, with the description beside the title on one
+page and under it on another. `ui-system.test.ts` fails the gate on a second
+surface — see [ADR 061](decisions/061-every-page-is-a-page-of-tiles.md).
 
-- Title `text-base font-semibold text-ink`
-- Description optional, one line, `text-quiet text-muted`
-- An optional action in the header, right, baseline-aligned with the title
+`rounded-lg border border-line bg-canvas p-4`, `@container`, `h-full`.
+
+- Title `text-section font-semibold text-ink` — 16px, a section title, which is
+  what a tile's heading is
+- Description optional, one line, `text-quiet text-muted`, **4px under the
+  title** — the same shape `PageHeader` uses, because a header is a header
+- Actions right, baseline-aligned with the title, wrapping before the tile gives
 - 16px from the header to the body
-- **24px between cards**
+- **24px between tiles**
 
-**A card never carries a create-form.** Adding is a header button and a dialog,
+**A tile's title is optional.** Where the content carries its own heading in the
+column it totals — the Budget page's tables — the tile is a surface and nothing
+more. A tile heading repeating what the table says is the drift this system
+exists to delete.
+
+**The footer belongs to the shell.** A rule and a line of small print at the
+foot, outside the body, because the body is what scrolls: four tiles on Overview
+drew their own footer as the last child of a scrolling list, so "All bills →"
+scrolled away on a tile with eleven bills in it.
+
+**A tile never carries a create-form.** Adding is a header button and a dialog,
 which was already the rule and which Settings → Bitcoin and Settings → Properties
 both broke by parking a permanently-open form where the list should be. A form
 below a list pushes the list off the screen to make room for something that is
 used once.
+
+**A tile's group is named — `group/tile`, never a bare `group`.** A bare one is
+the same group the table rows inside it use: `.group:hover .row-menu-trigger`
+reveals a row's `⋯` and its absorb button, and it matches any hovered ancestor
+carrying the class. With the tile in that group, hovering anywhere over the
+budget drew "Move surplus here" on every line at once. Anything hover-revealed
+inside a tile names the group it belongs to.
+
+**Content inside a tile asks how wide the _tile_ is.** `@sm:`/`@md:`/`@lg:`,
+never `sm:`/`md:`/`lg:`. A window query stopped being the same question the
+moment a tile stopped being the whole row — a third-width tile on a 1440px
+screen is 345px across and was being handed the layout meant for 640, which is
+how the backups table drew its columns past its own border in v0.49. The gate
+checks column widths and table layout, which is where it bites.
 
 ## 7. The four recurring pieces
 
@@ -473,6 +521,22 @@ One component, `Modal`, in two frames: a centred card on a pointer, a sheet
 rising from the bottom edge on a phone. Escape closes it and Cancel closes it;
 the backdrop does not, because these hold typed money.
 
+**`role="dialog"` outside `ui.tsx` fails the gate**, since ADR 061. This was
+already the rule and nothing was checking it, so two hand-rolled overlays
+survived on the Budget page from before ADR 038 — centred cards on a phone, no
+`visualViewport` measurement, and Escape did nothing. One of them is Transfer,
+which is a dialog somebody opens to type an amount, and on iOS its amount field
+and its confirm button sat underneath the software keyboard.
+
+A third was written in v0.70, for the Delegate and Undo confirmations, on the
+reasoning that neither holds a typed figure. That is true and it is an argument
+for **`dismissible`** — the switch that lets the backdrop close a reading — not
+for a second frame. "It holds nothing typed" answers one of the four things
+`Modal` guarantees and leaves the viewport measurement, the sheet and Escape
+unanswered. It matters most there of anywhere: that control sits in the page
+header on a phone, and the confirmation a phone reaches most easily is the
+destructive one.
+
 **A dialog is measured against the visual viewport, never the window.** They are
 not the same thing on a phone: a software keyboard is drawn _over_ the page
 rather than beside it, so the window stays 844px tall while 430px of it is on
@@ -506,12 +570,11 @@ question somebody came to answer — Sync, Accounts, Budget, Rules, Holdings,
 Access, Display, Archived — and every route that existed before still resolves,
 redirecting to whichever section absorbed it.
 
-**Cards are a six-column grid, and a card states what it needs.** `span` on
+**Cards are tiles on the one grid, and a card states what it needs.** `span` on
 `SettingsCard` is `third`, `half`, `two-thirds` or `full`, and **defaults to
 `full`** — a card that has not thought about it keeps the width it always had.
-Six columns rather than three because three cannot express "two side by side",
-and a half is not a whole number of thirds. Grid gutter `gap-6`, the card-to-card
-step from §1.
+Twelve columns, the same grid Overview lays its tiles on (§2): it was six here
+and twelve there, which is how `half` came to mean two different spans.
 
 It is `span`, not `width`: a field's `width` is its own scale (§2), and two
 vocabularies under one prop name is a trap for whoever reads it next.
@@ -589,7 +652,30 @@ were introduced for Ledger, which swapped the typeface; that theme is gone, and
 the tokens stay because the thing they buy — one place to change a face or a
 tracking value — is worth having whether or not a second palette uses it.
 
-## 14. What this does not change
+## 14. Recurring
+
+**Due and Cost are side by side, always** — two-thirds and a third, stacking to
+one column below `lg` ([ADR 061](decisions/061-every-page-is-a-page-of-tiles.md)).
+They were two views behind a segmented control, and a switch between two answers
+that are never in each other is one somebody has to press to find out which they
+wanted.
+
+Due takes the wide column because it is a seven-column table; Cost is a column of
+dense lists, and §2's floor — a ranked bar with a name and a figure stops being
+readable below about 300px — is what stops it being narrower.
+
+**The Due table's Delegation column gives way at `@2xl`**, with the delegation in
+the row's hover text at every width. Due is two-thirds of the page now, and the
+merchant name is the one column whose content has no upper bound, so every other
+width is taken out of it — the same trade `design.md` records for the "last seen"
+column removed for the same reason.
+
+**Cost is two tiles of rows**, not a grid of one card per utility: the per-cycle
+comparison, and twelve months with the monthly average. Every figure still names
+its unit — the tile's heading carries it for a column, and the row's hover text
+carries both where a row has two.
+
+## 15. What this does not change
 
 Colour, the chip vocabulary, row heights, banner tones, the row-menu shell, the
 keyboard map, and every decision recorded in `design.md`. Those were settled and

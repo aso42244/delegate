@@ -1035,6 +1035,75 @@ in [ADR 053](decisions/053-a-pace-bar-reads-two-marks-not-one.md).
   describes that failure exactly, and it happened anyway — which is the argument
   for discovering columns there the way tables already are.
 
+**Since v0.69.0 — Delegate moves to the sidebar (`v0.70.0`)**
+
+Recorded here as a pointer rather than a summary, because it was built in a
+parallel session and its reasoning is its own:
+[ADR 060](decisions/060-the-sidebar-holds-the-acts-on-the-household.md) and the
+0.70.0 entry in `CHANGELOG.md`. The short version is that Delegate and its undo
+left the Budget page's header for the foot of the sidebar, under the reading
+they act on, and Undo Delegation asks before it fires — which it never did.
+
+**Since v0.70.0 — the box everything is drawn in (`v0.71.0`)**
+
+The owner put five screenshots side by side and said the interface was "just a
+little bit different" on each page. He was right, and the difference was not
+taste: it is the drift ADR 033 exists to stop, arriving in the one thing that ADR
+never put a number on — **the box**. Counted rather than felt:
+
+- **Three implementations of one surface**, at two paddings (`p-4`, and `p-3` on
+  the two suggestion panels), two heading sizes (`text-section` on a tile,
+  `text-base` on a card), and two places for the description — beside the title
+  on Overview, under it on Settings.
+- **Two grids.** Settings counted in sixths, Overview in twelfths, so
+  `span="half"` emitted `lg:col-span-3` in one file and `lg:col-span-6` in
+  another. One word, two meanings, nothing at a call site to tell them apart.
+- **Two hand-rolled dialogs**, both on Budget, the only two left after ADR 038 —
+  so the dialog somebody opens _to type an amount_ put its amount field and its
+  confirm button under the software keyboard on iOS, and Escape did nothing.
+- **Window queries inside a box that is not the window**, which is the v0.49
+  defect surviving in four places.
+
+All of it is [ADR 061](decisions/061-every-page-is-a-page-of-tiles.md), and the
+part worth carrying is not the tile — it is **why nothing caught any of it.**
+`ui-system.test.ts` had five rules and every one of them was about something with
+a name: a page header, a field width, a `<details>`, a create button. The box had
+no name, so it was written out by hand and nothing was looking. The four new
+rules are each written against a defect that actually happened, and the
+page-title one was checked against the Rules page as it stood before the fix.
+
+**The one trap in it, and it was found in a screenshot rather than by a test.**
+Overview's tile shell carried a bare `group` class for its drag grip — harmless
+while one component had it, and a collision the moment every box on every page
+became that component. `.group:hover .row-menu-trigger` reveals a row's `⋯` and
+its absorb button and matches _any_ hovered ancestor with the class, so hovering
+anywhere over the budget drew "Move surplus here" on every line at once, and
+`.group:focus-within` meant a press into the register's search box did it to
+fifty rows. **Every test passed**, because each control is still in the DOM and
+still reachable and nothing asserts when one appears. It is `group/tile` now.
+The rule to carry: a utility class that is effectively global stops being safe
+the moment a second thing uses it, and Tailwind's named groups exist for that —
+this codebase was already using them (`group/toggle`, `group/bar`), just not
+where it mattered most.
+
+**Two settled decisions were reversed, both deliberately and both recorded.**
+`design.md` §5's "no card box" for the budget tables was written when Budget was
+the only page — the contrast it reached for was against nothing. And the hidden
+bills fold left the Recurring page at the owner's request.
+
+**The hidden-bills move is the one to read.** They went to Settings → Archived
+first, and the owner's reaction inside a minute was to ask whether hiding a bill
+archived its transactions. It does not — `bill_overrides` is one row per merchant
+carrying a refusal and a name, and it touches no transaction — but **the word
+made the wrong claim**, because "archived" means `archived_at` on a row
+everywhere else here. They are on Settings → Budget now, beside the switch that
+governs overdue notifications, and the card's description and the row menu both
+say _the charges stay in the register_ out loud. The lesson is the ordinary one
+and it is cheap: a list of put-away things looks like it belongs under
+"Archived", and where a word already means something exact in this application,
+borrowing it for something adjacent is a claim you did not mean to make. An e2e
+test now proves the charges are still there, because that was the fear.
+
 ### Known gaps to fix
 
 None outstanding. The September security review is closed — see

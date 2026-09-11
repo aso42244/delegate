@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState, type ReactNode } from 'react';
 import { ApiError } from '../api/client.js';
 import { transactionsApi } from '../api/transactions.js';
+import { Tile } from './Tile.jsx';
 import { Alert, Button } from './ui.jsx';
 
 /**
@@ -62,18 +63,12 @@ export function PairSuggestions(): ReactNode {
   if (shown.length === 0) return null;
 
   return (
-    <section className="mb-4 rounded-lg border border-line bg-canvas p-3">
-      <header className="mb-2">
-        <h2 className="text-base font-semibold text-ink">
-          {shown.length} possible {shown.length === 1 ? 'transfer' : 'transfers'} between your
-          accounts
-        </h2>
-        <p className="text-quiet text-muted">
-          These look like money moving between accounts you own rather than spending. Confirming a
-          pair excludes both from every spending figure. Nothing happens until you say so.
-        </p>
-      </header>
-
+    /* A tile, like everything else on this page — see DuplicateSuggestions. */
+    <Tile
+      span="full"
+      title={`${shown.length} possible ${shown.length === 1 ? 'transfer' : 'transfers'} between your accounts`}
+      description="Money moving between your own accounts, not spending."
+    >
       {problem && (
         <div className="mb-2">
           <Alert>{problem}</Alert>
@@ -141,6 +136,6 @@ export function PairSuggestions(): ReactNode {
           </li>
         ))}
       </ul>
-    </section>
+    </Tile>
   );
 }

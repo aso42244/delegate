@@ -346,7 +346,10 @@ test('the picker draws each tile rather than naming it', async ({ signedIn }) =>
   // it, and the preview beside that.
   const add = signedIn.getByRole('button', { name: 'Add What it is all made of' });
   await expect(add).toBeVisible();
-  const card = add.locator('../..');
+  // The tile holding that button, named rather than walked to: a card is a
+  // `Tile` now, and counting `../..` up out of its header is a test that breaks
+  // whenever the header gains or loses a wrapper.
+  const card = signedIn.locator('section', { has: add });
   await expect(card.getByText('$2,500.00', { exact: true })).toBeVisible();
 });
 

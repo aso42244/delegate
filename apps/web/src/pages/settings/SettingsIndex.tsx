@@ -37,7 +37,7 @@ export function SettingsIndex(): ReactNode {
 
   return (
     // The whole row: this is the phone's navigation, not one card among three.
-    <ul className="rounded-lg border border-line bg-canvas px-3 lg:col-span-6">
+    <ul className="rounded-lg border border-line bg-canvas px-3 lg:col-span-12">
       {SECTIONS.map((section) => {
         const state = stateOf(section.to);
         return (

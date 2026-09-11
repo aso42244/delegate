@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState, type ReactNode } from 'react';
 import { ApiError } from '../api/client.js';
 import { transactionsApi } from '../api/transactions.js';
+import { Tile } from './Tile.jsx';
 import { Alert, Button } from './ui.jsx';
 import { duplicateActionAriaLabel, duplicateActionLabels } from './duplicate-actions.js';
 
@@ -79,17 +80,18 @@ export function DuplicateSuggestions(): ReactNode {
   if (shown.length === 0) return null;
 
   return (
-    <section className="mb-4 rounded-lg border border-line bg-canvas p-3">
-      <header className="mb-2">
-        <h2 className="text-base font-semibold text-ink">
-          {shown.length} possible {shown.length === 1 ? 'duplicate' : 'duplicates'}
-        </h2>
-        <p className="text-quiet text-muted">
-          Two rows for what looks like one charge. Archiving one takes it out of the register and
-          puts back anything it moved. Nothing happens until you say so.
-        </p>
-      </header>
-
+    /*
+     * A tile, like everything else on this page (ADR 061). It was its own box at
+     * `p-3` with a 14px heading and a three-line description — a third padding
+     * value and a third heading size for the same object, and a description four
+     * times the one line the text budget allows a card. What the sentences said
+     * is on the buttons: Archive, and Not a duplicate.
+     */
+    <Tile
+      span="full"
+      title={`${shown.length} possible ${shown.length === 1 ? 'duplicate' : 'duplicates'}`}
+      description="Two rows for what looks like one charge. Nothing happens until you say so."
+    >
       {problem && (
         <div className="mb-2">
           <Alert>{problem}</Alert>
@@ -204,6 +206,6 @@ export function DuplicateSuggestions(): ReactNode {
           </li>
         ))}
       </ul>
-    </section>
+    </Tile>
   );
 }

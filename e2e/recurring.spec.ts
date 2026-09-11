@@ -7,12 +7,14 @@ import { expect, makeDelegation, test } from './fixtures.js';
  * watching whether a charge arrived, one judging whether the line is funded at
  * what it costs — and Electricity sat on both, described two different ways.
  *
- * What is guarded here is that the merge kept both answers and both addresses:
- * neither view is a filter of the other, and the two old links still land on the
- * half they named.
+ * What is guarded here is that the merge kept both answers and both addresses.
+ * Since ADR 061 it also guards that both are on the screen **at once**: they
+ * were two views behind a segmented control, and a switch between two answers
+ * that are never in each other is a switch somebody has to press to find out
+ * which one they wanted.
  */
 
-test('is one entry in the sidebar, with both views behind it', async ({ signedIn }) => {
+test('is one entry in the sidebar, with both halves behind it', async ({ signedIn }) => {
   await signedIn.goto('/overview');
 
   await expect(signedIn.getByRole('link', { name: 'Recurring', exact: true })).toBeVisible();
@@ -22,46 +24,40 @@ test('is one entry in the sidebar, with both views behind it', async ({ signedIn
   await signedIn.getByRole('link', { name: 'Recurring', exact: true }).click();
   await expect(signedIn.getByRole('heading', { name: 'Recurring' })).toBeVisible();
 
-  // Due first: what did not arrive is the question the page exists for.
-  await expect(signedIn.getByRole('radio', { name: 'Due' })).toHaveAttribute(
-    'aria-checked',
-    'true',
-  );
+  // Both, without pressing anything. Neither answer is in the other, so neither
+  // is a filter of the other and neither waits behind a switch.
+  await expect(signedIn.getByRole('heading', { name: 'Due' })).toBeVisible();
+  await expect(signedIn.getByRole('heading', { name: 'Per cycle' })).toBeVisible();
+
   await expect(signedIn.getByText('No bill has arrived three times yet.')).toBeVisible();
+  await expect(signedIn.getByText('No delegations are marked as a utility.')).toBeVisible();
+
+  // The switch is gone with the views it selected.
+  await expect(signedIn.getByRole('radio', { name: 'Due' })).toHaveCount(0);
+  await expect(signedIn.getByRole('radio', { name: 'Cost' })).toHaveCount(0);
 });
 
-test('the view is in the URL, so it survives leaving the page', async ({ signedIn, api }) => {
+test('both halves are on the screen together', async ({ signedIn, api }) => {
   const water = await makeDelegation(api, 'Water', '6000');
   await api.patch(`/api/delegations/${water}`, { data: { isUtility: true } });
 
   await signedIn.goto('/recurring');
-  await signedIn.getByRole('radio', { name: 'Cost' }).click();
-  await expect(signedIn.getByRole('heading', { name: 'Water' })).toBeVisible();
-  await expect(signedIn).toHaveURL(/view=cost/);
 
-  /*
-   * A view kept in component state resets every time somebody follows a link out
-   * and comes back — which is how Insights lost its window on every navigation,
-   * including on a press of one of its own tiles.
-   */
-  await signedIn.goto('/transactions');
-  await signedIn.goBack();
-  await expect(signedIn.getByRole('heading', { name: 'Water' })).toBeVisible();
+  // The Due tile's own control, and a Cost row, without a navigation between
+  // them: this is the whole of what putting them side by side bought.
+  await expect(signedIn.getByLabel('Search bills')).toBeVisible();
+  // Twice, once in each Cost tile — which is itself the assertion: the
+  // per-cycle comparison and the twelve months are both on screen.
+  await expect(signedIn.getByText('Water')).toHaveCount(2);
 });
 
-test('the two old addresses land on the half they named', async ({ signedIn }) => {
-  // A bookmark is a promise, and the page it pointed at still exists as a view.
+test('the two old addresses land on the page carrying both halves', async ({ signedIn }) => {
+  // A bookmark is a promise, and the page each pointed at is on this screen.
   await signedIn.goto('/bills');
   await expect(signedIn).toHaveURL(/\/recurring$/);
-  await expect(signedIn.getByRole('radio', { name: 'Due' })).toHaveAttribute(
-    'aria-checked',
-    'true',
-  );
+  await expect(signedIn.getByRole('heading', { name: 'Due' })).toBeVisible();
 
   await signedIn.goto('/utilities');
-  await expect(signedIn).toHaveURL(/view=cost/);
-  await expect(signedIn.getByRole('radio', { name: 'Cost' })).toHaveAttribute(
-    'aria-checked',
-    'true',
-  );
+  await expect(signedIn).toHaveURL(/\/recurring$/);
+  await expect(signedIn.getByRole('heading', { name: 'Per cycle' })).toBeVisible();
 });
