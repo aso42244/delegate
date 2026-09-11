@@ -6,6 +6,10 @@ phase (`v0.1.0-phase1`, and so on).
 
 ## [Unreleased]
 
+Nothing yet.
+
+## [0.73.0] — 2026-09-11
+
 ### Changed
 
 - **Everything the bank feed has to say is inside the Sync SimpleFIN button**
