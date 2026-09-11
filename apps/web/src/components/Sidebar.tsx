@@ -1,9 +1,10 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState, type ReactNode } from 'react';
 import { NavLink } from 'react-router-dom';
-import { authApi, syncApi } from '../api/client.js';
+import { authApi, syncApi, type SyncStatus } from '../api/client.js';
 import { useSession } from '../auth/SessionProvider.jsx';
 import { Alerts } from './Alerts.jsx';
+import { DelegateControl } from './DelegateControl.jsx';
 import { Button } from './ui.jsx';
 import { useIsDemo } from '../useDemo.js';
 import { pathFor } from '../demo/is-demo.js';
@@ -190,14 +191,22 @@ function useCollapsed(): [boolean, (value: boolean) => void] {
   return [collapsed, setCollapsed];
 }
 
-function formatLastSync(iso: string | null): string {
-  if (!iso) return 'Never synced';
-  const minutes = Math.round((Date.now() - new Date(iso).getTime()) / 60_000);
-  if (minutes < 1) return 'Synced just now';
-  if (minutes < 60) return `Synced ${minutes}m ago`;
-  const hours = Math.round(minutes / 60);
-  if (hours < 24) return `Synced ${hours}h ago`;
-  return `Synced ${Math.round(hours / 24)}d ago`;
+/**
+ * What the Sync button has to say about itself, if anything.
+ *
+ * There is no caption under it any more. "Synced 12m ago" was a figure nobody
+ * acts on, and "Last sync failed" was a second line saying what a colour can say
+ * on the control somebody would press about it. The button carries both states
+ * now: yellow when the most recent run failed, with the bridge's own error one
+ * hover away.
+ *
+ * The error is whatever the run recorded. A failed run with nothing written down
+ * still has to say something, or the colour would be unexplained.
+ */
+function describeSync(status: SyncStatus | undefined): string | null {
+  if (status?.failing !== true) return null;
+  const error = status.runs[0]?.error?.trim();
+  return error ? `Last sync failed: ${error}` : 'The last sync failed.';
 }
 
 export function Sidebar({ appName }: { appName: string }): ReactNode {
@@ -241,6 +250,17 @@ export function Sidebar({ appName }: { appName: string }): ReactNode {
       await queryClient.invalidateQueries();
     },
   });
+
+  const syncDetail = describeSync(syncStatus.data);
+  const syncFailing = syncDetail !== null;
+  /*
+   * Collapsed, the button is a glyph and its `title` is the only name it has, so
+   * the detail is appended rather than substituted — a rail that said only
+   * "Last sync failed" would leave nothing naming the control.
+   */
+  const syncTitle = collapsed
+    ? [`Sync SimpleFIN`, syncDetail].filter((part) => part !== null).join(' — ')
+    : (syncDetail ?? undefined);
 
   const [signingOut, setSigningOut] = useState(false);
 
@@ -351,32 +371,40 @@ export function Sidebar({ appName }: { appName: string }): ReactNode {
       */}
       <div className="mt-auto">{!collapsed && <Alerts />}</div>
 
-      {/* The bank feed, whole. A demo has no feed to sync and no caption worth
-          writing about one — invented data does not come from anywhere. */}
-      <div className={`border-t border-line px-2 py-3 ${demo ? 'hidden' : ''}`}>
+      {/*
+        The two acts on the household, in the order they are reached for.
+
+        Delegate sits directly above Sync and directly below the reading it acts
+        on. Neither is a fact about the page underneath — the same argument
+        ADR 059 used to move the alerts out of the page header — and both now
+        ask before they do anything, because they are 8px apart and one of them
+        moves a pay packet.
+      */}
+      <div className="flex flex-col gap-2 border-t border-line px-2 py-3">
+        <DelegateControl collapsed={collapsed} />
+
+        {/* The bank feed. A demo has no feed to sync — invented data does not
+            come from anywhere. */}
         {!demo && (
           <Button
+            /*
+             * The button is the state.
+             *
+             * A caption under it said how long ago the last sync was, which is a
+             * figure nobody acts on, and a second line appeared under that when
+             * a run failed. Both are gone: a failing feed turns this yellow, and
+             * the error the bridge gave is on hover and in the button's own
+             * description. What to do about it is press the thing that is
+             * yellow.
+             */
+            variant={syncFailing ? 'warning' : 'default'}
             onClick={() => runSync.mutate()}
             disabled={runSync.isPending || syncStatus.data?.syncing === true}
             className="w-full"
-            title={collapsed ? 'Sync SimpleFIN' : undefined}
+            title={syncTitle}
           >
             {collapsed ? '⟳' : runSync.isPending ? 'Syncing…' : 'Sync SimpleFIN'}
           </Button>
-        )}
-
-        {!collapsed && (
-          <p className="mt-1 max-w-sidebar-cap px-1 text-label text-muted">
-            {syncStatus.data?.configured === false
-              ? 'Not configured'
-              : formatLastSync(syncStatus.data?.lastSyncAt ?? null)}
-          </p>
-        )}
-
-        {/* A failed sync is surfaced here as well as on the page, because this is
-            where the owner looks when he wonders whether data is current. */}
-        {!collapsed && syncStatus.data?.failing === true && (
-          <p className="mt-1 px-1 text-label font-semibold text-danger">Last sync failed</p>
         )}
       </div>
 

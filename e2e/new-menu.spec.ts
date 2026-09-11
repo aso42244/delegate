@@ -16,19 +16,17 @@ test('is on every page, and always leftmost', async ({ signedIn }) => {
 
   /*
    * Leftmost of the actions, so it holds the same position whatever else a page
-   * puts beside it. Budget is the page with the most to put there — Delegate,
-   * and the undo offer that replaces it.
+   * puts beside it. Overview is the page with the most to put there now that
+   * Delegate has moved to the sidebar: the window picker and Arrange.
    */
-  await signedIn.goto('/budget');
+  await signedIn.goto('/overview');
   // Asserted by position rather than by DOM order, because "leftmost" is a fact
   // about the screen — and it is what somebody reaches for without looking.
   const New = await signedIn.getByRole('button', { name: 'New …' }).boundingBox();
-  const delegate = await signedIn
-    .getByRole('button', { name: 'Delegate', exact: true })
-    .boundingBox();
-  expect(New!.x).toBeLessThan(delegate!.x);
+  const arrange = await signedIn.getByRole('button', { name: 'Arrange' }).boundingBox();
+  expect(New!.x).toBeLessThan(arrange!.x);
   // On the same row, not above it.
-  expect(Math.abs(New!.y - delegate!.y)).toBeLessThan(New!.height);
+  expect(Math.abs(New!.y - arrange!.y)).toBeLessThan(New!.height);
 });
 
 test('makes a delegation from a page that is not Budget', async ({ signedIn }) => {
@@ -82,8 +80,12 @@ test('no page carries a create button of its own', async ({ signedIn, api }) => 
     ).toHaveCount(0);
   }
 
-  // What a page keeps is what is not creating a thing.
+  // What a page keeps is what is not creating a thing. Delegate is no longer one
+  // of them: it is an act on the household and it lives in the sidebar, above
+  // Sync, on every screen rather than on the one page it used to belong to.
   await signedIn.goto('/budget');
+  await expect(signedIn.getByRole('button', { name: 'Delegate', exact: true })).toBeVisible();
+  await signedIn.goto('/transactions');
   await expect(signedIn.getByRole('button', { name: 'Delegate', exact: true })).toBeVisible();
   await signedIn.goto('/settings/rules');
   await expect(signedIn.getByRole('button', { name: 'Run rules' })).toBeVisible();

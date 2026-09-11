@@ -468,7 +468,7 @@ test('the panel picks its lines in a dialog, and they survive a reload', async (
   await expect(panel).toBeVisible();
   await expect(panel.getByText('No delegations chosen yet.')).toBeVisible();
 
-  await panel.getByRole('button', { name: 'Choose which delegations show →' }).click();
+  await panel.getByRole('button', { name: 'Choose which delegations show' }).click();
   const dialog = signedIn.getByRole('dialog');
   await dialog.getByRole('switch', { name: 'Show Grocery' }).click();
   await dialog.getByRole('button', { name: 'Save' }).click();
@@ -498,7 +498,7 @@ test('the picker lists delegations under their groupings, in the budget order', 
   await signedIn.goto('/overview');
   await signedIn
     .getByRole('complementary', { name: 'Budget' })
-    .getByRole('button', { name: 'Choose which delegations show →' })
+    .getByRole('button', { name: 'Choose which delegations show' })
     .click();
 
   const dialog = signedIn.getByRole('dialog');
@@ -850,7 +850,7 @@ test('the panel keeps its delegations when tiles are rearranged', async ({ signe
 
   await signedIn.goto('/overview');
   const panel = signedIn.getByRole('complementary', { name: 'Budget' });
-  await panel.getByRole('button', { name: 'Choose which delegations show →' }).click();
+  await panel.getByRole('button', { name: 'Choose which delegations show' }).click();
   const dialog = signedIn.getByRole('dialog');
   await dialog.getByRole('switch', { name: 'Show Grocery' }).click();
   await dialog.getByRole('button', { name: 'Save' }).click();
@@ -877,32 +877,51 @@ test('the panel keeps its delegations when tiles are rearranged', async ({ signe
   ).toBeVisible();
 });
 
-test('the panel summary says what there is, what has gone and what is left', async ({
-  signedIn,
-  api,
-}) => {
+test('the panel carries no summary band, only the lines', async ({ signedIn, api }) => {
   await makeDelegation(api, 'Grocery');
 
   await signedIn.goto('/overview');
   const panel = signedIn.getByRole('complementary', { name: 'Budget' });
-  await panel.getByRole('button', { name: 'Choose which delegations show →' }).click();
+  await panel.getByRole('button', { name: 'Choose which delegations show' }).click();
   const dialog = signedIn.getByRole('dialog');
   await dialog.getByRole('switch', { name: 'Show Grocery' }).click();
   await dialog.getByRole('button', { name: 'Save' }).click();
 
-  /*
-   * The three subtract: what the lines had this cycle, less what has gone, is
-   * what is left. It said "Budgeted" — the sum of the amounts to delegate, which
-   * is what a press puts in rather than what there is, and on lines carrying
-   * surplus it came out *smaller* than Remaining.
-   */
-  await expect(panel.getByText('To spend')).toBeVisible();
-  await expect(panel.getByText('Spent')).toBeVisible();
-  await expect(panel.getByText('Remaining')).toBeVisible();
+  await expect(panel.getByText('Grocery')).toBeVisible();
 
-  // Spent-against-budgeted is on the bar's own tooltip rather than beside it,
-  // so the name gets the width those two figures were taking.
+  /*
+   * It read To spend · Spent · Remaining across the top. Three aggregates the
+   * owner does not use, on a 398px column — and the budget's own reading is in
+   * the sidebar on every screen now, so the panel is not where a total belongs.
+   */
+  await expect(panel.getByText('To spend')).toHaveCount(0);
+  await expect(panel.getByText('Spent', { exact: true })).toHaveCount(0);
+
+  // What each line has left is still on its own row, and what it has spent is
+  // still on the bar's tooltip.
   await expect(panel.getByTitle(/spent of/)).toBeVisible();
+});
+
+test('the picker link sits at the right of the panel', async ({ signedIn }) => {
+  await signedIn.goto('/overview');
+  const panel = signedIn.getByRole('complementary', { name: 'Budget' });
+
+  /*
+   * Measured rather than read: every assertion that only looks for the words
+   * passes wherever the words happen to sit, which is the whole of what this
+   * change was about. The link ends within a few pixels of the panel's own
+   * padded edge instead of starting at its left one.
+   */
+  const link = await panel
+    .getByRole('button', { name: 'Choose which delegations show' })
+    .boundingBox();
+  const box = await panel.boundingBox();
+
+  const gapRight = box!.x + box!.width - (link!.x + link!.width);
+  const gapLeft = link!.x - box!.x;
+  expect(gapRight).toBeLessThan(gapLeft);
+  // The 12px padding the panel puts round everything else in it.
+  expect(gapRight).toBeLessThanOrEqual(16);
 });
 
 test('the outflow band draws the calendar month with no payday set', async ({ signedIn }) => {
@@ -1033,7 +1052,7 @@ test('the bill tiles open every bill in the middle of the page', async ({ signed
    * A dialog rather than a link away. Somebody reading "three bills need a look"
    * wants the other twenty in front of them, not a page change and a way back.
    */
-  await tile.getByRole('button', { name: 'All bills →' }).click();
+  await tile.getByRole('button', { name: 'All bills' }).click();
   const dialog = signedIn.getByRole('dialog');
   await expect(dialog.getByRole('heading', { name: 'All bills' })).toBeVisible();
   await expect(dialog.getByText('No bill has arrived three times yet.')).toBeVisible();
@@ -1367,7 +1386,7 @@ test('every row of All bills is a single line', async ({ signedIn, api }) => {
   await signedIn.getByRole('button', { name: 'Add Needs a look' }).click();
   await signedIn.getByRole('button', { name: 'Done' }).click();
 
-  await signedIn.getByRole('button', { name: 'All bills →' }).first().click();
+  await signedIn.getByRole('button', { name: 'All bills' }).first().click();
   const dialog = signedIn.getByRole('dialog');
   await expect(dialog).toBeVisible();
   await expect(dialog.getByText('BLUEPEAK INTERNET')).toBeVisible();

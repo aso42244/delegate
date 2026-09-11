@@ -1,6 +1,6 @@
 import { formatCents } from '@budget/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useEffect, useState, type ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import {
   budgetApi,
   type BudgetRowDto,
@@ -187,66 +187,9 @@ export function TransferDialog({
   );
 }
 
-function DelegateDialog({ onClose }: { onClose: () => void }): ReactNode {
-  const queryClient = useQueryClient();
-  const [problem, setProblem] = useState<string | null>(null);
-  const preview = useQuery({ queryKey: ['delegate-preview'], queryFn: budgetApi.delegatePreview });
-
-  const run = useMutation({
-    mutationFn: budgetApi.delegate,
-    onSuccess: async () => {
-      await queryClient.invalidateQueries();
-      onClose();
-    },
-    onError: (error: unknown) =>
-      setProblem(error instanceof ApiError ? error.message : 'Could not delegate.'),
-  });
-
-  return (
-    <div className="fixed inset-0 z-10 flex items-center justify-center bg-black/20 p-4">
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-label="Confirm delegate"
-        className="w-full max-w-md rounded-lg border border-line bg-canvas p-4"
-      >
-        <h2 className="mb-1 text-section font-bold text-ink">Delegate</h2>
-
-        {preview.isLoading ? (
-          <p className="text-quiet text-muted">Working out what would be distributed…</p>
-        ) : preview.data ? (
-          <p className="mb-4 text-base text-ink">
-            Distribute <strong>{formatCents(BigInt(preview.data.totalCents))}</strong> across{' '}
-            <strong>{preview.data.lineCount}</strong>{' '}
-            {preview.data.lineCount === 1 ? 'line' : 'lines'}.
-            <span className="mt-2 block text-quiet text-muted">
-              Lines with no amount receive nothing. This can be undone for a while afterwards.
-            </span>
-          </p>
-        ) : null}
-
-        {problem && <Alert>{problem}</Alert>}
-
-        <div className="mt-4 flex justify-end gap-2">
-          <Button onClick={onClose}>Cancel</Button>
-          <Button
-            variant="primary"
-            onClick={() => run.mutate()}
-            disabled={run.isPending || preview.data?.lineCount === 0}
-          >
-            {run.isPending ? 'Delegating…' : 'Delegate'}
-          </Button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 export function MainBudget(): ReactNode {
   const queryClient = useQueryClient();
-  const [dialog, setDialog] = useState<'none' | 'delegate' | 'transfer' | 'check' | 'transaction'>(
-    'none',
-  );
+  const [dialog, setDialog] = useState<'none' | 'transfer' | 'check' | 'transaction'>('none');
   const [problem, setProblem] = useState<string | null>(null);
   // Set when Transfer was opened from a line whose archive was blocked.
   const [transferFrom, setTransferFrom] = useState<string | null>(null);
@@ -309,44 +252,6 @@ export function MainBudget(): ReactNode {
 
   const onError = (error: unknown): void =>
     setProblem(error instanceof ApiError ? error.message : 'Something went wrong.');
-
-  /*
-   * The undo offer, which the header owns.
-   *
-   * It used to be a bar of its own below the banner. Both halves of it belong
-   * where the action is: the button takes the Delegate button's place while the
-   * window is open, and what was delegated is said beside the cycle date.
-   */
-  const undo = useQuery({ queryKey: ['undo-preview'], queryFn: budgetApi.undoPreview });
-  const undoRunId = undo.data?.available === true ? (undo.data.runId ?? null) : null;
-
-  const undoDelegate = useMutation({
-    mutationFn: (runId: string) => budgetApi.undoDelegate(runId),
-    onSuccess: async () => {
-      await queryClient.invalidateQueries();
-    },
-    onError,
-  });
-
-  /*
-   * Closes the offer the moment the window does.
-   *
-   * The server stops offering an undo once it has expired, but nothing would
-   * ask it again — so without this the button stays red until something else
-   * on the page happens to refetch, which on a tab left open is never. The
-   * second of slack is for clock skew between here and the database.
-   */
-  useEffect(() => {
-    const expiresAt = undo.data?.expiresAt;
-    if (undoRunId === null || !expiresAt) return;
-
-    const remaining = new Date(expiresAt).getTime() - Date.now();
-    const timer = setTimeout(
-      () => void queryClient.invalidateQueries({ queryKey: ['undo-preview'] }),
-      Math.max(remaining, 0) + 1_000,
-    );
-    return () => clearTimeout(timer);
-  }, [undoRunId, undo.data?.expiresAt, queryClient]);
 
   const editAmount = useMutation({
     mutationFn: ({ id, cents }: { id: string; cents: bigint }) =>
@@ -641,75 +546,15 @@ export function MainBudget(): ReactNode {
 
   return (
     <div>
-      {/* Stacked on a phone, one row from `sm`. Side by side at 390px the
-          title collapses to a single letter and the subtitle wraps a word to a
-          line, because `min-w-0` lets it give up everything to the controls. */}
-      <PageHeader
-        title="Budget"
-        /*
-         * Only the undo offer, and only while there is one.
-         *
-         * "This cycle began 21/08/2026" sat here permanently and was the one
-         * line on the page nobody was going to act on — a date, on the screen
-         * that exists for deciding where money goes. It reads as a fact about
-         * the budget's settings, so it now lives with them, on Settings →
-         * Budget beside the undo window and the pay cadence that govern it.
-         *
-         * The offer below is the opposite: transient, the only sign a Delegate
-         * press can still be taken back, and gone the moment the window closes.
-         */
-        subtitle={
-          undoRunId === null ? undefined : (
-            <>
-              Delegated {formatCents(BigInt(undo.data?.totalCents ?? '0'))} across{' '}
-              {undo.data?.lineCount} lines. Undo rolls the cycle back too.
-            </>
-          )
-        }
-        actions={
-          <>
-            {/*
-            Four of the five fold away on a phone.
-            
-            Five buttons cannot sit in a row at 390px, and choosing which stays
-            is not arbitrary: Delegate is the one with a moment attached. The
-            rest are things done when you are already sitting down.
-          */}
-            {/* Creating a thing is the header's "New …" now, on every page.
-                Four buttons stood here — grouping, transaction, check, transfer
-                — and each was here because this is the page that happened to own
-                the dialog. Delegate stays: it is not creating anything, it is
-                the act this page exists for. */}
+      {/*
+        Title and nothing else.
 
-            {/* One slot, two jobs. While the run can still be undone there is
-              nothing sensible to delegate — the money has just gone out — so
-              offering both would be offering the wrong one first. */}
-            {undoRunId !== null ? (
-              <Button
-                variant="danger"
-                className="flex-1 sm:flex-none"
-                onClick={() => undoDelegate.mutate(undoRunId)}
-                disabled={undoDelegate.isPending}
-              >
-                {undoDelegate.isPending ? 'Undoing…' : 'Undo Delegation'}
-              </Button>
-            ) : (
-              <Button
-                variant="primary"
-                className="flex-1 sm:flex-none"
-                onClick={() => setDialog('delegate')}
-              >
-                Delegate
-              </Button>
-            )}
-
-            {/* The ⋯ sheet is gone with the buttons it folded away. It held
-                the same four creates, and "New …" is in the header on a phone
-                too — one control in one place beats a control that only exists
-                below a breakpoint. */}
-          </>
-        }
-      />
+        Delegate and the undo that replaces it were the only things here, and
+        they are in the sidebar now — above Sync, under the reading they act on.
+        Neither was a fact about this page: they are acts on the household, which
+        is the argument ADR 059 already used to move the alerts out of the header.
+      */}
+      <PageHeader title="Budget" />
 
       {problem && (
         <div className="mb-4">
@@ -813,7 +658,6 @@ export function MainBudget(): ReactNode {
         <NewTransactionDialog delegations={spendable} onClose={() => setDialog('none')} />
       )}
       {dialog === 'check' && <NewCheckDialog view={view.data} onClose={() => setDialog('none')} />}
-      {dialog === 'delegate' && <DelegateDialog onClose={() => setDialog('none')} />}
       {dialog === 'transfer' && (
         <TransferDialog
           section={view.data.delegations}
