@@ -6,6 +6,10 @@ phase (`v0.1.0-phase1`, and so on).
 
 ## [Unreleased]
 
+Nothing yet.
+
+## [0.71.0] — 2026-09-11
+
 ### Changed
 
 - **Every page is a page of tiles.** There were three implementations of one box
