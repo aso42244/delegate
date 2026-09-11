@@ -58,14 +58,15 @@ function overdueMonths(): string[] {
 }
 
 /**
- * Bills is the Due view of Recurring now, so the sidebar entry is one and the
- * heading names the page rather than the half. Reached by pressing the link the
- * household presses, which is what makes this the navigation test as well.
+ * Bills is the Due tile on Recurring now, so the sidebar entry is one, the
+ * heading names the page, and Due sits beside Cost rather than behind a switch.
+ * Reached by pressing the link the household presses, which is what makes this
+ * the navigation test as well.
  */
 async function openBills(page: Page): Promise<void> {
   await page.getByRole('link', { name: 'Recurring', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Recurring' })).toBeVisible();
-  await expect(page.getByRole('radio', { name: 'Due' })).toHaveAttribute('aria-checked', 'true');
+  await expect(page.getByRole('heading', { name: 'Due' })).toBeVisible();
 }
 
 test('says plainly when nothing has arrived three times yet', async ({ signedIn, api }) => {
@@ -98,8 +99,27 @@ test('a monthly charge becomes a bill with a date and a delegation', async ({ si
 
   await expect(signedIn.getByText('CITY WATER UTILITY')).toBeVisible();
   await expect(signedIn.getByRole('cell', { name: 'Monthly' })).toBeVisible();
-  await expect(signedIn.getByRole('cell', { name: 'Home & Grounds' })).toBeVisible();
-  await expect(signedIn.getByText('1 recurring.')).toBeVisible();
+
+  /*
+   * The delegation is on the row's hover text at every width and in a column of
+   * its own where the tile is wide enough — it is the one column that gives way,
+   * because Due is two-thirds of the page now and a merchant name has no upper
+   * bound. The title is what holds at any width, so it is what is asserted.
+   */
+  await expect(signedIn.getByRole('row', { name: /CITY WATER UTILITY/ })).toHaveAttribute(
+    'title',
+    /Home & Grounds/,
+  );
+
+  /*
+   * And no count.
+   *
+   * "1 recurring." said how many merchants this household repeats with, which
+   * is a fact about how long it has been running rather than about the list
+   * somebody came to work through — the same argument that took "494
+   * transactions" off the register.
+   */
+  await expect(signedIn.getByText(/\d+ recurring/)).toHaveCount(0);
 });
 
 test('the bill that did not arrive is named on the page and in the header', async ({
@@ -112,9 +132,10 @@ test('the bill that did not arrive is named on the page and in the header', asyn
   await openBills(signedIn);
 
   await expect(signedIn.getByRole('cell', { name: /Overdue/ })).toBeVisible();
-  await expect(signedIn.getByText('1 recurring, 1 overdue.')).toBeVisible();
 
-  // And the pill, which is how somebody who is not on this page finds out.
+  // And the pill, which is how somebody who is not on this page finds out —
+  // the page itself no longer counts anything, so the pill is the whole of how
+  // this is said away from the row.
   const pill = signedIn.getByRole('link', { name: /1 bill overdue/ });
   await expect(pill).toBeVisible();
 });
@@ -177,10 +198,46 @@ test('a merchant that is not a bill is taken off the list, and can come back', a
   // The other one is untouched: this is a judgement about one merchant.
   await expect(signedIn.getByText('CITY WATER UTILITY')).toBeVisible();
 
-  // And it is findable again, which is what makes saying it safe.
-  await signedIn.getByRole('button', { name: '1 hidden' }).click();
-  await signedIn.getByRole('button', { name: 'Put back' }).click();
+  /*
+   * And nothing on this page says it was hidden.
+   *
+   * The fold at the foot of the list is gone at the owner's request — a list of
+   * corrections is not what anybody opens this page for, and Due is a tile
+   * beside another tile now with nowhere sensible for one to sit.
+   */
+  await expect(signedIn.getByRole('button', { name: /hidden/ })).toHaveCount(0);
+
+  /*
+   * It is findable again on Settings → Budget, which is what makes saying it
+   * safe — a correction nobody can find is one nobody can undo.
+   *
+   * **Not Settings → Archived**, which was tried first and is the wrong word:
+   * "archived" means `archived_at` on a row here, and a hidden bill archives
+   * nothing. The charges stay in the register, which the card says out loud
+   * because it is the question somebody asks standing in front of it.
+   */
+  await signedIn.goto('/settings/budget');
+  await expect(signedIn.getByText('Their charges stay in the register.')).toBeVisible();
+  await signedIn.getByRole('button', { name: 'Put back SAVERS - 1090 SIOUX FALLS SD' }).click();
+
+  await openBills(signedIn);
   await expect(signedIn.getByText('SAVERS - 1090 SIOUX FALLS SD')).toBeVisible();
+});
+
+/** The charges a hidden merchant made are untouched — the fear the card answers. */
+test('hiding a bill leaves every one of its charges in the register', async ({ signedIn, api }) => {
+  const accountId = await makeAccount('Everyday Checking', 'asset', 500000n);
+  await monthlyBill(api, accountId, recentMonths(), '-7150', 'SAVERS - 1090 SIOUX FALLS SD');
+
+  await openBills(signedIn);
+  await signedIn.getByRole('button', { name: 'Options for SAVERS - 1090 SIOUX FALLS SD' }).click();
+  await signedIn.getByRole('menuitem', { name: 'Not a bill' }).click();
+  await expect(signedIn.getByText('SAVERS - 1090 SIOUX FALLS SD')).toHaveCount(0);
+
+  // All three, still in the register. `bill_overrides` holds a refusal keyed on
+  // the merchant and touches no transaction.
+  await signedIn.goto('/transactions');
+  await expect(signedIn.getByText('SAVERS - 1090 SIOUX FALLS SD')).toHaveCount(3);
 });
 
 test('a bill can be given a name, and the bank text moves into the menu', async ({

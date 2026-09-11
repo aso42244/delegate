@@ -80,6 +80,42 @@ export function PageHeader({
   );
 }
 
+/**
+ * A search box.
+ *
+ * One shape, because there were two: the register's and the bills list's, each
+ * hand-rolled from `.field` and a border and each 64 characters of class name
+ * that happened to agree. They agreed by luck rather than by construction, which
+ * is the whole reason this file exists.
+ *
+ * It states its own width (`ui-system.md` §2) rather than filling whatever it is
+ * put in — `lg`, because what somebody types into it is a merchant's name or a
+ * pasted description and has no upper bound.
+ */
+export function SearchField({
+  value,
+  onChange,
+  label,
+  placeholder,
+}: {
+  readonly value: string;
+  readonly onChange: (next: string) => void;
+  /** Names the box for a screen reader: "Search bills". */
+  readonly label: string;
+  readonly placeholder: string;
+}): ReactNode {
+  return (
+    <input
+      type="search"
+      value={value}
+      onChange={(event) => onChange(event.target.value)}
+      placeholder={placeholder}
+      aria-label={label}
+      className="field w-96 max-w-full min-w-0 rounded-lg border border-line bg-canvas px-3 text-base"
+    />
+  );
+}
+
 const DOT_TONES = {
   positive: 'bg-positive',
   warning: 'bg-warning',

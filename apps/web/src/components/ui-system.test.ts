@@ -98,6 +98,82 @@ describe('the page header', () => {
 });
 
 /**
+ * One box.
+ *
+ * Overview's tile, Settings' card and the bordered `<section>` every page reached
+ * for were the same object written three times — same radius, same border, same
+ * padding, two heading sizes and a third padding value on the two suggestion
+ * panels. `Tile` is the box now, and a page that wants one asks for it rather
+ * than drawing it again slightly differently. See ADR 061.
+ */
+describe('the tile', () => {
+  it('is drawn in one place', () => {
+    const surface = 'rounded-lg border border-line bg-canvas p-4';
+    const offenders = FILES.filter(
+      ({ path, text }) => text.includes(surface) && !path.endsWith('components/Tile.tsx'),
+    ).map(({ path }) => path);
+    expect(offenders).toEqual([]);
+  });
+});
+
+/**
+ * One dialog, so ADR 038 holds everywhere.
+ *
+ * The two hand-rolled overlays on the Budget page were centred cards on a phone
+ * rather than sheets, took no notice of `visualViewport`, and could not be
+ * closed with Escape — so the dialog somebody opens to *type an amount* put its
+ * amount field and its confirm button underneath the software keyboard. A frame
+ * written by hand is a frame that does not get the next fix either.
+ */
+describe('dialogs', () => {
+  it('are the shared Modal, never a hand-rolled overlay', () => {
+    const offenders = FILES.filter(
+      ({ path, text }) => /role="dialog"/.test(text) && !path.endsWith('components/ui.tsx'),
+    ).map(({ path }) => path);
+    expect(offenders).toEqual([]);
+  });
+});
+
+/**
+ * `PageHeader` owns the 24px between a title and the page under it.
+ *
+ * That is the whole reason the step lives in the component rather than in each
+ * caller — and the Rules page then wrapped it in a `gap-6` column, so its one
+ * tile started 48px below the title while every tile on Overview started 24px
+ * below its own. Invisible on either page alone.
+ */
+describe('the step below a page title', () => {
+  it('is the header component alone, never doubled by a wrapper', () => {
+    const doubled = /flex-col[^"'`]*\bgap-\d[\s\S]{0,240}?<PageHeader/g;
+    const offenders = FILES.flatMap(({ path, text }) =>
+      [...text.matchAll(doubled)].map(() => path),
+    );
+    expect(offenders).toEqual([]);
+  });
+});
+
+/**
+ * Content inside a tile asks how wide the **tile** is.
+ *
+ * A `md:` breakpoint asks how wide the window is, which stopped being the same
+ * question the moment a tile stopped being the whole row: a third-width tile on
+ * a 1440px screen is 345px across and was handed the layout meant for 640. That
+ * is how the backups table drew its columns past its own border in v0.49, and
+ * how the bills table would size seven columns for a window it only has
+ * two-thirds of. Column widths and table layout are where it bites, so those are
+ * what this checks.
+ */
+describe('widths inside a tile', () => {
+  it('are container queries, never window ones', () => {
+    const windowWidth = /(?<![@\w-])(?:sm|md|lg|xl|2xl):(?:w-\d|table-fixed)/g;
+    const offenders = FILES.filter(({ path }) => !SHELL.includes(path)).flatMap(({ path, text }) =>
+      [...text.matchAll(windowWidth)].map((match) => `${path}: ${match[0]}`),
+    );
+    expect(offenders).toEqual([]);
+  });
+});
+
+/**
  * A field states its own width. Left to `w-full` on a page it takes whatever the
  * container happens to be, which is how one text input came to be three
  * different widths on three tabs of one page.

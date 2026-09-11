@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState, type ReactNode } from 'react';
 import { budgetApi } from '../api/budget.js';
 import { ApiError } from '../api/client.js';
-import { Alert, Button } from './ui.jsx';
+import { Alert, Button, Modal } from './ui.jsx';
 
 /**
  * Delegate, and the undo that replaces it — in the sidebar, above Sync.
@@ -161,37 +161,49 @@ export function DelegateControl({
 }
 
 /**
- * The shell every confirmation here uses.
+ * The shell every confirmation here uses. One copy of it rather than two,
+ * because the two dialogs differ only in their words.
  *
- * Deliberately not `Modal`: neither of these holds a typed figure, both are two
- * sentences and two buttons, and this is the frame the Delegate confirmation has
- * always had. One copy of it rather than two, because the two dialogs differ
- * only in their words.
+ * **`Modal`, not a frame of its own.** It was hand-rolled on the reasoning that
+ * neither of these holds a typed figure — which is an argument for letting the
+ * backdrop close them, and `dismissible` is exactly that switch. It is not an
+ * argument for a second frame, and a hand-rolled one gives up the three things
+ * `Modal` exists to guarantee (ADR 038): it is measured against the **visual
+ * viewport** rather than the window, it rises from the bottom edge as a sheet on
+ * a phone instead of landing wherever a centred card's own height puts it, and
+ * Escape closes it.
+ *
+ * That matters more here than anywhere, because this control was just promoted
+ * into the page header below `sm`. The confirmation a phone reaches most easily
+ * is now **Undo Delegation** — the destructive one, which empties every line a
+ * run touched — and a destructive confirm that ignores Escape and lands mid-screen
+ * is the weakest possible case for a bespoke frame.
  */
 function ConfirmFrame({
   label,
   title,
+  onClose,
   children,
   footer,
 }: {
   readonly label: string;
   readonly title: string;
+  readonly onClose: () => void;
   readonly children: ReactNode;
   readonly footer: ReactNode;
 }): ReactNode {
   return (
-    <div className="fixed inset-0 z-10 flex items-center justify-center bg-black/20 p-4">
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-label={label}
-        className="w-full max-w-md rounded-lg border border-line bg-canvas p-4"
-      >
-        <h2 className="mb-1 text-section font-bold text-ink">{title}</h2>
-        {children}
-        <div className="mt-4 flex justify-end gap-2">{footer}</div>
-      </div>
-    </div>
+    <Modal
+      label={label}
+      title={title}
+      onClose={onClose}
+      /* A reading has nothing to lose to a stray press beside the card, which is
+         the true half of the original reasoning. */
+      dismissible
+      footer={<div className="flex justify-end gap-2">{footer}</div>}
+    >
+      {children}
+    </Modal>
   );
 }
 
@@ -212,6 +224,7 @@ function DelegateDialog({ onClose }: { onClose: () => void }): ReactNode {
 
   return (
     <ConfirmFrame
+      onClose={onClose}
       label="Confirm delegate"
       title="Delegate"
       footer={
@@ -227,20 +240,25 @@ function DelegateDialog({ onClose }: { onClose: () => void }): ReactNode {
         </>
       }
     >
-      {preview.isLoading ? (
-        <p className="text-quiet text-muted">Working out what would be distributed…</p>
-      ) : preview.data ? (
-        <p className="mb-4 text-base text-ink">
-          Distribute <strong>{formatCents(BigInt(preview.data.totalCents))}</strong> across{' '}
-          <strong>{preview.data.lineCount}</strong>{' '}
-          {preview.data.lineCount === 1 ? 'line' : 'lines'}.
-          <span className="mt-2 block text-quiet text-muted">
-            Lines with no amount receive nothing. This can be undone for a while afterwards.
-          </span>
-        </p>
-      ) : null}
+      {/* `gap-4` rather than a margin on the paragraph: the footer's step away
+          from the body belongs to `Modal` now, and carrying it here too spent it
+          twice. */}
+      <div className="flex flex-col gap-4">
+        {preview.isLoading ? (
+          <p className="text-quiet text-muted">Working out what would be distributed…</p>
+        ) : preview.data ? (
+          <p className="text-base text-ink">
+            Distribute <strong>{formatCents(BigInt(preview.data.totalCents))}</strong> across{' '}
+            <strong>{preview.data.lineCount}</strong>{' '}
+            {preview.data.lineCount === 1 ? 'line' : 'lines'}.
+            <span className="mt-2 block text-quiet text-muted">
+              Lines with no amount receive nothing. This can be undone for a while afterwards.
+            </span>
+          </p>
+        ) : null}
 
-      {problem && <Alert>{problem}</Alert>}
+        {problem && <Alert>{problem}</Alert>}
+      </div>
     </ConfirmFrame>
   );
 }
@@ -267,6 +285,7 @@ function ConfirmUndoDialog({
 }): ReactNode {
   return (
     <ConfirmFrame
+      onClose={onClose}
       label="Confirm undo delegation"
       title="Undo Delegation"
       footer={
@@ -278,14 +297,16 @@ function ConfirmUndoDialog({
         </>
       }
     >
-      <p className="mb-4 text-base text-ink">
-        {summary ?? 'Takes the last distribution back out of the delegations.'}
-        <span className="mt-2 block text-quiet text-muted">
-          Every line this run touched goes back to what it held before.
-        </span>
-      </p>
+      <div className="flex flex-col gap-4">
+        <p className="text-base text-ink">
+          {summary ?? 'Takes the last distribution back out of the delegations.'}
+          <span className="mt-2 block text-quiet text-muted">
+            Every line this run touched goes back to what it held before.
+          </span>
+        </p>
 
-      {problem && <Alert>{problem}</Alert>}
+        {problem && <Alert>{problem}</Alert>}
+      </div>
     </ConfirmFrame>
   );
 }

@@ -178,10 +178,12 @@ export function App(): ReactNode {
           <Route path="budget" element={<MainBudget />} />
           <Route path="transactions" element={<Transactions />} />
           <Route path="recurring" element={<Recurring />} />
-          {/* Both old entries land on the half they named. A bookmark is a
-              promise, and the page it pointed at still exists — as a view. */}
+          {/* Both old entries land on the page carrying both halves. A bookmark
+              is a promise, and the thing each pointed at is on that screen —
+              `?view=cost` is gone with the switch it selected, because Due and
+              Cost are side by side now rather than one at a time. */}
           <Route path="bills" element={<Navigate to="/recurring" replace />} />
-          <Route path="utilities" element={<Navigate to="/recurring?view=cost" replace />} />
+          <Route path="utilities" element={<Navigate to="/recurring" replace />} />
           <Route path="rules" element={<Rules />} />
           {/* Overview replaced it. Same promise as /bills: the thing the
               bookmark pointed at still exists, in better form. */}

@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
 import { PageHeader } from '../components/layout.jsx';
+import { TileGrid } from '../components/Tile.jsx';
 import { RulesSection } from './settings/Rules.jsx';
 
 /**
@@ -16,9 +17,21 @@ import { RulesSection } from './settings/Rules.jsx';
  */
 export function Rules(): ReactNode {
   return (
-    <div className="flex flex-col gap-6">
+    /*
+     * No gap of its own.
+     *
+     * `PageHeader` carries the 24px between a title and the page beneath it —
+     * that is the whole reason the step lives in the component rather than in
+     * each caller. Wrapping it in a `gap-6` column added a second one, so the
+     * tile on this page started 48px below its title while every tile on
+     * Overview started 24px below its own. One page's worth of drift, invisible
+     * until the two are looked at side by side.
+     */
+    <div>
       <PageHeader title="Rules" />
-      <RulesSection />
+      <TileGrid>
+        <RulesSection />
+      </TileGrid>
     </div>
   );
 }

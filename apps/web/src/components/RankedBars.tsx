@@ -44,9 +44,30 @@ export interface RankedRow {
    * since bars here are scaled to the largest row rather than to the total.
    */
   readonly aside?: string;
-  readonly compare?: { readonly label: string; readonly valueCents: bigint | null };
+  readonly compare?: {
+    readonly label: string;
+    readonly valueCents: bigint | null;
+    /**
+     * Marks the comparison rather than the ranking.
+     *
+     * One tile asks whether a figure is *wrong* rather than how big it is —
+     * Recurring's per-cycle list, where the comparison is the whole question.
+     * The colour is on the compared figure because that is the number somebody
+     * would change, the same reasoning that puts a target's warning on the
+     * amount to delegate rather than beside the name.
+     */
+    readonly tone?: 'warning';
+  };
   /** Replaces the formatted figure, where the row states something else. */
   readonly note?: string;
+  /**
+   * The whole reading, one hover away.
+   *
+   * A ranked row is a name, a bar and a figure; where the figures have units
+   * that the tile's own heading cannot carry for both of them, the sentence
+   * that names them goes here rather than into a second line per row.
+   */
+  readonly title?: string;
 }
 
 /** Wider is more; a row states its own share only where the share is the point. */
@@ -167,6 +188,7 @@ export function RankedBars({
                semantics a screen reader needs. The row takes the list's tracks
                instead of computing its own. */
             className="row-cell col-span-full grid grid-cols-subgrid items-center gap-x-2"
+            {...(row.title === undefined ? {} : { title: row.title })}
           >
             <span className="truncate text-quiet text-ink" title={row.name}>
               {row.name}
@@ -229,7 +251,11 @@ export function RankedBars({
             */}
             <span className="flex shrink-0 items-baseline justify-end gap-2">
               {row.compare !== undefined && (
-                <span className="money text-micro text-muted">
+                <span
+                  className={`money text-micro ${
+                    row.compare.tone === 'warning' ? 'font-semibold text-warning' : 'text-muted'
+                  }`}
+                >
                   {row.compare.valueCents === null ? '—' : formatCents(row.compare.valueCents)}
                   <span className="sr-only"> {row.compare.label}</span>
                 </span>

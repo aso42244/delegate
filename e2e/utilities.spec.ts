@@ -1,35 +1,36 @@
 import { expect, makeAccount, makeDelegation, test } from './fixtures.js';
 
 /**
- * The Utilities page.
+ * The Cost half of Recurring.
  *
  * It suggests and never writes. The assertion that matters is that the
- * configured amount to delegate is untouched by anything on this page.
+ * configured amount to delegate is untouched by anything here.
+ *
+ * Since ADR 061 it is two tiles of dense rows rather than a grid of cards, so
+ * what is asserted moved with it: the four labelled figures per card are a
+ * per-cycle comparison in one tile and twelve months in the other, and each
+ * row's hover text carries both units — a per-month figure and a per-cycle one
+ * adjacent and looking comparable is the bug those labels were written for.
  */
 
 test('says plainly when there are no utilities yet', async ({ signedIn }) => {
-  // The old address still works: a bookmark is a promise, and the page it
-  // pointed at is still here as a view.
+  // The old address still works: a bookmark is a promise, and the thing it
+  // pointed at is on this page.
   await signedIn.goto('/utilities');
 
   await expect(signedIn.getByRole('heading', { name: 'Recurring' })).toBeVisible();
-  await expect(signedIn.getByRole('radio', { name: 'Cost' })).toHaveAttribute(
-    'aria-checked',
-    'true',
-  );
+  await expect(signedIn.getByRole('heading', { name: 'Per cycle' })).toBeVisible();
   await expect(signedIn.getByText('No delegations are marked as a utility.')).toBeVisible();
 });
 
-test('shows a card per utility, and warns that averages need history', async ({
-  signedIn,
-  api,
-}) => {
+test('shows a row per utility, and warns that averages need history', async ({ signedIn, api }) => {
   const water = await makeDelegation(api, 'Water', '6000');
   await api.patch(`/api/delegations/${water}`, { data: { isUtility: true } });
 
   await signedIn.goto('/utilities');
 
-  await expect(signedIn.getByRole('heading', { name: 'Water' })).toBeVisible();
+  // A row in each tile rather than a card of its own.
+  await expect(signedIn.getByText('Water').first()).toBeVisible();
   // Honest about being empty rather than presenting zeros as findings.
   await expect(signedIn.getByText(/categorized history/)).toBeVisible();
 });
@@ -63,8 +64,10 @@ test('compares the suggestion against what is actually delegated', async ({ sign
 
   await signedIn.goto('/utilities');
 
-  // The comparison the page exists for, named rather than left to a colour.
-  await expect(signedIn.getByText('Delegated below suggested')).toBeVisible();
+  // The comparison the page exists for, named rather than left to a colour —
+  // §9: never convey state by colour alone. The warning tone on the delegated
+  // figure is how fast it is read; the footer is what it means.
+  await expect(signedIn.getByText(/delegated below suggested/i)).toBeVisible();
 });
 
 /** §9.3: suggest only, never auto-write. */
@@ -73,7 +76,7 @@ test('never changes the amount to delegate', async ({ signedIn, api }) => {
   await api.patch(`/api/delegations/${water}`, { data: { isUtility: true } });
 
   await signedIn.goto('/utilities');
-  await expect(signedIn.getByRole('heading', { name: 'Water' })).toBeVisible();
+  await expect(signedIn.getByText('Water').first()).toBeVisible();
 
   await signedIn.goto('/budget');
   await expect(signedIn.getByRole('button', { name: 'Water amount to delegate' })).toContainText(
@@ -111,7 +114,7 @@ test('the sparkline takes the grouping colour', async ({ signedIn, api }) => {
   });
 
   await signedIn.goto('/utilities');
-  await expect(signedIn.getByText('Electricity')).toBeVisible();
+  await expect(signedIn.getByText('Electricity').first()).toBeVisible();
 
   // The purple of the grouping, not the accent blue. The bar sits inside a
   // full-height column, which is what gives a spent-nothing month something to
@@ -148,12 +151,23 @@ test('the card compares like with like', async ({ signedIn, api }) => {
 
   await signedIn.goto('/utilities');
 
-  // Every figure names its unit, so a monthly one and a per-cycle one cannot be
-  // read as comparable. That was the bug: "Currently $65.00" beside a
-  // per-paycheck suggestion, carrying no unit at all.
+  /*
+   * Every figure names its unit, so a monthly one and a per-cycle one cannot be
+   * read as comparable. That was the bug: "Currently $65.00" beside a
+   * per-paycheck suggestion, carrying no unit at all.
+   *
+   * The two per-cycle figures share a row, and the row's hover text names both
+   * of them — which is where a unit goes when a dense list has no room for a
+   * label a figure. The monthly average is a tile of its own and its heading
+   * carries the unit for the whole column.
+   */
+  await expect(signedIn.getByText('Delegated against suggested')).toBeVisible();
   await expect(signedIn.getByText('Average per month')).toBeVisible();
-  await expect(signedIn.getByText('Suggested per cycle')).toBeVisible();
-  await expect(signedIn.getByText('Delegated per cycle')).toBeVisible();
+
+  await expect(
+    signedIn.getByRole('listitem').filter({ hasText: 'Electricity' }).first(),
+  ).toHaveAttribute('title', /delegated per cycle .* suggested per cycle/);
+
   await expect(signedIn.getByText('Currently', { exact: true })).toHaveCount(0);
 
   // And "delegated" throughout — the application has one word for this.

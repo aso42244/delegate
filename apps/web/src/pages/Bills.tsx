@@ -1,11 +1,11 @@
 import { formatCents } from '@budget/shared';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import { useMemo, useState, type ReactNode } from 'react';
 import { recurringApi, type BillDto, type BillStatus } from '../api/recurring.js';
-import { ApiError } from '../api/client.js';
 import { BillRowMenu } from '../components/BillRowMenu.jsx';
-import { Disclosure, EmptyState } from '../components/layout.jsx';
-import { Alert, Button } from '../components/ui.jsx';
+import { EmptyState, SearchField } from '../components/layout.jsx';
+import { Tile } from '../components/Tile.jsx';
+import { Alert } from '../components/ui.jsx';
 import { NARROW, useMediaQuery } from '../useMediaQuery.js';
 
 /**
@@ -77,7 +77,12 @@ function BillRow({
   return (
     // `group` so the row's menu appears on hover of the row rather than only of
     // the trigger itself.
-    <tr className="group border-b border-line">
+    <tr
+      className="group border-b border-line"
+      title={`${bill.name} · ${bill.cadence} · ${STATUS_TEXT[bill.status]}${
+        bill.delegationName === null ? '' : ` · ${bill.delegationName}`
+      }`}
+    >
       <td className="row-cell pr-3 pl-3">
         {/*
           The name, and only the name.
@@ -107,7 +112,17 @@ function BillRow({
           {formatCents(BigInt(bill.lastAmountCents))}
         </span>
       </td>
-      <td className="row-cell pr-3 overflow-hidden">
+      {/*
+        The column that gives way.
+
+        Everything else on this row answers "did the charge arrive"; where the
+        money comes out of is a fact about the budget rather than about the
+        bill's schedule, and it is the row's only column whose content repeats
+        the merchant name on most rows. So it is drawn where the tile is wide
+        enough to afford it and carried in the row's hover text otherwise —
+        `@2xl`, which is this tile's own width rather than the window's.
+      */}
+      <td className="row-cell pr-3 hidden overflow-hidden @3xl:table-cell">
         <span className="block truncate text-quiet text-muted">{bill.delegationName ?? '—'}</span>
       </td>
       <td className="row-cell pr-3 whitespace-nowrap">
@@ -167,60 +182,22 @@ function BillCard({
 }
 
 /**
- * The merchants somebody has said are not bills.
- *
- * Folded away, because it is a list of corrections rather than of bills and
- * nobody comes to this page to read it — but present, because a correction
- * nobody can find is one nobody can undo, and the row it hid is invisible by
- * design. The count is on the summary so it says whether opening it is worth
- * anything.
- */
-function Hidden({
-  hidden,
-  onProblem,
-}: {
-  readonly hidden: readonly { key: string; label: string }[];
-  readonly onProblem: (message: string) => void;
-}): ReactNode {
-  const queryClient = useQueryClient();
-
-  const restore = useMutation({
-    mutationFn: (entry: { key: string; label: string }) =>
-      recurringApi.override({ key: entry.key, label: entry.label, hidden: false }),
-    onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ['recurring'] });
-      await queryClient.invalidateQueries({ queryKey: ['notifications'] });
-    },
-    onError: (error: unknown) =>
-      onProblem(error instanceof ApiError ? error.message : 'That could not be put back.'),
-  });
-
-  if (hidden.length === 0) return null;
-
-  return (
-    <div className="mt-6">
-      <Disclosure summary={hidden.length === 1 ? '1 hidden' : `${hidden.length} hidden`}>
-        <ul className="mt-2 flex flex-col gap-2">
-          {hidden.map((entry) => (
-            <li key={entry.key} className="flex items-center gap-2">
-              <span className="min-w-0 flex-1 truncate text-quiet text-muted">{entry.label}</span>
-              <Button onClick={() => restore.mutate(entry)} disabled={restore.isPending}>
-                Put back
-              </Button>
-            </li>
-          ))}
-        </ul>
-      </Disclosure>
-    </div>
-  );
-}
-
-/**
  * The Due half of Recurring: what is coming, and what did not come.
  *
- * Not a page any more — Recurring owns the header and the switch, because Bills
- * and Utilities were two sidebar entries describing the same merchants two ways,
- * and Electricity lived on both.
+ * A tile beside Cost rather than a page of its own — see ADR 061. Two things
+ * left it in that change and both were the owner's call:
+ *
+ * **The count is gone.** "10 recurring." said how many merchants this household
+ * repeats with, which is a fact about how long it has been running rather than
+ * about the list somebody came to work through — the same argument that took
+ * "494 transactions" off the register in v0.34.
+ *
+ * **The hidden fold is gone**, and the corrections it held moved to
+ * Settings → Archived. It is a list of things somebody put away with a way to
+ * put them back, which is precisely what that page is, and it sat under a page
+ * that is now a tile beside another tile with nowhere sensible for a fold. The
+ * rule it was written for still holds: a correction nobody can find is one
+ * nobody can undo, so it moved rather than went.
  */
 export function BillsView(): ReactNode {
   const [search, setSearch] = useState('');
@@ -245,36 +222,22 @@ export function BillsView(): ReactNode {
     );
   }, [all, search]);
 
-  const overdue = all.filter((bill) => bill.status === 'overdue').length;
-
   return (
-    <div>
-      {/*
-        The current fact — the count, and whether any of it needs attention.
-        Never an explanation of how the detection works: that belongs in the ADR
-        rather than on the screen every day.
-
-        It sits above the search rather than in a page subtitle, because the page
-        header now belongs to Recurring and names both halves.
-      */}
-      {!bills.isLoading && all.length > 0 && (
-        <p className="mb-4 text-quiet text-muted">
-          {overdue > 0
-            ? `${all.length} recurring, ${overdue} overdue.`
-            : `${all.length} recurring.`}
-        </p>
-      )}
-
-      <div className="mb-4 flex flex-wrap items-center gap-2">
-        <input
+    <Tile
+      span="two-thirds"
+      title="Due"
+      /* Due and Cost sit side by side now, so what each half asks has to be on
+         the tile: the segmented control that used to name them is gone. */
+      description="What is coming, and what did not come"
+      actions={
+        <SearchField
           value={search}
-          onChange={(event) => setSearch(event.target.value)}
+          onChange={setSearch}
+          label="Search bills"
           placeholder="Search bills, delegation or account"
-          aria-label="Search bills"
-          className="field min-w-64 flex-1 rounded-lg border border-line bg-canvas px-3 text-base"
         />
-      </div>
-
+      }
+    >
       {problem && (
         <div className="mb-4">
           <Alert>{problem}</Alert>
@@ -300,10 +263,14 @@ export function BillsView(): ReactNode {
           ))}
         </ul>
       ) : (
-        <table className="w-full border-t-2 border-ink md:table-fixed">
-          <thead>
-            <tr className="text-label uppercase tracking-label text-muted">
-              {/*
+        /* A wide table scrolls inside its own tile rather than squeezing, which
+           is design.md §8 and the only honest answer where the tile is narrower
+           than the columns need. */
+        <div className="overflow-x-auto">
+          <table className="w-full border-t-2 border-ink @xl:table-fixed">
+            <thead>
+              <tr className="text-label uppercase tracking-label text-muted">
+                {/*
                 No width on the name: under a fixed layout the unsized column
                 takes what the others leave, which is the right job for the one
                 whose content has no upper bound — a merchant name is as long as
@@ -314,31 +281,45 @@ export function BillsView(): ReactNode {
                 often, Next says when, and an overdue row already carries how
                 many days late it is, so it was a fourth way of saying the same
                 thing paid for out of the only column that needed the room.
+
+                **`@xl` rather than `xl`.** These widths are a claim about how
+                much room the *tile* has, and this tile is two-thirds of the page
+                — asking the window would hand a 656px tile the layout meant for
+                1280, which is exactly how the backups table drew its columns
+                past its own border in v0.49.
+
+                Measured at the widths this tile actually has: the fixed columns
+                come to 464px, so the merchant name gets about 250 of a 756px
+                tile on a 1440px screen. It was 124 with the delegation drawn at
+                `@2xl`, which truncated "Water & Sewer - City of Sioux Falls" to
+                "Water & Sew…" — the column that has no upper bound paying for
+                the one that repeats it.
               */}
-              <th className="row-cell pr-3 pl-3 text-left font-normal">Bill</th>
-              {/* Each of these is sized to the longest thing it can hold and no
+                <th className="row-cell pr-3 pl-3 text-left font-normal">Bill</th>
+                {/* Each of these is sized to the longest thing it can hold and no
                   wider — "Every two months", "$1,234.56" — because every pixel
                   they take comes out of the merchant name beside them. */}
-              {/* "Cadence", not "Every": the cell under it reads "Monthly", and
+                {/* "Cadence", not "Every": the cell under it reads "Monthly", and
                   "Every Monthly" is not a sentence. */}
-              <th className="row-cell pr-3 text-left font-normal md:w-28">Cadence</th>
-              <th className="row-cell pr-3 text-left font-normal md:w-24">Next</th>
-              <th className="row-cell pr-3 text-right font-normal md:w-28">Typical</th>
-              <th className="row-cell pr-3 text-right font-normal md:w-28">Last</th>
-              <th className="row-cell pr-3 text-left font-normal md:w-32">Delegation</th>
-              <th className="row-cell pr-3 text-left font-normal md:w-28">Status</th>
-              <th className="hold-to-open-cell row-cell" />
-            </tr>
-          </thead>
-          <tbody>
-            {shown.map((bill) => (
-              <BillRow key={bill.key} bill={bill} onProblem={setProblem} />
-            ))}
-          </tbody>
-        </table>
+                <th className="row-cell pr-3 text-left font-normal @xl:w-28">Cadence</th>
+                <th className="row-cell pr-3 text-left font-normal @xl:w-16">Next</th>
+                <th className="row-cell pr-3 text-right font-normal @xl:w-24">Typical</th>
+                <th className="row-cell pr-3 text-right font-normal @xl:w-24">Last</th>
+                <th className="row-cell pr-3 hidden text-left font-normal @3xl:table-cell @3xl:w-28">
+                  Delegation
+                </th>
+                <th className="row-cell pr-3 text-left font-normal @xl:w-24">Status</th>
+                <th className="hold-to-open-cell row-cell" />
+              </tr>
+            </thead>
+            <tbody>
+              {shown.map((bill) => (
+                <BillRow key={bill.key} bill={bill} onProblem={setProblem} />
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
-
-      <Hidden hidden={bills.data?.hidden ?? []} onProblem={setProblem} />
-    </div>
+    </Tile>
   );
 }

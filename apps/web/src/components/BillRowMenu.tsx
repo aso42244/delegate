@@ -205,8 +205,12 @@ export function BillRowMenu({
             disabled={hide.isPending}
           >
             <span>Not a bill</span>
+            {/* It names where it can come back from, now that the fold at the
+                foot of this page is gone (ADR 061). "The charges stay" is the
+                half people actually want: taking a merchant off this list reads
+                like removing its transactions and does nothing of the kind. */}
             <span className="text-label text-muted">
-              Takes it off this list. Nothing else changes, and it can come back.
+              The charges stay. Put it back on Settings → Budget.
             </span>
           </button>
         </>

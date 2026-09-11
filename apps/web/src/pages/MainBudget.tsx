@@ -21,7 +21,7 @@ import { ConfirmCheckMatchDialog } from '../components/ConfirmCheckMatchDialog.j
 import { DelegationRowMenu } from '../components/DelegationRowMenu.jsx';
 import { NewCheckDialog } from '../components/NewCheckDialog.jsx';
 import { NewTransactionDialog } from '../components/NewTransactionDialog.jsx';
-import { Alert, Button } from '../components/ui.jsx';
+import { Alert, Button, Modal, SelectField, TextField } from '../components/ui.jsx';
 
 /**
  * The Budget page — the page that replaces the spreadsheet.
@@ -120,57 +120,26 @@ export function TransferDialog({
   });
 
   return (
-    <div className="fixed inset-0 z-10 flex items-center justify-center bg-black/20 p-4">
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-label="Transfer between delegations"
-        className="w-full max-w-md rounded-lg border border-line bg-canvas p-4"
-      >
-        <h2 className="mb-1 text-section font-bold text-ink">Transfer</h2>
-        <p className="mb-4 text-quiet text-muted">
-          Moves money between envelopes. The total across delegations does not change, so the bottom
-          line stays where it is. The source may go negative.
-        </p>
-
+    /*
+     * `Modal`, like every other dialog here.
+     *
+     * This one and Delegate below it were hand-rolled `fixed inset-0` overlays
+     * — the only two left in the application — and being hand-rolled cost them
+     * both of the things ADR 038 bought everything else. They were centred cards
+     * on a phone rather than sheets rising from the edge, and they measured
+     * themselves against the *window*: on iOS the software keyboard is drawn
+     * over the page, so a card holding a typed amount and its Transfer button
+     * sat underneath the keys, and this is the dialog somebody opens to type an
+     * amount. Escape did not close them either.
+     */
+    <Modal
+      label="Transfer between delegations"
+      title="Transfer"
+      description="Moves money between envelopes. The total does not change, and the source may go negative."
+      onClose={onClose}
+      footer={
         <div className="flex flex-col gap-2">
-          <label className="block">
-            <span className="mb-1 block text-quiet font-medium">From</span>
-            <select
-              value={from}
-              onChange={(event) => setFrom(event.target.value)}
-              className="field w-full rounded-lg border border-line bg-canvas px-3"
-            >
-              <option value="">Choose a delegation</option>
-              <TransferOptions section={section} exclude={to} />
-            </select>
-          </label>
-
-          <label className="block">
-            <span className="mb-1 block text-quiet font-medium">To</span>
-            <select
-              value={to}
-              onChange={(event) => setTo(event.target.value)}
-              className="field w-full rounded-lg border border-line bg-canvas px-3"
-            >
-              <option value="">Choose a delegation</option>
-              <TransferOptions section={section} exclude={from} />
-            </select>
-          </label>
-
-          <label className="block">
-            <span className="mb-1 block text-quiet font-medium">Amount</span>
-            <input
-              value={amount}
-              onChange={(event) => setAmount(event.target.value)}
-              inputMode="decimal"
-              placeholder="25.00"
-              className="field money money-input rounded-lg border border-line bg-canvas px-3"
-            />
-          </label>
-
           {problem && <Alert>{problem}</Alert>}
-
           <div className="flex justify-end gap-2">
             <Button onClick={onClose}>Cancel</Button>
             <Button
@@ -182,8 +151,33 @@ export function TransferDialog({
             </Button>
           </div>
         </div>
+      }
+    >
+      <div className="flex flex-col gap-2">
+        <SelectField label="From" width="full" value={from} onChange={setFrom}>
+          <option value="">Choose a delegation</option>
+          <TransferOptions section={section} exclude={to} />
+        </SelectField>
+
+        <SelectField label="To" width="full" value={to} onChange={setTo}>
+          <option value="">Choose a delegation</option>
+          <TransferOptions section={section} exclude={from} />
+        </SelectField>
+
+        {/* `sm`, not `full`. A figure is not open-ended content, and a box the
+            width of a sentence to hold $575.00 reads as a mistake — ui-system.md
+            §2, which this dialog was the last place ignoring. */}
+        <TextField
+          label="Amount"
+          width="sm"
+          value={amount}
+          onChange={(event) => setAmount(event.target.value)}
+          inputMode="decimal"
+          placeholder="25.00"
+          className="money"
+        />
       </div>
-    </div>
+    </Modal>
   );
 }
 
@@ -585,13 +579,16 @@ export function MainBudget(): ReactNode {
       <div
         className={
           budgetLayout === 'columns'
-            ? 'lg:grid lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)] lg:items-start lg:gap-6'
-            : undefined
+            ? 'flex flex-col gap-6 lg:grid lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)] lg:items-start lg:gap-6'
+            : 'flex flex-col gap-6'
         }
       >
         {budgetLayout === 'columns' && delegationsSection}
 
-        <div>
+        {/* The 24px between sections is this column's gap now rather than a
+            margin each section carried, because each of them is a tile and a
+            tile does not know what is under it. */}
+        <div className="flex flex-col gap-6">
           <BudgetSection
             title="Assets"
             section={view.data.assets}

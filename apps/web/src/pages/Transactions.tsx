@@ -25,7 +25,8 @@ import { TransactionCard } from '../components/TransactionCard.jsx';
 import { Alert, Button, Modal } from '../components/ui.jsx';
 import { NARROW, useMediaQuery } from '../useMediaQuery.js';
 import { useRowKeyboard } from '../useRowKeyboard.js';
-import { PageHeader } from '../components/layout.jsx';
+import { PageHeader, SearchField } from '../components/layout.jsx';
+import { Tile, TileGrid } from '../components/Tile.jsx';
 
 /**
  * The Transactions page.
@@ -399,111 +400,147 @@ export function Transactions(): ReactNode {
         Touch and hold still works; it is a shortcut rather than the route.
       */}
 
-      {/* Above the pairs: a duplicate is a row that should not be in the
-          register at all, and every figure below it is wrong while it is. */}
-      <DuplicateSuggestions />
+      <TileGrid>
+        {/* Above the pairs: a duplicate is a row that should not be in the
+            register at all, and every figure below it is wrong while it is. */}
+        <DuplicateSuggestions />
 
-      <PairSuggestions />
-
-      <div className="mb-4 flex flex-wrap items-center gap-2">
-        <input
-          value={search}
-          onChange={(event) => {
-            setOffset(0);
-            setSearch(event.target.value);
-          }}
-          placeholder="Search description, account, delegation or amount"
-          aria-label="Search transactions"
-          className="field min-w-64 flex-1 rounded-lg border border-line bg-canvas px-3 text-base"
-        />
+        <PairSuggestions />
 
         {/*
-          A day is a filter somebody arrived with rather than one they set here,
-          so it is shown as a pressed control that says what it is doing and
-          clears itself — the alternative is a list that is silently short with
-          nothing on screen saying why.
-        */}
-        {day !== null && (
-          <Button variant="primary" onClick={clearDay}>
-            {dayLabel(day)} ✕
-          </Button>
-        )}
-        <Button variant={uncategorized ? 'primary' : 'default'} onClick={toggleUncategorized}>
-          Uncategorized
-        </Button>
-        <Button
-          variant={filters.pending === true ? 'primary' : 'default'}
-          onClick={() => setFilter({ pending: filters.pending === true ? undefined : true })}
-        >
-          Pending
-        </Button>
-      </div>
+          The register, on the one surface everything else in this application is
+          drawn on (ADR 061).
 
-      {selected.size > 0 && (
-        <div className="mb-4 flex items-center gap-2 rounded-lg border border-line bg-surface px-3 py-2">
-          <span className="text-quiet text-ink">{selected.size} selected — assign all to</span>
-          <div className="w-64">
-            <DelegationPicker
-              options={delegations}
-              label="Bulk categorize selection"
-              onChoose={(delegationId) => bulk.mutate(delegationId)}
-            />
-          </div>
-          {/* Archiving reverses whatever the rows moved and hides nothing —
+          **No title.** The page header says "Transactions" a few pixels above
+          it, and a tile heading repeating that would be the text budget's own
+          example of a word not carrying its weight. What the header carries
+          instead is the filtering, where a tile's own controls are looked for,
+          and the pager is the footer — which is what keeps it on screen rather
+          than at the bottom of fifty rows.
+        */}
+        <Tile
+          span="full"
+          actions={
+            <>
+              <SearchField
+                value={search}
+                onChange={(next) => {
+                  setOffset(0);
+                  setSearch(next);
+                }}
+                label="Search transactions"
+                placeholder="Search description, account, delegation or amount"
+              />
+
+              {/*
+                A day is a filter somebody arrived with rather than one they set
+                here, so it is shown as a pressed control that says what it is
+                doing and clears itself — the alternative is a list that is
+                silently short with nothing on screen saying why.
+              */}
+              {day !== null && (
+                <Button variant="primary" onClick={clearDay}>
+                  {dayLabel(day)} ✕
+                </Button>
+              )}
+              <Button variant={uncategorized ? 'primary' : 'default'} onClick={toggleUncategorized}>
+                Uncategorized
+              </Button>
+              <Button
+                variant={filters.pending === true ? 'primary' : 'default'}
+                onClick={() => setFilter({ pending: filters.pending === true ? undefined : true })}
+              >
+                Pending
+              </Button>
+            </>
+          }
+          footer={
+            total > PAGE_SIZE ? (
+              <div className="flex items-center justify-between">
+                <Button
+                  onClick={() => setOffset(Math.max(0, offset - PAGE_SIZE))}
+                  disabled={offset === 0}
+                >
+                  Previous
+                </Button>
+                <span className="text-quiet text-muted">
+                  {offset + 1}–{Math.min(offset + PAGE_SIZE, total)} of {total}
+                </span>
+                <Button
+                  onClick={() => setOffset(offset + PAGE_SIZE)}
+                  disabled={offset + PAGE_SIZE >= total}
+                >
+                  Next
+                </Button>
+              </div>
+            ) : undefined
+          }
+        >
+          {selected.size > 0 && (
+            <div className="mb-4 flex items-center gap-2 rounded-lg border border-line bg-surface px-3 py-2">
+              <span className="text-quiet text-ink">{selected.size} selected — assign all to</span>
+              <div className="w-64">
+                <DelegationPicker
+                  options={delegations}
+                  label="Bulk categorize selection"
+                  onChoose={(delegationId) => bulk.mutate(delegationId)}
+                />
+              </div>
+              {/* Archiving reverses whatever the rows moved and hides nothing —
               ADR: nothing is ever hard-deleted. It sits beside the picker
               rather than in a menu because clearing a fortnight of stand-in
               rows one at a time is how somebody decides to leave them there. */}
-          <Button variant="ghost" onClick={() => bulkArchive.mutate()}>
-            Archive selection
-          </Button>
-          <Button variant="ghost" onClick={() => setSelected(new Set())}>
-            Clear
-          </Button>
-        </div>
-      )}
+              <Button variant="ghost" onClick={() => bulkArchive.mutate()}>
+                Archive selection
+              </Button>
+              <Button variant="ghost" onClick={() => setSelected(new Set())}>
+                Clear
+              </Button>
+            </div>
+          )}
 
-      {problem && (
-        <div className="mb-4">
-          <Alert>{problem}</Alert>
-        </div>
-      )}
+          {problem && (
+            <div className="mb-4">
+              <Alert>{problem}</Alert>
+            </div>
+          )}
 
-      {list.isLoading ? (
-        <p className="text-quiet text-muted">Loading transactions…</p>
-      ) : /*
+          {list.isLoading ? (
+            <p className="text-quiet text-muted">Loading transactions…</p>
+          ) : /*
           Two layouts, not one taught to reflow. Six columns do not become two
           lines by wrapping: the decision is which facts share a line and which
           are dropped, and that reads better as its own component than as eight
           breakpoints threaded through a `<tr>`.
         */
-      narrow ? (
-        <ul className="border-t-2 border-ink">
-          {(list.data?.transactions ?? []).map((transaction) => (
-            <TransactionCard
-              key={transaction.id}
-              transaction={transaction}
-              chips={chipsFor(transaction)}
-              categorizedAs={transaction.allocations[0]?.delegation.name ?? null}
-              onCategorize={() => setPicking(transaction)}
-              menu={
-                <TransactionRowMenu
+          narrow ? (
+            <ul className="border-t-2 border-ink">
+              {(list.data?.transactions ?? []).map((transaction) => (
+                <TransactionCard
+                  key={transaction.id}
                   transaction={transaction}
-                  onSplit={() => setSplitting(transaction)}
-                  onMatchCheck={() => setMatching(transaction)}
-                  onCreateRule={
-                    transaction.allocations.length === 1 ? () => setRuling(transaction) : null
+                  chips={chipsFor(transaction)}
+                  categorizedAs={transaction.allocations[0]?.delegation.name ?? null}
+                  onCategorize={() => setPicking(transaction)}
+                  menu={
+                    <TransactionRowMenu
+                      transaction={transaction}
+                      onSplit={() => setSplitting(transaction)}
+                      onMatchCheck={() => setMatching(transaction)}
+                      onCreateRule={
+                        transaction.allocations.length === 1 ? () => setRuling(transaction) : null
+                      }
+                      onProblem={setProblem}
+                    />
                   }
-                  onProblem={setProblem}
                 />
-              }
-            />
-          ))}
-        </ul>
-      ) : (
-        <table className="w-full border-t-2 border-ink md:table-fixed">
-          <thead>
-            <tr className="text-label uppercase tracking-label text-muted">
-              {/*
+              ))}
+            </ul>
+          ) : (
+            <table className="w-full border-t-2 border-ink @2xl:table-fixed">
+              <thead>
+                <tr className="text-label uppercase tracking-label text-muted">
+                  {/*
                 From `md` up only. These add to more than a phone screen is
                 wide, and a fixed layout that is over-subscribed gives the
                 unsized column nothing — the description collapsed to zero and
@@ -522,197 +559,181 @@ export function Transactions(): ReactNode {
                 is unbounded, and it truncates gracefully with the full text on
                 hover.
               */}
-              <th className="w-8 row-cell pr-2 pl-3" />
-              <th className="row-cell pr-4 text-left font-normal whitespace-nowrap md:w-24">
-                Date
-              </th>
-              {/* No width: under a fixed layout the unsized column takes
+                  <th className="w-8 row-cell pr-2 pl-3" />
+                  <th className="row-cell pr-4 text-left font-normal whitespace-nowrap @2xl:w-24">
+                    Date
+                  </th>
+                  {/* No width: under a fixed layout the unsized column takes
                   whatever the others leave, which is the right job for the one
                   whose content has no upper bound. */}
-              <th className="row-cell pr-3 text-left font-normal">Description</th>
-              <th className="row-cell pr-3 text-left font-normal md:w-36">Account</th>
-              <th className="w-32 row-cell pr-3 text-right font-normal">Amount</th>
-              <th className="row-cell pr-3 text-left font-normal md:w-64">Delegation</th>
-              <th className="hold-to-open-cell row-cell" />
-            </tr>
-          </thead>
+                  <th className="row-cell pr-3 text-left font-normal">Description</th>
+                  <th className="row-cell pr-3 text-left font-normal @2xl:w-36">Account</th>
+                  <th className="w-32 row-cell pr-3 text-right font-normal">Amount</th>
+                  <th className="row-cell pr-3 text-left font-normal @2xl:w-64">Delegation</th>
+                  <th className="hold-to-open-cell row-cell" />
+                </tr>
+              </thead>
 
-          <tbody onKeyDown={keyboard.onKeyDown}>
-            {list.data?.transactions.map((transaction, index) => {
-              const amount = BigInt(transaction.amountCents);
-              const current = transaction.allocations[0]?.delegation.name;
-              const suggestion = suggestionFor.get(transaction.id);
+              <tbody onKeyDown={keyboard.onKeyDown}>
+                {list.data?.transactions.map((transaction, index) => {
+                  const amount = BigInt(transaction.amountCents);
+                  const current = transaction.allocations[0]?.delegation.name;
+                  const suggestion = suggestionFor.get(transaction.id);
 
-              return (
-                <tr
-                  key={transaction.id}
-                  // `group` so the row's menu appears on hover of the row rather
-                  // than only of the trigger itself.
-                  className="group border-b border-line focus:bg-accent-soft"
-                  {...keyboard.rowProps(index)}
-                >
-                  <td className="row-cell pr-2 pl-3 align-middle">
-                    <input
-                      type="checkbox"
-                      checked={selected.has(transaction.id)}
-                      onChange={() => toggleSelected(transaction.id)}
-                      aria-label={`Select ${transaction.description}`}
-                    />
-                  </td>
+                  return (
+                    <tr
+                      key={transaction.id}
+                      // `group` so the row's menu appears on hover of the row rather
+                      // than only of the trigger itself.
+                      className="group border-b border-line focus:bg-accent-soft"
+                      {...keyboard.rowProps(index)}
+                    >
+                      <td className="row-cell pr-2 pl-3 align-middle">
+                        <input
+                          type="checkbox"
+                          checked={selected.has(transaction.id)}
+                          onChange={() => toggleSelected(transaction.id)}
+                          aria-label={`Select ${transaction.description}`}
+                        />
+                      </td>
 
-                  {/* `pr-4` and the middle alignment: the date was running
+                      {/* `pr-4` and the middle alignment: the date was running
                       into the checkbox and sitting a shade above it. */}
-                  <td className="row-cell pr-4 align-middle text-quiet whitespace-nowrap text-muted">
-                    {new Date(transaction.postedAt).toLocaleDateString()}
-                  </td>
+                      <td className="row-cell pr-4 align-middle text-quiet whitespace-nowrap text-muted">
+                        {new Date(transaction.postedAt).toLocaleDateString()}
+                      </td>
 
-                  {/*
+                      {/*
                     One line, always. A bank description is as long as the bank
                     feels like making it, and a wrapped row pushes every row
                     below it down — sixty of those is a page that will not sit
                     still. Truncated with the full text on hover and in the
                     title, so nothing is actually lost.
                   */}
-                  <td className="row-cell pr-3">
-                    <div className="flex items-baseline gap-2 overflow-hidden">
-                      {/* Only the description gives way. The badges beside it
+                      <td className="row-cell pr-3">
+                        <div className="flex items-baseline gap-2 overflow-hidden">
+                          {/* Only the description gives way. The badges beside it
                           are short and fixed, and shrinking those to fit a long
                           merchant name would hide the useful half. */}
-                      <span className="truncate text-ink" title={transaction.description}>
-                        {transaction.description}
-                      </span>
+                          <span className="truncate text-ink" title={transaction.description}>
+                            {transaction.description}
+                          </span>
 
-                      {/* Marks, not words — see components/chips.ts. A pending
+                          {/* Marks, not words — see components/chips.ts. A pending
                           row has already moved its envelope while the account
                           balance has not caught up, so it is marked rather than
                           hidden, and it keeps the yellow. */}
-                      <Chips kinds={chipsFor(transaction)} />
-                      {/* A confirmed pair has to be reversible: the suggestion
+                          <Chips kinds={chipsFor(transaction)} />
+                          {/* A confirmed pair has to be reversible: the suggestion
                           was a judgement, and judgements are sometimes wrong. */}
-                      {transaction.pairedTransactionId && (
-                        <button
-                          type="button"
-                          onClick={() => unpair.mutate(transaction.id)}
-                          aria-label={`Unpair ${transaction.description}`}
-                          className="shrink-0 text-quiet text-muted underline"
-                        >
-                          unpair
-                        </button>
-                      )}
-                      <span className="shrink-0 truncate">
-                        <AllocationSummary transaction={transaction} />
-                      </span>
-                    </div>
-                  </td>
+                          {transaction.pairedTransactionId && (
+                            <button
+                              type="button"
+                              onClick={() => unpair.mutate(transaction.id)}
+                              aria-label={`Unpair ${transaction.description}`}
+                              className="shrink-0 text-quiet text-muted underline"
+                            >
+                              unpair
+                            </button>
+                          )}
+                          <span className="shrink-0 truncate">
+                            <AllocationSummary transaction={transaction} />
+                          </span>
+                        </div>
+                      </td>
 
-                  {/* Capped, so it truncates rather than pushing the row
+                      {/* Capped, so it truncates rather than pushing the row
                       wider. The full name is in the title, as with the
                       description. */}
-                  <td className="row-cell pr-3 text-quiet text-muted">
-                    <span className="block truncate" title={transaction.account.name}>
-                      {transaction.account.name}
-                    </span>
-                  </td>
+                      <td className="row-cell pr-3 text-quiet text-muted">
+                        <span className="block truncate" title={transaction.account.name}>
+                          {transaction.account.name}
+                        </span>
+                      </td>
 
-                  {/* `whitespace-nowrap`: a squeezed column was breaking
+                      {/* `whitespace-nowrap`: a squeezed column was breaking
                       "+$3,527.63" after the sign, putting the amount on a second
                       line. A figure is one thing and wraps nowhere. */}
-                  <td className="money row-cell w-32 pr-3 whitespace-nowrap">
-                    <span className={amount > 0n ? 'font-semibold text-positive' : 'text-ink'}>
-                      {formatCents(amount, { explicitPlus: true })}
-                    </span>
-                  </td>
+                      <td className="money row-cell w-32 pr-3 whitespace-nowrap">
+                        <span className={amount > 0n ? 'font-semibold text-positive' : 'text-ink'}>
+                          {formatCents(amount, { explicitPlus: true })}
+                        </span>
+                      </td>
 
-                  <td className="row-cell pr-3">
-                    {/* An out-of-budget row is offered no field, for the same
+                      <td className="row-cell pr-3">
+                        {/* An out-of-budget row is offered no field, for the same
                         reason income is not: there is nothing it could be
                         categorized to. The budget does not sum that account, so
                         moving an envelope against it would put the reading out
                         by the full amount — `setAllocations` refuses it. Money
                         arriving in a Roth IRA was already spent from the
                         account it left. */}
-                    {transaction.kind === 'normal' && transaction.account.inBudget ? (
-                      <div className="flex items-center gap-2">
-                        {/* Only while the row is still a question. A row already
+                        {transaction.kind === 'normal' && transaction.account.inBudget ? (
+                          <div className="flex items-center gap-2">
+                            {/* Only while the row is still a question. A row already
                             filed has an answer, and offering a second one beside
                             it would read as a disagreement. */}
-                        {suggestion && transaction.allocations.length === 0 && (
-                          <SuggestionButton
-                            suggestion={suggestion}
-                            onOpen={() => setConfirming({ transaction, suggestion })}
-                          />
-                        )}
-                        {/* `min-w-0`: a flex item defaults to its content width,
+                            {suggestion && transaction.allocations.length === 0 && (
+                              <SuggestionButton
+                                suggestion={suggestion}
+                                onOpen={() => setConfirming({ transaction, suggestion })}
+                              />
+                            )}
+                            {/* `min-w-0`: a flex item defaults to its content width,
                             so without it the field would size the column rather
                             than the column sizing the field. */}
-                        <div className="min-w-0 flex-1">
-                          <DelegationPicker
-                            options={delegations}
-                            {...(current ? { currentName: current } : {})}
-                            {...(suggestion
-                              ? {
-                                  suggestion: {
-                                    delegationId: suggestion.delegationId,
-                                    name: suggestion.delegationName,
-                                    matchCount: suggestion.matchCount,
-                                    totalCount: suggestion.totalCount,
-                                  },
+                            <div className="min-w-0 flex-1">
+                              <DelegationPicker
+                                options={delegations}
+                                {...(current ? { currentName: current } : {})}
+                                {...(suggestion
+                                  ? {
+                                      suggestion: {
+                                        delegationId: suggestion.delegationId,
+                                        name: suggestion.delegationName,
+                                        matchCount: suggestion.matchCount,
+                                        totalCount: suggestion.totalCount,
+                                      },
+                                    }
+                                  : {})}
+                                label={`Categorize ${transaction.description}`}
+                                onChoose={(delegationId) =>
+                                  categorize.mutate({ id: transaction.id, delegationId })
                                 }
-                              : {})}
-                            label={`Categorize ${transaction.description}`}
-                            onChoose={(delegationId) =>
-                              categorize.mutate({ id: transaction.id, delegationId })
-                            }
-                          />
-                        </div>
-                      </div>
-                    ) : (
-                      <AllocationSummary transaction={transaction} />
-                    )}
-                  </td>
+                              />
+                            </div>
+                          </div>
+                        ) : (
+                          <AllocationSummary transaction={transaction} />
+                        )}
+                      </td>
 
-                  {/* Splitting and matching a check are both uncommon; the
+                      {/* Splitting and matching a check are both uncommon; the
                       frequent act on this page is categorizing, which stays a
                       field in the row. */}
-                  <td className="hold-to-open-cell row-cell">
-                    {
-                      <TransactionRowMenu
-                        transaction={transaction}
-                        onSplit={() => setSplitting(transaction)}
-                        onMatchCheck={() => setMatching(transaction)}
-                        onCreateRule={
-                          transaction.allocations.length === 1 ? () => setRuling(transaction) : null
+                      <td className="hold-to-open-cell row-cell">
+                        {
+                          <TransactionRowMenu
+                            transaction={transaction}
+                            onSplit={() => setSplitting(transaction)}
+                            onMatchCheck={() => setMatching(transaction)}
+                            onCreateRule={
+                              transaction.allocations.length === 1
+                                ? () => setRuling(transaction)
+                                : null
+                            }
+                            onProblem={setProblem}
+                          />
                         }
-                        onProblem={setProblem}
-                      />
-                    }
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      )}
-
-      {total > PAGE_SIZE && (
-        <div className="mt-4 flex items-center justify-between">
-          <Button
-            onClick={() => setOffset(Math.max(0, offset - PAGE_SIZE))}
-            disabled={offset === 0}
-          >
-            Previous
-          </Button>
-          <span className="text-quiet text-muted">
-            {offset + 1}–{Math.min(offset + PAGE_SIZE, total)} of {total}
-          </span>
-          <Button
-            onClick={() => setOffset(offset + PAGE_SIZE)}
-            disabled={offset + PAGE_SIZE >= total}
-          >
-            Next
-          </Button>
-        </div>
-      )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          )}
+        </Tile>
+      </TileGrid>
 
       {adding && (
         <NewTransactionDialog delegations={delegations} onClose={() => setAdding(false)} />
