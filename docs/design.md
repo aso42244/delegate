@@ -596,6 +596,14 @@ distributes a pay packet, so a press that was meant for the lower one costs a
 dialog rather than a distribution. Undo Delegation fired on the press until it
 moved here; an accidental undo empties every line a run touched.
 
+**And neither is coloured while it is idle.** Delegate was the accent, which made
+the loud button the one that moves a pay packet and the plain one below it the
+one pressed daily — an invitation to reach for the wrong control, on the same
+8px, that the dialogs are there to catch. Both are plain now. Colour in that zone
+means a button is reporting a **state**: red while a delegation can still be
+undone, and whatever the bank feed currently is on Sync. Delegate has no state,
+so it has no colour.
+
 What was delegated, and the fact that undoing rolls the cycle back, sit under the
 button and vanish with the offer — capped and wrapping, because the sidebar is as
 wide as its longest label and a sentence must not set that. The cycle date lives
@@ -845,6 +853,32 @@ notification dismissed for something that is still true is a lie the interface
 tells on the owner's behalf. Snoozing went with the bar: it existed because a bar
 was in the way, and a pill is not in the way. What makes one go away is fixing the
 thing it is about.
+
+**The bank feed's own are inside the Sync SimpleFIN button**
+([ADR 063](decisions/063-the-feed-reports-in-its-own-button.md)). A failing run, a
+sync warning, a stale balance, an account the feed has stopped reporting, an
+account a sync discovered and guessed at — five yellow pills stacked directly
+above a yellow button, every one of them answered by looking at the same
+connection. That is one sentence said five times, and it crowded out the pills
+the feed has nothing to do with. The button carries the loudest one's colour and
+the whole list opens on hover and on focus, most significant first, each row
+still a link to where its condition is dealt with.
+
+The line is what the _import_ is responsible for, not what happens to be about an
+account. A categorization backlog, a cheque to confirm, an overdue bill, a line
+behind its target, a stale Bitcoin price, a failing backup — none of those is
+anything the bridge did, and burying them in a button about the bank would be
+hiding them rather than tidying them. They are still pills. So is the budget's
+own reading, which is the thing the household opens the application for.
+
+**On a phone every one of them is a single coloured dot.** There is no sidebar
+below `sm` and so no Sync button to fold into, and the whole set has to reach the
+small screen — but three pills wrapped the page header onto three lines and
+pushed the band off the bottom of it, and a pill's detail is a tooltip, which a
+touchscreen has no way to open. The dot takes the loudest tone and a press opens
+the list as a sheet, where each condition is a row and a press on one goes where
+it is dealt with. Colour is still not alone: the dot's accessible name is the
+count and the sheet behind it is words.
 
 ## A display preference does not wait for the network
 
@@ -1205,9 +1239,18 @@ eight chosen lines cut into six headed sections spends more of the band on
 headings than on figures — and each row keeps its grouping's colour, because that
 tint is how a line is found in a column.
 
+**The band's header is read on the left and acted on from the right.** Where the
+cycle is — the dates, the day, the percentage through — sits on the left; the two
+controls sit together on the right, in the order they are decided in, so Show
+selected / Show all is the last thing on the line at every width. They stack
+above each other on a phone rather than fighting the reading for it.
+
 **On a phone Overview is the band and nothing else.** It is the screen this
 household reads most and acts on least; a dashboard of charts beneath it is a
-scroll past the only thing anybody opened it for.
+scroll past the only thing anybody opened it for. There is no Arrange there
+either — one full-width column is not an arrangement — and the header spends what
+that frees on getting New…, the period and Delegate onto one line above the
+band.
 
 **Overview is the first destination and Budget the second.** Overview is the
 daily read and Budget is where the work happens — a quick review, then the full

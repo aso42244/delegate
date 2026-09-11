@@ -1,6 +1,6 @@
 # 060 — The sidebar holds the acts on the household
 
-**Status:** accepted
+**Status:** accepted, amended by [063](063-the-feed-reports-in-its-own-button.md)
 **Date:** 2026-09-11
 
 Extends [ADR 059](059-one-tag.md), which moved the alerts and the budget's own

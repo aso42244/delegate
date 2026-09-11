@@ -242,6 +242,28 @@ budget, which is the drift this whole system exists to stop.
 balance filter on the other — sits at the **right-hand end of the bar**, one
 position whichever tab is showing.
 
+**Read on the left, act on the right.** The header's left-hand track carries the
+cycle stamp — the date range, the day, the percentage through — and its right
+carries both controls in one order: which tab, then how much of it, so **Show
+selected / Show all** is the last thing on the line at every width. The stamp sat
+between the two controls until v0.73.0, which put a reading inside a row of
+things to press and left neither control able to hold a position.
+
+The stamp goes in through `Tile`'s `lead`, which is the header's left track for a
+tile whose name is carried by being the page's first block rather than by a
+heading. Never `lead` and `title` together: they are the same track.
+
+**The controls stack below `@xl`**, tabs on top, both hard right. A container
+query, not a breakpoint (§2): it is this tile's width that decides. The two come
+to about 330px, which on a phone leaves the stamp nothing — so it wraps under
+them on the left rather than squeezing them, and the second control stays where
+the eye already is for it.
+
+**The link under the table is `Select Delegations`**, which names the act.
+"Choose which delegations show" described the dialog's contents and was long
+enough on a phone to wrap under the table it belongs to. The dialog it opens says
+the same words.
+
 **Show selected is a flat list.** Eight watched lines cut into six headed
 sections spends more width on headings than on figures. Each row keeps its
 grouping's colour through `tintFor`, because the tint is how a line is found in a
@@ -254,6 +276,20 @@ columns.
 
 **A phone gets the band and nothing else.** The tiles are hidden below `sm` —
 still arranged, still stored, still there on a laptop.
+
+**And no Arrange button.** Every tile is full width below `sm` and the band above
+them is pinned, so the only thing left to arrange there is the order of one
+column, for which the page was charging a button in the header with the least
+room for one. `arranging` is read from the URL _and_ from the width, so a window
+dragged narrow while Arrange is open cannot strand somebody in a mode whose
+"Done" has gone.
+
+**Overview's window picker is `sm` below the breakpoint**, which is the one
+exception to §5's "one size". At `md` its four options are 212px, and beside
+New… and Delegate that is 378px on a 343px line — so the header wrapped to three
+rows on the screen whose whole point is the band underneath it. The three sit on
+one line at `sm`. A control that has to be scrolled sideways to find YTD is worse
+than a smaller one.
 
 **One region.** `region` was `main` or `sidebar`, and `sidebar` was the single
 column under the docked panel. There is no right-hand column now. The column
@@ -367,19 +403,21 @@ There is no small or large button.
 Everything else is `default`. A screen with two primaries has not decided what it
 is for.
 
-**The shell's own primary is Delegate**, and it is the exception that proves the
-rule rather than a second one: it is not a page's primary, it is the household's,
-and it sits in the sidebar's control zone on every screen (§12). A page that adds
-a primary of its own beside it has two, which is the thing this rule forbids — so
-no page does.
+**The shell has no primary.** Delegate was it, from when it was the Budget page's
+own button and the only loud thing on that screen. In the sidebar's control zone
+it is one of two buttons 8px apart (§12), and the blue one was the one that moves
+a pay packet while the plain one below it is the one pressed daily — an
+invitation to reach for the wrong control, which is the hazard the confirmation
+dialog already exists to catch. Both are `default` now. What is coloured in that
+zone is a button reporting a **state**, and Delegate has none.
 
-`warning` is a control that still works and is reporting something. Sync
-SimpleFIN is the only one: a failing feed turns the button yellow and puts the
-bridge's own error on its `title`, rather than writing a second line underneath
-saying what a colour already says on the thing you would press about it.
+`warning` and `danger` on a control that still works mean it is reporting
+something, and **Sync SimpleFIN is the only one**. It takes the colour of the
+loudest condition the bank feed currently has, and the whole list of them opens
+on hover and on focus — see §9.
 
-`danger` appears only inside a dialog or a row menu, never sitting on a page —
-with the same exception, Undo Delegation, which replaces Delegate in that slot
+`danger` otherwise appears only inside a dialog or a row menu, never sitting on a
+page — with one exception, Undo Delegation, which replaces Delegate in that slot
 while a run can still be taken back.
 
 `ghost` is for a control that must recede: a disclosure toggle, a tertiary
@@ -510,8 +548,35 @@ is not asked to say it a third time.
 
 **They live at the foot of the sidebar**, above the sync button and its
 separator, ordered so the most urgent is lowest and the budget's own reading is
-always last. Below `sm` there is no sidebar, so they fall back to the page
-header, where they used to live.
+always last.
+
+**Except the bank feed's own, which are folded into Sync SimpleFIN**
+([ADR 063](decisions/063-the-feed-reports-in-its-own-button.md)).
+`SYNC_KINDS` in `components/notifications.ts` is the list: a failing run, a sync
+warning, a stale balance, an account the feed has stopped reporting, an account a
+sync discovered and guessed at. Five yellow tags stacked directly above a yellow
+button, every one answered by looking at the same connection, is one sentence
+said five times — and it crowded out the alerts the feed has nothing to do with.
+The button takes the loudest one's colour; the list opens on hover **and on
+focus**, most significant first, each row a link to where its condition is dealt
+with. The panel takes the pointer so those links can be reached, which is why it
+hangs from a padded wrapper rather than a margin: a gap between button and card
+drops `:hover` on the way into it.
+
+**What is not folded**: a categorization backlog, a cheque to confirm, a row to
+clear, an overdue bill, a line behind its target, a stale Bitcoin price, a
+failing backup, a stalled snapshot — none of those is anything the bridge did,
+and burying them inside a button about the bank would be hiding them. Nor is the
+budget's own reading, which is the thing the household opens the application for.
+
+**Below `sm` there is no sidebar, and no Sync button to fold into**, so the phone
+keeps every notification — and shows them as **one coloured dot** beside the page
+title, carrying the loudest tone, opening the whole list in a `Modal` on a press.
+Three tags wrapped that header onto three lines and pushed the band off the
+screen, and a tag's detail is a tooltip, which a touchscreen has no way to open.
+The count is in the dot's accessible name and the list behind it is words, so
+colour is still not the only carrier. The budget's reading stays a tag there: it
+is one pill, and it is the one being read.
 
 **Two or three words, and a count is the most detail one carries.** `Sync issue`,
 `4 new transactions`, `1 check to confirm`. Which bank, which accounts, how old —
@@ -650,13 +715,18 @@ is the whole reason it is here rather than on Budget.
 one moves a pay packet, so a misclick costs a dialog rather than a distribution.
 That includes Undo Delegation, which fired on the press until it moved here.
 
+**Neither is coloured.** Delegate was the accent until v0.73.0; §5 says why it is
+not. The one thing that paints a button in this zone is a condition it is
+reporting, and only Sync has any.
+
 **There is no caption under Sync.** "Synced 12m ago" was a figure nobody acts on
 and "Last sync failed" was a line saying what the button's own colour says. The
-button carries its state (§5).
+button carries its state, and now the bank feed's whole list with it (§5, §9).
 
 **Below `sm` there is no sidebar**, so Delegate falls back to `PageHeader` — the
 same rule and the same reason as the alerts (§9). Sync does not: it has no phone
-fallback today and did not gain one here.
+fallback today and did not gain one here, which is exactly why the alerts it
+folds are unfolded again on a phone.
 
 ## 13. Themes
 

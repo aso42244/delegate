@@ -6,7 +6,64 @@ phase (`v0.1.0-phase1`, and so on).
 
 ## [Unreleased]
 
-Nothing yet.
+### Changed
+
+- **Everything the bank feed has to say is inside the Sync SimpleFIN button**
+  ([ADR 063](docs/decisions/063-the-feed-reports-in-its-own-button.md)). A
+  failing run, a sync warning, a stale balance, an account the feed has stopped
+  reporting, an account a sync discovered and guessed at — five yellow pills
+  stacked directly above a yellow button, every one of them answered by looking
+  at the same connection. The button takes the loudest one's colour now, and the
+  whole list opens on hover **and on focus**, most significant first, each row
+  still a link to where its condition is dealt with.
+
+  The line is what the _import_ is responsible for. A categorization backlog, a
+  cheque to confirm, a row to clear, an overdue bill, a line behind its target, a
+  stale Bitcoin price, a failing backup, a stalled snapshot — none of those is
+  anything the bridge did, and burying them in a button about the bank would be
+  hiding them. They are still pills, and so is the budget's own reading.
+
+- **On a phone every alert is one coloured dot beside the page title**, carrying
+  the loudest tone, opening the whole list as a sheet on a press. There is no
+  sidebar below `sm` and so no Sync button to fold into, and every notification
+  still has to reach the small screen — but three pills wrapped that header onto
+  three lines, and a pill's detail is a tooltip, which a touchscreen has no way
+  to open at all. The count is the dot's accessible name and the sheet behind it
+  is words, so colour is still not the only carrier.
+
+- **Delegate is no longer blue.** It was the accent, from when it was the Budget
+  page's own primary and the only loud thing on that screen. In the sidebar's
+  control zone it is one of two buttons 8px apart, and the blue one was the one
+  that moves a pay packet while the plain one below it is the one pressed daily.
+  Both are plain now; what is coloured there is a button reporting a state, and
+  Delegate has none.
+
+- **The band's header is read on the left and acted on from the right.** The
+  cycle stamp — the dates, the day, the percentage through — moves to the
+  header's left-hand track, and both controls sit together on the right in the
+  order they are decided in, so **Show selected / Show all** is the last thing on
+  the line at every width. The stamp sat between the two controls before, which
+  put a reading inside a row of things to press and left neither control able to
+  hold a position.
+
+  On a phone the two controls stack instead, tabs on top, both hard right, with
+  the reading keeping the left. Together they are about 330px, which is the whole
+  of the screen.
+
+- **"Select Delegations"** replaces "Choose which delegations show", under the
+  band and on the dialog it opens. It names the act rather than describing the
+  dialog's contents, and it was long enough on a phone to wrap under the table it
+  belongs to.
+
+### Removed
+
+- **Arrange is gone from Overview on a phone.** Every tile is full width below
+  `sm` and the band above them is pinned, so the only thing left to arrange there
+  is the order of a single column — for which the page was charging a button in
+  the header with the least room for one. What that frees, along with the alert
+  dot, gets **New…, the period picker and Delegate onto one line** above the
+  band. The arrangement is still the household's; it is edited on the machine
+  that can see the grid it describes.
 
 ## [0.72.0] — 2026-09-11
 

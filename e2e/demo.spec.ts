@@ -38,7 +38,7 @@ test('offers nothing that would change anything', async ({ signedIn }) => {
   await expect(signedIn.getByRole('button', { name: 'New …' })).toHaveCount(0);
   await expect(signedIn.getByRole('button', { name: 'Arrange' })).toHaveCount(0);
   await expect(signedIn.getByRole('button', { name: /Sync SimpleFIN/ })).toHaveCount(0);
-  await expect(signedIn.getByRole('button', { name: /Choose which delegations/ })).toHaveCount(0);
+  await expect(signedIn.getByRole('button', { name: /Select Delegations/ })).toHaveCount(0);
 
   // Settings is where the bank-feed credential lives. Not on the demo.
   await expect(signedIn.getByRole('link', { name: 'Settings' })).toHaveCount(0);

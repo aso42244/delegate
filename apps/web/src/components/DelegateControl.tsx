@@ -100,7 +100,18 @@ export function DelegateControl({
         </Button>
       ) : (
         <Button
-          variant="primary"
+          /*
+           * Not blue.
+           *
+           * It was the accent, from when it was the Budget page's own primary
+           * action and the only loud thing on that screen. In the sidebar it is
+           * one of two buttons 8px apart, and the blue one was the one that
+           * moves a pay packet while the neutral one below it is the one pressed
+           * daily — an invitation to reach for the wrong control, which is the
+           * hazard the confirmation dialog already exists to catch. Both are
+           * plain now; what is coloured here is a button reporting a *state*,
+           * and Delegate has none.
+           */
           className={width}
           onClick={() => setDialog('delegate')}
           title={collapsed ? 'Delegate' : undefined}

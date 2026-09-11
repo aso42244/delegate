@@ -5,7 +5,7 @@ import { EmptyState } from './layout.jsx';
 import { Button, Modal, Toggle } from './ui.jsx';
 
 /**
- * Which delegations the Overview tile shows.
+ * Which delegations the Overview band shows.
  *
  * **A 1:1 mirror of the Budget page**, and it is one because it reads the same
  * data rather than a second query shaped to look similar. `GET /api/budget`
@@ -62,8 +62,8 @@ export function DelegationPickerDialog({
 
   return (
     <Modal
-      label="Choose which delegations show"
-      title="Which delegations show"
+      label="Select Delegations"
+      title="Select Delegations"
       description="Arranged as they are on the Budget page."
       onClose={onClose}
       width="lg"
