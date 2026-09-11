@@ -2,6 +2,7 @@ import { useId, useState, type ReactNode } from 'react';
 import { Button } from './ui.jsx';
 import { NewMenu } from './NewMenu.jsx';
 import { Alerts } from './Alerts.jsx';
+import { DelegateControl } from './DelegateControl.jsx';
 
 /**
  * The pieces every screen repeats.
@@ -66,6 +67,13 @@ export function PageHeader({
       */}
       <div className="flex min-w-0 max-w-full flex-wrap items-center gap-2">
         <NewMenu />
+        {/* Phones only, for the same reason the alerts above are: Delegate lives
+            at the foot of the sidebar and a phone has no sidebar, so a control
+            that lived only there would take the act this application is named
+            for off the small screen entirely. */}
+        <span className="contents sm:hidden">
+          <DelegateControl inline />
+        </span>
         {actions}
       </div>
     </header>

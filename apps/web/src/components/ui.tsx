@@ -17,11 +17,15 @@ import { useVisualViewport } from '../useVisualViewport.js';
  * have to fight.
  */
 
-type ButtonVariant = 'default' | 'primary' | 'danger' | 'ghost';
+type ButtonVariant = 'default' | 'primary' | 'warning' | 'danger' | 'ghost';
 
 const BUTTON_VARIANTS: Record<ButtonVariant, string> = {
   default: 'border-line bg-canvas text-ink hover:bg-surface',
   primary: 'border-accent bg-accent text-on-accent hover:brightness-95',
+  // A control that still works but is reporting something. Sync SimpleFIN is
+  // the one of these: the button is the state, so a failing feed does not need
+  // a line of its own underneath saying so.
+  warning: 'border-warning-line bg-warning-soft text-warning hover:brightness-95',
   danger: 'border-danger-line bg-danger-soft text-danger hover:brightness-95',
   ghost: 'border-transparent bg-transparent text-muted hover:bg-surface-2',
 };

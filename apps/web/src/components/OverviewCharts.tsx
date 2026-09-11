@@ -306,7 +306,7 @@ export function BillAttentionList({
       )}
       <p className="border-t border-line pt-2">
         <button type="button" className="linkish" onClick={onOpenAll}>
-          All bills →
+          All bills
         </button>
       </p>
     </div>
@@ -738,7 +738,7 @@ export function UpcomingList({
           {bills.length} scheduled · <span className="money">{formatCents(total)}</span> typical
         </span>
         <button type="button" className="linkish" onClick={onOpenAll}>
-          All bills →
+          All bills
         </button>
       </p>
     </div>

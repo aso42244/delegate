@@ -144,20 +144,6 @@ function DelegationsTab({
   const lines = data?.panel ?? [];
   const tick = data?.payCycle?.progressBasisPoints ?? null;
 
-  const spent = lines.reduce((sum, line) => sum + BigInt(line.spentCents), 0n);
-  const held = lines.reduce((sum, line) => sum + BigInt(line.balanceCents), 0n);
-  /*
-   * What these lines had to spend this cycle, which is the figure the bars are
-   * drawn against — so the three numbers and every bar below them agree.
-   *
-   * It was the sum of the amounts to delegate, which answered a question nobody
-   * was asking here: "Budgeted $2,450" is what one press puts in, not what there
-   * is, and on a set of lines carrying surplus it was smaller than Remaining.
-   * Two figures on one row where the second is larger than the first is a row
-   * that teaches somebody to distrust both.
-   */
-  const available = spent + held;
-
   // Grouped in the order the server sent, which is the Budget page's own.
   const groups: { name: string | null; lines: PanelLineDto[] }[] = [];
   for (const line of lines) {
@@ -168,20 +154,15 @@ function DelegationsTab({
 
   return (
     <div className="flex min-h-0 flex-col">
-      {lines.length > 0 && (
-        /* To spend, spent, remaining — and the first two subtract to the third,
-           which is what makes the row readable at a glance. */
-        <div className="grid grid-cols-3 border-b border-line">
-          <Stat label="To spend" value={formatCents(available)} />
-          <Stat label="Spent" value={formatCents(spent)} />
-          <Stat
-            label="Remaining"
-            value={formatCents(held)}
-            tone={held < 0n ? 'negative' : undefined}
-          />
-        </div>
-      )}
+      {/*
+        No summary band.
 
+        It read To spend · Spent · Remaining across the top, three figures the
+        owner does not use — and the panel is 398px, so it was a whole row of a
+        narrow column spent on an aggregate nobody was reading. Each line still
+        says what is left in it, and the budget's own reading is in the sidebar
+        on every screen.
+      */}
       <div className="min-h-0 flex-1">
         {lines.length === 0 ? (
           <div className="p-3">
@@ -206,42 +187,14 @@ function DelegationsTab({
       {/* Choosing writes the layout, which a read-only demo refuses. What it
           opens with is what it watches. */}
       {!demo && (
-        <div className="border-t border-line p-3">
+        /* Right, with the figures above it, rather than adrift under the left
+           edge of a column whose content is all right-aligned. */
+        <div className="flex justify-end border-t border-line p-3">
           <button type="button" className="linkish" onClick={onChoose}>
-            Choose which delegations show →
+            Choose which delegations show
           </button>
         </div>
       )}
-    </div>
-  );
-}
-
-function Stat({
-  label,
-  value,
-  tone,
-}: {
-  readonly label: string;
-  readonly value: string;
-  readonly tone?: 'negative' | undefined;
-}): ReactNode {
-  /*
-   * Both lines right-aligned, so the label sits over its own figure.
-   *
-   * They were a left-aligned label above a right-aligned number in a flexed
-   * cell, which put "BUDGETED" at one end of the column and $2,499.06 at the
-   * other — three pairs that each read as two unrelated things.
-   */
-  return (
-    <div className="flex flex-col items-end gap-1 p-3">
-      <span className="text-micro font-semibold tracking-[0.07em] text-muted uppercase">
-        {label}
-      </span>
-      <span
-        className={`money text-base font-semibold ${tone === 'negative' ? 'text-negative' : 'text-ink'}`}
-      >
-        {value}
-      </span>
     </div>
   );
 }

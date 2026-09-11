@@ -569,17 +569,34 @@ match is always confirmed by a person, never applied by a sync (ADR 030).
 
 ## Delegate, and undoing it
 
-One slot in the header. While the latest run can still be undone the button
-reads **Undo Delegation** and is red; when the window closes it goes back to
-**Delegate**. There is never a moment where both make sense — a run that has
-just gone out is not a run to repeat.
+One slot, **in the sidebar's control zone, directly above Sync SimpleFIN**
+([ADR 060](decisions/060-the-sidebar-holds-the-acts-on-the-household.md)). While
+the latest run can still be undone the button reads **Undo Delegation** and is
+red; when the window closes it goes back to **Delegate**. There is never a moment
+where both make sense — a run that has just gone out is not a run to repeat.
 
-What was delegated, and the fact that undoing rolls the cycle back, sit beside
-"This cycle began …" and vanish with the offer. The date stays: the cycle did
-not end when the chance to undo it did.
+It is there rather than in the Budget header because it is not a fact about that
+page. It is an act on the household, like syncing the feed, and the reading that
+says whether to press it — `To delegate $1,240.00` — is directly above it and has
+been on every screen since ADR 059. The button belongs under the figure it acts
+on.
+
+**Both controls in that zone ask first.** They are 8px apart and the upper one
+distributes a pay packet, so a press that was meant for the lower one costs a
+dialog rather than a distribution. Undo Delegation fired on the press until it
+moved here; an accidental undo empties every line a run touched.
+
+What was delegated, and the fact that undoing rolls the cycle back, sit under the
+button and vanish with the offer — capped and wrapping, because the sidebar is as
+wide as its longest label and a sentence must not set that. The cycle date lives
+on Settings → Budget: the cycle did not end when the chance to undo it did.
 
 The offer closes on a timer as well as on a refetch. Left alone in a tab,
 nothing else would ever ask the server again.
+
+**A phone keeps it in the page header**, where the alerts also fall back, because
+below `sm` there is no sidebar and the act this application is named for must not
+be missing from the small screen.
 
 ## Ordering delegations
 

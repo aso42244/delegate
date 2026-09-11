@@ -319,11 +319,25 @@ takes focus, which is a worse thing to do to somebody on a phone than four pixel
 of padding.
 There is no small or large button.
 
-**One primary per screen**, and it is the thing you came to that screen to do —
-Delegate on Budget, New transaction on Transactions. Everything else is
-`default`. A screen with two primaries has not decided what it is for.
+**One primary per screen**, and it is the thing you came to that screen to do.
+Everything else is `default`. A screen with two primaries has not decided what it
+is for.
 
-`danger` appears only inside a dialog or a row menu, never sitting on a page.
+**The shell's own primary is Delegate**, and it is the exception that proves the
+rule rather than a second one: it is not a page's primary, it is the household's,
+and it sits in the sidebar's control zone on every screen (§12). A page that adds
+a primary of its own beside it has two, which is the thing this rule forbids — so
+no page does.
+
+`warning` is a control that still works and is reporting something. Sync
+SimpleFIN is the only one: a failing feed turns the button yellow and puts the
+bridge's own error on its `title`, rather than writing a second line underneath
+saying what a colour already says on the thing you would press about it.
+
+`danger` appears only inside a dialog or a row menu, never sitting on a page —
+with the same exception, Undo Delegation, which replaces Delegate in that slot
+while a run can still be taken back.
+
 `ghost` is for a control that must recede: a disclosure toggle, a tertiary
 escape.
 
@@ -528,9 +542,30 @@ of those pixels came off the page beside it.
 
 Two rules make intrinsic sizing safe. Every nav label is `whitespace-nowrap`, so
 the links state a real width rather than collapsing to their longest word. And
-anything whose length nobody controls — the app name, the signed-in address — is
-capped at `--spacing-sidebar-cap` and truncates, because `w-fit` takes the widest
-child and an email address is wider than anything anybody navigates to.
+anything whose length nobody controls — the app name, the signed-in address, the
+undo offer's own sentence — is capped at `--spacing-sidebar-cap` and truncates or
+wraps, because `w-fit` takes the widest child and an email address is wider than
+anything anybody navigates to.
+
+### The control zone
+
+Below the alerts and the budget's reading, above the sign-out block: the two acts
+on the household, 8px apart, **Delegate then Sync SimpleFIN**. Neither is a fact
+about the page underneath — the argument ADR 059 used to move the alerts out of
+the page header — and Delegate sits directly under the reading it acts on, which
+is the whole reason it is here rather than on Budget.
+
+**Both ask before they do anything.** They are one control apart and the upper
+one moves a pay packet, so a misclick costs a dialog rather than a distribution.
+That includes Undo Delegation, which fired on the press until it moved here.
+
+**There is no caption under Sync.** "Synced 12m ago" was a figure nobody acts on
+and "Last sync failed" was a line saying what the button's own colour says. The
+button carries its state (§5).
+
+**Below `sm` there is no sidebar**, so Delegate falls back to `PageHeader` — the
+same rule and the same reason as the alerts (§9). Sync does not: it has no phone
+fallback today and did not gain one here.
 
 ## 13. Themes
 

@@ -6,7 +6,50 @@ phase (`v0.1.0-phase1`, and so on).
 
 ## [Unreleased]
 
-Nothing yet.
+### Changed
+
+- **Delegate is in the sidebar now, directly above Sync SimpleFIN**
+  ([ADR 060](docs/decisions/060-the-sidebar-holds-the-acts-on-the-household.md)).
+  It was the Budget page's primary button, which was right while Budget was the
+  only screen it could be pressed from — and the figure that says whether to
+  press it has been at the foot of the sidebar, on every screen, since v0.69.0.
+  The button belongs under the reading it acts on.
+
+  The undo offer goes with it, in the same slot and with the same rule: while a
+  run can still be taken back there is nothing sensible to delegate. What was
+  delegated is said under the button instead of in the Budget page's subtitle,
+  and the offer is now visible from the register, which is where a wrong press
+  actually gets noticed.
+
+  **Undo Delegation asks before it acts**, which it never did. Delegate always
+  confirmed; undo fired on the press. Two full-width buttons 8px apart, the upper
+  one distributing a pay packet, is not a place for a control that acts
+  immediately — and an accidental undo empties every line a run touched.
+
+  Below `sm` both fall back to the page header, the same way the alerts already
+  do: a phone has no sidebar, and the act this application is named for must not
+  go missing from the small screen.
+
+- **The Sync button is the sync status.** The caption under it is gone —
+  "Synced 12m ago" is a figure nobody acts on, and "Last sync failed" was a
+  second line saying what a colour says on the control you would press about it.
+  A failing run turns the button yellow, with the bridge's own error one hover
+  away. Collapsed to the rail, that tooltip carries the button's name too, since
+  a glyph is all it otherwise has.
+
+- **The panel's summary band is gone.** To spend · Spent · Remaining was three
+  aggregates across the top of a 398px column. Every line still says what is left
+  in it, what it has spent is still on its bar's tooltip, and the budget's own
+  reading is in the sidebar on every screen.
+
+- **"Choose which delegations show" sits at the right of the panel**, with the
+  figures it belongs to, rather than under the left edge of a column whose
+  content is all right-aligned.
+
+- **"All bills" and "Choose which delegations show" lost their arrows.** They are
+  links; `.linkish` already says so in the accent. Two other links still carry
+  one — "Choose which figures show" and "Open Recurring" — and are left as they
+  were rather than swept up in a change that was not about them.
 
 ## [0.69.0] — 2026-09-10
 

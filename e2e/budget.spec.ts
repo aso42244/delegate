@@ -212,7 +212,10 @@ test('Delegate previews, distributes, and can be undone', async ({ signedIn, api
    * still be undone there is nothing sensible to delegate.
    */
   await expect(signedIn.getByRole('button', { name: 'Delegate', exact: true })).toHaveCount(0);
-  const undo = signedIn.getByRole('button', { name: 'Undo Delegation' });
+  // Scoped away from the confirmation's own button, which carries the same name.
+  const undo = signedIn
+    .getByRole('navigation', { name: 'Main' })
+    .getByRole('button', { name: 'Undo Delegation' });
   await expect(undo).toBeVisible();
 
   // What was delegated, and that undoing rolls the cycle back with it. The
@@ -222,7 +225,16 @@ test('Delegate previews, distributes, and can be undone', async ({ signedIn, api
   await expect(signedIn.getByText(/Delegated \$300\.00 across 2 lines/)).toBeVisible();
   await expect(signedIn.getByText(/Undo rolls the cycle back too/)).toBeVisible();
 
+  /*
+   * Undoing asks first now. It fired on the press until this release, which was
+   * fine while the button sat in the Budget header and is not fine in the
+   * sidebar, 8px above Sync SimpleFIN: a misclick there took a whole
+   * distribution back out of the envelopes with nothing to catch it.
+   */
   await undo.click();
+  const confirm = signedIn.getByRole('dialog', { name: 'Confirm undo delegation' });
+  await expect(confirm).toContainText('$300.00');
+  await confirm.getByRole('button', { name: 'Undo Delegation' }).click();
 
   await expect(signedIn.getByRole('button', { name: 'Grocery balance' })).toContainText('$0.00');
   await expect(signedIn.getByRole('status')).toContainText('To delegate $300.00');
