@@ -6,6 +6,10 @@ phase (`v0.1.0-phase1`, and so on).
 
 ## [Unreleased]
 
+Nothing yet.
+
+## [0.70.0] — 2026-09-11
+
 ### Changed
 
 - **Delegate is in the sidebar now, directly above Sync SimpleFIN**
