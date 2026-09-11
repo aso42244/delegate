@@ -6,6 +6,10 @@ phase (`v0.1.0-phase1`, and so on).
 
 ## [Unreleased]
 
+Nothing yet.
+
+## [0.72.0] — 2026-09-11
+
 ### Changed
 
 - **The budget is the first block of Overview**, full width and pinned above the
