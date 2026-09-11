@@ -113,6 +113,7 @@ interface DataBody {
     readonly plannedCents: string | null;
     readonly spentCents: string;
   }[];
+  readonly panelSelected?: readonly string[];
   readonly outstanding_checks?: readonly {
     readonly checkNumber: string;
     readonly amountCents: string;
@@ -581,7 +582,7 @@ describe("a tile's own configuration", () => {
      * docked beside them and carries its own lines, so a chart key here would
      * mean the same list was being drawn twice on one screen.
      */
-    expect(Object.keys(body).sort()).toEqual(['panel', 'payCycle', 'window']);
+    expect(Object.keys(body).sort()).toEqual(['panel', 'panelSelected', 'payCycle', 'window']);
   });
 });
 
@@ -1087,10 +1088,23 @@ describe('the panel', () => {
     await categorizeTransaction(prisma, transaction.id, delegationId);
   }
 
-  it('is empty until lines are chosen', async () => {
+  it('carries every line, and says separately which were chosen', async () => {
+    /*
+     * The selection decides what is *shown*, never what is *computed*.
+     *
+     * It used to decide both, because the panel only ever drew the chosen few.
+     * The band draws the whole budget when it is showing all of it, and every
+     * row of that needs this cycle's spending for its pace bar — so a selection
+     * that filtered the figures would leave the bars missing on the one view
+     * that shows the most of them.
+     */
     await makeDelegation({ name: 'Grocery' });
+    await makeDelegation({ name: 'Fuel' });
     await putLayout(rowed(['delegations']));
-    expect((await get('/api/overview')).json<DataBody>().panel).toEqual([]);
+
+    const body = (await get('/api/overview')).json<DataBody>();
+    expect((body.panel ?? []).map((line) => line.name).sort()).toEqual(['Fuel', 'Grocery']);
+    expect(body.panelSelected).toEqual([]);
   });
 
   it('carries what a pace bar needs for each chosen line', async () => {

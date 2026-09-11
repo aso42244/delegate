@@ -5,7 +5,7 @@ import { budgetApi } from '../api/budget.js';
 import { ApiError } from '../api/client.js';
 import { AddGroupingDialog } from '../pages/settings/Groupings.jsx';
 import { AddRuleDialog } from '../pages/settings/Rules.jsx';
-import { TransferDialog } from '../pages/MainBudget.jsx';
+import { TransferDialog } from './TransferDialog.jsx';
 import { NewCheckDialog } from './NewCheckDialog.jsx';
 import { NewTransactionDialog } from './NewTransactionDialog.jsx';
 import { Alert, Button, Modal, TextField } from './ui.jsx';

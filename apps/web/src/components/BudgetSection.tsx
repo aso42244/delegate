@@ -89,6 +89,30 @@ export interface BudgetSectionProps {
    * would be pointing at something invisible.
    */
   readonly rowAffordance?: (row: BudgetRowDto) => ReactNode;
+  /**
+   * A pace bar for this row, drawn between the name and the figures.
+   *
+   * Supplied only by the Overview band, which is this same table with the
+   * cycle's spending against each line. The Budget page passes nothing and gets
+   * the table it has always had — one component either way, because two
+   * renderings of one table is how two screens come to disagree about a budget.
+   *
+   * **A fixed column, never a share.** The tick is a time marker and has to read
+   * as one straight vertical down the page (ADR 054); a column that flexed with
+   * the longest name would put it somewhere different on every row.
+   */
+  readonly pace?: (row: BudgetRowDto) => ReactNode;
+  /**
+   * The row tint for a line drawn outside a grouping.
+   *
+   * A grouped row takes its grouping's colour from the grouping it is rendered
+   * under. A row in `ungrouped` has no grouping to ask — which is ordinarily
+   * correct, because on the Budget page an ungrouped line genuinely has no
+   * colour. The Overview band hands its watched lines over flat, so it supplies
+   * the colour each one came from: the tint is how somebody finds a line in a
+   * column, and losing the heading must not lose that too.
+   */
+  readonly tintFor?: (row: BudgetRowDto) => string | null;
 }
 
 function parseCents(value: string | null): bigint | null {
@@ -159,6 +183,8 @@ export function BudgetSection({
   onAbsorb,
   absorbLabel,
   rowAffordance,
+  pace,
+  tintFor,
 }: BudgetSectionProps): ReactNode {
   const [newName, setNewName] = useState('');
 
@@ -174,6 +200,12 @@ export function BudgetSection({
   const [mobileColumn, setMobileColumn] = useState<'remaining' | 'toDelegate'>('remaining');
   const splitColumns = narrow && showAmountToDelegate;
 
+  /*
+   * No pace on a narrow screen. The row is already choosing between its two
+   * money columns there, and a bar between the name and the one figure that
+   * survived is the third thing competing for 390px.
+   */
+  const showPace = pace !== undefined && !narrow;
   const showRemaining = !splitColumns || mobileColumn === 'remaining';
   const showToDelegate = showAmountToDelegate && (!splitColumns || mobileColumn === 'toDelegate');
 
@@ -456,6 +488,8 @@ export function BudgetSection({
           </div>
         </td>
 
+        {showPace && <td className="w-56 row-cell pr-2">{pace?.(row)}</td>}
+
         {showRemaining && (
           // `relative`, with the button below hung off the left of the cell: it
           // belongs beside the figure it is about, and that figure lives in a
@@ -523,7 +557,8 @@ export function BudgetSection({
     );
   }
 
-  const columnCount = 1 + (showRemaining ? 1 : 0) + (showToDelegate ? 1 : 0) + (rowMenu ? 1 : 0);
+  const columnCount =
+    1 + (showPace ? 1 : 0) + (showRemaining ? 1 : 0) + (showToDelegate ? 1 : 0) + (rowMenu ? 1 : 0);
 
   return (
     /*
@@ -559,6 +594,7 @@ export function BudgetSection({
             <td className="pb-1 pl-3">
               <h2 className="text-section font-bold text-ink">{title}</h2>
             </td>
+            {showPace && <td className="w-56 pb-1" />}
             {showRemaining && (
               <td className="w-40 pb-1">
                 <span className="money block pr-3 pl-2 text-section font-bold text-ink">
@@ -618,6 +654,7 @@ export function BudgetSection({
             }`}
           >
             <th className="row-cell pl-3 text-left font-normal">Name</th>
+            {showPace && <th className="row-cell text-left font-normal">Pace</th>}
             {showRemaining && (
               <th className="row-cell pr-2 text-right font-normal">
                 {showAmountToDelegate ? 'Remaining' : 'Balance'}
@@ -708,6 +745,12 @@ export function BudgetSection({
                   </button>
                 </td>
 
+                {/* No pace on a grouping: the bar reads one line against its own
+                    cycle, and a grouping's lines carry different amounts and
+                    different carry-in. Summing them draws a bar that is true of
+                    nothing. */}
+                {showPace && <td className="row-cell" />}
+
                 {/* Amounts appear on the grouping row only when collapsed. Shown
                     while expanded they would double every figure below them. */}
                 {showRemaining && (
@@ -745,7 +788,19 @@ export function BudgetSection({
             </Fragment>
           ))}
 
-          {section.ungrouped.map((row) => renderRow(row, false))}
+          {/*
+            An ungrouped row takes its own grouping's colour, when it has one.
+
+            On the Budget page it has none and nothing changes. The Overview band
+            showing only the watched lines is the case this exists for: it hands
+            every chosen line over as ungrouped, because eight lines cut into six
+            headed sections spends more of the width on headings than on figures
+            — and the tint is how somebody finds a line in a column, so it has to
+            survive losing the heading.
+          */}
+          {section.ungrouped.map((row) =>
+            renderRow(row, false, groupingTint(tintFor?.(row) ?? null, 'row')),
+          )}
 
           {/* A landing strip for dragging a row back out of every grouping.
               Shown only while something is being dragged. */}

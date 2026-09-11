@@ -219,15 +219,46 @@ there is no transfer term to add and nothing to keep in step.
 **No payday anchor means no tick.** A marker drawn from a guessed schedule is
 confidently in the wrong place, and every reading beside it is judged against it.
 
-### Overview's panel
+### Overview's band
 
-Docked right at 398px on `lg` and above, collapsible per device. Below `lg` its
-three tabs are promoted onto the page and Overview becomes the fourth — there is
-no room to dock 398px beside anything at 390px wide, and the answer somebody
-opens the application for should not be behind a button.
+**The budget is the page's first block**, full width, above the tiles
+([ADR 062](decisions/062-the-budget-is-the-first-block-of-overview.md)). It was
+docked right at 398px and it was a reading; it is the Budget page's own table
+now, and the width is what made that possible: two money columns and a
+recognisable name do not fit in 398px, which is what v0.60.0 measured when three
+of them were cut to one.
 
-**The sidebar is a region tiles can be dragged into.** The budget panel is
-pinned at its top and is not a tile; everything below it is, one to a row.
+**It is pinned and it is not a tile.** It cannot be dragged, removed or dropped
+onto, and nothing can be placed above it or beside it.
+
+**One table, two surfaces.** `DelegationsTable` is the delegations table and
+everything that can be done to a line in it, and the Budget page and the band
+both render it. They differ in two props and nothing else: a pace bar, and a
+narrowing to the chosen lines. A second component would be two renderings of one
+budget, which is the drift this whole system exists to stop.
+
+**Two tabs**: Delegations, and Accounts & Debts with **Accounts first** and a
+`With balance / All` switch. The tab's own control — the scope on one, the
+balance filter on the other — sits at the **right-hand end of the bar**, one
+position whichever tab is showing.
+
+**Show selected is a flat list.** Eight watched lines cut into six headed
+sections spends more width on headings than on figures. Each row keeps its
+grouping's colour through `tintFor`, because the tint is how a line is found in a
+column.
+
+**The pace column is a fixed width**, never a share: the tick is a time marker
+and has to read as one straight vertical down the page (ADR 054). It is not drawn
+below the breakpoint, where the row is already choosing between its two money
+columns.
+
+**A phone gets the band and nothing else.** The tiles are hidden below `sm` —
+still arranged, still stored, still there on a laptop.
+
+**One region.** `region` was `main` or `sidebar`, and `sidebar` was the single
+column under the docked panel. There is no right-hand column now. The column
+stays in the database and is still read, so an arrangement made before this
+opens with every tile it had; the next save writes them all back as `main`.
 
 **Everything on Overview is cycle-shaped except the outflow band**, which draws
 the calendar month. That is the deliberate exception rather than a drift: the
@@ -236,14 +267,11 @@ a band of days answers "what did each day cost" — and days belong to months. I
 names its month, so there is nothing to remember, and it is the one such tile
 that needs no payday anchor.
 
-**A row holds two tiles**, not four. The cap is arithmetic and it moved when the
-panel took the right of the page: a quarter of the ~1000px left on a 1440px
-window is 250px, and a ranked bar with a name and a figure stops being readable
-below about 300.
+**A row holds three tiles**, not four. A ranked bar with a name and a figure
+stops being readable at about 300px, and a quarter of a 1600px page is 295.
 
-**Panel rows are one step tighter than table rows** — 32 / 28 / 24 against
-Settings → Display's 40 / 32 / 28. One setting still governs both; the panel is a
-dense list rather than a table, and reads as one.
+**Band rows are one step tighter than table rows** — 32 / 28 / 24 against
+Settings → Display's 40 / 32 / 28. One setting still governs both.
 
 **Dragging works on the page itself**, not only inside Arrange — pointer devices
 only, since HTML5 drag fires no events under a thumb and a phone has no rows to

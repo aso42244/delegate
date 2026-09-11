@@ -1192,12 +1192,29 @@ a closed one.
 
 ## The navigation, and where a person lands
 
+**The budget is the first block of Overview**, full width and pinned above the
+tiles ([ADR 062](decisions/062-the-budget-is-the-first-block-of-overview.md)). It
+was a 398px column docked down the right and it was a reading — a chosen few
+lines, a pace bar each, and nothing to act on. It is the Budget page's own table
+now, and the full width is what made that possible rather than a preference: two
+money columns and a name you can recognise do not fit in 398px.
+
+Two tabs, Delegations and Accounts & Debts with Accounts first, and the tab's own
+control at the right-hand end of the bar. **Show selected** is a flat list —
+eight chosen lines cut into six headed sections spends more of the band on
+headings than on figures — and each row keeps its grouping's colour, because that
+tint is how a line is found in a column.
+
+**On a phone Overview is the band and nothing else.** It is the screen this
+household reads most and acts on least; a dashboard of charts beneath it is a
+scroll past the only thing anybody opened it for.
+
 **Overview is the first destination and Budget the second.** Overview is the
 daily read and Budget is where the work happens — a quick review, then the full
 inspection — and the order is the order they are used in.
 
 **Insights is gone.** Overview replaced it: the same catalogue, arranged per
-region with per-tile configuration, a docked budget beside it, and its period in
+region with per-tile configuration, the budget across the top of it, and its period in
 the URL rather than in component state. `/insights` redirects to `/overview`,
 which is the same promise `/bills` and `/utilities` make — the thing a bookmark
 pointed at still exists, in better form.

@@ -6,7 +6,64 @@ phase (`v0.1.0-phase1`, and so on).
 
 ## [Unreleased]
 
-Nothing yet.
+### Changed
+
+- **The budget is the first block of Overview**, full width and pinned above the
+  tiles ([ADR 062](docs/decisions/062-the-budget-is-the-first-block-of-overview.md)).
+  It was docked down the right in a 398px column and it was a _reading_: a chosen
+  handful of lines, a pace bar each, and nothing to act on — so every review that
+  found an overspent line ended on another page.
+
+  It is the Budget page's own table now. Editing Remaining and To delegate in
+  place, the row menu, dragging a line within a grouping or into another one,
+  reordering groupings, folding them, closing the reading against a line,
+  confirming a cheque the bank appears to have cashed — all of it, on Overview.
+
+  The width is what made that possible rather than a preference: two money
+  columns and a name you can recognise do not fit in 398px, which is what
+  v0.60.0 measured when three of them were cut to one.
+
+  **One table, not two.** `DelegationsTable` is the delegations table and
+  everything that can be done to a line in it, and both surfaces render it. They
+  differ in two props — a pace bar, and a narrowing to the chosen lines — because
+  two renderings of one budget is how two screens come to disagree about it.
+
+- **Show selected / Show all**, at the right-hand end of the band's bar. The
+  scope is in the URL, so it survives leaving the page and can be linked to, and
+  it opens on the chosen lines every time rather than remembering: the point of
+  choosing a few is that the daily open is short.
+
+  **Selected is a flat list.** Eight watched lines cut into six headed sections
+  spends more of the band on saying where a line lives than on what is in it, and
+  the reader chose them one at a time. Each row keeps its grouping's colour,
+  because the tint is how a line is found in a column.
+
+- **Accounts and Debts are one tab**, with **Accounts first** and a
+  `With balance / All` switch. They are read together — what there is, and what
+  is owed against it — and some cards genuinely hold nothing some of the time,
+  which a list that hides them silently makes somebody go looking for.
+
+- **On a phone, Overview is the band and nothing else.** It is the screen this
+  household reads most and acts on least, and a dashboard of charts beneath it is
+  a scroll past the only thing anybody opened it for. The tiles are still
+  arranged, still stored, and still there on a laptop. The four-way phone view
+  control is gone with the docked panel it belonged to.
+
+- **One region.** `region` was `main` or `sidebar`, and `sidebar` meant the single
+  column under the docked panel; there is no right-hand column now. The column
+  stays in the database and is still read, so an arrangement made before this
+  opens with every tile it had — anything parked in the sidebar comes back as a
+  row of its own — and the next save writes them all back as `main`.
+
+- **The demo moved with it**, since it draws the same pages from invented
+  figures: one grid, no sidebar region, and a chosen set for the band to open on.
+
+### Fixed
+
+- **`/api/overview` computes this cycle's spending for every line**, not only the
+  chosen ones. A selection that filtered the figures would have left the pace
+  bars missing on the one view that shows the most of them; it travels beside the
+  figures now and decides what is drawn rather than what is computed.
 
 ## [0.71.0] — 2026-09-11
 
