@@ -95,15 +95,23 @@ The state stays visible; the working is one hover away.
 Thresholds derive from the **configured tolerance** — set in Settings, default
 $5.00 — rather than being fixed. `T` below is that value.
 
-| Condition  | State       | Look                        | Label                    |
-| ---------- | ----------- | --------------------------- | ------------------------ |
-| ≥ +T       | To delegate | Accent blue on accent-soft  | `To delegate $4,890.00`  |
-| Within ±T  | Balanced    | Green                       | `Balanced`               |
-| −T to −2T  | Warning     | Yellow; shows the shortfall | `Over delegated $7.40`   |
-| Beyond −2T | Danger      | Red; shows the shortfall    | `Over delegated $212.00` |
+| Condition | State       | Look                       | Label                    |
+| --------- | ----------- | -------------------------- | ------------------------ |
+| ≥ +T      | To delegate | Accent blue on accent-soft | `To delegate $4,890.00`  |
+| Within ±T | Balanced    | Green                      | `Balanced`               |
+| ≤ −T      | Danger      | Red; shows the shortfall   | `Over delegated $212.00` |
 
-State first, then the figure. It is a label on a chip now rather than a sentence
-in a bar, and it reads as one.
+**Three states, three colours.** Over-delegation used to split at twice the
+tolerance — yellow inside, red beyond — and that split is gone
+([ADR 064](decisions/064-the-corner-answers-one-question.md)). Over-delegated is
+the direction that is genuinely wrong at any size, and the reading is a _control_
+now, read at a glance in the corner of the screen rather than compared against
+its own past.
+
+State first, then the figure. It reads as one label, and in the sidebar it is a
+button: always coloured, always a way to Overview (§ the control zone in
+`ui-system.md`). On a phone, where there is no sidebar, it stays a chip beside the
+page title.
 
 **The working appears on hover _and_ on focus.** The chip takes `tabIndex` and
 carries the equation as its `aria-describedby`, so the justification for the
@@ -113,9 +121,9 @@ region, or revealing it would re-announce the whole reading on every hover.
 
 **A positive reading is not a warning.** It is the ordinary state on payday:
 money has landed and has not been distributed yet, and that figure _is_ the
-amount available to delegate. Colouring the most common healthy state yellow
-would teach the owner to ignore the one reading that has to be read. Yellow and
-red are reserved for over-delegation — the direction that is genuinely wrong.
+amount available to delegate. Colouring the most common healthy state as a fault
+would teach the owner to ignore the one reading that has to be read. Red is
+reserved for over-delegation — the direction that is genuinely wrong.
 
 ### Tables
 
@@ -281,8 +289,9 @@ banner, which is the one thing it must not do. **Positive is now informational**
 over-delegation. Confirmed by the owner.
 
 Separately, the thresholds were fixed at ±$4.99 / −$10.00 while the tolerance is
-configurable in Settings. **Thresholds now derive from the configured tolerance**,
-with danger at twice it.
+configurable in Settings. **Thresholds now derive from the configured tolerance.**
+Danger sat at twice it until v0.74.0, when over-delegation became one red at any
+size — see ADR 064.
 
 ### 4. Grouping colour as a row tint — settled
 
@@ -601,8 +610,16 @@ the loud button the one that moves a pay packet and the plain one below it the
 one pressed daily — an invitation to reach for the wrong control, on the same
 8px, that the dialogs are there to catch. Both are plain now. Colour in that zone
 means a button is reporting a **state**: red while a delegation can still be
-undone, and whatever the bank feed currently is on Sync. Delegate has no state,
-so it has no colour.
+undone, whatever the bank feed currently is on Sync, and the budget's own reading
+at the top of the group. Delegate has no state, so it has no colour — what it
+_will do_ shows as a blue tint on the way to pressing it, the way Sign out below
+shows red.
+
+**Sign out is the fourth control in that group and asks like the rest**
+([ADR 064](decisions/064-the-corner-answers-one-question.md)). It was borderless,
+under a second rule, below a name and a role that belong on Settings → Users; and
+it was the one control there that did nothing to stop a misclick, 8px under the
+bank sync, with a full page load and no undo behind it.
 
 What was delegated, and the fact that undoing rolls the cycle back, sit under the
 button and vanish with the offer — capped and wrapping, because the sidebar is as

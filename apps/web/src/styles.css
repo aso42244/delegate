@@ -34,9 +34,14 @@
   /* Text and icons sitting on the accent fill. Its own token because the accent
      lightens in dark mode, where white on it would fall under 3:1. */
   --color-on-accent: #ffffff;
+  /* The edge of a soft accent fill. Warning, danger and confirm each had one of
+     these; accent and positive did not, because nothing had yet drawn a soft
+     blue or green *control* — the budget's reading became the first (ADR 064). */
+  --color-accent-line: #b3d7f4;
 
   --color-positive: #46a171;
   --color-positive-soft: #e8f1ec;
+  --color-positive-line: #b9d9c7;
 
   /*
    * Purple: something worked out but not acted on, waiting for a person to say
@@ -212,9 +217,11 @@
   --color-accent: #62aef2;
   --color-accent-soft: #16283a;
   --color-on-accent: #0e1922;
+  --color-accent-line: #2a4a68;
 
   --color-positive: #6cc292;
   --color-positive-soft: #16261d;
+  --color-positive-line: #2a4632;
 
   --color-confirm: #bb92e2;
   --color-confirm-soft: #221a2e;

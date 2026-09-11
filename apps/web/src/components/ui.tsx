@@ -17,17 +17,48 @@ import { useVisualViewport } from '../useVisualViewport.js';
  * have to fight.
  */
 
-type ButtonVariant = 'default' | 'primary' | 'warning' | 'danger' | 'ghost';
+export type ButtonVariant =
+  'default' | 'primary' | 'positive' | 'info' | 'warning' | 'danger' | 'ghost';
 
 const BUTTON_VARIANTS: Record<ButtonVariant, string> = {
   default: 'border-line bg-canvas text-ink hover:bg-surface',
   primary: 'border-accent bg-accent text-on-accent hover:brightness-95',
-  // A control that still works but is reporting something. Sync SimpleFIN is
-  // the one of these: the button is the state, so a failing feed does not need
-  // a line of its own underneath saying so.
+  /*
+   * The four soft fills: a control reporting a **state**.
+   *
+   * `positive` and `info` joined `warning` and `danger` when the budget's own
+   * reading became a control rather than a tag (ADR 064). Its three states are
+   * the three colours — balanced, money waiting to be delegated, over-delegated
+   * — and a reading that is only ever yellow or red could not say the two that
+   * are not faults.
+   */
+  positive: 'border-positive-line bg-positive-soft text-positive hover:brightness-95',
+  info: 'border-accent-line bg-accent-soft text-accent hover:brightness-95',
+  // Sync SimpleFIN is the one of these: the button is the state, so a failing
+  // feed does not need a line of its own underneath saying so.
   warning: 'border-warning-line bg-warning-soft text-warning hover:brightness-95',
   danger: 'border-danger-line bg-danger-soft text-danger hover:brightness-95',
   ghost: 'border-transparent bg-transparent text-muted hover:bg-surface-2',
+};
+
+/**
+ * What a plain button will do, shown only while somebody is reaching for it.
+ *
+ * A separate axis from `variant`, because it says something different: `variant`
+ * is the state a control is *in*, and this is the consequence of pressing it.
+ * The sidebar's control zone is where that distinction earns its keep — Delegate
+ * and Sign out have no state and so no colour of their own, but one of them
+ * distributes a pay packet and the other ends the session, and 8px apart they
+ * should not look identical right up to the moment they are clicked.
+ *
+ * Background and text only. The outline stays `border-line` on all three plain
+ * buttons, which is what makes them read as one set.
+ */
+export type ButtonHover = 'accent' | 'danger';
+
+const BUTTON_HOVERS: Record<ButtonHover, string> = {
+  accent: 'hover:bg-accent-soft hover:text-accent',
+  danger: 'hover:bg-danger-soft hover:text-danger',
 };
 
 /**
@@ -62,11 +93,39 @@ const FIELD_WIDTHS: Record<FieldWidth, string> = {
   full: 'w-full',
 };
 
+/**
+ * A button's face, for the two things that wear it without being one.
+ *
+ * The budget's reading is a `Link` — it goes to Overview — and a link drawn by
+ * hand beside three buttons is how a set stops looking like a set. One string,
+ * one place it is written.
+ *
+ * 28px, at the owner's request: 36 was more air than a row of controls needs,
+ * most visibly on a phone where the Budget header carries five of them. Above
+ * the 24px floor WCAG 2.5.8 sets, below the 44px both platforms publish as
+ * comfortable — a deliberate trade, and his to make.
+ */
+export function buttonFace(variant: ButtonVariant = 'default', hover?: ButtonHover): string {
+  const base =
+    'inline-flex min-h-[28px] items-center justify-center gap-2 rounded-lg border px-3 text-quiet font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-50';
+  // A tinted hover replaces the variant's own, so the two cannot both apply.
+  const tone =
+    hover === undefined || variant !== 'default'
+      ? BUTTON_VARIANTS[variant]
+      : `border-line bg-canvas text-ink ${BUTTON_HOVERS[hover]}`;
+  return `${base} ${tone}`;
+}
+
 export function Button({
   variant = 'default',
+  hover,
   className = '',
   ...props
-}: ButtonHTMLAttributes<HTMLButtonElement> & { variant?: ButtonVariant }): ReactNode {
+}: ButtonHTMLAttributes<HTMLButtonElement> & {
+  variant?: ButtonVariant;
+  /** Only meaningful on `default`, whose own hover it replaces. */
+  hover?: ButtonHover;
+}): ReactNode {
   return (
     <button
       // 8px radius, 1px border, 13px/600.
@@ -75,7 +134,7 @@ export function Button({
       // needs, most visibly on a phone where the Budget header carries five of
       // them. Above the 24px floor WCAG 2.5.8 sets, below the 44px both
       // platforms publish as comfortable — a deliberate trade, and his to make.
-      className={`inline-flex min-h-[28px] items-center justify-center gap-2 rounded-lg border px-3 text-quiet font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${BUTTON_VARIANTS[variant]} ${className}`}
+      className={`${buttonFace(variant, hover)} ${className}`}
       {...props}
     />
   );

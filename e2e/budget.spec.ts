@@ -555,8 +555,9 @@ test('a custom amount moves only part of the surplus', async ({ signedIn, api })
 
 /**
  * The reading used to be a full-width bar carrying the state on the left and the
- * equation on the right. It is a chip beside the title now, and the equation —
- * the reason to trust the number — is one hover away.
+ * equation on the right. It is the first control in the sidebar's foot now — a
+ * coloured button that goes to Overview (ADR 064) — and the equation, the reason
+ * to trust the number, is still one hover or one focus away.
  */
 test('the reading states itself, and shows its working on demand', async ({ signedIn, api }) => {
   await makeAccount('Frontier Checking', 'asset', 100_000n);
@@ -564,8 +565,14 @@ test('the reading states itself, and shows its working on demand', async ({ sign
 
   await signedIn.goto('/budget');
 
+  /*
+   * The words are a `role="status"` live region inside the link, because they
+   * change on every edit and that change is the point. The link around them is
+   * what takes focus and what goes somewhere.
+   */
   const reading = signedIn.getByRole('status');
   await expect(reading).toHaveText('To delegate $1,000.00');
+  const control = signedIn.getByRole('link', { name: 'To delegate $1,000.00' });
 
   // The working is not on the page until it is asked for.
   await expect(signedIn.getByRole('tooltip')).toHaveCount(0);
@@ -577,10 +584,11 @@ test('the reading states itself, and shows its working on demand', async ({ sign
   await expect(working).toContainText('= $1,000.00');
 
   // And by keyboard, because a reading only a mouse can reach is one some people
-  // never get. It takes focus without being a button: there is nothing to press.
+  // never get. It is a real tab stop now rather than a `tabIndex` on a span —
+  // there is something to press, and it is where the lines are.
   await signedIn.mouse.move(0, 0);
   await expect(working).toBeHidden();
-  await reading.focus();
+  await control.focus();
   await expect(signedIn.getByRole('tooltip')).toBeVisible();
 });
 

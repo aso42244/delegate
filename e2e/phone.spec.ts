@@ -507,15 +507,25 @@ test('the sidebar is only as wide as the longest thing in it', async ({ signedIn
   expect(box!.width).toBeLessThan(200);
 
   /*
-   * And a long signed-in address does not set it. `w-fit` takes the widest
-   * child, and an email is wider than anything anybody navigates to — so the
-   * identity block is capped and truncates instead.
+   * And nothing of uncontrolled length sets it.
    *
-   * Asserted on the element's own geometry rather than on its text: `truncate`
-   * is a visual rule, and the whole address is still in the DOM and still read
-   * aloud, which is the behaviour wanted.
+   * The signed-in address used to, which is why the identity block was capped
+   * and truncated: `w-fit` takes the widest child, and an email is wider than
+   * anything anybody navigates to. That block is gone — the address and the
+   * account's role are on Settings → Users, which is where an account is
+   * administered (ADR 064) — so the assertion is now that it is not there at
+   * all, which is a stronger version of the same claim.
    */
-  const address = page.getByText('e2e-owner@example.test', { exact: true });
-  const overflowing = await address.evaluate((node) => node.scrollWidth > node.clientWidth);
-  expect(overflowing).toBe(true);
+  await expect(sidebar.getByText('e2e-owner@example.test')).toHaveCount(0);
+
+  /*
+   * The reading is the one thing left in here whose length nobody controls —
+   * "Over-delegated $1,234,567.00" is wider than "Transactions" — so it
+   * truncates rather than setting the width. Asserted on geometry rather than
+   * text: `truncate` is a visual rule, and the whole of it is still in the DOM,
+   * still read aloud, and still in the popover.
+   */
+  const reading = sidebar.getByRole('status');
+  const fits = await reading.evaluate((node) => node.scrollWidth <= node.clientWidth + 1);
+  expect(fits).toBe(true);
 });

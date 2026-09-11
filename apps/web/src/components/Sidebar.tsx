@@ -1,12 +1,14 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { budgetApi } from '../api/budget.js';
 import { useEffect, useId, useState, type ReactNode } from 'react';
 import { Link, NavLink } from 'react-router-dom';
 import { authApi, syncApi, type SyncStatus } from '../api/client.js';
-import { useSession } from '../auth/SessionProvider.jsx';
 import { Alerts } from './Alerts.jsx';
+import { BalanceButton } from './BalanceReading.jsx';
+import { ControlPopover } from './ControlPopover.jsx';
 import { DelegateControl } from './DelegateControl.jsx';
 import { Tag } from './Tag.jsx';
-import { Button } from './ui.jsx';
+import { Button, Modal } from './ui.jsx';
 import {
   byUrgency,
   loudest,
@@ -327,69 +329,46 @@ function SyncControl({ collapsed }: { readonly collapsed: boolean }): ReactNode 
       </Button>
 
       {folded.length > 0 && (
-        /*
-         * Upwards, because the button is at the foot of the sidebar, and wider
-         * than the sidebar because these are sentences — the same 384px that
-         * holds prose everywhere else (`ui-system.md` §2), capped so it cannot
-         * run off a narrow window.
-         *
-         * `pb-1` on the wrapper rather than `mb-1` on the card: the offset has
-         * to be *inside* the hover target, or the 4px between the two is a strip
-         * that closes the panel on the way into it.
-         */
-        <div
-          id={detailId}
-          role="tooltip"
-          className="absolute bottom-full left-0 z-20 hidden w-96 max-w-[calc(100vw-2rem)] pb-1 group-hover:block group-focus-within:block"
-        >
-          {/* The same card `AlertTag` hangs its detail from — one floating
-              reading, not a second shape for one. Notably *not* the tile
-              surface, which `ui-system.test.ts` reserves for `Tile`. */}
-          <div className="flex flex-col gap-2 rounded-lg border border-line bg-canvas px-3 py-2 shadow-lg">
-            {folded.map((row) => (
-              <Link
-                key={row.kind}
-                to={row.actionPath}
-                className="-mx-2 flex flex-col items-start gap-1 rounded-md px-2 py-1 hover:bg-surface-2"
-              >
-                <Tag tone={row.severity} size="md">
-                  {row.pill}
-                </Tag>
-                <span className="text-quiet text-ink">{row.message}</span>
-              </Link>
-            ))}
-          </div>
-        </div>
+        <ControlPopover id={detailId}>
+          {folded.map((row) => (
+            <Link
+              key={row.kind}
+              to={row.actionPath}
+              className="-mx-2 flex flex-col items-start gap-1 rounded-md px-2 py-1 hover:bg-surface-2"
+            >
+              <Tag tone={row.severity} size="md">
+                {row.pill}
+              </Tag>
+              <span className="text-quiet text-ink">{row.message}</span>
+            </Link>
+          ))}
+        </ControlPopover>
       )}
     </div>
   );
 }
 
-export function Sidebar({ appName }: { appName: string }): ReactNode {
-  /*
-   * A demo has no Settings and no sync.
-   *
-   * Settings is where the bank-feed credential and the household's accounts
-   * live, and neither is worth showing to a room. Sync is a write, which the
-   * server refuses anyway — this is about not offering it.
-   */
-  /*
-   * On the demo, the navigation stays on the demo.
-   *
-   * Every link is rewritten under `/demo`, because the first press of "Budget"
-   * otherwise lands somebody in their own money halfway through showing
-   * somebody else's. Settings goes entirely: it is where the bank-feed
-   * credential lives and there is nothing there worth showing to a room.
-   */
-  const demo = useIsDemo();
-  const pages = (demo ? PAGES.filter((page) => DEMO_PAGES.has(page.to)) : PAGES).map((page) => ({
-    ...page,
-    to: pathFor(page.to, demo),
-  }));
-
-  const [collapsed, setCollapsed] = useCollapsed();
-  const { user } = useSession();
-
+/**
+ * Sign out, and the confirmation it now asks for.
+ *
+ * **Plain, like the two above it, with a red hover.** It was `ghost` — no
+ * outline at all — in a block of its own under a rule, which made it read as
+ * furniture rather than as the fourth control in a set of four. Colour in this
+ * zone means a control is reporting a state (`ui-system.md` §5), and signing out
+ * has none; what it *will do* shows on the way to pressing it.
+ *
+ * **It asks first.** Every other control in this zone does, and for the same
+ * reason: they are 8px apart, and the one directly above this is the bank sync
+ * somebody presses several times a day. Signing out is a full page load, so a
+ * misclick costs the whole session and everything typed into it — there is no
+ * undo, and no state to come back to.
+ *
+ * The Settings → Users copy of this button is deliberately not confirmed: it is
+ * three navigations deep, it is nowhere near anything else, and on a phone it is
+ * the only route there is.
+ */
+function SignOutControl({ collapsed }: { readonly collapsed: boolean }): ReactNode {
+  const [asking, setAsking] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
 
   /**
@@ -419,6 +398,77 @@ export function Sidebar({ appName }: { appName: string }): ReactNode {
       window.location.assign('/login');
     }
   }
+
+  return (
+    <>
+      <Button
+        hover="danger"
+        onClick={() => setAsking(true)}
+        disabled={signingOut}
+        className="w-full"
+        title={collapsed ? 'Sign out' : undefined}
+        aria-label={collapsed ? 'Sign out' : undefined}
+      >
+        {collapsed ? '⎋' : 'Sign out'}
+      </Button>
+
+      {asking && (
+        <Modal
+          label="Confirm sign out"
+          title="Sign out"
+          onClose={() => setAsking(false)}
+          /* A reading has nothing to lose to a stray press beside the card, and
+             this dialog holds nothing typed — the same argument the delegate
+             confirmations make. */
+          dismissible
+          footer={
+            <div className="flex justify-end gap-2">
+              <Button onClick={() => setAsking(false)}>Cancel</Button>
+              <Button variant="danger" onClick={() => void signOut()} disabled={signingOut}>
+                {signingOut ? 'Signing out…' : 'Sign out'}
+              </Button>
+            </div>
+          }
+        >
+          <p className="text-base text-ink">
+            End this session and return to the sign-in screen.
+            <span className="mt-2 block text-quiet text-muted">
+              Nothing in the budget changes. Signing back in needs the password, and the second
+              factor if one is set up.
+            </span>
+          </p>
+        </Modal>
+      )}
+    </>
+  );
+}
+
+export function Sidebar({ appName }: { appName: string }): ReactNode {
+  /*
+   * A demo has no Settings and no sync.
+   *
+   * Settings is where the bank-feed credential and the household's accounts
+   * live, and neither is worth showing to a room. Sync is a write, which the
+   * server refuses anyway — this is about not offering it.
+   */
+  /*
+   * On the demo, the navigation stays on the demo.
+   *
+   * Every link is rewritten under `/demo`, because the first press of "Budget"
+   * otherwise lands somebody in their own money halfway through showing
+   * somebody else's. Settings goes entirely: it is where the bank-feed
+   * credential lives and there is nothing there worth showing to a room.
+   */
+  const demo = useIsDemo();
+  const pages = (demo ? PAGES.filter((page) => DEMO_PAGES.has(page.to)) : PAGES).map((page) => ({
+    ...page,
+    to: pathFor(page.to, demo),
+  }));
+
+  const [collapsed, setCollapsed] = useCollapsed();
+
+  // The budget's own reading, which is the top of the control zone below.
+  const budget = useQuery({ queryKey: ['budget'], queryFn: budgetApi.view });
 
   /*
    * Expanded, the sidebar is as wide as its longest label — "Transactions" —
@@ -500,44 +550,38 @@ export function Sidebar({ appName }: { appName: string }): ReactNode {
       <div className="mt-auto">{!collapsed && <Alerts />}</div>
 
       {/*
-        The two acts on the household, in the order they are reached for.
+        The control zone: one group of four, 8px apart, under one rule.
 
-        Delegate sits directly above Sync and directly below the reading it acts
-        on. Neither is a fact about the page underneath — the same argument
-        ADR 059 used to move the alerts out of the page header — and both now
-        ask before they do anything, because they are 8px apart and one of them
-        moves a pay packet.
+        **The reading first, and it is the only one that is always coloured.**
+        Green, blue or red — where the budget stands — and a press goes to
+        Overview whatever it says. Everything under it is plain until hovered, or
+        until the bank feed has something to report, so the corner of the screen
+        answers one question at a glance and nothing competes for it.
+
+        Then the two acts on the household, in the order they are reached for:
+        Delegate directly under the figure it acts on, then Sync. Neither is a
+        fact about the page underneath — the argument ADR 059 used to move the
+        alerts out of the page header.
+
+        Then Sign out, which was in a block of its own under a second rule. It is
+        the fourth control in a set of four and it is drawn as one now (ADR 064):
+        a divider between a button and the button above it said there were two
+        groups where there is one.
+
+        **All four ask before they do anything**, because they are 8px apart and
+        they distribute a pay packet, roll one back, fetch the bank, and end the
+        session.
       */}
       <div className="flex flex-col gap-2 border-t border-line px-2 py-3">
+        {budget.data && <BalanceButton view={budget.data} collapsed={collapsed} />}
+
         <DelegateControl collapsed={collapsed} />
 
         {/* The bank feed, and everything it has to say about itself. A demo has
             no feed to sync — invented data does not come from anywhere. */}
         {!demo && <SyncControl collapsed={collapsed} />}
-      </div>
 
-      <div className="border-t border-line px-3 py-3">
-        {!collapsed && user && (
-          <div className="mb-2 max-w-sidebar-cap">
-            <p className="truncate text-quiet font-semibold text-ink">{user.username}</p>
-            <p className="text-label text-muted">
-              {user.role === 'super_admin'
-                ? 'Super Admin'
-                : user.role === 'admin'
-                  ? 'Admin'
-                  : 'User'}
-            </p>
-          </div>
-        )}
-        <Button
-          variant="ghost"
-          onClick={() => void signOut()}
-          disabled={signingOut}
-          className="w-full"
-          title={collapsed ? 'Sign out' : undefined}
-        >
-          {collapsed ? '⎋' : 'Sign out'}
-        </Button>
+        <SignOutControl collapsed={collapsed} />
       </div>
     </nav>
   );
