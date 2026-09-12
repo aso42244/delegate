@@ -1,12 +1,99 @@
 # Handoff
 
-Everything a new session needs to pick this up. Read this, then
-`docs/architecture.md`, `docs/design.md`, and the ADRs in `docs/decisions/`.
+Everything a new session needs to pick this up.
 
 The authoritative specification is the owner's build prompt at
 `~/Desktop/budget-app-build-prompt.md`. Where this document and that one
 disagree, that one wins — except where a decision has been explicitly overridden,
 and every such override is recorded in an ADR.
+
+---
+
+## Start here
+
+**Read, in this order.** Not all of it — the last three are read when the task
+touches them.
+
+1. `CLAUDE.md` at the repository root. The short version of everything below.
+2. This file: **Your authority**, **Hard constraints**, **The gate**,
+   **Releasing and deploying**. Those four are durable. The release narrative
+   further down is history, not status — see the next section.
+3. `docs/ui-system.md` — **before any interface change**, including a one-line
+   one. This is the file that stops the interface drifting back into seventeen
+   dialects, and a test enforces it.
+4. `docs/design.md` — before UI work. Read as written rather than re-derived.
+   Where it and `ui-system.md` meet: the first says _why_, the second _how much_.
+5. `docs/architecture.md` — only if you touch the domain, the ledger, or money.
+6. `docs/decisions/*.md` — only the ones your task actually touches.
+
+---
+
+## How to know where things stand
+
+**Run these. Do not trust prose in this file for anything that has a version
+number in it** — this section exists because the paragraph below it spent ten
+releases insisting the NAS was on `v0.58.0`.
+
+```sh
+cd ~/Documents/Claude/Projects/delegate
+git status -sb                                  # clean tree? in sync with origin?
+git log --oneline -10                           # the newest `chore: cut vX.Y.Z` is the release
+git tag --sort=-v:refname | head -5             # what has actually been cut
+sed -n '/## \[Unreleased\]/,/^## \[0/p' CHANGELOG.md   # merged but not yet released
+gh pr list --state open                         # anything left mid-flight
+```
+
+How to read the answers:
+
+- **The newest `chore: cut vX.Y.Z` commit is the current release.** There is no
+  other source of truth for it in the repository.
+- **`[Unreleased]` in `CHANGELOG.md` is what is merged and not yet cut.**
+  "Nothing yet." means the last release is the whole of `main`.
+- **Assume the NAS is running the newest tag that was handed over.** The owner's
+  standing instruction: once the deploy line has been given to him, treat the NAS
+  as being on that version unless he says otherwise. He will say if he has not.
+  Do not ask, and do not leave a version number sitting in this document with a
+  question attached to it.
+- **Nothing in the running application reports its version.** `/health` is
+  deliberately quiet and no screen shows it. If it genuinely has to be
+  established, it is `docker ps` on the NAS — which reports the digest
+  `deploy.sh` pinned — or inferring from a feature that exists in only one of the
+  candidates.
+- **A missing version number means nothing was ever cut**, not that a release was
+  withdrawn. `v0.54.1` and `v0.53.x` never existed and the gap is deliberate.
+  The exception is **`v0.46.0`, which has no published image** — its workflow run
+  never produced one, so a deploy must name `v0.47.0` or later.
+
+The sections after **Where things stand** are a release-by-release narrative kept
+for context. It is not maintained as status and it is not the changelog. When it
+disagrees with `CHANGELOG.md` or `git log`, they win.
+
+---
+
+## The gate
+
+**`npm run verify` is the only thing between a branch and `main`.** There is no
+CI: GitHub stores the code and nothing else
+([ADR 022](decisions/022-the-checks-run-here-not-on-github.md)). Nothing but you
+enforces that it passed.
+
+```sh
+npm run verify            # everything, about ten minutes
+npm run verify --quick    # everything except the container image
+```
+
+Three things about running it:
+
+- **It brings its own environment.** It sources `.env` itself, so it works from
+  any shell. It did not always: several steps need `DATABASE_URL` and
+  `TEST_DATABASE_URL` exported rather than passed through a wrapper, so the gate
+  used to pass or fail on whether whoever ran it had sourced `.env` first, while
+  every document said it was one command. Anything already exported still wins.
+- **Never pipe it.** `npm run verify | tail` reports the exit status of `tail`.
+  Redirect to a file and check `$?`.
+- **It is the merge condition, not a formality.** A session has merged on a
+  pending check twice. An exhausted timeout is not a pass and neither is an empty
+  check list.
 
 ---
 
@@ -88,37 +175,22 @@ These are non-negotiable. Violating one is a build failure.
 
 ## Where things stand
 
-**`main` is at `v0.58.0`, and the NAS is running `v0.58.0`** — deployed
-2026-09-08.
+> **This section is history, not status.** It is a release-by-release narrative
+> kept because the _reasons_ in it are worth having, and it is not maintained
+> version by version. For what is actually true right now, run the commands in
+> **How to know where things stand** above. Where this disagrees with
+> `CHANGELOG.md` or `git log`, they win.
 
-**`v0.54.1` does not exist**, and neither does a `v0.53.x`. The owner named
-`v0.54.2` and the gap is deliberate, not a failed release — unlike `v0.46.0`,
-which was tagged and whose workflow never produced an image. A missing number
-here means nothing was ever cut; check the tag list before assuming a version
-was withdrawn.
+Two facts from the version history that are still worth carrying:
 
-`v0.54.0` was tagged first and its publish workflow hung, so `v0.53.0` was
-deployed while that was still building. The only thing `v0.54.0` adds is the
-stored pair refusal (`pair_dismissals`) and its migration.
+- `v0.54.0` was tagged first and its publish workflow hung, so `v0.53.0` was
+  deployed while that was still building. The only thing `v0.54.0` adds is the
+  stored pair refusal (`pair_dismissals`) and its migration.
+- **`v0.46.0` has no published image.** Its workflow run never produced one, so a
+  deploy must name `v0.47.0` or later; everything it contained is in the releases
+  after it.
 
-**Assume a version you handed over is deployed.** The owner's instruction, given
-the same day: once the deploy command has been handed to him, treat the NAS as
-being on that version unless he says otherwise. He will say if he has not. Do not
-ask, and do not leave this paragraph carrying a stale figure with a question
-attached to it — which is exactly what it was doing when he corrected it.
-
-Should it ever genuinely need checking, there is no version anywhere in the
-application to read it from: `/health` is deliberately quiet about it and nothing in the UI shows
-it, so the two ways to answer the question are the running image
-(`docker ps` on the NAS, which reports the digest `deploy.sh` pinned) and a
-feature that only exists in one of the two candidates — `Rules` in the sidebar
-means `v0.51.0` or later. Worth a column one day; not worth guessing meanwhile.
-
-Note that **`v0.46.0` has no published image**. Its workflow run never produced
-one, so a deploy must name `v0.47.0` or later; everything `v0.46.0` contained is
-in the releases after it.
-
-The pattern is worth keeping. Each of the last three releases came from the owner
+The pattern below is worth keeping. Each of the last three releases came from the owner
 using the previous one against real data and sending screenshots — the thrift shop
 listed as a fortnightly bill, "Every Monthly" in a column header, home insurance
 that needed two dates a year. None of it was visible from a test fixture, and all
@@ -1591,6 +1663,86 @@ hand and apply it with `migrate deploy`.
 - PR descriptions state what changed, why, how it was tested, and any deferrals.
 - Commit messages and PR bodies end with the co-author trailer and the Claude
   Code footer respectively.
+
+---
+
+## Releasing and deploying
+
+Two halves. **You do all of the first half. The owner types one line for the
+second, and that is the whole of his part.**
+
+### On GitHub — yours, end to end
+
+```sh
+git checkout -b feat/what-it-is           # feat|fix|chore|docs|refactor + kebab
+# ... the work ...
+npm run verify                            # must actually pass
+gh pr create --title "..." --body "..."
+gh pr merge <n> --squash --delete-branch
+```
+
+Then a **separate** `chore: cut vX.Y.Z` PR, whose only change is moving the
+`[Unreleased]` entry in `CHANGELOG.md` under a version heading:
+
+```sh
+git checkout main && git pull
+git checkout -b chore/cut-v0.71.0
+# move the CHANGELOG entry, commit, PR, squash-merge
+git checkout main && git pull
+git tag -a v0.71.0 -m "v0.71.0" && git push origin v0.71.0
+```
+
+Pushing the tag starts **Publish the image**, which builds `linux/amd64` only and
+signs it. Watch it and **wait for it to be green**:
+
+```sh
+gh run watch <run-id> --exit-status
+```
+
+Then confirm the registry actually has it, because a green workflow has not
+always meant a pullable tag:
+
+```sh
+TOKEN=$(curl -fsSL "https://ghcr.io/token?scope=repository:aso42244/delegate:pull&service=ghcr.io" \
+  | sed -n 's/.*"token":"\([^"]*\)".*/\1/p')
+curl -s -o /dev/null -w '%{http_code}\n' \
+  -H "Authorization: Bearer $TOKEN" \
+  -H 'Accept: application/vnd.oci.image.index.v1+json' \
+  "https://ghcr.io/v2/aso42244/delegate/manifests/v0.71.0"     # want 200
+```
+
+**Do not hand over a deploy line until that returns 200.** A tag is not a
+release. This has bitten twice — once a workflow that hung, once a
+`workflow_dispatch` where `docker/metadata-action` read `github.ref`, matched no
+semver pattern, and pushed only `latest`. Both ended as `manifest unknown` on the
+owner's NAS, after he had been told it was ready.
+
+### On the NAS — his, and it is one line
+
+**He types exactly one line. Never give him two.** No `cd` then a command as
+separate steps, no "first check X", no follow-up verification for him to run. One
+copy-pasteable line in its own fenced `bash` block, and nothing else:
+
+```bash
+cd /volume1/docker/delegate && sudo ./scripts/deploy.sh --tag v0.71.0
+```
+
+That is the whole interface. It pulls the tag, resolves it to a digest, verifies
+the image was built and signed by this repository's workflow, restarts, and waits
+for `/health`. Everything else — building, testing, tagging, publishing, checking
+the manifest — happened before he saw the line.
+
+If a release supersedes one he has not deployed yet, give him the newer line and
+say plainly that it includes the earlier one. Do not give him a queue.
+
+Rules that go with this:
+
+- **SSH to the NAS is password-auth and you do not have it.** You cannot deploy.
+  The owner considered a restricted deploy key and decided against it, so this is
+  settled: hand over the line and stop.
+- **Then assume it is deployed.** See **How to know where things stand**.
+- The source route (`--unpack` a `git archive` tarball, `--build`) still exists
+  and is documented below, but the registry route is the ordinary one.
 
 ---
 

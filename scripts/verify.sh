@@ -16,6 +16,29 @@ set -eu
 
 cd "$(dirname "$0")/.."
 
+# The gate brings its own environment.
+#
+# Several steps below need `DATABASE_URL` and `TEST_DATABASE_URL` in the shell
+# rather than through a wrapper: `db:seed` is a plain `node`, the restore
+# exercise reads `TEST_DATABASE_URL` with `:?`, and the container smoke test
+# rewrites it for the container. Only the four `prisma` scripts carry
+# `dotenv -e ../../.env`.
+#
+# So this used to pass or fail on whether whoever typed `npm run verify` had
+# happened to source `.env` first — which every document here says nothing
+# about, all of them stating flatly that the gate is one command. It is now.
+#
+# Anything already exported wins, so a deliberate override on the command line
+# is not silently replaced by the file.
+if [ -f .env ]; then
+  # shellcheck disable=SC1091
+  . ./.env
+  for _name in DATABASE_URL TEST_DATABASE_URL SESSION_SECRET; do
+    eval "[ -n \"\${$_name:-}\" ] && export $_name" || true
+  done
+  unset _name
+fi
+
 QUICK='no'
 [ "${1:-}" = '--quick' ] && QUICK='yes'
 
