@@ -6,7 +6,21 @@ phase (`v0.1.0-phase1`, and so on).
 
 ## [Unreleased]
 
-Nothing yet.
+### Changed
+
+- **`npm run verify` brings its own environment.** It sources `.env` itself, so
+  it runs from any shell. Several of its steps need `DATABASE_URL` and
+  `TEST_DATABASE_URL` exported rather than passed through a wrapper, so until now
+  the gate passed or failed on whether whoever ran it had sourced `.env` first —
+  while every document said it was one command. It is now. Anything already
+  exported still wins.
+
+- **The handoff says how to find the current state rather than asserting it.**
+  It had spent ten releases insisting the NAS was on `v0.58.0`. The release
+  narrative is marked as history, and the top of the document is now a short
+  durable orientation: what to read, the commands that answer "where are we", the
+  gate, and the release-and-deploy loop end to end — including that the owner
+  types exactly one line on the NAS and never two.
 
 ## [0.71.0] — 2026-09-11
 

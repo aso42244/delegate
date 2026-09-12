@@ -27,7 +27,9 @@ These are in `docs/handoff.md` in full. The short version, because each one is a
 build failure rather than a preference:
 
 - **`npm run verify` is the gate.** There is no CI. It is the only thing between
-  a branch and `main`, and nothing but you enforces that it passed.
+  a branch and `main`, and nothing but you enforces that it passed. It sources
+  `.env` itself, so it runs from any shell. Never pipe it — redirect and check
+  `$?`, or you are reading `tail`'s exit status.
 - **All money is integer cents in `BIGINT`.** Never a float, never a JavaScript
   `number` in arithmetic or persistence. Decimal strings over HTTP.
 - **Nothing is ever hard-deleted.** `archived_at` everywhere; archived rows stay
@@ -46,10 +48,27 @@ build failure rather than a preference:
 
 Branch → work → `npm run verify` passes → PR → squash merge → a separate
 `chore: cut vX.Y.Z` PR moving the CHANGELOG entry from `[Unreleased]` to a
-version heading → tag → `git archive` a tarball.
+version heading → tag → wait for the publish workflow to go green → confirm the
+registry returns the manifest → hand over the deploy line.
 
-**The owner deploys, not you.** SSH to the NAS is password-auth. Hand him the
-two commands.
+**The owner deploys, not you.** SSH to the NAS is password-auth and you do not
+have it. He types **exactly one line**, never two:
+
+```
+cd /volume1/docker/delegate && sudo ./scripts/deploy.sh --tag vX.Y.Z
+```
+
+Give it in its own fenced `bash` block with nothing for him to run before or
+after it, and not until the image is confirmed pullable — a tag is not a release.
+Then assume it is deployed. `docs/handoff.md` § **Releasing and deploying** has
+the whole of it.
+
+## Knowing where things stand
+
+Never assert a version from a document. `git log --oneline -10` — the newest
+`chore: cut vX.Y.Z` is the current release; `[Unreleased]` in `CHANGELOG.md` is
+what is merged and not yet cut. `docs/handoff.md` § **How to know where things
+stand** has the rest.
 
 Conventional Commits. Commit messages end with the co-author trailer, PR bodies
 with the Claude Code footer.
