@@ -15,6 +15,18 @@ phase (`v0.1.0-phase1`, and so on).
   while every document said it was one command. It is now. Anything already
   exported still wins.
 
+- **The handoff covers a session running in the cloud.** The docs travel with
+  the clone; `.env`, the databases, Docker and the NAS do not, so the gate cannot
+  run there. Merging still never needs permission — the gate having passed is the
+  one condition on it, so a cloud session says plainly that it has not run rather
+  than implying it did.
+
+- **The handoff no longer defers to a file that does not exist.** Its opening
+  named `~/Desktop/budget-app-build-prompt.md` as the specification overriding
+  everything in it. That file is not on disk and is in no git history, so every
+  session was being told to defer to something unreadable. The ADRs are the
+  record.
+
 - **The handoff says how to find the current state rather than asserting it.**
   It had spent ten releases insisting the NAS was on `v0.58.0`. The release
   narrative is marked as history, and the top of the document is now a short

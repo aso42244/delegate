@@ -63,6 +63,15 @@ after it, and not until the image is confirmed pullable — a tag is not a relea
 Then assume it is deployed. `docs/handoff.md` § **Releasing and deploying** has
 the whole of it.
 
+## Running in the cloud
+
+The docs travel with the clone; `.env`, the Postgres databases, Docker and the
+NAS do not, so `npm run verify` cannot run there. Merging is still yours and
+still never needs permission — but the gate having passed is the one condition on
+it, so push the branch, open the PR **saying plainly that the gate has not run
+here**, and say it needs a local run before it lands. Check with `test -f .env`,
+`docker info`, `psql -l` rather than assuming.
+
 ## Knowing where things stand
 
 Never assert a version from a document. `git log --oneline -10` — the newest

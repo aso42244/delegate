@@ -2,10 +2,50 @@
 
 Everything a new session needs to pick this up.
 
-The authoritative specification is the owner's build prompt at
-`~/Desktop/budget-app-build-prompt.md`. Where this document and that one
-disagree, that one wins — except where a decision has been explicitly overridden,
-and every such override is recorded in an ADR.
+**What is authoritative:** these documents and the ADRs in `docs/decisions/`.
+This used to name the owner's original build prompt at
+`~/Desktop/budget-app-build-prompt.md` as the specification that overrode
+everything here — but that file is no longer on disk, so for a long time every
+session was being told to defer to something it could not read. Every decision
+that outlived the prompt is in an ADR; where two documents here disagree, the
+ADR wins, and where no ADR covers it, ask.
+
+---
+
+## If you are running in the cloud
+
+The repository is public at `github.com/aso42244/delegate`, and everything a
+session reads travels with the clone — `CLAUDE.md`, this file, `ui-system.md`,
+`design.md`, `architecture.md`, the ADRs. A cloud session is oriented exactly as
+well as a local one.
+
+**What does not travel, because it is deliberately not in the repository:**
+
+- `.env` — git-ignored, and it holds the database URLs and `SESSION_SECRET`.
+  `.env.example` is committed and shows the shape.
+- The Postgres databases. `npm run verify` uses a real local
+  `household_budget_dev` and `household_budget_test`.
+- Docker, which the gate needs for the compose check, the tor check and the
+  container smoke test.
+- The NAS. It is reachable only from the owner's machine, by password SSH.
+
+**So a cloud session cannot run the gate.** Nothing about your authority changes
+— merging is yours and you never ask permission for it. What changes is that the
+one condition on a merge, the gate having actually passed, cannot be met here.
+
+So:
+
+1. Do the work on a branch and push it.
+2. Open the PR, and **say in the body that the gate has not been run here, and
+   why**. Never imply it passed.
+3. Say plainly that it needs a run on the owner's machine before it lands. That
+   is a report of a blocked step, not a request for permission — do not dress it
+   up as "shall I merge?", and do not merge it unverified either. `main` is
+   always deployable, and the gate is what makes that true.
+
+Check rather than assume: `test -f .env`, `docker info`, `psql -l`. If they are
+all there, you are on the owner's machine and the ordinary workflow applies —
+including merging without asking.
 
 ---
 
@@ -132,8 +172,11 @@ double-entry bookkeeping — it is a health indicator, and a positive number is 
 
 The owner has delegated architecture and expects you to act, not ask.
 
-- **Merge and deploy without asking each time.** If `npm run verify` passes and the work is
-  complete, merge it. Do not ask "shall I merge this?"
+- **Merge without asking. Ever.** If the work is complete and the gate passed,
+  merge it. Do not ask "shall I merge this?" — the owner's words: _if I ask
+  Claude to build it, I want Claude to merge it._ The only reasons to stop and
+  raise something first are a **security or operational concern**, and "I would
+  like to be reassured" is neither.
 - **You own the repository**: branches, PRs, merges, tags, via `gh` and `git`.
 - **You may work on the local machine** — build, run, test, restart the server.
 - **Ask only when genuinely blocked**, not for reassurance. A question you could
