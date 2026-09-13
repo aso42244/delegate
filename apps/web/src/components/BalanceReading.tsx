@@ -1,10 +1,10 @@
 import { classifyIdentity, formatCents, formatIdentityLabel } from '@budget/shared';
-import { useId, type ReactNode } from 'react';
+import { useId, useState, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import type { BudgetViewDto } from '../api/budget.js';
-import { AlertTag, type PillTone } from './AlertTag.jsx';
+import { type PillTone } from './AlertTag.jsx';
 import { ControlPopover } from './ControlPopover.jsx';
-import { buttonFace, type ButtonVariant } from './ui.jsx';
+import { buttonFace, Modal, type ButtonVariant } from './ui.jsx';
 import { useIsDemo } from '../useDemo.js';
 import { pathFor } from '../demo/is-demo.js';
 
@@ -100,18 +100,66 @@ function read(view: BudgetViewDto): Reading {
   return { tone, message, working };
 }
 
+/** The dot's fill, by tone. Written out: Tailwind never sees a runtime string. */
+const DOTS: Record<ReadingTone, string> = {
+  positive: 'bg-positive',
+  info: 'bg-accent',
+  danger: 'bg-danger-dot',
+};
+
 /**
- * The tag, for a phone.
+ * A circle of colour, for a phone.
  *
- * The face is `AlertTag`, shared with the notifications it sits among. This file
- * decides what the reading says and how alarmed to be; it does not decide what a
- * tag looks like, because every tag in the application is one.
+ * It was a tag reading `Balanced` or `To delegate $1,240.00` beside the page
+ * title. On a 375px screen that is a third of the header spent on a reading that
+ * is glanced at rather than read, and it pushed New… and Delegate onto a line of
+ * their own — on the screen this household opens most, whose whole point is the
+ * band underneath.
+ *
+ * So it is the colour and nothing else, beside the alert dot it matches: the two
+ * marks in that corner are "where the budget stands" and "what needs attention",
+ * and neither is a sentence a phone has room for.
+ *
+ * **The words are a press away, not a hover away.** A tooltip is a pointer's
+ * gesture and a touchscreen has no way to open one, so this is a button and a
+ * sheet rather than `AlertTag`. The sheet carries the reading *and* its working,
+ * which is more than the tag ever showed without a mouse.
+ *
+ * **Colour is not the only carrier** (design.md §9): the accessible name is the
+ * whole reading, so a screen reader hears "Balanced" where an eye sees green.
  */
 export function BalanceReading({ view }: { view: BudgetViewDto }): ReactNode {
-  const workingId = useId();
+  const [open, setOpen] = useState(false);
   const { tone, message, working } = read(view);
 
-  return <AlertTag tone={tone} label={message} detail={working} detailId={workingId} />;
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        aria-label={message}
+        // 24px of target around a 10px mark, so it is pressable at the size
+        // WCAG 2.5.8 asks for without drawing a chip beside the title. A shade
+        // larger than the alert dot beside it: this one is always there, and it
+        // is the reading the screen exists for.
+        className="-m-2 inline-flex h-6 w-6 shrink-0 items-center justify-center self-center rounded-full p-2 hover:bg-surface-2"
+      >
+        <span aria-hidden className={`h-2.5 w-2.5 rounded-full ${DOTS[tone]}`} />
+      </button>
+
+      {open && (
+        <Modal
+          label={message}
+          title={message}
+          onClose={() => setOpen(false)}
+          /* A reading has nothing to lose to a stray press beside the card. */
+          dismissible
+        >
+          <p className="text-quiet text-ink">{working}</p>
+        </Modal>
+      )}
+    </>
+  );
 }
 
 /** Which button a tone paints. */

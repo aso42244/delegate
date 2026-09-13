@@ -277,19 +277,18 @@ columns.
 **A phone gets the band and nothing else.** The tiles are hidden below `sm` —
 still arranged, still stored, still there on a laptop.
 
-**And no Arrange button.** Every tile is full width below `sm` and the band above
-them is pinned, so the only thing left to arrange there is the order of one
-column, for which the page was charging a button in the header with the least
-room for one. `arranging` is read from the URL _and_ from the width, so a window
-dragged narrow while Arrange is open cannot strand somebody in a mode whose
-"Done" has gone.
+**And no Arrange button, and no period picker.** Every tile is full width below
+`sm` and the band above them is pinned, so the only thing left to arrange there
+is the order of one column — and every tile the period would change is hidden,
+while the band is cycle-shaped whatever it says. Both were controls costing a row
+of the screen whose whole point is the band underneath, and moving nothing
+visible. `window` stays in the URL, so a link into a period still opens in it;
+`arranging` is read from the URL _and_ from the width, so a window dragged narrow
+while Arrange is open cannot strand somebody in a mode whose "Done" has gone.
 
-**Overview's window picker is `sm` below the breakpoint**, which is the one
-exception to §5's "one size". At `md` its four options are 212px, and beside
-New… and Delegate that is 378px on a 343px line — so the header wrapped to three
-rows on the screen whose whole point is the band underneath it. The three sit on
-one line at `sm`. A control that has to be scrolled sideways to find YTD is worse
-than a smaller one.
+**What that frees is the header itself.** The title, New… and Delegate sit on one
+line at 390px ([ADR 065](decisions/065-a-dashboard-you-can-work-from.md)), which
+is the whole of the header.
 
 **One region.** `region` was `main` or `sidebar`, and `sidebar` was the single
 column under the docked panel. There is no right-hand column now. The column
@@ -321,6 +320,18 @@ the routes that work from a keyboard. ◂ ▸ reorder within a row and step **ou
 onto a new row at its edge, never merging: merging is what ⤒ is for, and a
 reorder button that silently changed two tiles' widths would be doing something
 nobody pressed it for.
+
+**A tile may be a working surface, not only a reading.** "Waiting to be
+categorized" is the one of these: it carries the register's own row — date,
+payee, amount, the type-ahead — and files a charge without leaving the page
+([ADR 065](decisions/065-a-dashboard-you-can-work-from.md)). The rule it follows
+is that the _frequent_ act belongs where the thing announcing it is; a tile that
+reports work the reader must go elsewhere to do is a notification wearing a
+tile's frame.
+
+Such a tile shows a **bounded** number of rows and names the rest. Five, then "2
+more waiting." and a link to the full queue: sixty charges is a session at the
+register, not a tile on a dashboard.
 
 ### A tile's figure
 

@@ -24,6 +24,7 @@ import { EmptyState, PageHeader, SegmentedControl } from '../components/layout.j
 import { budgetApi, type BudgetViewDto } from '../api/budget.js';
 import { transactionsApi } from '../api/transactions.js';
 import { recurringApi } from '../api/recurring.js';
+import { BacklogQueue } from '../components/BacklogQueue.jsx';
 import { DelegationPickerDialog } from '../components/DelegationPickerDialog.jsx';
 import {
   BillAttentionList,
@@ -746,34 +747,26 @@ function MoversTile({
   );
 }
 
-/** One figure, and the sentence that says what to do about it. */
+/**
+ * What is waiting to be categorized — worked here rather than linked to.
+ *
+ * This was a figure and a link: a count, "Waiting, oldest 1d", and a way to the
+ * register. Which is a notification rather than a surface, and it sent the owner
+ * off the screen he opens every morning to spend forty seconds filing three
+ * charges. `BacklogQueue` is the register's own row without the register.
+ */
 function BacklogTile({
   backlog,
 }: {
   readonly backlog: NonNullable<OverviewDataDto['uncategorized_backlog']>;
 }): ReactNode {
+  // The payload's own count decides whether to draw anything; the queue fetches
+  // the rows themselves, which have a different lifetime (they are filed).
   if (backlog.count === 0) {
     return <EmptyState>Nothing waiting.</EmptyState>;
   }
 
-  const oldest = backlog.oldestPostedAt;
-  const days =
-    oldest === null
-      ? null
-      : Math.floor((Date.now() - new Date(oldest).getTime()) / (24 * 60 * 60 * 1000));
-
-  return (
-    <Figure
-      value={String(backlog.count)}
-      note={days === null ? 'Waiting to be categorized.' : `Waiting, oldest ${days}d.`}
-      tone="warning"
-      action={
-        <Link to="/transactions?uncategorized=true" className="linkish">
-          Open the queue →
-        </Link>
-      }
-    />
-  );
+  return <BacklogQueue />;
 }
 
 /**
@@ -2536,25 +2529,27 @@ export function Overview(): ReactNode {
         title="Overview"
         actions={
           <>
-            <SegmentedControl
-              /*
-               * `sm` on a phone, `md` everywhere else.
-               *
-               * The one exception to §5's "one size", recorded under
-               * `ui-system.md`'s Overview's band: at `md` these four
-               * options are 212px, and beside New… and Delegate that is 378px
-               * on a 343px line — so the row wrapped and the header ate three
-               * lines of a screen whose whole point is the band below it. At
-               * `sm` the three sit on one line with room to spare. A control
-               * that has to be scrolled sideways to find "YTD" is worse than a
-               * smaller one.
-               */
-              size={narrow ? 'sm' : 'md'}
-              label="Time window"
-              value={window}
-              options={WINDOWS}
-              onChange={setWindow}
-            />
+            {/*
+              The period picker is a laptop's control.
+
+              Every tile is hidden below `sm` and the band above them is
+              cycle-shaped whatever this says, so on a phone it changed the
+              figures on no visible thing — a control that costs a third of the
+              header and moves nothing. Gone, and what it frees puts New… and
+              Delegate on the title's own line, which is the screen this
+              household reads most (ADR 065).
+
+              The URL still carries `window`, so a link into a period opens in
+              it and a laptop picks up where the phone left off.
+            */}
+            {!narrow && (
+              <SegmentedControl
+                label="Time window"
+                value={window}
+                options={WINDOWS}
+                onChange={setWindow}
+              />
+            )}
             {/* Arranging writes a layout, which a read-only demo refuses.
                 What it opens on is what it has — and it is a laptop's control:
                 see `arranging` above. */}

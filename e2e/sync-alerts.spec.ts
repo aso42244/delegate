@@ -1,5 +1,5 @@
 import type { Locator, Page } from '@playwright/test';
-import { expect, makeSyncFailure, makeSyncWarning, test } from './fixtures.js';
+import { expect, makeSuccessfulSync, makeSyncFailure, makeSyncWarning, test } from './fixtures.js';
 
 /**
  * What the application says about a sync, and where.
@@ -180,4 +180,51 @@ test('the reading sits above Delegate, is coloured, and goes to Overview', async
   // And it goes to Overview whatever it currently says.
   await reading.click();
   await expect(signedIn).toHaveURL(/\/overview/);
+});
+
+/**
+ * A quiet feed still has something to say.
+ *
+ * The button carries the bank feed's conditions when there are any (ADR 063),
+ * and there nearly never are — so for most of its life the panel was empty and
+ * the button said nothing at all. What is useful then is that it ran and what it
+ * brought back, which used to be a caption under the button reading "Synced 12m
+ * ago" to nobody in particular. It is on the hover now, where it costs no floor
+ * space.
+ *
+ * The boundaries of the wording — 59 minutes against an hour, 23 hours against a
+ * day — are proved in `sync-status.test.ts`, which can stage times this cannot.
+ */
+test('with nothing to report, Sync says when it last ran and what it found', async ({
+  signedIn,
+}) => {
+  await makeSuccessfulSync(4);
+  await signedIn.reload();
+
+  // Nothing is wrong, so the button is plain.
+  const button = signedIn.getByRole('button', { name: /Sync SimpleFIN/ });
+  await expect(button).toHaveClass(/bg-canvas/);
+
+  await expect(signedIn.getByRole('tooltip')).toHaveCount(0);
+  await button.hover();
+
+  const panel = signedIn.getByRole('tooltip');
+  await expect(panel).toContainText('Synced');
+  await expect(panel).toContainText('4 new transactions');
+});
+
+/**
+ * And says nothing about a count when the run found nothing.
+ *
+ * "0 new transactions" is a line that says nothing and would appear on every
+ * quiet day, which is most of them.
+ */
+test('a run that found nothing does not say so', async ({ signedIn }) => {
+  await makeSuccessfulSync(0);
+  await signedIn.reload();
+
+  await signedIn.getByRole('button', { name: /Sync SimpleFIN/ }).hover();
+  const panel = signedIn.getByRole('tooltip');
+  await expect(panel).toContainText('Synced');
+  await expect(panel).not.toContainText('new transaction');
 });
