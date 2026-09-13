@@ -897,6 +897,13 @@ the list as a sheet, where each condition is a row and a press on one goes where
 it is dealt with. Colour is still not alone: the dot's accessible name is the
 count and the sheet behind it is words.
 
+**The budget's own reading is a coloured circle there too**, beside that dot,
+with its words in a sheet on a press rather than a tooltip nothing can open
+([ADR 065](decisions/065-a-dashboard-you-can-work-from.md)). Two marks in that
+corner and no sentences: where the budget stands, and what needs attention. A
+375px header has room for one of those readings or for New… and Delegate, and the
+controls won.
+
 ## A display preference does not wait for the network
 
 Collapsing a grouping used to send the change, refetch the whole budget, and only

@@ -1,6 +1,6 @@
 # 064 — The corner of the screen answers one question
 
-**Status:** accepted
+**Status:** accepted, amended by [065](065-a-dashboard-you-can-work-from.md)
 **Date:** 2026-09-11
 
 Amends [ADR 059](059-one-tag.md), which made the budget's reading the last tag in

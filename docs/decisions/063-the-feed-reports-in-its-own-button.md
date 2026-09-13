@@ -1,6 +1,6 @@
 # 063 — The bank feed reports in its own button
 
-**Status:** accepted, amended by [064](064-the-corner-answers-one-question.md)
+**Status:** accepted, amended by [064](064-the-corner-answers-one-question.md) and [065](065-a-dashboard-you-can-work-from.md)
 **Date:** 2026-09-11
 
 Amends [ADR 059](059-one-tag.md), whose "every notification is a tag at the foot

@@ -38,41 +38,79 @@ test.describe('on a phone', () => {
   });
 
   /**
-   * The header is one line of controls, and Arrange is not on it.
+   * The whole header is one line: the title, then New… and Delegate.
    *
    * Overview on a phone is the band and nothing else, so every row the header
-   * spends is a row the band does not get. Three things were competing for that
-   * row — the create menu, Delegate, the period, and Arrange — and the alert
-   * pills beside the title were wrapping it onto a third line before any of them
-   * had started.
+   * spends is a row the band does not get. Four things were competing for it —
+   * the create menu, Delegate, the period picker, Arrange — with alert pills
+   * beside the title wrapping it onto a third line before any of them started.
    *
    * Arrange went because one full-width column is not an arrangement. The pills
-   * became one dot. What is left fits across 390px, which is the claim here: same
-   * `y`, and nothing off the side of the screen.
+   * became dots. The period picker went because every tile it changes is hidden
+   * here and the band is cycle-shaped whatever it says (ADR 065). What is left
+   * fits on the title's own line, which is the claim here.
    */
-  test('the header puts New…, the period and Delegate on one line, without Arrange', async ({
+  test('the title, New… and Delegate share one line, with no period picker', async ({
     signedIn: page,
   }) => {
     await page.goto('/overview');
-    await expect(page.getByRole('heading', { name: 'Overview' })).toBeVisible();
+    const title = page.getByRole('heading', { name: 'Overview' });
+    await expect(title).toBeVisible();
 
     await expect(page.getByRole('button', { name: 'Arrange' })).toHaveCount(0);
+    await expect(page.getByRole('radiogroup', { name: 'Time window' })).toHaveCount(0);
 
     const boxes = await Promise.all([
+      title.boundingBox(),
       page.getByRole('button', { name: 'New …' }).boundingBox(),
       page.getByRole('button', { name: 'Delegate' }).boundingBox(),
-      page.getByRole('radiogroup', { name: 'Time window' }).boundingBox(),
     ]);
 
-    const tops = boxes.map((box) => Math.round(box!.y));
-    // One line. Two pixels of slack: a radiogroup and a button are centred
-    // against each other rather than sharing a top edge exactly.
-    expect(Math.max(...tops) - Math.min(...tops)).toBeLessThanOrEqual(2);
+    /*
+     * Same line, measured by overlap rather than by a shared top edge: a 24px
+     * heading and a 28px button sharing a baseline do not share a `y`, and
+     * asserting that they do would be asserting a font metric.
+     */
+    const tops = boxes.map((box) => box!.y);
+    const bottoms = boxes.map((box) => box!.y + box!.height);
+    expect(Math.min(...bottoms) - Math.max(...tops)).toBeGreaterThan(0);
+
+    // And the two controls are right of the title, in reading order.
+    expect(boxes[1]!.x).toBeGreaterThan(boxes[0]!.x + boxes[0]!.width);
+    expect(boxes[2]!.x).toBeGreaterThan(boxes[1]!.x);
 
     for (const box of boxes) expect(box!.x + box!.width).toBeLessThanOrEqual(390);
     // And the page itself does not scroll sideways.
     const scrollWidth = await page.evaluate(() => document.documentElement.scrollWidth);
     expect(scrollWidth).toBeLessThanOrEqual(390);
+  });
+
+  /**
+   * The budget's reading is a circle of colour, and a press opens the words.
+   *
+   * It was a tag reading `Balanced` or `To delegate $1,240.00`, which on a
+   * 375px screen is a third of the header spent on something glanced at rather
+   * than read — and it is what pushed New… and Delegate onto a line of their
+   * own. The words are a press away rather than a hover away, because a
+   * touchscreen has no way to open a tooltip at all.
+   */
+  test('the reading is a circle, and a press opens the reading and its working', async ({
+    signedIn: page,
+    api,
+  }) => {
+    await makeAccount('Frontier Checking', 'asset', 100_000n);
+    await makeDelegation(api, 'Grocery', '40000');
+    await page.goto('/overview');
+
+    // Colour with no text in it — the name carries the reading.
+    const circle = page.getByRole('button', { name: 'To delegate $1,000.00' });
+    await expect(circle).toBeVisible();
+    await expect(circle).toHaveText('');
+
+    await circle.click();
+    const sheet = page.getByRole('dialog', { name: 'To delegate $1,000.00' });
+    await expect(sheet).toContainText('Assets $1,000.00');
+    await expect(sheet).toContainText('= $1,000.00');
   });
 
   /**

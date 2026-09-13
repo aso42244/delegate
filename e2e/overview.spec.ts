@@ -1414,3 +1414,86 @@ test('every row of All bills is a single line', async ({ signedIn, api }) => {
     expect(Math.max(...centres) - Math.min(...centres)).toBeLessThanOrEqual(1);
   }
 });
+
+/**
+ * The backlog is worked from Overview rather than linked to.
+ *
+ * It was a figure and a link: a count, "Waiting, oldest 1d", and "Open the queue
+ * →". Which is a notification rather than a surface — the owner reads it on the
+ * screen he opens every morning and then goes somewhere else to spend forty
+ * seconds filing three charges. Categorizing is the highest-traffic act in this
+ * application, and it was a page away from the dashboard that announces it.
+ */
+test('a waiting charge is categorized from the Overview tile', async ({ signedIn, api }) => {
+  const accountId = await makeAccount('Frontier Checking', 'asset', 500_000n);
+  await makeDelegation(api, 'Grocery', '40000');
+  await api.post('/api/transactions', {
+    data: {
+      accountId,
+      amountCents: '-4210',
+      description: 'WHOLE FOODS MKT',
+      postedAt: '2026-08-23T00:00:00Z',
+    },
+  });
+
+  await signedIn.goto('/overview');
+  const tile = signedIn
+    .getByRole('heading', { name: 'Waiting to be categorized', level: 2 })
+    .locator('../..');
+
+  // The charge itself, not a count of them.
+  await expect(tile.getByText('WHOLE FOODS MKT')).toBeVisible();
+  await expect(tile.getByText('-$42.10')).toBeVisible();
+
+  // The register's own field, in the tile.
+  const field = tile.getByRole('combobox', { name: 'Categorize WHOLE FOODS MKT' });
+  await field.click();
+  await field.fill('Groc');
+  await signedIn
+    .getByRole('option', { name: /Grocery/ })
+    .first()
+    .click();
+
+  // Filed, so it leaves the list — "what is still waiting" is what this shows.
+  await expect(tile.getByText('WHOLE FOODS MKT')).toHaveCount(0);
+  await expect(tile.getByText('Nothing waiting.')).toBeVisible();
+
+  /*
+   * And the money really moved, rather than the row merely disappearing from a
+   * list. Nothing has been delegated to Grocery yet, so the charge lands as a
+   * balance of -$42.10 on that line — a figure that was not there a moment ago
+   * and could only have come from the envelope ledger.
+   */
+  await signedIn.goto('/budget');
+  await expect(signedIn.getByRole('row', { name: /Grocery/ })).toContainText('-$42.10');
+});
+
+/**
+ * The full queue is still one press away.
+ *
+ * A tile that quietly shows five of sixty is a tile that says the work is nearly
+ * done. It names the rest and links to the register with the same filter on it.
+ */
+test('the tile says how many more are waiting, and opens the queue', async ({ signedIn, api }) => {
+  const accountId = await makeAccount('Frontier Checking', 'asset', 500_000n);
+  await makeDelegation(api, 'Grocery', '40000');
+  for (let index = 0; index < 7; index += 1) {
+    await api.post('/api/transactions', {
+      data: {
+        accountId,
+        amountCents: '-1000',
+        description: `CHARGE ${index}`,
+        postedAt: '2026-08-23T00:00:00Z',
+      },
+    });
+  }
+
+  await signedIn.goto('/overview');
+  const tile = signedIn
+    .getByRole('heading', { name: 'Waiting to be categorized', level: 2 })
+    .locator('../..');
+
+  await expect(tile.getByText('2 more waiting.')).toBeVisible();
+  await tile.getByRole('link', { name: /Open the queue/ }).click();
+  await expect(signedIn).toHaveURL(/uncategorized=true/);
+});

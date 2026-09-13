@@ -381,6 +381,24 @@ export async function makeSyncWarning(message: string): Promise<void> {
   });
 }
 
+/**
+ * A run that succeeded, and what it brought back.
+ *
+ * `finishedAt` is what `/api/sync/status` reports as `lastSyncAt`, so a run
+ * without it reads as never having completed.
+ */
+export async function makeSuccessfulSync(transactionsAdded: number): Promise<void> {
+  await prisma.syncRun.create({
+    data: {
+      status: 'succeeded',
+      startedAt: new Date(),
+      finishedAt: new Date(),
+      transactionsAdded,
+      correlationId: `e2e-${Date.now()}`,
+    },
+  });
+}
+
 /** A run that failed outright, which is one of the two conditions that get a bar. */
 export async function makeSyncFailure(message: string): Promise<void> {
   await prisma.syncRun.create({

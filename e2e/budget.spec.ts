@@ -6,6 +6,7 @@ import {
   makeDelegation,
   makePendingSpend,
   makeSucceededSyncRun,
+  makeSyncWarning,
   openNew,
   test,
 } from './fixtures.js';
@@ -670,27 +671,38 @@ test('every pill keeps its detail inside the viewport', async ({ signedIn, api }
 });
 
 /**
- * The same, on a phone, where there is far less room to be wrong in.
+ * A phone has nothing that opens on hover, which is the stronger claim.
  *
- * Still in the header here, and deliberately: below `sm` there is no sidebar at
- * all — the tab bar is the navigation — so the alerts fall back to where they
- * used to live. A phone losing the sync-failure alert entirely would be the
- * quiet half of this move.
+ * This used to assert that a pill's detail stayed inside a 390px screen — the
+ * `w-max` sentence that named six accounts and ran about 1,500px on one line.
+ * That clamping still matters and is still proved, on the screen where pills
+ * still exist: the sidebar, in the test above.
+ *
+ * Below `sm` there are no pills left. The notifications are one dot and the
+ * budget's reading is a circle, and both open a **sheet** on a press (ADR 063,
+ * ADR 065) — because a tooltip is a pointer's gesture and a touchscreen has no
+ * way to perform one. So the thing worth guarding here is that nothing in the
+ * header hides what it has to say behind a hover a thumb cannot do.
  */
-test('a pill keeps its detail inside a phone screen', async ({ signedIn, api }) => {
-  await makeAccount('Plains Commerce Bank (SD) PLAINS+ CHECKING (7173)', 'asset', 100_000n);
-  await makeDelegation(api, 'Grocery', '40000');
+test('nothing on a phone hides its words behind a hover', async ({ signedIn }) => {
+  await makeSyncWarning(
+    'Connection to Plains Commerce Bank (SD) may need attention. Auth required — the saved login was rejected and no accounts were refreshed on this run.',
+  );
 
   await signedIn.setViewportSize({ width: 390, height: 844 });
   await signedIn.goto('/budget');
 
-  const pill = signedIn.locator('header [aria-describedby]').first();
-  await pill.hover();
+  // The alert is on screen, and it is a dot rather than a pill with a tooltip.
+  const dot = signedIn.getByRole('button', { name: /^\d+ alerts?$/ });
+  await expect(dot).toBeVisible();
+  await expect(signedIn.locator('header [role="tooltip"]')).toHaveCount(0);
 
-  const detail = signedIn.getByRole('tooltip');
-  await expect(detail).toBeVisible();
+  // Pressing it opens the whole sentence, inside the screen.
+  await dot.click();
+  const sheet = signedIn.getByRole('dialog', { name: 'Alerts' });
+  await expect(sheet).toContainText('Plains Commerce Bank');
 
-  const box = await detail.boundingBox();
-  expect(box!.x).toBeGreaterThanOrEqual(0);
-  expect(box!.x + box!.width).toBeLessThanOrEqual(390);
+  const box = (await sheet.boundingBox())!;
+  expect(box.x).toBeGreaterThanOrEqual(0);
+  expect(box.x + box.width).toBeLessThanOrEqual(390);
 });

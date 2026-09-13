@@ -6,7 +6,39 @@ phase (`v0.1.0-phase1`, and so on).
 
 ## [Unreleased]
 
+### Added
+
+- **The categorization backlog is worked from Overview**
+  ([ADR 065](docs/decisions/065-a-dashboard-you-can-work-from.md)). The tile was
+  a count, "Waiting, oldest 1d", and a link to the register — a notification
+  rather than a surface, which sent you off the screen you open every morning to
+  spend forty seconds filing three charges. It is the register's own row now,
+  without the register: date, payee, amount, and the same type-ahead with the
+  same suggestion leading it. Choosing files the charge and the row leaves.
+
+  It shows the first five and names the rest — "2 more waiting." — with the full
+  queue one press away, because sixty charges is a session at the register rather
+  than a tile on a dashboard.
+
+- **Sync SimpleFIN says when it last ran and what it found.** Its panel carried
+  the bank feed's conditions and there are nearly never any, so for most of its
+  life it opened on nothing. Hovering a quiet button now reads "Synced 12m ago."
+  and, when the run actually brought something back, "3 new transactions."
+
+  Coarse on purpose — nobody acts on the difference between 41 and 43 minutes —
+  and silent about a count of zero, which would appear on every quiet day saying
+  nothing.
+
 ### Changed
+
+- **On a phone the budget's reading is a circle of colour**, beside the alert dot
+  it matches, with its words in a sheet on a press. It was a tag reading
+  `Balanced` or `To delegate $1,240.00`, which on a 375px screen is a third of
+  the header spent on something glanced at rather than read. A press gives more
+  than the tag ever did without a mouse: the reading _and_ its working.
+
+- **The title, New… and Delegate share one line on a phone.** What paid for it is
+  the reading above and the period picker below.
 
 - **`npm run verify` brings its own environment.** It sources `.env` itself, so
   it runs from any shell. Several of its steps need `DATABASE_URL` and
@@ -33,6 +65,14 @@ phase (`v0.1.0-phase1`, and so on).
   durable orientation: what to read, the commands that answer "where are we", the
   gate, and the release-and-deploy loop end to end — including that the owner
   types exactly one line on the NAS and never two.
+
+### Removed
+
+- **Overview's period picker is gone on a phone.** Every tile it changes is
+  hidden below `sm` and the band is cycle-shaped whatever it says, so it was a
+  control costing a third of the header and moving nothing visible. `window`
+  stays in the URL, so a link into a period still opens in it and a laptop picks
+  up where the phone left off.
 
 ## [0.74.0] — 2026-09-11
 

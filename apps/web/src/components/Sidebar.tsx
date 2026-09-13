@@ -2,10 +2,11 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { budgetApi } from '../api/budget.js';
 import { useEffect, useId, useState, type ReactNode } from 'react';
 import { Link, NavLink } from 'react-router-dom';
-import { authApi, syncApi, type SyncStatus } from '../api/client.js';
+import { authApi, syncApi } from '../api/client.js';
 import { Alerts } from './Alerts.jsx';
 import { BalanceButton } from './BalanceReading.jsx';
 import { ControlPopover } from './ControlPopover.jsx';
+import { describeSync, readSync } from './sync-status.js';
 import { DelegateControl } from './DelegateControl.jsx';
 import { Tag } from './Tag.jsx';
 import { Button, Modal } from './ui.jsx';
@@ -201,24 +202,6 @@ function useCollapsed(): [boolean, (value: boolean) => void] {
   return [collapsed, setCollapsed];
 }
 
-/**
- * What the last run itself says, if anything.
- *
- * Read from `/api/sync/status` rather than from the notifications, and kept
- * beside them, because it is the fresher of the two: the status is re-checked
- * every minute and the notifications every five, so a run that has just failed
- * shows here first. `SyncControl` folds it in only when the notification for it
- * has not caught up, so the same failure is never listed twice.
- *
- * The error is whatever the run recorded. A failed run with nothing written down
- * still has to say something, or the colour would be unexplained.
- */
-function describeSync(status: SyncStatus | undefined): string | null {
-  if (status?.failing !== true) return null;
-  const error = status.runs[0]?.error?.trim();
-  return error ? `Last sync failed: ${error}` : 'The last sync failed.';
-}
-
 /** Which button a severity paints. Only these two are ever loud enough. */
 function variantFor(tone: ReturnType<typeof loudest>): 'default' | 'warning' | 'danger' {
   if (tone === 'danger') return 'danger';
@@ -298,6 +281,16 @@ function SyncControl({ collapsed }: { readonly collapsed: boolean }): ReactNode 
   const tone = loudest(folded);
 
   /*
+   * What a quiet feed says about itself.
+   *
+   * Read at render rather than held in state: the popover is closed almost all
+   * of the time, and a ticking clock behind a hidden panel is a re-render a
+   * minute for something nobody is looking at. The status query already
+   * refetches every 60s, which moves this along whenever it matters.
+   */
+  const reading = readSync(syncStatus.data, new Date());
+
+  /*
    * A `title` only on the rail, and only to name the control.
    *
    * Collapsed, the button is a glyph and its `title` is the only name it has.
@@ -323,12 +316,21 @@ function SyncControl({ collapsed }: { readonly collapsed: boolean }): ReactNode 
         disabled={runSync.isPending || syncStatus.data?.syncing === true}
         className="w-full"
         title={title}
-        {...(folded.length > 0 ? { 'aria-describedby': detailId } : {})}
+        {...(folded.length > 0 || reading !== null ? { 'aria-describedby': detailId } : {})}
       >
         {collapsed ? '⟳' : runSync.isPending ? 'Syncing…' : 'Sync SimpleFIN'}
       </Button>
 
-      {folded.length > 0 && (
+      {/*
+        The panel says whichever of the two readings applies.
+
+        When the feed is reporting something, that is the answer and the last
+        run's timing is beside the point. When it is quiet — which is nearly
+        always — the useful thing is that it ran and what it brought back, which
+        used to be a caption under the button and is now only here, where it
+        costs no floor space.
+      */}
+      {folded.length > 0 ? (
         <ControlPopover id={detailId}>
           {folded.map((row) => (
             <Link
@@ -343,6 +345,17 @@ function SyncControl({ collapsed }: { readonly collapsed: boolean }): ReactNode 
             </Link>
           ))}
         </ControlPopover>
+      ) : (
+        reading !== null && (
+          <ControlPopover id={detailId}>
+            <span className="text-quiet text-ink">{reading.when}</span>
+            {/* Only when the run actually found something. "0 new transactions"
+                is a line that says nothing and appears on every quiet day. */}
+            {reading.added !== null && (
+              <span className="text-quiet text-muted">{reading.added}</span>
+            )}
+          </ControlPopover>
+        )
       )}
     </div>
   );
