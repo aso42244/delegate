@@ -6,6 +6,10 @@ phase (`v0.1.0-phase1`, and so on).
 
 ## [Unreleased]
 
+Nothing yet.
+
+## [0.76.0] — 2026-09-14
+
 ### Fixed
 
 - **The categorize field in a tile gives the payee room.** The field took the
