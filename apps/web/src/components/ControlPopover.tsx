@@ -9,7 +9,16 @@ import type { ReactNode } from 'react';
  * column that have sentences to show, and a second shape for the second one is
  * how a set stops looking like a set.
  *
- * **Upwards**, because these sit at the foot of the sidebar.
+ * **To the right of its control, never above it.** It opened upwards at first,
+ * which meant it covered the button above — Sync's panel sat over Delegate, and
+ * the reading's sat over the alerts. A panel that hides a control you might have
+ * been reaching for is worse than one that hides nothing, and the whole page is
+ * to the right of this column and free.
+ *
+ * **Aligned to the control's own top**, so it appears where the pointer already
+ * is rather than jumping to a corner. It is placed by the control's position,
+ * not the pointer's: a panel that follows the mouse is a panel whose links move
+ * while you aim at them.
  *
  * **Wider than the sidebar**, because these are sentences — the same 384px that
  * holds prose everywhere else (`ui-system.md` §2), capped so it cannot run off a
@@ -35,7 +44,7 @@ export function ControlPopover({
     <div
       id={id}
       role="tooltip"
-      className="absolute bottom-full left-0 z-20 hidden w-96 max-w-[calc(100vw-2rem)] pb-1 group-hover:block group-focus-within:block"
+      className="absolute top-0 left-full z-20 hidden w-96 max-w-[calc(100vw-2rem)] pl-1 group-hover:block group-focus-within:block"
     >
       {/* The same card `AlertTag` hangs its detail from — one floating reading,
           not a second shape for one. Notably *not* the tile surface, which

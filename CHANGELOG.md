@@ -6,7 +6,24 @@ phase (`v0.1.0-phase1`, and so on).
 
 ## [Unreleased]
 
-Nothing yet.
+### Fixed
+
+- **The categorize field in a tile gives the payee room.** The field took the
+  register's flat 256px into a tile a third the width of the page, which left the
+  payee eighty pixels and truncated the one thing you read in order to decide.
+  The payee and the field share the row now, and 256px is the field's _cap_
+  rather than its width: the register's proportions wherever there is room for
+  them, giving way in step with the payee where there is not. Its open list
+  follows the field instead of hanging over the tile's right edge, and it opens
+  upward when the bottom of the screen is close — on the last rows of a page the
+  options a search had just narrowed to were the ones nobody could reach.
+
+- **A control's hover panel opens beside it, never over the button above it.**
+  Sync SimpleFIN's panel covered Delegate; the budget reading's covered the
+  alerts. A panel that hides a control somebody might have been reaching for is
+  worse than one that hides nothing, and the whole page to the right of that
+  column is free. It is placed by the control's position rather than the
+  pointer's, so its links hold still while you aim at them.
 
 ## [0.75.0] — 2026-09-12
 

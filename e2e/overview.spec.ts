@@ -1497,3 +1497,105 @@ test('the tile says how many more are waiting, and opens the queue', async ({ si
   await tile.getByRole('link', { name: /Open the queue/ }).click();
   await expect(signedIn).toHaveURL(/uncategorized=true/);
 });
+
+/**
+ * The queue's row fits the tile it is in, at the width a tile actually gets.
+ *
+ * The field stated a flat 256px, which is right on the register — a table the
+ * width of the page — and wrong in a tile that is a third of somebody's
+ * dashboard. At 576px of tile it left the payee about eighty pixels, truncating
+ * "COSTCO WHSE #1043 SIOUX FALLS SD" to almost nothing, and its open list hung
+ * over the tile's right edge. The payee is the thing being read in order to
+ * decide.
+ */
+test('the waiting row gives the payee room, and its list stays inside the tile', async ({
+  signedIn,
+  api,
+}) => {
+  const accountId = await makeAccount('Frontier Checking', 'asset', 500_000n);
+  for (const name of ['Tithe', 'Family Money', 'Andy Personal', 'Kenzie Personal', 'Grocery']) {
+    await makeDelegation(api, name, '40000');
+  }
+  await api.post('/api/transactions', {
+    data: {
+      accountId,
+      amountCents: '-12531',
+      description: 'COSTCO WHSE #1043 SIOUX FALLS SD',
+      postedAt: '2026-09-13T00:00:00Z',
+    },
+  });
+
+  // Narrow enough that the tile is about 576px, which is what a shared row gives
+  // it — the width the flat field was wrong at.
+  await signedIn.setViewportSize({ width: 820, height: 900 });
+  await signedIn.goto('/overview');
+
+  const tile = signedIn
+    .getByRole('heading', { name: 'Waiting to be categorized', level: 2 })
+    .locator('../..');
+  const row = tile.locator('li').first();
+  const payee = tile.getByText('COSTCO WHSE #1043 SIOUX FALLS SD');
+  await expect(payee).toBeVisible();
+
+  // The payee gets real room rather than whatever the field left over.
+  const payeeBox = (await payee.boundingBox())!;
+  expect(payeeBox.width).toBeGreaterThan(120);
+
+  // The field is inside the row, not hanging off it.
+  const rowBox = (await row.boundingBox())!;
+  const field = tile.getByRole('combobox');
+  const fieldBox = (await field.boundingBox())!;
+  expect(fieldBox.x + fieldBox.width).toBeLessThanOrEqual(rowBox.x + rowBox.width + 1);
+
+  // And so is the list it opens, which used to be a flat 256px whatever the
+  // field had shrunk to.
+  await field.click();
+  const list = tile.getByRole('listbox');
+  await expect(list).toBeVisible();
+  const listBox = (await list.boundingBox())!;
+  expect(listBox.x + listBox.width).toBeLessThanOrEqual(rowBox.x + rowBox.width + 1);
+});
+
+/**
+ * The list opens upward when there is no room below it.
+ *
+ * It hung straight down at a flat height, so on a tile near the foot of the page
+ * — which is where a dashboard puts most of them — the options ran off the
+ * bottom of the screen, and the ones nobody could reach were the ones a search
+ * had just narrowed to.
+ */
+test('the categorize list opens upward when the bottom of the screen is close', async ({
+  signedIn,
+  api,
+}) => {
+  const accountId = await makeAccount('Frontier Checking', 'asset', 500_000n);
+  for (const name of ['Tithe', 'Family Money', 'Andy Personal', 'Kenzie Personal', 'Grocery']) {
+    await makeDelegation(api, name, '40000');
+  }
+  await api.post('/api/transactions', {
+    data: {
+      accountId,
+      amountCents: '-12531',
+      description: 'COSTCO WHSE',
+      postedAt: '2026-09-13T00:00:00Z',
+    },
+  });
+
+  await signedIn.setViewportSize({ width: 1280, height: 800 });
+  await signedIn.goto('/overview');
+
+  const tile = signedIn
+    .getByRole('heading', { name: 'Waiting to be categorized', level: 2 })
+    .locator('../..');
+  const field = tile.getByRole('combobox');
+  await field.click();
+
+  const list = tile.getByRole('listbox');
+  await expect(list).toBeVisible();
+  const fieldBox = (await field.boundingBox())!;
+  const listBox = (await list.boundingBox())!;
+
+  // Above the field, and wholly on the screen either way.
+  expect(listBox.y + listBox.height).toBeLessThanOrEqual(fieldBox.y + 1);
+  expect(listBox.y).toBeGreaterThanOrEqual(0);
+});

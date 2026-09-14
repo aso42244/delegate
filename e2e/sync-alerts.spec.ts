@@ -228,3 +228,48 @@ test('a run that found nothing does not say so', async ({ signedIn }) => {
   await expect(panel).toContainText('Synced');
   await expect(panel).not.toContainText('new transaction');
 });
+
+/**
+ * A panel opens beside its control, never over the one above it.
+ *
+ * It opened upwards at first, which put Sync's panel across Delegate and the
+ * reading's across the alerts — a panel hiding a control somebody might have
+ * been reaching for. The whole page is to the right of this column and free.
+ */
+test('the folded panel opens to the right, covering nothing in the sidebar', async ({
+  signedIn,
+}) => {
+  await makeSuccessfulSync(2);
+  await signedIn.reload();
+
+  const nav = signedIn.getByRole('navigation', { name: 'Main' });
+  const sync = nav.getByRole('button', { name: /Sync SimpleFIN/ });
+  const delegate = nav.getByRole('button', { name: 'Delegate' });
+
+  const navBox = (await nav.boundingBox())!;
+  const syncBox = (await sync.boundingBox())!;
+  const delegateBox = (await delegate.boundingBox())!;
+
+  await sync.hover();
+  const panel = signedIn.getByRole('tooltip');
+  await expect(panel).toBeVisible();
+  const panelBox = (await panel.boundingBox())!;
+
+  /*
+   * It begins at the control's own right edge and runs outward, so no part of
+   * it is over a control. Measured against the button rather than against the
+   * sidebar: the panel hangs from a padded wrapper that starts exactly there,
+   * and the last few pixels of the column are the control zone's own padding.
+   */
+  expect(panelBox.x).toBeGreaterThanOrEqual(syncBox.x + syncBox.width - 1);
+  expect(panelBox.x + panelBox.width).toBeGreaterThan(navBox.x + navBox.width);
+
+  // And specifically not over Delegate, which sits directly above Sync.
+  const overlapsDelegate =
+    panelBox.y < delegateBox.y + delegateBox.height &&
+    panelBox.x < delegateBox.x + delegateBox.width;
+  expect(overlapsDelegate).toBe(false);
+
+  // Aligned to the control it belongs to rather than to a corner.
+  expect(Math.abs(panelBox.y - syncBox.y)).toBeLessThanOrEqual(2);
+});

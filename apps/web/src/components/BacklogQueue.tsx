@@ -123,9 +123,23 @@ export function BacklogQueue(): ReactNode {
                 })}
               </span>
 
-              {/* `min-w-0` and `truncate`: a payee's name has no upper bound,
-                  and without these it sizes the row rather than the row sizing
-                  it. */}
+              {/*
+                The payee and the field share what is left, and neither may
+                starve the other.
+
+                The field stated a flat `w-64` at first, on the reasoning that a
+                type-ahead which changes width per row has no column
+                (`ui-system.md` §2). True on the register, whose table is the
+                width of the page — and wrong in a tile, which is a third of a
+                row on somebody's dashboard: 256px of field against 542px of tile
+                left the payee about 90 characters' worth of nothing, truncated
+                to "COSTCO WH…" or, one tile narrower, to nothing at all. The
+                payee is the thing being read in order to decide.
+
+                So both are `flex-1` and the field is *capped* rather than fixed:
+                it is 256px wherever there is room for 256px, and it gives way in
+                step with the payee where there is not.
+              */}
               <span className="min-w-0 flex-1 truncate text-base text-ink">
                 {transaction.description}
               </span>
@@ -138,10 +152,7 @@ export function BacklogQueue(): ReactNode {
                 {formatCents(amount)}
               </span>
 
-              {/* The same field the register carries, stating its own width
-                  (`ui-system.md` §2) rather than taking whatever is left: a
-                  type-ahead that changes width per row has no column. */}
-              <div className="w-64 min-w-0 shrink-0">
+              <div className="w-64 min-w-0 flex-1">
                 <DelegationPicker
                   options={delegations}
                   {...(suggestion

@@ -1,4 +1,12 @@
-import { useId, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
+import {
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+  type KeyboardEvent,
+  type ReactNode,
+} from 'react';
 
 /**
  * The delegation picker used to categorize a transaction.
@@ -50,6 +58,66 @@ export interface DelegationPickerProps {
   readonly suggestion?: DelegationSuggestion | undefined;
 }
 
+/** The tallest the popover list is ever allowed to be. */
+const LIST_MAX_PX = 256;
+
+/** Breathing room between the list and the edge of the screen. */
+const EDGE_MARGIN_PX = 16;
+
+/**
+ * Which way the list opens, and how tall it may be.
+ *
+ * It hung straight down at a flat `max-h-64`, which is right in the middle of a
+ * long register and wrong at either end of it: on the last rows of a page the
+ * list ran off the bottom of the screen, and the options nobody could reach were
+ * the ones a search had just narrowed to.
+ *
+ * Measured from the **input**, which is always on screen, rather than from the
+ * list, which is not rendered until it opens and so has no box to measure.
+ *
+ * It flips only when flipping genuinely helps — a row near the bottom of a short
+ * window has little room either way, and a list that jumps upward to gain twelve
+ * pixels is a list that moves for no reason.
+ */
+function useListPlacement(
+  inputRef: React.RefObject<HTMLInputElement | null>,
+  open: boolean,
+): { above: boolean; maxHeightPx: number } {
+  const [placement, setPlacement] = useState({ above: false, maxHeightPx: LIST_MAX_PX });
+
+  useEffect(() => {
+    if (!open) return;
+
+    function measure(): void {
+      const input = inputRef.current;
+      if (!input) return;
+
+      const box = input.getBoundingClientRect();
+      const below = window.innerHeight - box.bottom - EDGE_MARGIN_PX;
+      const above = box.top - EDGE_MARGIN_PX;
+
+      // Downwards unless upwards is both sufficient and better, so the common
+      // case never moves.
+      const flip = below < LIST_MAX_PX && above > below;
+      setPlacement({
+        above: flip,
+        maxHeightPx: Math.max(Math.min(LIST_MAX_PX, flip ? above : below), 0),
+      });
+    }
+
+    measure();
+    window.addEventListener('resize', measure);
+    // Capture, because what scrolls is usually an ancestor rather than the page.
+    window.addEventListener('scroll', measure, true);
+    return () => {
+      window.removeEventListener('resize', measure);
+      window.removeEventListener('scroll', measure, true);
+    };
+  }, [inputRef, open]);
+
+  return placement;
+}
+
 export function DelegationPicker({
   options,
   currentName,
@@ -66,6 +134,7 @@ export function DelegationPicker({
   const [highlighted, setHighlighted] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
   const listboxId = useId();
+  const placement = useListPlacement(inputRef, !asSheet && open);
 
   const matches = useMemo(() => {
     const needle = query.trim().toLowerCase();
@@ -174,12 +243,25 @@ export function DelegationPicker({
            * tall behind an open keyboard, so it reserved more height than the
            * screen had and nested a second scroller inside one that was already
            * scrolling. Two touch scrollers in a stack fight each other.
+           *
+           * As a popover it is 256px wide **or the width of its field, whichever
+           * is less**. `max-w-full` resolves against the positioned wrapper,
+           * which is the field — so on the register's wide column the list is
+           * the 256px it has always been, and in a dashboard tile where the
+           * field has given way to the payee it gives way with it rather than
+           * hanging over the tile's right edge.
+           *
+           * Its height and its direction are measured rather than fixed: see
+           * `useListPlacement`.
            */
           className={
             asSheet
               ? 'mt-2'
-              : 'absolute z-20 mt-1 max-h-64 w-64 overflow-auto rounded-lg border border-line bg-canvas py-1 shadow-lg'
+              : `absolute z-20 w-64 max-w-full overflow-auto rounded-lg border border-line bg-canvas py-1 shadow-lg ${
+                  placement.above ? 'bottom-full mb-1' : 'top-full mt-1'
+                }`
           }
+          {...(asSheet ? {} : { style: { maxHeight: `${placement.maxHeightPx}px` } })}
         >
           {matches.map((option, index) => (
             <li key={option.id}>

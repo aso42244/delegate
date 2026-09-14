@@ -333,6 +333,15 @@ Such a tile shows a **bounded** number of rows and names the rest. Five, then "2
 more waiting." and a link to the full queue: sixty charges is a session at the
 register, not a tile on a dashboard.
 
+**A control borrowed into a tile states a cap, not a width.** The categorize
+field is 256px on the register, which is a table the width of the page — and a
+tile is a third of somebody's dashboard. Fixed there, it left the payee about
+eighty pixels and truncated it to nothing, and its open list hung over the tile's
+right edge. In the queue the payee and the field are both `flex-1` and the field
+is capped at 256px: the register's width wherever there is room for it, giving
+way in step with the payee where there is not. The list follows, at `w-64
+max-w-full` — as wide as the field, never wider.
+
 ### A tile's figure
 
 A figure tile — one number and the sentence that says what to do about it —
@@ -770,10 +779,18 @@ and "Last sync failed" was a line saying what the button's own colour says. The
 button carries its state, and now the bank feed's whole list with it (§5, §9).
 
 **`ControlPopover` is what a control in this zone says.** Sync's folded alerts
-and the reading's arithmetic are one object: a panel hanging **above** the
-control, `w-96` because these are sentences, with the 4px offset as padding on
-the wrapper rather than a margin on the card — a bare gap is a dead strip that
-drops `:hover` on the way into a panel whose links have to be reachable.
+and the reading's arithmetic are one object: a panel hanging **to the right of**
+its control, aligned to the control's own top, `w-96` because these are
+sentences, with the 4px offset as padding on the wrapper rather than a margin on
+the card — a bare gap is a dead strip that drops `:hover` on the way into a panel
+whose links have to be reachable.
+
+**Beside, never above.** It opened upwards until v0.76.0 and covered the button
+above it — Sync's panel across Delegate, the reading's across the alerts. A panel
+that hides a control somebody might have been reaching for is worse than one that
+hides nothing, and the whole page to the right of that column is free. It is
+placed by the control's position rather than the pointer's: a panel that follows
+the mouse is a panel whose links move while you aim at them.
 
 **Below `sm` there is no sidebar**, so Delegate and the reading fall back to
 `PageHeader` — the same rule and the same reason as the alerts (§9); the reading
