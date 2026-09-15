@@ -1,5 +1,12 @@
 import type { Locator, Page } from '@playwright/test';
-import { expect, makeSuccessfulSync, makeSyncFailure, makeSyncWarning, test } from './fixtures.js';
+import {
+  expect,
+  makeAccount,
+  makeSuccessfulSync,
+  makeSyncFailure,
+  makeSyncWarning,
+  test,
+} from './fixtures.js';
 
 /**
  * What the application says about a sync, and where.
@@ -180,6 +187,63 @@ test('the reading sits above Delegate, is coloured, and goes to Overview', async
   // And it goes to Overview whatever it currently says.
   await reading.click();
   await expect(signedIn).toHaveURL(/\/overview/);
+});
+
+/**
+ * The backlog is a control, and there is exactly one of it.
+ *
+ * It was an `info` tag in the column above the control zone until ADR 066 — the
+ * smallest object in that corner, carrying the most actionable thing in it. It
+ * is a button above Delegate now, and blue, on the days there is a backlog.
+ *
+ * **The count assertion is the one that matters.** Moving it means folding it
+ * out of `Alerts` *and* drawing it in `Sidebar`, and forgetting the first half
+ * leaves the same reading in the corner twice — two blue links with one
+ * accessible name, which is the kind of thing that looks deliberate in a
+ * screenshot and is obvious only when somebody counts.
+ */
+test('the backlog is one control, above Delegate, and not also a tag', async ({
+  signedIn,
+  api,
+}) => {
+  const accountId = await makeAccount('Everyday Checking', 'asset', 500000n);
+  await api.post('/api/transactions', {
+    data: {
+      accountId,
+      amountCents: '-4210',
+      description: 'Whole Foods Market',
+      postedAt: '2026-08-05T00:00:00Z',
+    },
+  });
+
+  await signedIn.goto('/budget');
+
+  const nav = signedIn.getByRole('navigation', { name: 'Main' });
+  const backlog = nav.getByRole('link', { name: '1 new transaction' });
+
+  // Once. Not once in the column and once in the zone.
+  await expect(backlog).toHaveCount(1);
+  await expect(backlog).toHaveClass(/bg-accent-soft/);
+
+  // Between the reading and Delegate, which is the order the morning happens in:
+  // where the budget stands, what came in, what to do about it.
+  const order = await Promise.all(
+    [
+      nav.getByRole('link', { name: /Balanced|To delegate|Over-delegated/ }),
+      backlog,
+      nav.getByRole('button', { name: 'Delegate' }),
+    ].map(async (control) => Math.round((await control.boundingBox())!.y)),
+  );
+  expect([...order].sort((a, b) => a - b)).toEqual(order);
+
+  // The age of the oldest is the half a tag's face never had room for, and it is
+  // the half that says whether this is urgent.
+  await backlog.hover();
+  await expect(signedIn.getByRole('tooltip')).toContainText('waiting to be categorized');
+
+  // And it still opens the queue rather than the register.
+  await backlog.click();
+  await expect(signedIn).toHaveURL(/\/transactions\?uncategorized=true$/);
 });
 
 /**

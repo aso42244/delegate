@@ -6,7 +6,25 @@ phase (`v0.1.0-phase1`, and so on).
 
 ## [Unreleased]
 
-Nothing yet.
+### Changed
+
+- **The categorization backlog is a button above Delegate, not a tag**
+  ([ADR 066](docs/decisions/066-the-backlog-is-a-control-not-a-tag.md)). "4 new
+  transactions" was a 13px pill in the column above four bordered buttons — the
+  smallest object in that corner, carrying the most actionable thing in it.
+
+  It is a control now: blue, directly above Delegate, and there only while the
+  queue is not empty. What separates it from everything still in that column is
+  that those are _conditions_ — a bank needing a fresh login, a cheque to
+  confirm, a bill that did not arrive — which you read and then decide about. A
+  backlog is a queue of work with exactly one thing anybody has ever done about
+  it, and since v0.75.0 the doing of it starts one press away.
+
+  Blue rather than yellow because a queue of new charges is what a working bank
+  feed produces, not a fault. It still opens the queue rather than the register,
+  and the sentence that says how old the oldest one is — the half a tag's face
+  never had room for — is in the panel beside it. A phone is unchanged: there is
+  no control zone below `sm`, so it stays a tag in the alert sheet there.
 
 ## [0.76.0] — 2026-09-14
 

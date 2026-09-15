@@ -94,11 +94,12 @@ const FIELD_WIDTHS: Record<FieldWidth, string> = {
 };
 
 /**
- * A button's face, for the two things that wear it without being one.
+ * A button's face, for the things that wear it without being one.
  *
- * The budget's reading is a `Link` — it goes to Overview — and a link drawn by
- * hand beside three buttons is how a set stops looking like a set. One string,
- * one place it is written.
+ * Both are `Link`s in the sidebar's control zone, because both go somewhere: the
+ * budget's reading to Overview, and the backlog to the queue (ADR 066). A link
+ * drawn by hand beside three buttons is how a set stops looking like a set. One
+ * string, one place it is written.
  *
  * 28px, at the owner's request: 36 was more air than a row of controls needs,
  * most visibly on a phone where the Budget header carries five of them. Above
