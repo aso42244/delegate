@@ -6,6 +6,10 @@ phase (`v0.1.0-phase1`, and so on).
 
 ## [Unreleased]
 
+Nothing yet.
+
+## [0.77.0] — 2026-09-15
+
 ### Added
 
 - **Delegate has a favicon.** There was none at all, so every tab and every
