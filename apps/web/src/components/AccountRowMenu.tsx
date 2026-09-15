@@ -12,8 +12,8 @@ import {
 import { Alert, Button, Modal, TextField, Toggle } from './ui.jsx';
 
 /**
- * The per-row menu on an asset or debt row, on the Budget page and in
- * Settings → Accounts alike.
+ * The per-row menu on an asset or debt row — on Overview's band, on the Budget
+ * page and in Settings → Accounts alike.
  *
  * It mirrors Settings → Accounts for that one line, which is what §9.5 asks for:
  * anything configurable elsewhere is configurable there too, and the reverse.
@@ -248,8 +248,9 @@ export function AccountRowMenu({
   readonly row: AccountMenuRow;
   /**
    * Omitted in Settings → Accounts, which has no grouped view to move a row
-   * within. Groupings are a Budget-page arrangement and are chosen there, where
-   * they can be seen.
+   * within. A grouping is chosen where it can be seen — which since ADR 068 is
+   * either the Budget page or the band at the top of Overview, both of which
+   * draw `AccountsTable` and both of which pass this.
    */
   readonly groupings?: readonly GroupingOption[];
   /**

@@ -8,6 +8,34 @@ phase (`v0.1.0-phase1`, and so on).
 
 ### Changed
 
+- **Overview's Accounts & Debts tab is the Budget page's own table**
+  ([ADR 068](docs/decisions/068-one-accounts-table-on-both-screens.md)). It drew
+  a flat list of name and balance, which was the whole of what the Budget page
+  could still do and this one could not: accounts in their groupings, filing an
+  account under a grouping, and ordering accounts and groupings.
+
+  All three arrived at once rather than being designed again, because the band
+  now draws `AccountsTable` — the sibling of the `DelegationsTable` the other tab
+  has drawn since v0.71.0, and the same component the Budget page uses. Row menus,
+  folding, dragging and Move up / Move down came with it.
+
+  **"With balance" still hides an account sitting at zero**, and hiding one can
+  no longer narrow what an ordering writes: the order goes back through
+  `restoreHidden`, which puts each hidden row back after the row it followed.
+  Without that, reordering a filtered list renumbered the visible rows into
+  positions the hidden ones already held — silently, because the endpoint
+  renumbers what it is sent and leaves the rest alone. No total moves under the
+  filter either: every figure there is the server's, and a row at zero adds zero.
+
+  The Budget page is 87 lines from 270, and its behaviour is unchanged.
+
+- **Overview's band could load for ever on a budget nobody had customised.** It
+  fetched the budget only when a tile keyed `delegations` was in the stored
+  layout — but the band is pinned and always drawn, while that layout row is
+  created by the first press of "Select Delegations". A household that had never
+  pressed it saw "Loading the budget…" and nothing else. Found by making both of
+  the band's tabs read the one view.
+
 - **The Budget page is hidden from the navigation, for a fortnight's trial**
   ([ADR 067](docs/decisions/067-the-budget-page-is-hidden-for-a-trial.md)). It is
   not deleted and nothing about it changed: `/budget` still answers, a landing

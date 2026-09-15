@@ -805,9 +805,139 @@ test('the panel lists only accounts the budget counts', async ({ signedIn }) => 
    * And the total says what it counted, because a figure that silently excluded
    * a house is one somebody trusts and should not. $500.00 rather than
    * $350,500.00: the house is not money this budget can allocate.
+   *
+   * Read out of the table's own head rather than a heading: since ADR 068 this
+   * band draws `BudgetSection`, where the section's total is the first row of
+   * the table so each figure lands in the column it sums.
    */
-  const accounts = panel.getByRole('heading', { name: /^Accounts/ });
-  await expect(accounts).toContainText('$500.00');
+  const assets = panel
+    .getByRole('table')
+    // Page-rooted, not panel-rooted: a `has` locator is queried from the element
+    // being filtered, so a chain starting at the region would be looking for a
+    // region inside a table.
+    .filter({ has: signedIn.getByRole('heading', { name: 'Assets', exact: true }) });
+  await expect(assets.getByRole('row').first()).toContainText('$500.00');
+});
+
+/**
+ * The three things the Budget page could do and this band could not.
+ *
+ * ADR 067 hid that page for a trial and named these as the reason it could not
+ * simply be deleted: accounts in their groupings, filing one under a grouping,
+ * and ordering the list. ADR 068 is this band drawing `AccountsTable` — the
+ * Budget page's own component — so all three arrived at once rather than being
+ * built a second time.
+ *
+ * Asserted through the row menu rather than by dragging: dragging is the fast
+ * route and never the only one, and it is the route a keyboard and a thumb
+ * cannot take.
+ */
+test('the band files an account under a grouping, and groups what it draws', async ({
+  signedIn,
+  api,
+}) => {
+  await makeAccount('Everyday Checking', 'asset', 500_00n);
+  await api.post('/api/groupings', { data: { name: 'Spending', section: 'assets' } });
+
+  await signedIn.goto('/overview');
+  const panel = signedIn.getByRole('region', { name: 'Budget' });
+  await panel.getByRole('radio', { name: 'Accounts & Debts' }).click();
+
+  await panel.getByRole('button', { name: 'Options for Everyday Checking' }).click();
+  await signedIn.getByRole('menuitem', { name: 'Move to grouping' }).click();
+  await signedIn.getByRole('menuitem', { name: 'Spending' }).click();
+
+  // The grouping is drawn, which the flat list this band used to be had nowhere
+  // to do.
+  const grouping = panel.getByRole('row').filter({ hasText: 'Spending' });
+  await expect(grouping).toBeVisible();
+
+  /*
+   * Folding it is the proof of membership as well as the other half of what a
+   * grouping is for: the row leaving with the fold is what says it is *inside*,
+   * which a bare "both are on screen" does not.
+   *
+   * The `⋯` is the locator because it is the one thing on the row with a unique
+   * name — "Everyday Checking" on its own matches the name cell, the balance
+   * button and the menu button alike.
+   */
+  const account = panel.getByRole('button', { name: 'Options for Everyday Checking' });
+  await expect(account).toBeVisible();
+
+  const toggle = grouping.getByRole('button').first();
+  await toggle.click();
+  await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+  await expect(account).toHaveCount(0);
+});
+
+test('the band reorders accounts, and the order survives a reload', async ({ signedIn }) => {
+  await makeAccount('Everyday Checking', 'asset', 500_00n);
+  await makeAccount('Savings', 'asset', 900_00n);
+
+  await signedIn.goto('/overview');
+  const panel = signedIn.getByRole('region', { name: 'Budget' });
+  await panel.getByRole('radio', { name: 'Accounts & Debts' }).click();
+
+  const names = async (): Promise<string[]> => {
+    const cells = await panel.getByRole('button', { name: /^Options for / }).all();
+    return Promise.all(
+      cells.map(async (cell) =>
+        ((await cell.getAttribute('aria-label')) ?? '').replace(/^Options for /, ''),
+      ),
+    );
+  };
+
+  expect(await names()).toEqual(['Everyday Checking', 'Savings']);
+
+  await panel.getByRole('button', { name: 'Options for Savings' }).click();
+  await signedIn.getByRole('menuitem', { name: 'Move up' }).click();
+
+  await expect.poll(names).toEqual(['Savings', 'Everyday Checking']);
+
+  // Stored on the account, not in this browser: the order the household reads
+  // its accounts in is a fact about the household.
+  await signedIn.reload();
+  await panel.getByRole('radio', { name: 'Accounts & Debts' }).click();
+  await expect.poll(names).toEqual(['Savings', 'Everyday Checking']);
+});
+
+/**
+ * Hiding a row must never narrow what an ordering writes.
+ *
+ * `placeAccount` renumbers exactly the ids it is sent and leaves the rest where
+ * they are, so an order sent over the visible rows alone would give two accounts
+ * the same position and break the tie arbitrarily. `restoreHidden` is what stops
+ * that, and this is the end-to-end half of its unit tests: the zero-balance row
+ * is invisible under "With balance" and must come back in one piece.
+ */
+test('reordering under the With balance filter does not lose the rows it hides', async ({
+  signedIn,
+}) => {
+  await makeAccount('Everyday Checking', 'asset', 500_00n);
+  await makeAccount('Old Savings', 'asset', 0n);
+  await makeAccount('Holiday Fund', 'asset', 900_00n);
+
+  await signedIn.goto('/overview');
+  const panel = signedIn.getByRole('region', { name: 'Budget' });
+  await panel.getByRole('radio', { name: 'Accounts & Debts' }).click();
+
+  // The zero is not drawn, which is what the filter is for.
+  await expect(panel.getByText('Old Savings')).toHaveCount(0);
+
+  await panel.getByRole('button', { name: 'Options for Holiday Fund' }).click();
+  await signedIn.getByRole('menuitem', { name: 'Move up' }).click();
+
+  // Everything is still there, and the hidden row kept the place it held.
+  await panel.getByRole('radio', { name: 'All' }).click();
+  const names = async (): Promise<string[]> => {
+    const cells = await panel.getByRole('button', { name: /^Options for / }).all();
+    return Promise.all(
+      cells.map(async (cell) =>
+        ((await cell.getAttribute('aria-label')) ?? '').replace(/^Options for /, ''),
+      ),
+    );
+  };
+  await expect.poll(names).toEqual(['Holiday Fund', 'Everyday Checking', 'Old Savings']);
 });
 
 test('a tile can be dropped onto its own row, and at the very top', async ({ signedIn }) => {

@@ -739,6 +739,28 @@ is rendered inside the page rather than in the app shell — the shell would
 otherwise need to know which page is open, and would carry a second permanent
 column everywhere else.
 
+## 11a. The budget's two tables
+
+**`DelegationsTable` and `AccountsTable` are the budget**, and both the Budget
+page and the band at the top of Overview draw them
+([ADR 062](decisions/062-the-budget-is-the-first-block-of-overview.md),
+[ADR 068](decisions/068-one-accounts-table-on-both-screens.md)). Neither screen
+has a rendering of its own: two renderings of one table is how two screens come
+to disagree about a budget, and both read and write the one `['budget']` cache
+entry so they cannot.
+
+**What the two surfaces differ in is stated as props and nothing else.**
+`DelegationsTable` takes `pace` and `only`; `AccountsTable` takes `arrangement`
+and `onlyWithBalance`. A surface that needs a third kind of difference needs a
+prop, not a copy.
+
+**A filter that hides rows never narrows what is written.** The band can hide
+accounts sitting at zero, and `BudgetSection` builds its orderings from the
+section it was handed — so the order goes back through `restoreHidden` first,
+which puts each hidden id back after the visible id it followed. The endpoint
+that takes an ordering renumbers exactly the ids it is sent and leaves the rest
+alone, so a partial order does not fail, it just leaves the list wrong.
+
 ## 12. The sidebar
 
 **One list feeds both navigations.** `PAGES` in `components/Sidebar.tsx` is the

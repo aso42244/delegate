@@ -1,6 +1,7 @@
 # 067 — The Budget page is hidden from the navigation, for a trial
 
 **Status:** accepted, provisional — review on or after 2026-09-29
+**Amended by:** [068](068-one-accounts-table-on-both-screens.md), which gives Overview the three things listed below
 **Date:** 2026-09-15
 
 Amends [ADR 056](056-where-a-person-lands.md), whose "the sidebar is six entries:
@@ -23,8 +24,10 @@ target, transfer, manual adjustment and line history is there, and `?lines=all`
 widens it from the chosen handful to the whole list. The daily work has genuinely
 been in two places since ADR 062.
 
-**What is only on the Budget page**, established by reading both rather than
-assuming, is narrower than the overlap and is all of one kind:
+**What was only on the Budget page** when this was written, established by
+reading both rather than assuming, was narrower than the overlap and all of one
+kind — and is on Overview too since
+[ADR 068](068-one-accounts-table-on-both-screens.md), a day later:
 
 - **Accounts and debts _in their groupings_.** Overview's Accounts & Debts tab is
   a flat list of name and balance, deliberately — `BalanceList` draws no
@@ -96,8 +99,16 @@ One of two ways, and the point of writing it down is that neither is a drift.
 **Put it back:** restore the one line in `PAGES`, revert this ADR to superseded,
 and say what was missed.
 
-**Delete it:** `MainBudget`, its routes, `budget-layout` and the Settings →
-Display control that feeds it, `AccountRowMenu` and the account placement
-endpoints — **and first give Overview a home for grouping and ordering accounts**,
-because that is the part with nowhere else to go. Deleting before that is
-deleting a capability, not a page.
+**Delete it:** `MainBudget`, its routes, and `budget-layout` with the Settings →
+Display control that feeds it. It said here that this had to wait until Overview
+had a home for grouping and ordering accounts, because that was the part with
+nowhere else to go and deleting before it would be deleting a capability rather
+than a page. [ADR 068](068-one-accounts-table-on-both-screens.md) built that
+home: the band draws `AccountsTable`, the same component this page does, so all
+three of the gaps above are closed and `AccountRowMenu` and the account placement
+endpoints stay whichever way the trial ends.
+
+**What deleting would still cost** is the columns-or-stacked arrangement, which
+belongs to this page alone — and the answer to that is to drop it with the page
+rather than to rebuild it on a dashboard whose arrangement is already the
+household's to drag.
