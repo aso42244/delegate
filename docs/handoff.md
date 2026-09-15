@@ -68,9 +68,31 @@ set -a && . ./.env && set +a
 npm run db:deploy                            # and again with DATABASE_URL=$TEST_DATABASE_URL
 ```
 
-Then **`npm run verify` runs unmodified, every step**, and it is the gate — so a
-cloud session merges on exactly the condition a local one does. Verified end to
-end on 2026-09-15: sixteen steps, no skips.
+Then **`npm run verify` runs unmodified and fifteen of its sixteen steps pass**,
+including all three suites, the compose parse, the tor image and the backup
+restore. Verified on 2026-09-15.
+
+**The sixteenth cannot run here, and the reason is worth knowing before you spend
+an afternoon on it.** `Dockerfile` opens with `# syntax=docker/dockerfile:1`,
+which hands the build to an external BuildKit frontend — and that frontend
+resolves `FROM node:22-alpine` **against the registry**, ignoring the local image
+store. So the CA trick above works for `tor/Dockerfile`, which has no syntax
+directive, and cannot work for the main image: there is no way to substitute a
+CA-patched base without editing the Dockerfile, and editing it to suit this
+sandbox would be editing the artefact the NAS runs. Proved by adding that one
+line to a two-line Dockerfile and watching it start failing.
+
+**What covers it instead.** The publish workflow builds this exact image on an
+x86_64 runner with no interception, which is also the image that actually ships —
+so a green workflow _is_ that step, run somewhere it can be. Watch the run and
+confirm the manifest and the signature before handing over a deploy line, which
+is the rule anyway. What a cloud session genuinely does not get is the local
+`/health` smoke test of the built container; `deploy.sh` waits on `/health` on
+the NAS, so it is covered again at the far end.
+
+**Say which of the sixteen ran.** "The gate passed" is wrong here, and so is "the
+gate cannot run" — the first has been said in a PR body and the second in this
+file.
 
 **Every one of those accommodations is to the environment, never to the
 repository.** Nothing above edits a Dockerfile, a config or a test to suit this

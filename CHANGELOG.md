@@ -99,7 +99,17 @@ height it was dragged to` asserted an exact pixel height — the one a press
   never had room for — is in the panel beside it. A phone is unchanged: there is
   no control zone below `sm`, so it stays a tag in the alert sheet there.
 
-- **The handoff stops being wrong about what a cloud session can run.** It said
+- **The handoff says which of the gate's sixteen steps a cloud session runs.**
+  Fifteen, it turns out — every suite, the compose parse, the tor image, the
+  backup restore. The exception is the container image build, and the reason is
+  specific rather than a shrug: `Dockerfile` opens with
+  `# syntax=docker/dockerfile:1`, and that frontend resolves its base image from
+  the registry rather than the local store, so a sandbox that terminates TLS
+  cannot substitute a CA-patched base without editing the artefact the NAS runs.
+  The publish workflow builds that image on a clean runner, which is where the
+  step genuinely happens.
+
+  It said
   the gate could not run there at all, which sent sessions to the owner with
   untested branches. In fact only three of its steps need Docker — the compose
   parse, the tor check and the container image — and a cloud container has had

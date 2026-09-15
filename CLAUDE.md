@@ -70,8 +70,10 @@ and the NAS do not. **Everything needed to run the gate does.** This image ships
 Postgres and Docker installed and stopped, which `psql -l` and `docker info`
 report exactly as if they were absent — so check `which dockerd` and
 `service postgresql status`, not the daemons. Start them, install the pinned
-chromium, and `npm run verify` runs unmodified, every step. `docs/handoff.md`
-§ **If you are running in the cloud** has the two minutes of setup.
+chromium, and `npm run verify` runs unmodified — fifteen of its sixteen steps
+pass, the exception being the container image build, which cannot work here for
+a reason that is about this sandbox rather than the branch. `docs/handoff.md`
+§ **If you are running in the cloud** has the setup and the reason.
 
 So a cloud session is under the same rule as a local one: the gate must actually
 pass before a merge, and merging never needs permission. Never imply it passed
