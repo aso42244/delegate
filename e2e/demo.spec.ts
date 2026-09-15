@@ -45,13 +45,16 @@ test('offers nothing that would change anything', async ({ signedIn }) => {
 });
 
 test('keeps you in the demo once you are in it', async ({ signedIn }) => {
-  await signedIn.goto('/demo/overview');
-
   /*
-   * The first press of "Budget" must not land somebody in their own money
-   * halfway through showing somebody else's.
+   * Starting on the demo's Budget, which is still routed and still reachable by
+   * address after ADR 067 took it out of the navigation — so this presses
+   * Overview to come back rather than Budget to go there. The thing being proved
+   * is the same one: the first press of a navigation link must not land somebody
+   * in their own money halfway through showing somebody else's.
    */
-  await signedIn.getByRole('link', { name: 'Budget' }).click();
-  await expect(signedIn).toHaveURL(/\/demo\/budget$/);
+  await signedIn.goto('/demo/budget');
   await expect(signedIn.getByRole('heading', { name: 'Budget', exact: true })).toBeVisible();
+
+  await signedIn.getByRole('link', { name: 'Overview', exact: true }).click();
+  await expect(signedIn).toHaveURL(/\/demo\/overview$/);
 });

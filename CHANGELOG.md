@@ -8,6 +8,24 @@ phase (`v0.1.0-phase1`, and so on).
 
 ### Changed
 
+- **The Budget page is hidden from the navigation, for a fortnight's trial**
+  ([ADR 067](docs/decisions/067-the-budget-page-is-hidden-for-a-trial.md)). It is
+  not deleted and nothing about it changed: `/budget` still answers, a landing
+  preference of Budget still sends you there, and restoring the entry is one line
+  in `PAGES`.
+
+  The overlap is real and larger than it looks. Overview's band draws the _same_
+  `DelegationsTable` the Budget page draws, off the same query — every row menu,
+  editable amount, target, transfer and line history — and "Show all" widens it
+  to the whole list. What is only on the Budget page is accounts and debts in
+  their groupings, assigning an account to a grouping, ordering accounts and
+  groupings, and the columns-or-stacked arrangement from Settings → Display.
+  Those are setup tasks rather than daily ones, which is what makes a fortnight
+  a fair test.
+
+  Reaching it in the meantime means typing the address: nothing in the
+  application links to it now, because nothing but the navigation entry ever did.
+
 - **The categorization backlog is a button above Delegate, not a tag**
   ([ADR 066](docs/decisions/066-the-backlog-is-a-control-not-a-tag.md)). "4 new
   transactions" was a 13px pill in the column above four bordered buttons — the

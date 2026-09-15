@@ -116,9 +116,14 @@ test('the backlog pill clears as soon as the queue does', async ({ signedIn, api
   // The row leaving the queue is the signal that the write landed.
   await expect(signedIn.getByText('Whole Foods Market')).toBeHidden();
 
-  // Back to Budget the way a person goes back to it. Cached, before the fix in
-  // main.tsx, this still said there was one waiting.
-  await signedIn.getByRole('link', { name: 'Budget' }).click();
+  /*
+   * Back the way a person goes back, which is Overview since ADR 067 hid Budget
+   * from the navigation. What is being proved is unchanged and has nothing to do
+   * with which page it lands on: before the fix in `main.tsx` the notification
+   * query was still cached, so arriving anywhere in the shell said there was one
+   * waiting when the queue was empty.
+   */
+  await signedIn.getByRole('link', { name: 'Overview', exact: true }).click();
   await expect(signedIn.getByRole('link', { name: /new transaction/ })).toHaveCount(0);
 });
 

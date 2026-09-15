@@ -154,14 +154,23 @@ export type PageIcon =
 
 export const PAGES = [
   /*
-   * Overview first, Budget second.
+   * Overview first, and — since ADR 067 — the only one of the two.
    *
-   * Overview is the daily read and Budget is where the work happens — a quick
-   * review, then the full inspection. The order is the order somebody uses them
-   * in, which is also the owner's own description of what each is for.
+   * It was Overview then Budget: a quick review, then the full inspection. The
+   * owner's reading after a fortnight of ADR 065's dashboard is that the two had
+   * become duplicative, so **Budget is hidden from the navigation for a trial
+   * rather than deleted**. Nothing else about it changed: `/budget` is still
+   * routed, still rendered by `MainBudget`, and still where a landing
+   * preference of `budget` sends somebody.
+   *
+   * Putting it back is this line, and nothing else:
+   *
+   *   { to: '/budget', label: 'Budget', icon: 'budget', end: false },
+   *
+   * Both navigations read this list — the sidebar and `TabBar` — so one line
+   * decides both, which is why it is the only edit the trial needed.
    */
   { to: '/overview', label: 'Overview', icon: 'insights', end: false },
-  { to: '/budget', label: 'Budget', icon: 'budget', end: false },
   { to: '/transactions', label: 'Transactions', icon: 'transactions', end: false },
   /*
    * Beside Transactions rather than inside Settings.
@@ -187,6 +196,15 @@ export const PAGES = [
  *
  * Only these: a link to a page whose figures are not invented is a link to an
  * empty screen, which looks like a fault rather than a boundary.
+ */
+/*
+ * What a demo navigates to.
+ *
+ * `/budget` stays named here although `PAGES` no longer carries it, because this
+ * is a filter over that list: an entry naming a page that is not in it simply
+ * matches nothing. Keeping it means putting Budget back is one line up there
+ * rather than two in two places — and it records that the demo's exclusion of
+ * Budget is the trial's doing rather than a decision about the demo.
  */
 const DEMO_PAGES = new Set(['/overview', '/budget']);
 

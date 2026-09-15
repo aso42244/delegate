@@ -741,6 +741,13 @@ column everywhere else.
 
 ## 12. The sidebar
 
+**One list feeds both navigations.** `PAGES` in `components/Sidebar.tsx` is the
+sidebar's entries and the tab bar's columns, so a destination added or removed
+moves both at once — which is what makes hiding one a single line
+([ADR 067](decisions/067-the-budget-page-is-hidden-for-a-trial.md) hid Budget for
+a trial that way). A route is not in this list to be routed: `/budget` still
+answers while it is out of it.
+
 **Expanded, it is as wide as its longest label and no wider** — `w-fit`, not a
 number, so a renamed destination cannot leave it stale. It was a flat 232px from
 `design.md` §4, about sixty more than "Transactions" actually takes, and every one

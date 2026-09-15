@@ -1,6 +1,6 @@
 # 056 — Where a person lands, and the root that is not a page
 
-**Status:** accepted
+**Status:** accepted, amended by [067](067-the-budget-page-is-hidden-for-a-trial.md)
 **Date:** 2026-09-09
 
 ## Context
@@ -65,6 +65,9 @@ same reasoning as `archived_at` everywhere else.
   checked against, which is the same shape as the `region` defect in v0.61.0.
 - **The sidebar is six entries**, from eight: Overview, Budget, Transactions,
   Rules, Recurring, Settings. The tab bar's columns still come from the page
-  list rather than a number beside it.
+  list rather than a number beside it. (Five since
+  [ADR 067](067-the-budget-page-is-hidden-for-a-trial.md), which hides Budget for
+  a trial. The landing preference still offers it and still sends somebody
+  there — that part of this decision is untouched.)
 - Overview uses the `insights` icon. It inherited the page it replaced rather
   than inventing a glyph.
