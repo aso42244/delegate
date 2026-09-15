@@ -53,6 +53,16 @@ su postgres -c 'psql -c "CREATE DATABASE household_budget_test;"'
 dockerd >/tmp/dockerd.log 2>&1 &             # compose, tor and the image step need it
 npx playwright install chromium chromium-headless-shell   # the image ships a build behind the pin
 
+# A build container trusts nothing this sandbox terminates TLS with, so `apk
+# add` inside both Dockerfiles fails with "certificate verify failed" — which
+# apk then reports as `tor (no such package)`, naming the wrong problem. Give
+# the two base images the proxy's CA, locally and without touching either
+# Dockerfile, which must stay correct for the NAS and for the runner:
+printf 'ARG BASE\nFROM ${BASE}\nCOPY ca-bundle.crt /tmp/c\nRUN cat /tmp/c >> /etc/ssl/certs/ca-certificates.crt && rm /tmp/c\n' > /tmp/cabase/Dockerfile
+cp /root/.ccr/ca-bundle.crt /tmp/cabase/
+docker build --build-arg BASE=alpine:3.21    -t alpine:3.21    /tmp/cabase
+docker build --build-arg BASE=node:22-alpine -t node:22-alpine /tmp/cabase
+
 cp .env.example .env                         # then any 32+ character SESSION_SECRET
 set -a && . ./.env && set +a
 npm run db:deploy                            # and again with DATABASE_URL=$TEST_DATABASE_URL
@@ -61,6 +71,12 @@ npm run db:deploy                            # and again with DATABASE_URL=$TEST
 Then **`npm run verify` runs unmodified, every step**, and it is the gate — so a
 cloud session merges on exactly the condition a local one does. Verified end to
 end on 2026-09-15: sixteen steps, no skips.
+
+**Every one of those accommodations is to the environment, never to the
+repository.** Nothing above edits a Dockerfile, a config or a test to suit this
+container — the image the NAS runs and the image the runner publishes are built
+from exactly what is committed. A gate that only passes because the thing it
+checks was altered is not a gate.
 
 **Two workarounds that should not be reinvented.** There is no need for a
 `playwright.container.config.ts` pointing at a mismatched chromium — install the
