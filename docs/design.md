@@ -826,6 +826,26 @@ absorb affordance uses. That button is **always visible**, unlike the absorb one
 — it is a standing state rather than an offer, and a state nobody can see until
 they hover the right row is one the banner would be pointing at in vain.
 
+## The mark
+
+A white **D** on `--color-accent`, in a rounded square — `apps/web/public/`.
+
+**An envelope was the obvious answer and is the wrong one.** Envelope budgeting
+is the defining idea here, but a white envelope on a blue badge is the mail icon,
+at 16px, in a tab strip that already contains one. Drawn and compared at 16, 20,
+32 and 64: an envelope with a coin on the corner reads as a notification badge, a
+coin dropping into an open envelope reads as a person's head, and three stacked
+envelopes read as a bar chart. The letter is the only one of the five that is
+unambiguous at the size it is actually seen.
+
+**It carries no household name**, and cannot. `APP_NAME` is what this is called
+on one NAS and it lives in `.env`; a mark generated per deployment would be the
+one part of the interface able to carry a family name into the repository.
+
+**The badge does the theming.** A solid accent field with a white letter holds
+against light and dark browser chrome alike, so there is no `prefers-color-scheme`
+inside the SVG to go stale.
+
 ## Every notification is a pill
 
 A sync that _succeeds_ while the feed complains about one institution raises a

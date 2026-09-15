@@ -6,6 +6,20 @@ phase (`v0.1.0-phase1`, and so on).
 
 ## [Unreleased]
 
+### Added
+
+- **Delegate has a favicon.** There was none at all, so every tab and every
+  bookmark showed the browser's blank-page mark. It is a white D on the accent
+  blue, as a rounded badge — chosen over an envelope, which is the obvious mark
+  for envelope budgeting and reads as _mail_ at 16px beside a tab strip that
+  already has one.
+
+  Three files: an SVG, a 32px PNG for a browser that will not take one, and a
+  square full-bleed 180px PNG for a home screen, which iOS masks and rounds
+  itself. No household name is in any of them — `APP_NAME` stays in `.env`, and a
+  mark that had to be regenerated per deployment is the one thing in the
+  interface that could carry a family name into the repository.
+
 ### Changed
 
 - **Overview's Accounts & Debts tab is the Budget page's own table**
