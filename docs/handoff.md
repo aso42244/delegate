@@ -22,30 +22,62 @@ well as a local one.
 **What does not travel, because it is deliberately not in the repository:**
 
 - `.env` — git-ignored, and it holds the database URLs and `SESSION_SECRET`.
-  `.env.example` is committed and shows the shape.
-- The Postgres databases. `npm run verify` uses a real local
-  `household_budget_dev` and `household_budget_test`.
+  `.env.example` is committed and shows the shape, and a working local one can
+  be made from it in a second (see below).
+- The Postgres _databases_. `npm run verify` uses a real local
+  `household_budget_dev` and `household_budget_test`. The Postgres _server_ is a
+  different question — see below, because this document was wrong about it.
 - Docker, which the gate needs for the compose check, the tor check and the
-  container smoke test.
+  container smoke test. This is the real limit.
 - The NAS. It is reachable only from the owner's machine, by password SSH.
 
-**So a cloud session cannot run the gate.** Nothing about your authority changes
-— merging is yours and you never ask permission for it. What changes is that the
-one condition on a merge, the gate having actually passed, cannot be met here.
+**Most of the gate does run in the cloud.** This section used to say flatly that
+none of it could, which sent sessions to the owner with untested branches for a
+year. On 2026-09-15 a container turned out to have PostgreSQL 16 installed and
+merely _stopped_, and once it was started everything but the three Docker steps
+ran green — unit, integration and end-to-end included.
 
-So:
+**Check, do not assume, and check the server rather than the databases:**
 
-1. Do the work on a branch and push it.
-2. Open the PR, and **say in the body that the gate has not been run here, and
-   why**. Never imply it passed.
-3. Say plainly that it needs a run on the owner's machine before it lands. That
-   is a report of a blocked step, not a request for permission — do not dress it
-   up as "shall I merge?", and do not merge it unverified either. `main` is
-   always deployable, and the gate is what makes that true.
+```sh
+test -f .env && echo has-env
+docker info >/dev/null 2>&1 && echo has-docker
+which psql && service postgresql status     # installed? and is it merely down?
+```
 
-Check rather than assume: `test -f .env`, `docker info`, `psql -l`. If they are
-all there, you are on the owner's machine and the ordinary workflow applies —
-including merging without asking.
+`psql -l` failing proves nothing on its own: it is what a stopped cluster and an
+absent one both look like.
+
+**Bringing a cloud container up to run the suites**, which takes about a minute:
+
+```sh
+npm ci                                       # node_modules does not travel
+npm run db:generate                          # nor does the generated Prisma client
+service postgresql start
+su postgres -c "psql -c \"ALTER USER postgres PASSWORD 'change-me';\""
+su postgres -c 'psql -c "CREATE DATABASE household_budget_dev;"'
+su postgres -c 'psql -c "CREATE DATABASE household_budget_test;"'
+cp .env.example .env                         # then set SESSION_SECRET to anything 32+ chars
+set -a && . ./.env && set +a
+npm run db:deploy                            # and again with DATABASE_URL=$TEST_DATABASE_URL
+```
+
+Then run the gate's steps by hand, in `scripts/verify.sh`'s own order. **Skip
+exactly three, and say so**: the compose parse, `tor --verify-config`, and the
+container image build and smoke test. All three need Docker and nothing else
+does.
+
+**So what a cloud PR body must say is narrower than it used to be.** Not "the
+gate has not run here" — that is now usually a lie in the wrong direction. Say
+which steps ran and which three did not, and that `npm run verify` still needs
+one local run before it lands, because only that proves the whole thing in the
+order it is meant to run. Never imply the gate passed. That remains a report of
+a blocked step rather than a request for permission: do not dress it up as
+"shall I merge?", and do not merge it unverified either. `main` is always
+deployable, and the gate is what makes that true.
+
+If `.env`, Docker and `psql -l` are _all_ there, you are on the owner's machine
+and the ordinary workflow applies — including merging without asking.
 
 ---
 

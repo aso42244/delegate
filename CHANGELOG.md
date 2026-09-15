@@ -26,6 +26,15 @@ phase (`v0.1.0-phase1`, and so on).
   never had room for — is in the panel beside it. A phone is unchanged: there is
   no control zone below `sm`, so it stays a tag in the alert sheet there.
 
+- **The handoff stops claiming a cloud session cannot test anything.** It said
+  the gate could not run there at all, which sent sessions to the owner with
+  untested branches. In fact only three of its steps need Docker — the compose
+  parse, the tor check and the container image — and a cloud container has had
+  PostgreSQL installed and merely stopped, which `psql -l` reports identically to
+  not having it. `docs/handoff.md` now carries the minute of setup that gets the
+  unit, integration and end-to-end suites running, and says a cloud PR should
+  name the steps it skipped rather than disclaiming the lot.
+
 ## [0.76.0] — 2026-09-14
 
 ### Fixed

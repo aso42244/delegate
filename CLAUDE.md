@@ -65,12 +65,19 @@ the whole of it.
 
 ## Running in the cloud
 
-The docs travel with the clone; `.env`, the Postgres databases, Docker and the
-NAS do not, so `npm run verify` cannot run there. Merging is still yours and
-still never needs permission — but the gate having passed is the one condition on
-it, so push the branch, open the PR **saying plainly that the gate has not run
-here**, and say it needs a local run before it lands. Check with `test -f .env`,
-`docker info`, `psql -l` rather than assuming.
+The docs travel with the clone; `.env`, `node_modules`, the Postgres databases,
+Docker and the NAS do not. **`npm run verify` cannot complete there — but most of
+it runs.** A cloud container has had PostgreSQL installed and merely stopped, and
+once it is started only the three Docker steps are out of reach: the compose
+parse, the tor check and the container image. `docs/handoff.md` § **If you are
+running in the cloud** has the minute of setup that gets the suites running.
+
+So check rather than assume — `test -f .env`, `docker info`, `which psql` **and**
+`service postgresql status`, because a stopped cluster and an absent one look
+identical from `psql -l`. Then run every step you can and **name the ones you
+could not** in the PR body; never imply the gate passed, and say it needs one
+local run before it lands. Merging is still yours and still never needs
+permission — the gate having passed is the one condition on it.
 
 ## Knowing where things stand
 
