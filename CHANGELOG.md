@@ -6,7 +6,117 @@ phase (`v0.1.0-phase1`, and so on).
 
 ## [Unreleased]
 
-Nothing yet.
+### Added
+
+- **Delegate has a favicon.** There was none at all, so every tab and every
+  bookmark showed the browser's blank-page mark. It is a white D on the accent
+  blue, as a rounded badge — chosen over an envelope, which is the obvious mark
+  for envelope budgeting and reads as _mail_ at 16px beside a tab strip that
+  already has one.
+
+  Three files: an SVG, a 32px PNG for a browser that will not take one, and a
+  square full-bleed 180px PNG for a home screen, which iOS masks and rounds
+  itself. No household name is in any of them — `APP_NAME` stays in `.env`, and a
+  mark that had to be regenerated per deployment is the one thing in the
+  interface that could carry a family name into the repository.
+
+### Changed
+
+- **A test that reported the font rather than the feature.** `a row keeps the
+height it was dragged to` asserted an exact pixel height — the one a press
+  asks for — while a row is also floored at the height its content needs, which
+  is what the test beside it exists to protect. Where those two disagreed by a
+  pixel the test failed: 119 asked for, 120 given, on `main` at v0.76.0, on any
+  machine whose fonts rasterise a shade differently from the one it was written
+  on. It asserts what it is named for now — that the height survives a reload —
+  and that a press grows the row by at least a step, which is the contract a
+  one-directional floor actually has.
+
+  This is why the gate could never pass in a cloud container, and it was read as
+  an environmental quirk for weeks rather than as the brittle assertion it was.
+
+- **Overview's Accounts & Debts tab is the Budget page's own table**
+  ([ADR 068](docs/decisions/068-one-accounts-table-on-both-screens.md)). It drew
+  a flat list of name and balance, which was the whole of what the Budget page
+  could still do and this one could not: accounts in their groupings, filing an
+  account under a grouping, and ordering accounts and groupings.
+
+  All three arrived at once rather than being designed again, because the band
+  now draws `AccountsTable` — the sibling of the `DelegationsTable` the other tab
+  has drawn since v0.71.0, and the same component the Budget page uses. Row menus,
+  folding, dragging and Move up / Move down came with it.
+
+  **"With balance" still hides an account sitting at zero**, and hiding one can
+  no longer narrow what an ordering writes: the order goes back through
+  `restoreHidden`, which puts each hidden row back after the row it followed.
+  Without that, reordering a filtered list renumbered the visible rows into
+  positions the hidden ones already held — silently, because the endpoint
+  renumbers what it is sent and leaves the rest alone. No total moves under the
+  filter either: every figure there is the server's, and a row at zero adds zero.
+
+  The Budget page is 87 lines from 270, and its behaviour is unchanged.
+
+- **Overview's band could load for ever on a budget nobody had customised.** It
+  fetched the budget only when a tile keyed `delegations` was in the stored
+  layout — but the band is pinned and always drawn, while that layout row is
+  created by the first press of "Select Delegations". A household that had never
+  pressed it saw "Loading the budget…" and nothing else. Found by making both of
+  the band's tabs read the one view.
+
+- **The Budget page is hidden from the navigation, for a fortnight's trial**
+  ([ADR 067](docs/decisions/067-the-budget-page-is-hidden-for-a-trial.md)). It is
+  not deleted and nothing about it changed: `/budget` still answers, a landing
+  preference of Budget still sends you there, and restoring the entry is one line
+  in `PAGES`.
+
+  The overlap is real and larger than it looks. Overview's band draws the _same_
+  `DelegationsTable` the Budget page draws, off the same query — every row menu,
+  editable amount, target, transfer and line history — and "Show all" widens it
+  to the whole list. What is only on the Budget page is accounts and debts in
+  their groupings, assigning an account to a grouping, ordering accounts and
+  groupings, and the columns-or-stacked arrangement from Settings → Display.
+  Those are setup tasks rather than daily ones, which is what makes a fortnight
+  a fair test.
+
+  Reaching it in the meantime means typing the address: nothing in the
+  application links to it now, because nothing but the navigation entry ever did.
+
+- **The categorization backlog is a button above Delegate, not a tag**
+  ([ADR 066](docs/decisions/066-the-backlog-is-a-control-not-a-tag.md)). "4 new
+  transactions" was a 13px pill in the column above four bordered buttons — the
+  smallest object in that corner, carrying the most actionable thing in it.
+
+  It is a control now: blue, directly above Delegate, and there only while the
+  queue is not empty. What separates it from everything still in that column is
+  that those are _conditions_ — a bank needing a fresh login, a cheque to
+  confirm, a bill that did not arrive — which you read and then decide about. A
+  backlog is a queue of work with exactly one thing anybody has ever done about
+  it, and since v0.75.0 the doing of it starts one press away.
+
+  Blue rather than yellow because a queue of new charges is what a working bank
+  feed produces, not a fault. It still opens the queue rather than the register,
+  and the sentence that says how old the oldest one is — the half a tag's face
+  never had room for — is in the panel beside it. A phone is unchanged: there is
+  no control zone below `sm`, so it stays a tag in the alert sheet there.
+
+- **The handoff says which of the gate's sixteen steps a cloud session runs.**
+  Fifteen, it turns out — every suite, the compose parse, the tor image, the
+  backup restore. The exception is the container image build, and the reason is
+  specific rather than a shrug: `Dockerfile` opens with
+  `# syntax=docker/dockerfile:1`, and that frontend resolves its base image from
+  the registry rather than the local store, so a sandbox that terminates TLS
+  cannot substitute a CA-patched base without editing the artefact the NAS runs.
+  The publish workflow builds that image on a clean runner, which is where the
+  step genuinely happens.
+
+  It said
+  the gate could not run there at all, which sent sessions to the owner with
+  untested branches. In fact only three of its steps need Docker — the compose
+  parse, the tor check and the container image — and a cloud container has had
+  PostgreSQL installed and merely stopped, which `psql -l` reports identically to
+  not having it. `docs/handoff.md` now carries the minute of setup that gets the
+  unit, integration and end-to-end suites running, and says a cloud PR should
+  name the steps it skipped rather than disclaiming the lot.
 
 ## [0.76.0] — 2026-09-14
 

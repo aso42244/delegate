@@ -433,7 +433,7 @@ zone is a button reporting a **state**, and Delegate has none.
 
 **A soft fill on a control means it is reporting a state**, and the sidebar's
 control zone is where that rule lives (§12,
-[ADR 064](decisions/064-the-corner-answers-one-question.md)). Two controls have
+[ADR 064](decisions/064-the-corner-answers-one-question.md)). Three controls have
 one:
 
 - **The budget's reading** — `positive` green when balanced, `info` blue when
@@ -442,6 +442,11 @@ one:
 - **Sync SimpleFIN** — `warning` or `danger`, whichever the loudest condition the
   bank feed currently has is, with the whole list one hover or one focus away
   (§9).
+- **The categorization backlog** — `info` blue, and only while the queue is not
+  empty ([ADR 066](decisions/066-the-backlog-is-a-control-not-a-tag.md)). Blue
+  rather than yellow because a queue of new charges is what a working bank feed
+  produces, not a fault. An empty queue is not a state worth a button, which is
+  what keeps the reading's "nothing competes with it" true on a quiet morning.
 
 `danger` otherwise appears only inside a dialog or a row menu, never sitting on a
 page — with one exception, Undo Delegation, which replaces Delegate in that slot
@@ -734,7 +739,36 @@ is rendered inside the page rather than in the app shell — the shell would
 otherwise need to know which page is open, and would carry a second permanent
 column everywhere else.
 
+## 11a. The budget's two tables
+
+**`DelegationsTable` and `AccountsTable` are the budget**, and both the Budget
+page and the band at the top of Overview draw them
+([ADR 062](decisions/062-the-budget-is-the-first-block-of-overview.md),
+[ADR 068](decisions/068-one-accounts-table-on-both-screens.md)). Neither screen
+has a rendering of its own: two renderings of one table is how two screens come
+to disagree about a budget, and both read and write the one `['budget']` cache
+entry so they cannot.
+
+**What the two surfaces differ in is stated as props and nothing else.**
+`DelegationsTable` takes `pace` and `only`; `AccountsTable` takes `arrangement`
+and `onlyWithBalance`. A surface that needs a third kind of difference needs a
+prop, not a copy.
+
+**A filter that hides rows never narrows what is written.** The band can hide
+accounts sitting at zero, and `BudgetSection` builds its orderings from the
+section it was handed — so the order goes back through `restoreHidden` first,
+which puts each hidden id back after the visible id it followed. The endpoint
+that takes an ordering renumbers exactly the ids it is sent and leaves the rest
+alone, so a partial order does not fail, it just leaves the list wrong.
+
 ## 12. The sidebar
+
+**One list feeds both navigations.** `PAGES` in `components/Sidebar.tsx` is the
+sidebar's entries and the tab bar's columns, so a destination added or removed
+moves both at once — which is what makes hiding one a single line
+([ADR 067](decisions/067-the-budget-page-is-hidden-for-a-trial.md) hid Budget for
+a trial that way). A route is not in this list to be routed: `/budget` still
+answers while it is out of it.
 
 **Expanded, it is as wide as its longest label and no wider** — `w-fit`, not a
 number, so a renamed destination cannot leave it stale. It was a flat 232px from
@@ -750,29 +784,40 @@ anything anybody navigates to.
 
 ### The control zone
 
-**Four controls, one group, one rule above it** — the reading, Delegate, Sync
-SimpleFIN, Sign out, 8px apart, same 28px face, same `border-line` outline
-([ADR 064](decisions/064-the-corner-answers-one-question.md)). There is no
+**One group, one rule above it** — the reading, the backlog when there is one,
+Delegate, Sync SimpleFIN, Sign out, 8px apart, same 28px face, same `border-line`
+outline ([ADR 064](decisions/064-the-corner-answers-one-question.md),
+[ADR 066](decisions/066-the-backlog-is-a-control-not-a-tag.md)). There is no
 divider inside it and no identity block: the signed-in address and the account's
 role are on Settings → Users, which is where an account is administered.
 
-**The reading is first and is the only one always coloured.** Green, blue or red,
-and a press goes to Overview whatever it says — not only when something is wrong,
-because a control that is a link on the bad days and inert on the good ones is
-one nobody learns to press. Everything under it is plain unless hovered or unless
-the bank feed is reporting something, so the corner of the screen answers one
-question at a glance.
+**The reading is first and is the only one always there and always coloured.**
+Green, blue or red, and a press goes to Overview whatever it says — not only when
+something is wrong, because a control that is a link on the bad days and inert on
+the good ones is one nobody learns to press. Everything under it is plain unless
+hovered, unless the bank feed is reporting something, or unless there is a
+backlog, so the corner of the screen answers one question at a glance.
+
+**Then the backlog, on the days there is one.** `4 new transactions`, blue, and a
+link to the queue rather than the register. It was a tag in the column above
+until [ADR 066](decisions/066-the-backlog-is-a-control-not-a-tag.md), which drew
+the one notification that is _work_ as though it were one of the conditions
+beside it — and drew the most actionable thing in that
+corner as its smallest object.
 
 Then the two acts on the household. Neither is a fact about the page underneath —
-the argument ADR 059 used to move the alerts out of the page header — and
-Delegate sits directly under the reading it acts on, which is the whole reason it
-is here rather than on Budget.
+the argument ADR 059 used to move the alerts out of the page header.
 
-**All four ask before they do anything.** They are one control apart and they
+**Everything here that acts asks first.** They are one control apart and they
 distribute a pay packet, roll one back, fetch the bank, and end the session. That
 includes Undo Delegation, which fired on the press until it moved here, and Sign
-out, which is the strongest case of the four: a full page load, so a misclick
-costs the session and everything typed into it with nothing to come back to.
+out, which is the strongest case: a full page load, so a misclick costs the
+session and everything typed into it with nothing to come back to.
+
+**The two that only navigate do not ask** — the reading and the backlog, both
+`Link`s wearing `buttonFace()`. A confirmation on a link is a dialog in the way
+of nothing, and the rule above is about acting rather than about living in this
+zone.
 
 **There is no caption under Sync.** "Synced 12m ago" was a figure nobody acts on
 and "Last sync failed" was a line saying what the button's own colour says. The
@@ -796,7 +841,9 @@ the mouse is a panel whose links move while you aim at them.
 `PageHeader` — the same rule and the same reason as the alerts (§9); the reading
 is a tag again there, with one tone and one set of words shared with the button.
 Sync does not fall back: it has no phone home today and did not gain one here,
-which is exactly why the alerts it folds are unfolded again on a phone.
+which is exactly why the alerts it folds are unfolded again on a phone. **Nor
+does the backlog**, and for the same reason: it is a tag in the dot's list on a
+phone, which is where it was everywhere until ADR 066.
 
 ## 13. Themes
 

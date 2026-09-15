@@ -65,12 +65,20 @@ the whole of it.
 
 ## Running in the cloud
 
-The docs travel with the clone; `.env`, the Postgres databases, Docker and the
-NAS do not, so `npm run verify` cannot run there. Merging is still yours and
-still never needs permission — but the gate having passed is the one condition on
-it, so push the branch, open the PR **saying plainly that the gate has not run
-here**, and say it needs a local run before it lands. Check with `test -f .env`,
-`docker info`, `psql -l` rather than assuming.
+The docs travel with the clone; `.env`, `node_modules`, the Postgres databases
+and the NAS do not. **Everything needed to run the gate does.** This image ships
+Postgres and Docker installed and stopped, which `psql -l` and `docker info`
+report exactly as if they were absent — so check `which dockerd` and
+`service postgresql status`, not the daemons. Start them, install the pinned
+chromium, and `npm run verify` runs unmodified — fifteen of its sixteen steps
+pass, the exception being the container image build, which cannot work here for
+a reason that is about this sandbox rather than the branch. `docs/handoff.md`
+§ **If you are running in the cloud** has the setup and the reason.
+
+So a cloud session is under the same rule as a local one: the gate must actually
+pass before a merge, and merging never needs permission. Never imply it passed
+when it did not, and never read an exit code through a pipe — not `| tail`, and
+not a command that ends in `| grep`.
 
 ## Knowing where things stand
 

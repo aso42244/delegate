@@ -22,30 +22,94 @@ well as a local one.
 **What does not travel, because it is deliberately not in the repository:**
 
 - `.env` — git-ignored, and it holds the database URLs and `SESSION_SECRET`.
-  `.env.example` is committed and shows the shape.
-- The Postgres databases. `npm run verify` uses a real local
-  `household_budget_dev` and `household_budget_test`.
-- Docker, which the gate needs for the compose check, the tor check and the
-  container smoke test.
+  `.env.example` is committed and shows the shape, and a working local one can be
+  made from it in a second (see below).
+- `node_modules` and the generated Prisma client.
+- The Postgres _databases_ and their contents.
 - The NAS. It is reachable only from the owner's machine, by password SSH.
 
-**So a cloud session cannot run the gate.** Nothing about your authority changes
-— merging is yours and you never ask permission for it. What changes is that the
-one condition on a merge, the gate having actually passed, cannot be met here.
+**Everything else is here, and the whole gate runs.** This section has now been
+wrong twice in opposite directions — first that none of the gate could run in the
+cloud, then that all but three Docker steps could. Both had one cause: the checks
+everybody used, `docker info` and `psql -l`, report a **stopped daemon** and an
+**absent program** identically, and this image ships Postgres 16 and Docker
+installed and neither running.
 
-So:
+```sh
+which psql && service postgresql status      # installed? and merely down?
+which dockerd && docker info                 # same question, same trap
+```
 
-1. Do the work on a branch and push it.
-2. Open the PR, and **say in the body that the gate has not been run here, and
-   why**. Never imply it passed.
-3. Say plainly that it needs a run on the owner's machine before it lands. That
-   is a report of a blocked step, not a request for permission — do not dress it
-   up as "shall I merge?", and do not merge it unverified either. `main` is
-   always deployable, and the gate is what makes that true.
+**Starting a cloud container**, which takes a couple of minutes:
 
-Check rather than assume: `test -f .env`, `docker info`, `psql -l`. If they are
-all there, you are on the owner's machine and the ordinary workflow applies —
-including merging without asking.
+```sh
+npm ci && npm run db:generate                # neither travels with the clone
+
+service postgresql start
+su postgres -c "psql -c \"ALTER USER postgres PASSWORD 'change-me';\""
+su postgres -c 'psql -c "CREATE DATABASE household_budget_dev;"'
+su postgres -c 'psql -c "CREATE DATABASE household_budget_test;"'
+
+dockerd >/tmp/dockerd.log 2>&1 &             # compose, tor and the image step need it
+npx playwright install chromium chromium-headless-shell   # the image ships a build behind the pin
+
+# A build container trusts nothing this sandbox terminates TLS with, so `apk
+# add` inside both Dockerfiles fails with "certificate verify failed" — which
+# apk then reports as `tor (no such package)`, naming the wrong problem. Give
+# the two base images the proxy's CA, locally and without touching either
+# Dockerfile, which must stay correct for the NAS and for the runner:
+printf 'ARG BASE\nFROM ${BASE}\nCOPY ca-bundle.crt /tmp/c\nRUN cat /tmp/c >> /etc/ssl/certs/ca-certificates.crt && rm /tmp/c\n' > /tmp/cabase/Dockerfile
+cp /root/.ccr/ca-bundle.crt /tmp/cabase/
+docker build --build-arg BASE=alpine:3.21    -t alpine:3.21    /tmp/cabase
+docker build --build-arg BASE=node:22-alpine -t node:22-alpine /tmp/cabase
+
+cp .env.example .env                         # then any 32+ character SESSION_SECRET
+set -a && . ./.env && set +a
+npm run db:deploy                            # and again with DATABASE_URL=$TEST_DATABASE_URL
+```
+
+Then **`npm run verify` runs unmodified and fifteen of its sixteen steps pass**,
+including all three suites, the compose parse, the tor image and the backup
+restore. Verified on 2026-09-15.
+
+**The sixteenth cannot run here, and the reason is worth knowing before you spend
+an afternoon on it.** `Dockerfile` opens with `# syntax=docker/dockerfile:1`,
+which hands the build to an external BuildKit frontend — and that frontend
+resolves `FROM node:22-alpine` **against the registry**, ignoring the local image
+store. So the CA trick above works for `tor/Dockerfile`, which has no syntax
+directive, and cannot work for the main image: there is no way to substitute a
+CA-patched base without editing the Dockerfile, and editing it to suit this
+sandbox would be editing the artefact the NAS runs. Proved by adding that one
+line to a two-line Dockerfile and watching it start failing.
+
+**What covers it instead.** The publish workflow builds this exact image on an
+x86_64 runner with no interception, which is also the image that actually ships —
+so a green workflow _is_ that step, run somewhere it can be. Watch the run and
+confirm the manifest and the signature before handing over a deploy line, which
+is the rule anyway. What a cloud session genuinely does not get is the local
+`/health` smoke test of the built container; `deploy.sh` waits on `/health` on
+the NAS, so it is covered again at the far end.
+
+**Say which of the sixteen ran.** "The gate passed" is wrong here, and so is "the
+gate cannot run" — the first has been said in a PR body and the second in this
+file.
+
+**Every one of those accommodations is to the environment, never to the
+repository.** Nothing above edits a Dockerfile, a config or a test to suit this
+container — the image the NAS runs and the image the runner publishes are built
+from exactly what is committed. A gate that only passes because the thing it
+checks was altered is not a gate.
+
+**Two workarounds that should not be reinvented.** There is no need for a
+`playwright.container.config.ts` pointing at a mismatched chromium — install the
+pinned build instead; that temporary config also fails `npm run lint`, which is
+how sessions kept rediscovering it and deleting it again. And the pipe trap has a
+second shape: `npm run verify | tail` was always wrong, and so is any command
+that merely _ends_ in a pipe to `grep`, which reported a red gate as green once
+in the session that wrote this. Redirect, then read `$?` on its own.
+
+**A red gate is still a red gate.** `main` is always deployable and the gate is
+what makes that true, whichever machine it ran on.
 
 ---
 
@@ -1755,7 +1819,26 @@ curl -s -o /dev/null -w '%{http_code}\n' \
 ```
 
 **Do not hand over a deploy line until that returns 200.** A tag is not a
-release. This has bitten twice — once a workflow that hung, once a
+release.
+
+Then verify the signature **the way `deploy.sh` will**, rather than by guessing a
+URL. An earlier version of this file said to fetch `sha256-<digest>.sig` over
+HTTP; that 404s on every release ever published here, because it is not how
+cosign stores a signature — a check that always fails is one nobody keeps
+running. Install cosign (`deploy.sh` prints the one-liner) and run the real
+thing, which works from a cloud session:
+
+```sh
+cosign verify \
+  --certificate-oidc-issuer 'https://token.actions.githubusercontent.com' \
+  --certificate-identity-regexp '^https://github\.com/aso42244/delegate/\.github/workflows/publish\.yml@refs/.+$' \
+  ghcr.io/aso42244/delegate:vX.Y.Z
+```
+
+**No signature at all is ordinary for a minute after the tag**: the workflow
+pushes the image and signs it as a separate step, so a version is pullable
+slightly before it is verifiable. `deploy.sh` tells that case apart from a
+signature belonging to somebody else, and so should you. This has bitten twice — once a workflow that hung, once a
 `workflow_dispatch` where `docker/metadata-action` read `github.ref`, matched no
 semver pattern, and pushed only `latest`. Both ended as `manifest unknown` on the
 owner's NAS, after he had been told it was ready.

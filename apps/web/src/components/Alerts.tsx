@@ -7,6 +7,7 @@ import { BalanceReading } from './BalanceReading.jsx';
 import { Modal } from './ui.jsx';
 import { Tag } from './Tag.jsx';
 import {
+  BACKLOG_KIND,
   byUrgency,
   loudest,
   SYNC_KINDS,
@@ -28,9 +29,11 @@ import {
  * title's own controls around as they came and went. The sidebar is on every
  * screen and is not competing with anything.
  *
- * **The bank feed's own are not here.** Everything in `SYNC_KINDS` is folded
- * into the Sync SimpleFIN button directly below this column — see
- * `notifications.ts`. What is left is the half the feed cannot answer for.
+ * **Two of them are not here, and both are buttons instead.** Everything in
+ * `SYNC_KINDS` is folded into the Sync SimpleFIN button, and the categorization
+ * backlog is a control of its own above Delegate (ADR 066) — see
+ * `notifications.ts` for the line each is on. What is left in this column is
+ * what it was always for: the conditions somebody reads and then decides about.
  *
  * **Except on a phone, where there is no sidebar.** Below `sm` the navigation is
  * a tab bar and the sidebar is not rendered at all, so a stack that lived only
@@ -69,13 +72,17 @@ export function Alerts({ inline = false }: { readonly inline?: boolean }): React
   const view = budget.data ?? null;
 
   /*
-   * A phone keeps every one of them, the feed's included.
+   * A phone keeps every one of them — the feed's and the backlog's included.
    *
-   * There is no Sync button below `sm` to fold them into, and an alert that is
-   * on screen on a laptop and nowhere at all on a phone is the exact failure
-   * this component's `inline` case exists to prevent.
+   * There is no sidebar below `sm`, so there is no Sync button to fold the feed
+   * into and no control zone to put the backlog's button in. An alert that is on
+   * screen on a laptop and nowhere at all on a phone is the exact failure this
+   * component's `inline` case exists to prevent, and it does not care which of
+   * the two folds took it away.
    */
-  const rows = byUrgency(inline ? all : all.filter((row) => !SYNC_KINDS.has(row.kind)));
+  const rows = byUrgency(
+    inline ? all : all.filter((row) => !SYNC_KINDS.has(row.kind) && row.kind !== BACKLOG_KIND),
+  );
 
   if (rows.length === 0 && view === null) return null;
 

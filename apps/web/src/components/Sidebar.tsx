@@ -9,8 +9,9 @@ import { ControlPopover } from './ControlPopover.jsx';
 import { describeSync, readSync } from './sync-status.js';
 import { DelegateControl } from './DelegateControl.jsx';
 import { Tag } from './Tag.jsx';
-import { Button, Modal } from './ui.jsx';
+import { Button, buttonFace, Modal } from './ui.jsx';
 import {
+  BACKLOG_KIND,
   byUrgency,
   loudest,
   SYNC_KINDS,
@@ -153,14 +154,23 @@ export type PageIcon =
 
 export const PAGES = [
   /*
-   * Overview first, Budget second.
+   * Overview first, and — since ADR 067 — the only one of the two.
    *
-   * Overview is the daily read and Budget is where the work happens — a quick
-   * review, then the full inspection. The order is the order somebody uses them
-   * in, which is also the owner's own description of what each is for.
+   * It was Overview then Budget: a quick review, then the full inspection. The
+   * owner's reading after a fortnight of ADR 065's dashboard is that the two had
+   * become duplicative, so **Budget is hidden from the navigation for a trial
+   * rather than deleted**. Nothing else about it changed: `/budget` is still
+   * routed, still rendered by `MainBudget`, and still where a landing
+   * preference of `budget` sends somebody.
+   *
+   * Putting it back is this line, and nothing else:
+   *
+   *   { to: '/budget', label: 'Budget', icon: 'budget', end: false },
+   *
+   * Both navigations read this list — the sidebar and `TabBar` — so one line
+   * decides both, which is why it is the only edit the trial needed.
    */
   { to: '/overview', label: 'Overview', icon: 'insights', end: false },
-  { to: '/budget', label: 'Budget', icon: 'budget', end: false },
   { to: '/transactions', label: 'Transactions', icon: 'transactions', end: false },
   /*
    * Beside Transactions rather than inside Settings.
@@ -187,6 +197,15 @@ export const PAGES = [
  * Only these: a link to a page whose figures are not invented is a link to an
  * empty screen, which looks like a fault rather than a boundary.
  */
+/*
+ * What a demo navigates to.
+ *
+ * `/budget` stays named here although `PAGES` no longer carries it, because this
+ * is a filter over that list: an entry naming a page that is not in it simply
+ * matches nothing. Keeping it means putting Budget back is one line up there
+ * rather than two in two places — and it records that the demo's exclusion of
+ * Budget is the trial's doing rather than a decision about the demo.
+ */
 const DEMO_PAGES = new Set(['/overview', '/budget']);
 
 function useCollapsed(): [boolean, (value: boolean) => void] {
@@ -207,6 +226,86 @@ function variantFor(tone: ReturnType<typeof loudest>): 'default' | 'warning' | '
   if (tone === 'danger') return 'danger';
   if (tone === 'warning') return 'warning';
   return 'default';
+}
+
+/**
+ * The categorization backlog, as a control rather than a tag.
+ *
+ * It was an `info` tag in the column above — "4 new transactions" — and a tag is
+ * the wrong object for it (ADR 066). Everything else in that column is a
+ * condition somebody reads and then decides about. This is a queue of work with
+ * exactly one thing anybody ever does about it, and it sits one press from the
+ * screen where ADR 065 made that doing possible.
+ *
+ * **Only when there is one.** Unlike the reading above it, which is always
+ * there and always coloured, this control does not exist on a morning with
+ * nothing waiting — which is what keeps `ui-system.md` §5's rule intact: a soft
+ * fill in this zone means a control is reporting a state, and an empty queue is
+ * not a state worth a button.
+ *
+ * **Blue, because it is not a fault.** A backlog is the ordinary consequence of
+ * a bank feed that works; `info` is the tone the notification already carried,
+ * and the same blue the reading takes when there is money to delegate. Yellow
+ * would say something had gone wrong.
+ *
+ * **It does not ask first**, because it does not act. The three that do —
+ * Delegate, Sync, Sign out — distribute a pay packet, roll one back, fetch the
+ * bank or end the session, and every one of them asks. This navigates, exactly
+ * as the reading above it does, and a confirmation on a link is a dialog in the
+ * way of nothing.
+ */
+function BacklogControl({ collapsed }: { readonly collapsed: boolean }): ReactNode {
+  const detailId = useId();
+  const notifications = useNotifications();
+
+  const backlog = (notifications.data?.notifications ?? []).find(
+    (row) => row.kind === BACKLOG_KIND,
+  );
+
+  if (backlog === undefined) return null;
+
+  return (
+    <div className="group relative">
+      <Link
+        to={backlog.actionPath}
+        aria-describedby={detailId}
+        /*
+         * Named by the count, which is what the tag said and what the end-to-end
+         * suite looks for. Kept off `role="status"` deliberately: the reading
+         * above is this zone's live region, and a second one 8px away would have
+         * a screen reader announcing two things on every sync.
+         */
+        aria-label={backlog.pill}
+        title={collapsed ? backlog.pill : undefined}
+        className={`${buttonFace('info')} w-full`}
+      >
+        {collapsed ? (
+          /*
+           * The register's own mark, in the rail.
+           *
+           * A drawn icon rather than a character, unlike Sync's `⟳` and Sign
+           * out's `⎋`: those name acts that have no page, and this one goes to a
+           * destination that is already in the icon set. Repeating the
+           * navigation's glyph is the point — blue, at the foot, it reads as
+           * "the register, with something waiting in it".
+           */
+          <Icon name="transactions" />
+        ) : (
+          // `truncate` for the same reason the reading truncates: the sidebar is
+          // as wide as its longest nav label, and the whole sentence is in the
+          // popover and the count is in the name either way.
+          <span className="min-w-0 truncate">{backlog.pill}</span>
+        )}
+      </Link>
+
+      {/* The sentence the tag's hover used to carry, in the shape this zone
+          says it in — including the age of the oldest, which is the half the
+          face has no room for and the half that says whether it is urgent. */}
+      <ControlPopover id={detailId}>
+        <span className="text-quiet text-ink">{backlog.message}</span>
+      </ControlPopover>
+    </div>
+  );
 }
 
 /**
@@ -563,30 +662,39 @@ export function Sidebar({ appName }: { appName: string }): ReactNode {
       <div className="mt-auto">{!collapsed && <Alerts />}</div>
 
       {/*
-        The control zone: one group of four, 8px apart, under one rule.
+        The control zone: one group, 8px apart, under one rule.
 
-        **The reading first, and it is the only one that is always coloured.**
-        Green, blue or red — where the budget stands — and a press goes to
-        Overview whatever it says. Everything under it is plain until hovered, or
-        until the bank feed has something to report, so the corner of the screen
-        answers one question at a glance and nothing competes for it.
+        **The reading first, and it is the only one that is always there and
+        always coloured.** Green, blue or red — where the budget stands — and a
+        press goes to Overview whatever it says.
+
+        **Then the backlog, when there is one** (ADR 066). Blue, because a queue
+        of new charges is the ordinary consequence of a working bank feed rather
+        than a fault, and a link rather than an act: it opens the queue. It was a
+        tag in the column above until ADR 066, which made the one notification
+        that is *work* look like the ones that are conditions.
 
         Then the two acts on the household, in the order they are reached for:
-        Delegate directly under the figure it acts on, then Sync. Neither is a
-        fact about the page underneath — the argument ADR 059 used to move the
-        alerts out of the page header.
+        Delegate, then Sync. Neither is a fact about the page underneath — the
+        argument ADR 059 used to move the alerts out of the page header.
 
         Then Sign out, which was in a block of its own under a second rule. It is
-        the fourth control in a set of four and it is drawn as one now (ADR 064):
-        a divider between a button and the button above it said there were two
-        groups where there is one.
+        drawn as one of the set now (ADR 064): a divider between a button and the
+        button above it said there were two groups where there is one.
 
-        **All four ask before they do anything**, because they are 8px apart and
+        **Everything here that acts asks first**, because they are 8px apart and
         they distribute a pay packet, roll one back, fetch the bank, and end the
-        session.
+        session. The two that only navigate — the reading and the backlog — do
+        not, and a confirmation on a link would be a dialog in the way of
+        nothing.
       */}
       <div className="flex flex-col gap-2 border-t border-line px-2 py-3">
         {budget.data && <BalanceButton view={budget.data} collapsed={collapsed} />}
+
+        {/* Only when the queue is not empty, so it does not compete with the
+            reading on a morning with nothing waiting. A demo never has one:
+            `useNotifications` does not run there. */}
+        <BacklogControl collapsed={collapsed} />
 
         <DelegateControl collapsed={collapsed} />
 

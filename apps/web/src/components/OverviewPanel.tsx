@@ -1,10 +1,8 @@
-import { formatCents } from '@budget/shared';
-import { useQuery } from '@tanstack/react-query';
 import { useState, type ReactNode } from 'react';
-import { accountsApi, type AccountDto } from '../api/accounts.js';
 import type { BudgetRowDto, BudgetViewDto } from '../api/budget.js';
 import type { OverviewDataDto } from '../api/overview.js';
 import { EmptyState, SegmentedControl } from './layout.jsx';
+import { AccountsTable } from './AccountsTable.jsx';
 import { DelegationsTable } from './DelegationsTable.jsx';
 import { PaceBar, paceSummary } from './PaceBar.jsx';
 import { Tile } from './Tile.jsx';
@@ -25,6 +23,12 @@ import { useIsDemo } from '../useDemo.js';
  * **Two tabs, not three.** Accounts and Debts were separate tabs over two short
  * lists that are read together — what there is, and what is owed against it — so
  * they are one tab with Accounts first.
+ *
+ * **Both tabs draw the Budget page's own table.** Delegations always did;
+ * Accounts & Debts drew a flat list of name and balance until ADR 068, which was
+ * the last thing that page could do and this one could not. Groupings, the row
+ * menu, moving an account and ordering the list all arrived with the component
+ * rather than being built a second time here.
  *
  * **Pinned.** It is not a tile: it cannot be dragged, removed, or dropped onto,
  * and nothing can be placed above or beside it. A dashboard whose first block is
@@ -137,7 +141,7 @@ export function OverviewPanel({
       {tab === 'delegations' ? (
         <DelegationsBand data={data} budget={budget} scope={scope} onChoose={onChoose} />
       ) : (
-        <BalancesBand filter={balanceFilter} />
+        <AccountsBand budget={budget} filter={balanceFilter} />
       )}
     </Tile>
   );
@@ -286,89 +290,31 @@ function ChooseLink({ onChoose }: { readonly onChoose: () => void }): ReactNode 
  * `in_budget` decides which accounts the identity sums, and ADR 050 made that a
  * wall rather than a description. This band is the budget's, so it stands on the
  * same side of it: a property and a retirement account are net worth, not money
- * this budget can allocate.
+ * this budget can allocate. Nothing here does that filtering — `/api/budget`
+ * already answers with the in-budget accounts and only those, which is why this
+ * reads the view the delegations tab is already holding rather than fetching
+ * every account and sieving them.
  *
  * Accounts first. It is the half somebody is usually asking about, and a debt
  * read before the money that covers it is the wrong order to be handed.
  */
-function BalancesBand({ filter }: { readonly filter: BalanceFilter }): ReactNode {
-  const accounts = useQuery({ queryKey: ['accounts'], queryFn: () => accountsApi.list() });
-
-  if (accounts.isPending) return null;
-
-  return (
-    <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
-      <BalanceList kind="accounts" filter={filter} rows={accounts.data?.accounts ?? []} />
-      <BalanceList kind="debts" filter={filter} rows={accounts.data?.accounts ?? []} />
-    </div>
-  );
-}
-
-function BalanceList({
-  kind,
+function AccountsBand({
+  budget,
   filter,
-  rows,
 }: {
-  readonly kind: 'accounts' | 'debts';
+  readonly budget: BudgetViewDto | undefined;
   readonly filter: BalanceFilter;
-  readonly rows: readonly AccountDto[];
 }): ReactNode {
-  const wanted = rows.filter(
-    (account) =>
-      account.archivedAt === null &&
-      account.inBudget &&
-      account.type === (kind === 'debts' ? 'debt' : 'asset') &&
-      /*
-       * An account sitting at zero is one nothing can be decided about, and a
-       * closed-but-not-archived card is the commonest of them — so they are out
-       * by default and one press away. Some cards genuinely have no balance some
-       * of the time, which is the case "All" exists for.
-       */
-      (filter === 'all' || BigInt(account.balanceCents) !== 0n),
-  );
-
-  // The total is every in-budget account of this kind, whichever are listed:
-  // hiding a zero changes nothing, and hiding a row must never change a sum.
-  const all = rows.filter(
-    (account) =>
-      account.archivedAt === null &&
-      account.inBudget &&
-      account.type === (kind === 'debts' ? 'debt' : 'asset'),
-  );
-  const total = all.reduce((sum, account) => sum + BigInt(account.balanceCents), 0n);
+  // The same wait the delegations tab makes. Drawing empty sections for a beat
+  // is worse than drawing nothing: the headings appear, then the rows push them
+  // down.
+  if (!budget) return null;
 
   return (
-    <section className="min-w-0">
-      <h3 className="flex items-baseline justify-between gap-2 border-b-2 border-ink pb-1">
-        <span className="text-section font-bold text-ink">
-          {kind === 'debts' ? 'Debts' : 'Accounts'}
-        </span>
-        <span className="money text-section font-bold text-ink">{formatCents(total)}</span>
-      </h3>
-
-      {wanted.length === 0 ? (
-        <p className="row-cell flex items-center text-quiet text-muted">
-          {filter === 'all' ? 'Nothing in the budget.' : 'Nothing with a balance.'}
-        </p>
-      ) : (
-        <ul className="list-none p-0">
-          {wanted.map((account) => (
-            <li
-              key={account.id}
-              className="row-cell flex items-center gap-2 border-b border-line last:border-b-0"
-            >
-              <span className="min-w-0 flex-1 truncate text-base text-ink">
-                {account.nickname ?? account.name}
-              </span>
-              {/* Cents here, unlike the dense rows above: this is a balance list,
-                  and a balance is read against a statement. */}
-              <span className="money shrink-0 text-base font-semibold text-ink">
-                {formatCents(BigInt(account.balanceCents))}
-              </span>
-            </li>
-          ))}
-        </ul>
-      )}
-    </section>
+    <AccountsTable
+      view={budget}
+      arrangement="side-by-side"
+      onlyWithBalance={filter === 'withBalance'}
+    />
   );
 }

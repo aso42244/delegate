@@ -826,6 +826,26 @@ absorb affordance uses. That button is **always visible**, unlike the absorb one
 — it is a standing state rather than an offer, and a state nobody can see until
 they hover the right row is one the banner would be pointing at in vain.
 
+## The mark
+
+A white **D** on `--color-accent`, in a rounded square — `apps/web/public/`.
+
+**An envelope was the obvious answer and is the wrong one.** Envelope budgeting
+is the defining idea here, but a white envelope on a blue badge is the mail icon,
+at 16px, in a tab strip that already contains one. Drawn and compared at 16, 20,
+32 and 64: an envelope with a coin on the corner reads as a notification badge, a
+coin dropping into an open envelope reads as a person's head, and three stacked
+envelopes read as a bar chart. The letter is the only one of the five that is
+unambiguous at the size it is actually seen.
+
+**It carries no household name**, and cannot. `APP_NAME` is what this is called
+on one NAS and it lives in `.env`; a mark generated per deployment would be the
+one part of the interface able to carry a family name into the repository.
+
+**The badge does the theming.** A solid accent field with a white letter holds
+against light and dark browser chrome alike, so there is no `prefers-color-scheme`
+inside the SVG to go stale.
+
 ## Every notification is a pill
 
 A sync that _succeeds_ while the feed complains about one institution raises a
@@ -859,10 +879,20 @@ A pill is a link, so on a touchscreen the press arrives before any hover could �
 which is the right trade: the page it lands on says in full what the tooltip
 would have.
 
-**The backlog pill opens the queue, not the register.** `?uncategorized=true` is
-on the link rather than in the page's defaults, because the two ways of arriving
-want different things: the sidebar means "the register" and the pill means "the
-ones I have not dealt with". A default cannot be both.
+**The backlog opens the queue, not the register.** `?uncategorized=true` is on
+the link rather than in the page's defaults, because the two ways of arriving
+want different things: the sidebar means "the register" and this means "the ones
+I have not dealt with". A default cannot be both.
+
+**And it is a button now, not a pill**
+([ADR 066](decisions/066-the-backlog-is-a-control-not-a-tag.md)). It sits in the
+control zone directly above Delegate, blue, on the days there is a backlog and
+not otherwise. The rest of this section still holds for every other
+notification — what separates this one is that it is not a condition to read and
+decide about but a queue of work with exactly one thing anybody does about it,
+and drawn as a pill it was the smallest object in the corner carrying the most
+actionable thing in it. On a phone, where there is no control zone, it is a pill
+like the rest.
 
 **Nothing can be put away.** Bars carried an X, and it was a snooze rather than a
 clear — away for a day, back afterwards if the condition still held — because a
@@ -885,8 +915,10 @@ The line is what the _import_ is responsible for, not what happens to be about a
 account. A categorization backlog, a cheque to confirm, an overdue bill, a line
 behind its target, a stale Bitcoin price, a failing backup — none of those is
 anything the bridge did, and burying them in a button about the bank would be
-hiding them rather than tidying them. They are still pills. So is the budget's
-own reading, which is the thing the household opens the application for.
+hiding them rather than tidying them. They are still pills — except the backlog,
+which became a control of its own in ADR 066, for a different reason to any of
+these. The budget's own reading is a control too, and is the thing the household
+opens the application for.
 
 **On a phone every one of them is a single coloured dot.** There is no sidebar
 below `sm` and so no Sync button to fold into, and the whole set has to reach the

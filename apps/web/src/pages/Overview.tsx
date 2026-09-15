@@ -2011,23 +2011,24 @@ export function Overview(): ReactNode {
   const tiles = useMemo(() => layout.data?.tiles ?? [], [layout.data]);
 
   /**
-   * The budget itself, for the Delegations tile and its picker.
+   * The budget itself, which the band is made of.
    *
    * The same query key the Budget page uses, so the two share one cache entry
    * and one answer — which is what makes "a 1:1 mirror" a property of the data
    * rather than a claim about two orderings.
    *
-   * Fetched only when a Delegations tile is actually on the page: this is the
-   * one tile whose data does not come from `/api/overview`, and asking for the
-   * whole budget on a page that does not show it would be the waste that
-   * endpoint exists to stop.
+   * **Unconditional, since ADR 068.** It used to be `enabled` only when a tile
+   * with the key `delegations` was in the stored layout, on the reasoning that
+   * this is the one tile whose data does not come from `/api/overview`. That
+   * reasoning outlived the thing it described: the band is pinned and always
+   * drawn, while its layout row is created lazily by the first selection — so a
+   * household that had never pressed "Select Delegations" had a band whose
+   * Delegations tab said "Loading the budget…" for ever. Nobody had hit it
+   * because the Accounts tab fetched accounts of its own and the delegations tab
+   * was usually chosen; both tabs read this view now, so the gap would have
+   * emptied the whole band.
    */
-  const wantsBudget = tiles.some((tile) => tile.key === 'delegations');
-  const budget = useQuery({
-    queryKey: ['budget'],
-    queryFn: () => budgetApi.view(),
-    enabled: wantsBudget || picking !== null,
-  });
+  const budget = useQuery({ queryKey: ['budget'], queryFn: () => budgetApi.view() });
 
   const save = useMutation({
     /*

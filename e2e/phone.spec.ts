@@ -457,7 +457,8 @@ test.describe('at 390px, on every screen', () => {
       // Waited for rather than slept on: the tables these check are drawn from
       // a query, and measuring an empty page proves nothing. The tab bar rather
       // than the heading — a settings sub-page shows a back link instead of one.
-      await expect(page.getByRole('link', { name: 'Budget' })).toBeVisible();
+      // Overview rather than Budget, which left the tab bar with ADR 067.
+      await expect(page.getByRole('link', { name: 'Overview', exact: true })).toBeVisible();
 
       const past = await page.evaluate(() => {
         const vw = document.documentElement.clientWidth;
@@ -494,7 +495,8 @@ test.describe('at 390px, on every screen', () => {
       // Waited for rather than slept on: the tables these check are drawn from
       // a query, and measuring an empty page proves nothing. The tab bar rather
       // than the heading — a settings sub-page shows a back link instead of one.
-      await expect(page.getByRole('link', { name: 'Budget' })).toBeVisible();
+      // Overview rather than Budget, which left the tab bar with ADR 067.
+      await expect(page.getByRole('link', { name: 'Overview', exact: true })).toBeVisible();
 
       const wrapped = await page.evaluate(() => {
         // Prose is allowed to wrap — an error message that truncates is worse

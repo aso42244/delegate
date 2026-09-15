@@ -69,10 +69,12 @@ export function loudest<T extends { readonly severity: PillTone }>(
  * button is the thing somebody presses about it. A column of five yellow tags
  * beside a yellow button was the same sentence said twice.
  *
- * **Only the feed's own.** A categorization backlog, a cheque waiting to be
- * confirmed, an overdue bill, a stalled backup — none of those is anything the
- * bridge did or failed to do, and burying them inside a button about the bank
- * would be hiding them. They stay tags.
+ * **Only the feed's own.** A cheque waiting to be confirmed, an overdue bill, a
+ * stalled backup — none of those is anything the bridge did or failed to do, and
+ * burying them inside a button about the bank would be hiding them. They stay
+ * tags. So did the categorization backlog until ADR 066, which moved it for the
+ * opposite reason: not that it belongs to the feed, but that it is work rather
+ * than a condition. See `BACKLOG_KIND` below.
  *
  * `stale_balances` is here because it is an account's figure going unconfirmed,
  * which is the same question the feed answers for every account it does report.
@@ -84,6 +86,28 @@ export const SYNC_KINDS: ReadonlySet<string> = new Set([
   'feed_not_reporting',
   'accounts_need_review',
 ]);
+
+/**
+ * The categorization backlog, which is a control rather than a tag.
+ *
+ * ADR 063 drew its line at what the bank feed is responsible for, put this on
+ * the other side of it, and said so explicitly: "they stay tags". That was right
+ * about the reason and wrong about the shape.
+ *
+ * Everything else left in that column is a **condition** — a bank that needs a
+ * fresh login, a cheque nobody has confirmed, a bill that did not arrive. You
+ * read it, and then you decide what to do about it. A backlog is not a
+ * condition. It is a queue of work, there is exactly one thing anybody ever does
+ * about it, and since ADR 065 the doing of it starts on the screen this sits on.
+ * So it belongs with the acts on the household rather than with the things being
+ * reported (ADR 066).
+ *
+ * **Only where there is a control zone to hold it.** A phone has no sidebar, so
+ * `Alerts inline` keeps it among the tags there — the same reason `SYNC_KINDS`
+ * are unfolded again on a phone, and the same failure being avoided: a thing on
+ * screen on a laptop and nowhere at all on a phone.
+ */
+export const BACKLOG_KIND = 'uncategorized_backlog';
 
 /**
  * Everything the application currently has to say.

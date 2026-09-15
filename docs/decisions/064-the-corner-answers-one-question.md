@@ -1,6 +1,6 @@
 # 064 — The corner of the screen answers one question
 
-**Status:** accepted, amended by [065](065-a-dashboard-you-can-work-from.md)
+**Status:** accepted, amended by [065](065-a-dashboard-you-can-work-from.md) and [066](066-the-backlog-is-a-control-not-a-tag.md)
 **Date:** 2026-09-11
 
 Amends [ADR 059](059-one-tag.md), which made the budget's reading the last tag in
@@ -38,8 +38,9 @@ several times a day, with a full page load behind it and no undo.
 ## Decision
 
 **One group of four, under one rule.** The reading, Delegate, Sync SimpleFIN,
-Sign out — 8px apart, all the same 28px face, all with the same `border-line`
-outline. The divider between Sign out and the button above it said there were two
+Sign out — joined by a fifth on the days there is a categorization backlog
+([ADR 066](066-the-backlog-is-a-control-not-a-tag.md)) — 8px apart, all the same
+28px face, all with the same `border-line` outline. The divider between Sign out and the button above it said there were two
 groups where there is one, and it is gone with the identity block above it.
 
 **The reading is the top of that group and the only thing in it that is always

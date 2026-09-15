@@ -4,6 +4,21 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Delegate</title>
+    <!--
+      The SVG is the icon; the PNG is for a browser that will not take one.
+      `alternate icon` rather than a second `icon`, so a browser that understands
+      both does not have to guess which was meant.
+
+      There is no app name in either. `APP_NAME` is a household's own word for
+      this and it stays in `.env` — a mark that had to be regenerated per
+      deployment would be the one thing in the interface that could carry a
+      family name into the repository.
+    -->
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="alternate icon" href="/favicon-32.png" sizes="32x32" type="image/png" />
+    <!-- Added to a home screen, iOS masks and rounds this itself, so the file is
+         square and full-bleed rather than carrying the corners twice. -->
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
   </head>
   <body>
     <div id="root"></div>

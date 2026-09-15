@@ -1,6 +1,6 @@
 # 063 — The bank feed reports in its own button
 
-**Status:** accepted, amended by [064](064-the-corner-answers-one-question.md) and [065](065-a-dashboard-you-can-work-from.md)
+**Status:** accepted, amended by [064](064-the-corner-answers-one-question.md), [065](065-a-dashboard-you-can-work-from.md) and [066](066-the-backlog-is-a-control-not-a-tag.md)
 **Date:** 2026-09-11
 
 Amends [ADR 059](059-one-tag.md), whose "every notification is a tag at the foot
@@ -61,8 +61,11 @@ account.** A categorization backlog, a cheque to confirm, a row to clear, an
 overdue bill, a line behind its target, a stale Bitcoin price, a failing backup,
 a stalled snapshot — none of those is anything the bridge did, and burying them
 inside a button about the bank would be hiding them rather than tidying them.
-They stay tags. So does the budget's own reading, which is the thing the
-household opens the application for.
+They stay tags. (The backlog left that list in
+[ADR 066](066-the-backlog-is-a-control-not-a-tag.md), for the opposite reason to
+the one this decision is about: not that it belongs to the feed, but that it is
+work rather than a condition.) So does the budget's own reading, which is the
+thing the household opens the application for.
 
 **The shell has no primary.** Delegate is `default`. What is coloured in the
 control zone is a button reporting a **state** — red on Undo Delegation while a
