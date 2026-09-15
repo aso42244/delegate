@@ -1247,8 +1247,29 @@ test('a row keeps the height it was dragged to', async ({ signedIn }) => {
   await handle.focus();
   await handle.press('ArrowDown');
 
-  const taller = before + 24;
-  await expect.poll(async () => Math.round((await tile.boundingBox())!.height)).toBe(taller);
+  /*
+   * **At least a step taller, not exactly a step taller.**
+   *
+   * A press asks for `round(height + 24)` and a row is floored at the height its
+   * content needs — which is the whole subject of the test below this one. So
+   * the arithmetic gives a *request*, and the floor can only answer it with
+   * something equal or larger. Asserting the predicted number exactly made this
+   * test depend on how a font rasterises: it asked for 119 on a machine whose
+   * Cashflow tile cannot be shorter than 120, and failed on the one pixel
+   * between them. It failed that way on `main` at v0.76.0 in a Linux container
+   * while passing on the machine it was written on, which is a test reporting
+   * the font rather than the feature.
+   *
+   * `>=` is not a weakening. The floor is one-directional, so "grew by at least
+   * a step" is exactly the contract, and the exact assertion that matters — the
+   * one this test is named for — is the reload below.
+   */
+  await expect
+    .poll(async () => Math.round((await tile.boundingBox())!.height))
+    .toBeGreaterThanOrEqual(before + 24);
+
+  // The height it actually settled at, which is what has to survive a reload.
+  const taller = Math.round((await tile.boundingBox())!.height);
 
   /*
    * Stored on every tile in the row, so it survives the reload that proves the

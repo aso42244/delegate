@@ -22,62 +22,56 @@ well as a local one.
 **What does not travel, because it is deliberately not in the repository:**
 
 - `.env` — git-ignored, and it holds the database URLs and `SESSION_SECRET`.
-  `.env.example` is committed and shows the shape, and a working local one can
-  be made from it in a second (see below).
-- The Postgres _databases_. `npm run verify` uses a real local
-  `household_budget_dev` and `household_budget_test`. The Postgres _server_ is a
-  different question — see below, because this document was wrong about it.
-- Docker, which the gate needs for the compose check, the tor check and the
-  container smoke test. This is the real limit.
+  `.env.example` is committed and shows the shape, and a working local one can be
+  made from it in a second (see below).
+- `node_modules` and the generated Prisma client.
+- The Postgres _databases_ and their contents.
 - The NAS. It is reachable only from the owner's machine, by password SSH.
 
-**Most of the gate does run in the cloud.** This section used to say flatly that
-none of it could, which sent sessions to the owner with untested branches for a
-year. On 2026-09-15 a container turned out to have PostgreSQL 16 installed and
-merely _stopped_, and once it was started everything but the three Docker steps
-ran green — unit, integration and end-to-end included.
-
-**Check, do not assume, and check the server rather than the databases:**
+**Everything else is here, and the whole gate runs.** This section has now been
+wrong twice in opposite directions — first that none of the gate could run in the
+cloud, then that all but three Docker steps could. Both had one cause: the checks
+everybody used, `docker info` and `psql -l`, report a **stopped daemon** and an
+**absent program** identically, and this image ships Postgres 16 and Docker
+installed and neither running.
 
 ```sh
-test -f .env && echo has-env
-docker info >/dev/null 2>&1 && echo has-docker
-which psql && service postgresql status     # installed? and is it merely down?
+which psql && service postgresql status      # installed? and merely down?
+which dockerd && docker info                 # same question, same trap
 ```
 
-`psql -l` failing proves nothing on its own: it is what a stopped cluster and an
-absent one both look like.
-
-**Bringing a cloud container up to run the suites**, which takes about a minute:
+**Starting a cloud container**, which takes a couple of minutes:
 
 ```sh
-npm ci                                       # node_modules does not travel
-npm run db:generate                          # nor does the generated Prisma client
+npm ci && npm run db:generate                # neither travels with the clone
+
 service postgresql start
 su postgres -c "psql -c \"ALTER USER postgres PASSWORD 'change-me';\""
 su postgres -c 'psql -c "CREATE DATABASE household_budget_dev;"'
 su postgres -c 'psql -c "CREATE DATABASE household_budget_test;"'
-cp .env.example .env                         # then set SESSION_SECRET to anything 32+ chars
+
+dockerd >/tmp/dockerd.log 2>&1 &             # compose, tor and the image step need it
+npx playwright install chromium chromium-headless-shell   # the image ships a build behind the pin
+
+cp .env.example .env                         # then any 32+ character SESSION_SECRET
 set -a && . ./.env && set +a
 npm run db:deploy                            # and again with DATABASE_URL=$TEST_DATABASE_URL
 ```
 
-Then run the gate's steps by hand, in `scripts/verify.sh`'s own order. **Skip
-exactly three, and say so**: the compose parse, `tor --verify-config`, and the
-container image build and smoke test. All three need Docker and nothing else
-does.
+Then **`npm run verify` runs unmodified, every step**, and it is the gate — so a
+cloud session merges on exactly the condition a local one does. Verified end to
+end on 2026-09-15: sixteen steps, no skips.
 
-**So what a cloud PR body must say is narrower than it used to be.** Not "the
-gate has not run here" — that is now usually a lie in the wrong direction. Say
-which steps ran and which three did not, and that `npm run verify` still needs
-one local run before it lands, because only that proves the whole thing in the
-order it is meant to run. Never imply the gate passed. That remains a report of
-a blocked step rather than a request for permission: do not dress it up as
-"shall I merge?", and do not merge it unverified either. `main` is always
-deployable, and the gate is what makes that true.
+**Two workarounds that should not be reinvented.** There is no need for a
+`playwright.container.config.ts` pointing at a mismatched chromium — install the
+pinned build instead; that temporary config also fails `npm run lint`, which is
+how sessions kept rediscovering it and deleting it again. And the pipe trap has a
+second shape: `npm run verify | tail` was always wrong, and so is any command
+that merely _ends_ in a pipe to `grep`, which reported a red gate as green once
+in the session that wrote this. Redirect, then read `$?` on its own.
 
-If `.env`, Docker and `psql -l` are _all_ there, you are on the owner's machine
-and the ordinary workflow applies — including merging without asking.
+**A red gate is still a red gate.** `main` is always deployable and the gate is
+what makes that true, whichever machine it ran on.
 
 ---
 
@@ -1787,7 +1781,26 @@ curl -s -o /dev/null -w '%{http_code}\n' \
 ```
 
 **Do not hand over a deploy line until that returns 200.** A tag is not a
-release. This has bitten twice — once a workflow that hung, once a
+release.
+
+Then verify the signature **the way `deploy.sh` will**, rather than by guessing a
+URL. An earlier version of this file said to fetch `sha256-<digest>.sig` over
+HTTP; that 404s on every release ever published here, because it is not how
+cosign stores a signature — a check that always fails is one nobody keeps
+running. Install cosign (`deploy.sh` prints the one-liner) and run the real
+thing, which works from a cloud session:
+
+```sh
+cosign verify \
+  --certificate-oidc-issuer 'https://token.actions.githubusercontent.com' \
+  --certificate-identity-regexp '^https://github\.com/aso42244/delegate/\.github/workflows/publish\.yml@refs/.+$' \
+  ghcr.io/aso42244/delegate:vX.Y.Z
+```
+
+**No signature at all is ordinary for a minute after the tag**: the workflow
+pushes the image and signs it as a separate step, so a version is pullable
+slightly before it is verifiable. `deploy.sh` tells that case apart from a
+signature belonging to somebody else, and so should you. This has bitten twice — once a workflow that hung, once a
 `workflow_dispatch` where `docker/metadata-action` read `github.ref`, matched no
 semver pattern, and pushed only `latest`. Both ended as `manifest unknown` on the
 owner's NAS, after he had been told it was ready.

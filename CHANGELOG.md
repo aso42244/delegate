@@ -22,6 +22,19 @@ phase (`v0.1.0-phase1`, and so on).
 
 ### Changed
 
+- **A test that reported the font rather than the feature.** `a row keeps the
+height it was dragged to` asserted an exact pixel height — the one a press
+  asks for — while a row is also floored at the height its content needs, which
+  is what the test beside it exists to protect. Where those two disagreed by a
+  pixel the test failed: 119 asked for, 120 given, on `main` at v0.76.0, on any
+  machine whose fonts rasterise a shade differently from the one it was written
+  on. It asserts what it is named for now — that the height survives a reload —
+  and that a press grows the row by at least a step, which is the contract a
+  one-directional floor actually has.
+
+  This is why the gate could never pass in a cloud container, and it was read as
+  an environmental quirk for weeks rather than as the brittle assertion it was.
+
 - **Overview's Accounts & Debts tab is the Budget page's own table**
   ([ADR 068](docs/decisions/068-one-accounts-table-on-both-screens.md)). It drew
   a flat list of name and balance, which was the whole of what the Budget page
@@ -86,7 +99,7 @@ phase (`v0.1.0-phase1`, and so on).
   never had room for — is in the panel beside it. A phone is unchanged: there is
   no control zone below `sm`, so it stays a tag in the alert sheet there.
 
-- **The handoff stops claiming a cloud session cannot test anything.** It said
+- **The handoff stops being wrong about what a cloud session can run.** It said
   the gate could not run there at all, which sent sessions to the owner with
   untested branches. In fact only three of its steps need Docker — the compose
   parse, the tor check and the container image — and a cloud container has had

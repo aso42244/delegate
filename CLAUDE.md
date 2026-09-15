@@ -65,19 +65,18 @@ the whole of it.
 
 ## Running in the cloud
 
-The docs travel with the clone; `.env`, `node_modules`, the Postgres databases,
-Docker and the NAS do not. **`npm run verify` cannot complete there — but most of
-it runs.** A cloud container has had PostgreSQL installed and merely stopped, and
-once it is started only the three Docker steps are out of reach: the compose
-parse, the tor check and the container image. `docs/handoff.md` § **If you are
-running in the cloud** has the minute of setup that gets the suites running.
+The docs travel with the clone; `.env`, `node_modules`, the Postgres databases
+and the NAS do not. **Everything needed to run the gate does.** This image ships
+Postgres and Docker installed and stopped, which `psql -l` and `docker info`
+report exactly as if they were absent — so check `which dockerd` and
+`service postgresql status`, not the daemons. Start them, install the pinned
+chromium, and `npm run verify` runs unmodified, every step. `docs/handoff.md`
+§ **If you are running in the cloud** has the two minutes of setup.
 
-So check rather than assume — `test -f .env`, `docker info`, `which psql` **and**
-`service postgresql status`, because a stopped cluster and an absent one look
-identical from `psql -l`. Then run every step you can and **name the ones you
-could not** in the PR body; never imply the gate passed, and say it needs one
-local run before it lands. Merging is still yours and still never needs
-permission — the gate having passed is the one condition on it.
+So a cloud session is under the same rule as a local one: the gate must actually
+pass before a merge, and merging never needs permission. Never imply it passed
+when it did not, and never read an exit code through a pipe — not `| tail`, and
+not a command that ends in `| grep`.
 
 ## Knowing where things stand
 
