@@ -334,6 +334,50 @@ test('the folded panel opens to the right, covering nothing in the sidebar', asy
     panelBox.x < delegateBox.x + delegateBox.width;
   expect(overlapsDelegate).toBe(false);
 
-  // Aligned to the control it belongs to rather than to a corner.
-  expect(Math.abs(panelBox.y - syncBox.y)).toBeLessThanOrEqual(2);
+  /*
+   * Aligned to the control's **bottom**, rather than its top.
+   *
+   * It was aligned to the top and grew downward, and this zone is pinned to the
+   * foot of the window — so a panel with a sentence in it hung past the bottom
+   * of the screen, which is where the owner found it. Growing upward is the
+   * direction with room in it.
+   */
+  expect(Math.abs(panelBox.y + panelBox.height - (syncBox.y + syncBox.height))).toBeLessThanOrEqual(
+    2,
+  );
+});
+
+/**
+ * The half the alignment above exists for, asserted as the thing rather than as
+ * a proxy for it.
+ *
+ * A panel one sentence long, on a control three from the bottom of the window,
+ * ran off the bottom of the screen with the bank's name on the cut-off line.
+ * Nothing about that is visible to a test that only checks which side of the
+ * control it is on, which is why the previous test passed throughout.
+ */
+test('a control panel stays inside the window, wherever its control sits', async ({ signedIn }) => {
+  await makeSyncWarning(WARNING);
+  await signedIn.reload();
+
+  const viewport = signedIn.viewportSize()!;
+  const nav = signedIn.getByRole('navigation', { name: 'Main' });
+
+  // Every control in the zone that has something to say, including the lowest —
+  // the one with the least room beneath it.
+  for (const control of [
+    nav.getByRole('button', { name: /Sync SimpleFIN/ }),
+    nav.getByRole('link', { name: /Balanced|To delegate|Over-delegated/ }),
+  ]) {
+    await control.hover();
+    const panel = signedIn.getByRole('tooltip');
+    await expect(panel).toBeVisible();
+
+    const box = (await panel.boundingBox())!;
+    expect(box.y, 'panel runs off the top').toBeGreaterThanOrEqual(0);
+    expect(box.y + box.height, 'panel runs off the bottom').toBeLessThanOrEqual(viewport.height);
+
+    // Away again, so the next hover is measured on its own panel.
+    await nav.getByRole('button', { name: 'Sign out' }).hover();
+  }
 });

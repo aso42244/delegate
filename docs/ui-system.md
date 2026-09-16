@@ -823,12 +823,13 @@ zone.
 and "Last sync failed" was a line saying what the button's own colour says. The
 button carries its state, and now the bank feed's whole list with it (§5, §9).
 
-**`ControlPopover` is what a control in this zone says.** Sync's folded alerts
-and the reading's arithmetic are one object: a panel hanging **to the right of**
-its control, aligned to the control's own top, `w-96` because these are
-sentences, with the 4px offset as padding on the wrapper rather than a margin on
-the card — a bare gap is a dead strip that drops `:hover` on the way into a panel
-whose links have to be reachable.
+**`ControlPopover` is what a control in this zone says.** Sync's folded alerts,
+the backlog's age and the reading's arithmetic are one object: a panel hanging
+**to the right of** its control, aligned to the control's own **bottom** and
+growing upward, `w-96` because these are sentences, with the 4px offset as
+padding on the wrapper rather than a margin on the card — a bare gap is a dead
+strip that drops `:hover` on the way into a panel whose links have to be
+reachable.
 
 **Beside, never above.** It opened upwards until v0.76.0 and covered the button
 above it — Sync's panel across Delegate, the reading's across the alerts. A panel
@@ -836,6 +837,20 @@ that hides a control somebody might have been reaching for is worse than one tha
 hides nothing, and the whole page to the right of that column is free. It is
 placed by the control's position rather than the pointer's: a panel that follows
 the mouse is a panel whose links move while you aim at them.
+
+**And upward, because this zone has no room below it.** Aligning to the control's
+top was the other half of the v0.76.0 fix and it was wrong for the same kind of
+reason, one edge along: the zone is pinned to the foot of the window, so a panel
+growing downward from a control in it hangs off the bottom of the screen. Sync's
+did, with one condition in it and the bank's name on the cut line.
+
+This **flips** where §9's tag **clamps**, and the difference is the thing each
+knows about itself. A tag sits anywhere along a wrapping row, so flipping it off
+one edge is the same bug mirrored and it has to be nudged back instead. A control
+in this zone is always near the bottom, so there is one right direction rather
+than two. The panel is then **capped at the room it measured**, from the control
+rather than from a `vh` fraction — unbounded, it would run off the top instead,
+which is the same defect facing the other way.
 
 **Below `sm` there is no sidebar**, so Delegate and the reading fall back to
 `PageHeader` — the same rule and the same reason as the alerts (§9); the reading
