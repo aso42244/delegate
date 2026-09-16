@@ -8,6 +8,14 @@ phase (`v0.1.0-phase1`, and so on).
 
 ### Fixed
 
+- **A test that failed one morning in fourteen.** `stops the pace lines at today`
+  anchored the pay cycle to a fixed far-future date, so where today sat inside
+  the cycle drifted by a day every day — and the pace points run to the day
+  _before_ the next payday, so on a cycle's last day there is nothing after
+  today left to be unobserved. It anchored three days out now, which holds today
+  at day eleven of fourteen whenever it runs. Found by the gate on the one
+  morning it was due.
+
 - **A control's panel opened downward off the bottom of the screen.** The panel
   beside Sync SimpleFIN, the backlog and the budget's reading was aligned to its
   control's top and grew down — and that zone is pinned to the foot of the
