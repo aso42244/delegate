@@ -6,6 +6,10 @@ phase (`v0.1.0-phase1`, and so on).
 
 ## [Unreleased]
 
+Nothing yet.
+
+## [0.77.1] — 2026-09-18
+
 ### Fixed
 
 - **The undo offer is on the button's hover, not under it.** "Delegated
