@@ -219,12 +219,22 @@ test('Delegate previews, distributes, and can be undone', async ({ signedIn, api
     .getByRole('button', { name: 'Undo Delegation' });
   await expect(undo).toBeVisible();
 
-  // What was delegated, and that undoing rolls the cycle back with it. The
-  // cycle *date* is no longer here: it is a fact about the budget's settings
+  // The cycle *date* is no longer here: it is a fact about the budget's settings
   // rather than something to act on, and it lives with them now.
   await expect(signedIn.getByText(/This cycle began/)).toHaveCount(0);
-  await expect(signedIn.getByText(/Delegated \$300\.00 across 2 lines/)).toBeVisible();
-  await expect(signedIn.getByText(/Undo rolls the cycle back too/)).toBeVisible();
+
+  /*
+   * What was delegated, on the button's own hover rather than under it.
+   *
+   * It was a paragraph in the column — the last caption this zone had, and one
+   * that appeared and vanished with the undo window, moving every button below
+   * it twice a fortnight. Hovering is how the other three controls here say
+   * what they have to say.
+   */
+  await undo.hover();
+  const offer = signedIn.getByRole('tooltip');
+  await expect(offer).toContainText('Delegated $300.00 across 2 lines');
+  await expect(offer).toContainText('Undo rolls the cycle back too');
 
   /*
    * Undoing asks first now. It fired on the press until this release, which was

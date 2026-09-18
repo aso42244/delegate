@@ -819,16 +819,26 @@ session and everything typed into it with nothing to come back to.
 of nothing, and the rule above is about acting rather than about living in this
 zone.
 
-**There is no caption under Sync.** "Synced 12m ago" was a figure nobody acts on
-and "Last sync failed" was a line saying what the button's own colour says. The
-button carries its state, and now the bank feed's whole list with it (§5, §9).
+**Nothing in this zone has a caption under it.** Sync's went first — "Synced 12m
+ago" was a figure nobody acts on and "Last sync failed" said what the button's
+own colour already says — and Undo Delegation's went last: a paragraph naming
+what a run distributed, which appeared and vanished with the undo window and so
+moved every button below it twice a fortnight. A control here carries what it
+has to say, on itself and in its panel (§5, §9).
 
-**`ControlPopover` is what a control in this zone says.** Sync's folded alerts
-and the reading's arithmetic are one object: a panel hanging **to the right of**
-its control, aligned to the control's own top, `w-96` because these are
-sentences, with the 4px offset as padding on the wrapper rather than a margin on
-the card — a bare gap is a dead strip that drops `:hover` on the way into a panel
-whose links have to be reachable.
+**A sentence in this column costs the controls around it**, which is the general
+form of that. The zone is pinned to the foot of the window with the page's
+navigation above it, so prose added here does not take space from the margin —
+it takes it from the things somebody came to press.
+
+**`ControlPopover` is what a control in this zone says.** Sync's folded alerts,
+the backlog's age, the undo offer's figures and the reading's arithmetic are one
+object: a panel hanging
+**to the right of** its control, aligned to the control's own **bottom** and
+growing upward, `w-96` because these are sentences, with the 4px offset as
+padding on the wrapper rather than a margin on the card — a bare gap is a dead
+strip that drops `:hover` on the way into a panel whose links have to be
+reachable.
 
 **Beside, never above.** It opened upwards until v0.76.0 and covered the button
 above it — Sync's panel across Delegate, the reading's across the alerts. A panel
@@ -836,6 +846,20 @@ that hides a control somebody might have been reaching for is worse than one tha
 hides nothing, and the whole page to the right of that column is free. It is
 placed by the control's position rather than the pointer's: a panel that follows
 the mouse is a panel whose links move while you aim at them.
+
+**And upward, because this zone has no room below it.** Aligning to the control's
+top was the other half of the v0.76.0 fix and it was wrong for the same kind of
+reason, one edge along: the zone is pinned to the foot of the window, so a panel
+growing downward from a control in it hangs off the bottom of the screen. Sync's
+did, with one condition in it and the bank's name on the cut line.
+
+This **flips** where §9's tag **clamps**, and the difference is the thing each
+knows about itself. A tag sits anywhere along a wrapping row, so flipping it off
+one edge is the same bug mirrored and it has to be nudged back instead. A control
+in this zone is always near the bottom, so there is one right direction rather
+than two. The panel is then **capped at the room it measured**, from the control
+rather than from a `vh` fraction — unbounded, it would run off the top instead,
+which is the same defect facing the other way.
 
 **Below `sm` there is no sidebar**, so Delegate and the reading fall back to
 `PageHeader` — the same rule and the same reason as the alerts (§9); the reading

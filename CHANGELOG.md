@@ -6,7 +6,41 @@ phase (`v0.1.0-phase1`, and so on).
 
 ## [Unreleased]
 
-Nothing yet.
+### Fixed
+
+- **The undo offer is on the button's hover, not under it.** "Delegated
+  $4,914.70 across 49 lines. Undo rolls the cycle back too." was a paragraph
+  wedged between Undo Delegation and Sync SimpleFIN — the last caption left in
+  that column, and one that appeared and disappeared with the undo window, so it
+  shifted every button below it twice a fortnight.
+
+  It is a hover panel now, the same one Sync, the backlog and the reading
+  already use. A phone is unchanged: there is no hover to open a panel with, so
+  the sentence stays on the button itself, and the confirmation dialog states it
+  in full either way.
+
+- **A test that failed one morning in fourteen.** `stops the pace lines at today`
+  anchored the pay cycle to a fixed far-future date, so where today sat inside
+  the cycle drifted by a day every day — and the pace points run to the day
+  _before_ the next payday, so on a cycle's last day there is nothing after
+  today left to be unobserved. It anchored three days out now, which holds today
+  at day eleven of fourteen whenever it runs. Found by the gate on the one
+  morning it was due.
+
+- **A control's panel opened downward off the bottom of the screen.** The panel
+  beside Sync SimpleFIN, the backlog and the budget's reading was aligned to its
+  control's top and grew down — and that zone is pinned to the foot of the
+  window, so there is almost nothing below a control in it and almost the whole
+  window above. One bank condition was enough to push the sentence naming the
+  bank past the bottom edge.
+
+  It grows upward from the control's bottom now, and is capped at the room it
+  measures rather than at a guessed fraction of the window — unbounded it would
+  have run off the top instead, which is the same defect facing the other way.
+
+  This flips where a tag's detail clamps, and the asymmetry is the point: a tag
+  can sit anywhere along a row, while a control in this zone is always near the
+  bottom, so it has one right direction rather than two.
 
 ## [0.77.0] — 2026-09-15
 

@@ -1173,6 +1173,19 @@ describe('the panel', () => {
 });
 
 describe('the cycle-shaped tiles', () => {
+  /**
+   * A day key this many days from today, in UTC.
+   *
+   * UTC because these tests run with `SCHEDULE_TIMEZONE` unset, which the domain
+   * reads as UTC — the same zone `localDayKey` will place "today" in when the
+   * request is served. A helper that disagreed with the server about which day
+   * it is would reintroduce the fault it exists to remove.
+   */
+  function dayKeyIn(days: number): string {
+    const at = new Date(Date.now() + days * 24 * 60 * 60 * 1000);
+    return at.toISOString().slice(0, 10);
+  }
+
   async function anchorPayday(on: string): Promise<void> {
     await app.inject({
       method: 'PATCH',
@@ -1239,7 +1252,22 @@ describe('the cycle-shaped tiles', () => {
   });
 
   it('stops the pace lines at today rather than carrying them flat', async () => {
-    await anchorPayday('2099-01-15');
+    /*
+     * The anchor is relative to today, not a fixed far-future date.
+     *
+     * Every cycle boundary is generated from this one, so a constant anchor puts
+     * today at a different point in the cycle on every day of the year — and the
+     * points run from the cycle's start to the day *before* the next payday. On
+     * the last day of a cycle there is therefore nothing after today left to be
+     * unobserved, and this assertion is false through no fault of the code.
+     *
+     * It failed exactly that way on 2026-09-16 with `2099-01-15`: one day in
+     * fourteen, sitting there until somebody ran the gate on the wrong morning.
+     *
+     * Three days out keeps today at day eleven of fourteen whenever this runs,
+     * so there is always a stretch on each side of it.
+     */
+    await anchorPayday(dayKeyIn(3));
     await putLayout(rowed(['income_vs_spending_pace']));
 
     const points = (await get('/api/overview')).json<DataBody>().income_vs_spending_pace ?? [];

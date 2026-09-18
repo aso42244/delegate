@@ -1,8 +1,9 @@
 import { formatCents } from '@budget/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useId, useState, type ReactNode } from 'react';
 import { budgetApi } from '../api/budget.js';
 import { ApiError } from '../api/client.js';
+import { ControlPopover } from './ControlPopover.jsx';
 import { Alert, Button, Modal } from './ui.jsx';
 
 /**
@@ -39,6 +40,7 @@ export function DelegateControl({
   readonly collapsed?: boolean;
 }): ReactNode {
   const queryClient = useQueryClient();
+  const detailId = useId();
   const [dialog, setDialog] = useState<'none' | 'delegate' | 'undo'>('none');
   const [problem, setProblem] = useState<string | null>(null);
 
@@ -76,7 +78,7 @@ export function DelegateControl({
     return () => clearTimeout(timer);
   }, [undoRunId, undo.data?.expiresAt, queryClient]);
 
-  /** What was delegated, for the caption and for the rail's tooltip. */
+  /** What was delegated, for the panel and for the phone's tooltip. */
   const offer =
     undoRunId === null
       ? null
@@ -89,15 +91,49 @@ export function DelegateControl({
   return (
     <>
       {undoRunId !== null ? (
-        <Button
-          variant="danger"
-          className={width}
-          onClick={() => setDialog('undo')}
-          title={collapsed ? `Undo Delegation. ${offer ?? ''}`.trim() : (offer ?? undefined)}
-          aria-label={collapsed ? 'Undo Delegation' : undefined}
-        >
-          {collapsed ? '↺' : 'Undo Delegation'}
-        </Button>
+        /*
+         * The offer is on the button's own hover, not under it.
+         *
+         * It was a paragraph in the column, which is the last caption this zone
+         * had — Sync's went in ADR 063 for the reason that applies here too: a
+         * control in this zone carries what it has to say, and floor space spent
+         * on a sentence is floor space taken from the controls around it. This
+         * one also appears and disappears with the undo window, so it moved
+         * every button below it twice a fortnight.
+         *
+         * `ControlPopover`, like the other three, rather than a native `title`:
+         * the two would open on the same hover with the tooltip on top, saying
+         * less (ADR 063 again). The rail keeps a `title` because a glyph is all
+         * the name it has there.
+         */
+        <div className={`group relative ${width}`}>
+          <Button
+            variant="danger"
+            className={width}
+            onClick={() => setDialog('undo')}
+            /*
+             * Three cases, and only one of them is a tooltip worth having. The
+             * rail has a glyph, so the `title` is the control's name. A phone
+             * has no hover to open the panel with, so it keeps the sentence the
+             * way it always did. The expanded sidebar has the panel, and a
+             * native tooltip there would open on the same hover, on top of it,
+             * saying less.
+             */
+            title={collapsed ? 'Undo Delegation' : inline ? (offer ?? undefined) : undefined}
+            aria-label={collapsed ? 'Undo Delegation' : undefined}
+            {...(offer === null || inline ? {} : { 'aria-describedby': detailId })}
+          >
+            {collapsed ? '↺' : 'Undo Delegation'}
+          </Button>
+
+          {/* Not on a phone: there is no hover to open it with, and the button
+              carries the sentence on its own `title` there instead. */}
+          {!inline && offer !== null && (
+            <ControlPopover id={detailId}>
+              <span className="text-quiet text-ink">{offer}</span>
+            </ControlPopover>
+          )}
+        </div>
       ) : (
         <Button
           /*
@@ -123,25 +159,6 @@ export function DelegateControl({
         >
           {collapsed ? '⇊' : 'Delegate'}
         </Button>
-      )}
-
-      {/*
-        What was delegated, while it can still be taken back.
-
-        It was the Budget page's subtitle. It belongs with the button rather than
-        with a page, and it is transient — the only sign a press can still be
-        undone, and gone the moment the window closes. The rail and the phone
-        carry it on the button's own tooltip instead, where there is no room.
-      */}
-      {!inline && !collapsed && offer !== null && (
-        /*
-         * Capped and wrapping, like everything else of uncontrolled length in
-         * here (`ui-system.md` §12). The sidebar is `w-fit`, so an uncapped
-         * sentence would set its width — and tall rather than wide is the
-         * owner's stated preference, which is the same trade the alert detail
-         * makes.
-         */
-        <p className="max-w-sidebar-cap px-1 text-label text-muted">{offer}</p>
       )}
 
       {problem !== null && dialog === 'none' && (
