@@ -8,6 +8,17 @@ phase (`v0.1.0-phase1`, and so on).
 
 ### Fixed
 
+- **The undo offer is on the button's hover, not under it.** "Delegated
+  $4,914.70 across 49 lines. Undo rolls the cycle back too." was a paragraph
+  wedged between Undo Delegation and Sync SimpleFIN — the last caption left in
+  that column, and one that appeared and disappeared with the undo window, so it
+  shifted every button below it twice a fortnight.
+
+  It is a hover panel now, the same one Sync, the backlog and the reading
+  already use. A phone is unchanged: there is no hover to open a panel with, so
+  the sentence stays on the button itself, and the confirmation dialog states it
+  in full either way.
+
 - **A test that failed one morning in fourteen.** `stops the pace lines at today`
   anchored the pay cycle to a fixed far-future date, so where today sat inside
   the cycle drifted by a day every day — and the pace points run to the day

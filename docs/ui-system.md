@@ -819,12 +819,21 @@ session and everything typed into it with nothing to come back to.
 of nothing, and the rule above is about acting rather than about living in this
 zone.
 
-**There is no caption under Sync.** "Synced 12m ago" was a figure nobody acts on
-and "Last sync failed" was a line saying what the button's own colour says. The
-button carries its state, and now the bank feed's whole list with it (§5, §9).
+**Nothing in this zone has a caption under it.** Sync's went first — "Synced 12m
+ago" was a figure nobody acts on and "Last sync failed" said what the button's
+own colour already says — and Undo Delegation's went last: a paragraph naming
+what a run distributed, which appeared and vanished with the undo window and so
+moved every button below it twice a fortnight. A control here carries what it
+has to say, on itself and in its panel (§5, §9).
+
+**A sentence in this column costs the controls around it**, which is the general
+form of that. The zone is pinned to the foot of the window with the page's
+navigation above it, so prose added here does not take space from the margin —
+it takes it from the things somebody came to press.
 
 **`ControlPopover` is what a control in this zone says.** Sync's folded alerts,
-the backlog's age and the reading's arithmetic are one object: a panel hanging
+the backlog's age, the undo offer's figures and the reading's arithmetic are one
+object: a panel hanging
 **to the right of** its control, aligned to the control's own **bottom** and
 growing upward, `w-96` because these are sentences, with the 4px offset as
 padding on the wrapper rather than a margin on the card — a bare gap is a dead
