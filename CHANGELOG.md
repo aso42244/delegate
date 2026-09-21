@@ -19,6 +19,11 @@ phase (`v0.1.0-phase1`, and so on).
   longer required. The job's token gains `contents: write` for the tag and
   nothing else.
 
+  The documentation no longer routes anything through the owner's Mac: where
+  things stand is read from any clone, the source-route deploy fetches GitHub's
+  archive on the NAS itself in one line, and `deploy.sh --build` says so when it
+  finds no source.
+
 ## [0.78.0] — 2026-09-21
 
 ### Added

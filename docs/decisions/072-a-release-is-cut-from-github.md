@@ -67,3 +67,7 @@ number on code nobody reviewed, and the check costs one `git merge-base`.
   already running that commit.
 - The handoff and `CLAUDE.md` describe the dispatch as the ordinary step and
   the tag push as the alternative, in that order.
+- **The source route needs no other machine either.** The repository is public,
+  so the NAS fetches GitHub's archive of a commit and builds it natively in one
+  line; the handoff carries that line and `deploy.sh --build` points at it. The
+  `git archive` plus `scp` route from a Mac is gone from the documentation.

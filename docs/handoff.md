@@ -138,13 +138,15 @@ touches them.
 number in it** — this section exists because the paragraph below it spent ten
 releases insisting the NAS was on `v0.58.0`.
 
+In any clone — a cloud session is the ordinary one — after
+`git fetch --tags origin main`:
+
 ```sh
-cd ~/Documents/Claude/Projects/delegate
 git status -sb                                  # clean tree? in sync with origin?
-git log --oneline -10                           # the newest `chore: cut vX.Y.Z` is the release
+git log --oneline -10 origin/main               # the newest `chore: cut vX.Y.Z` is the release
 git tag --sort=-v:refname | head -5             # what has actually been cut
 sed -n '/## \[Unreleased\]/,/^## \[0/p' CHANGELOG.md   # merged but not yet released
-gh pr list --state open                         # anything left mid-flight
+gh pr list --state open                         # anything left mid-flight (or the GitHub tools)
 ```
 
 How to read the answers:
@@ -226,8 +228,11 @@ That reading sits at the top of the Budget page. It is **not** enforced by
 double-entry bookkeeping — it is a health indicator, and a positive number is the
 "available to delegate" figure on payday rather than a fault.
 
-- **Repository:** `github.com/aso42244/delegate` (private)
-- **Local path:** `~/Documents/Claude/Projects/delegate`
+- **Repository:** `github.com/aso42244/delegate` (public)
+- **Where the work happens:** any clone. A cloud session is the ordinary one,
+  and since [ADR 072](decisions/072-a-release-is-cut-from-github.md) nothing in
+  building, releasing or deploying depends on a particular machine — the owner's
+  Mac is no longer part of any workflow.
 - **Owner's GitHub:** `aso42244`
 
 ---
@@ -1517,34 +1522,31 @@ completed** — not until the tag resolves, until the run is green. Check with:
 gh run list --workflow publish.yml --limit 1
 ```
 
-**The source route still works** and is what every deploy before `v0.41.0` used.
-Keep it for an unreleased commit, or when the registry is not reachable. Two
-commands.
-
-On the Mac:
-
-```sh
-cd ~/Documents/Claude/Projects/delegate && git checkout main && git pull \
-  && git archive --format=tar.gz -o delegate-<tag>.tar.gz <tag> \
-  && scp -O delegate-<tag>.tar.gz grub@10.0.3.4:/volume1/docker/delegate/
-```
-
-Then on the NAS:
+**The source route needs no other machine.** The repository is public, so the
+NAS fetches the source itself from GitHub and builds it natively — nothing is
+pulled from a registry, nothing is signed, and no tag is needed. Keep it for an
+unreleased commit, for a day the registry is unreachable, or for a release whose
+image has not been published yet; v0.78.0 went out this way on 2026-09-21. Still
+one line, on the NAS, with the commit sha (or a tag) in the URL:
 
 ```sh
-cd /volume1/docker/delegate && sudo ./scripts/deploy.sh --unpack delegate-<tag>.tar.gz --build
+cd /volume1/docker/delegate && curl -fsSL -o delegate-src.tar.gz https://github.com/aso42244/delegate/archive/<sha-or-tag>.tar.gz && sudo sh -c 'set -e; rm -rf delegate-src; mkdir delegate-src; tar xzf delegate-src.tar.gz -C delegate-src; src=$(ls -d delegate-src/*); for e in $(ls -A "$src"); do case "$e" in .env|backups|tls) echo "refusing $e"; exit 1;; esac; rm -rf "./$e"; done; cp -a "$src"/. .; rm -rf delegate-src' && sudo ./scripts/deploy.sh --build
 ```
 
-`--unpack` removes what the tarball owns before extracting. Plain `tar xzf` only
-ever adds, so a source file deleted between two releases survives the upgrade and
-gets compiled — which is exactly how v0.4.0 failed to build on the NAS. It
-refuses outright if a tarball ever claims `.env`, `backups` or `tls`.
+The `sh -c` does by hand what `--unpack` does for a `git archive` tarball,
+because GitHub's archive carries a top-level folder that `--unpack` does not
+expect: it removes what the tarball owns before copying it in — plain `tar xzf`
+only ever adds, so a source file deleted between two releases would survive the
+upgrade and get compiled, which is exactly how v0.4.0 failed to build — and it
+refuses outright if the archive ever claims `.env`, `backups` or `tls`. Expect
+the build to take about fifteen minutes on the DS220+. `--unpack` still takes a
+`git archive` tarball if one is ever put in that directory.
 
-Things that have cost time and are worth knowing: `scp` to DSM needs `-O`;
-Synology's Docker will not create a missing bind-mount source, so `deploy.sh`
-makes them **and chowns the backup directory to uid 1000**, which the container
-runs as; and the `tor` service builds from source, so the first deploy after it
-landed takes noticeably longer.
+Things that have cost time and are worth knowing: Synology's Docker will not
+create a missing bind-mount source, so `deploy.sh` makes them **and chowns the
+backup directory to uid 1000**, which the container runs as; and the `tor`
+service builds from source, so the first deploy after it landed takes noticeably
+longer.
 
 A successful deploy now ends with `Backups: the container can write to the backup
 directory.` If it instead prints a warning, the nightly dump will fail silently
@@ -1590,10 +1592,21 @@ are not negotiable by a request, whoever wrote it.
 
 ## The environment
 
+**The gate runs wherever the clone is, and a cloud session is the ordinary
+place now** — see **If you are running in the cloud** at the top of this file.
+The owner's Mac ran every gate until 2026-09-21 and is no longer part of any
+workflow ([ADR 072](decisions/072-a-release-is-cut-from-github.md)). The notes
+below describe that machine and are kept because the lessons in them — a wedged
+Docker VM that looks like flaky tests, an orphaned server against the test
+database, the pipe trap — are about the gate rather than the machine, and every
+one of them will recur somewhere else.
+
 - macOS, Apple Silicon. Node 25 locally; the image pins Node 22.
 - **Homebrew PostgreSQL 16.** `household_budget_dev` and `household_budget_test`
   (names predate the rename; harmless).
-- `gh` is installed and authenticated as `aso42244`.
+- `gh` is installed and authenticated as `aso42244`. A cloud session has the
+  GitHub tools instead, which do the same three things a release needs: open a
+  pull request, merge it, dispatch the publish workflow.
 - **Docker Desktop was uninstalled and left two things pointing at it**, both
   found on 2026-09-01 and both fixed. They are listed together because they have
   one cause and the next stale reference will too.
