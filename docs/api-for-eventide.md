@@ -53,8 +53,8 @@ no-store`.
   Negative is a leading `-`. A field that can have no answer is `null`, which is
   not `"0"`.
 - **Debts are positive magnitudes.** A $500 card balance is `"50000"`.
-- **An instant** (`asOf`, `cycleStartedAt`, `balanceAsOf`, `oldestPostedAt`,
-  `start`, `end`, `since`) is an ISO 8601 timestamp in UTC.
+- **An instant** (`asOf`, `cycleStartedAt`, `balanceAsOf`, `checkIssuedAt`,
+  `oldestPostedAt`, `start`, `end`, `since`) is an ISO 8601 timestamp in UTC.
 - **A day** (`targetDate`) is `YYYY-MM-DD` and has no zone: a decided day.
 - `progressBasisPoints` is an integer 0–10000.
 
@@ -81,9 +81,26 @@ the reading at the top.
       "id": "3f1c…",
       "name": "Grocery",
       "kind": "envelope",
+      "checkNumber": null,
+      "checkMemo": null,
+      "checkIssuedAt": null,
       "grouping": { "id": "9b2e…", "name": "3 - Food", "color": "#46A171" },
       "balanceCents": "41287",
       "amountToDelegateCents": "25000",
+      "isUtility": false,
+      "notes": null,
+      "target": null
+    },
+    {
+      "id": "c4d8…",
+      "name": "Check 1042 — Roof repair",
+      "kind": "check",
+      "checkNumber": "1042",
+      "checkMemo": "Roof repair",
+      "checkIssuedAt": "2026-09-12T00:00:00.000Z",
+      "grouping": { "id": "e70a…", "name": "Outstanding Checks", "color": null },
+      "balanceCents": "85000",
+      "amountToDelegateCents": null,
       "isUtility": false,
       "notes": null,
       "target": null
@@ -116,6 +133,9 @@ the reading at the top.
 | `cycleStartedAt`                                                         | instant \| null                                 | When Delegate was last pressed. Null before the first press.                                                                                                         |
 | `delegations[]`                                                          | list                                            | Every live line, in the order the Budget page shows them: grouping by grouping, then the ungrouped.                                                                  |
 | `delegations[].kind`                                                     | `envelope` \| `check`                           | A `check` row is an outstanding cheque, carried as a line.                                                                                                           |
+| `delegations[].checkNumber`                                              | string \| null                                  | Checks only: the number that identifies one among several outstanding. Null on an envelope — the key is always present.                                              |
+| `delegations[].checkMemo`                                                | string \| null                                  | Checks only: what it was written for. Null on an envelope, and null on a check written without one.                                                                  |
+| `delegations[].checkIssuedAt`                                            | instant \| null                                 | Checks only: when it was written. Null on an envelope.                                                                                                               |
 | `delegations[].grouping`                                                 | `{id, name, color}` \| null                     | `color` is `#RRGGBB` or null.                                                                                                                                        |
 | `delegations[].balanceCents`                                             | cents                                           | **What is left in the envelope.** Negative is overspent.                                                                                                             |
 | `delegations[].amountToDelegateCents`                                    | cents \| null                                   | Added on each Delegate press. Null is an ad-hoc line, which is not zero.                                                                                             |

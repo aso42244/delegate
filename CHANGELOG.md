@@ -6,6 +6,21 @@ phase (`v0.1.0-phase1`, and so on).
 
 ## [Unreleased]
 
+### Added
+
+- **The read door describes a check, not just that it is one.** Every
+  `delegations[]` row now carries `checkNumber`, `checkMemo` and `checkIssuedAt`
+  beside `kind` — the three that were already on the row the Budget page reads
+  and stopped at the door. `checkIssuedAt` is an instant in UTC like the door's
+  others; all three are present and null on an envelope rather than absent,
+  because a key that comes and goes is two shapes for one thing. No new
+  arithmetic and no write path: the door is still a projection
+  ([ADR 070](docs/decisions/070-the-read-door-is-its-own-surface.md)).
+  [docs/api-for-eventide.md](docs/api-for-eventide.md) gained the three rows in
+  the same commit; it had been wrong about them by omission. Eventide's client
+  already carries all three as optional and nullable, so they appear there with
+  no release on its side.
+
 ### Changed
 
 - **A release is cut from GitHub, with no Mac in the loop**

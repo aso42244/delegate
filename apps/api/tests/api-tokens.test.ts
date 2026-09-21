@@ -175,6 +175,53 @@ describe('the read door', () => {
     expect(new Date(body.asOf).getTime()).not.toBeNaN();
   });
 
+  it('describes a check, and says null rather than nothing on an envelope', async () => {
+    const { secret } = await issue();
+    await makeDelegation({ name: 'Grocery' });
+    const check = await prisma.delegation.create({
+      data: {
+        name: 'Check 1042 — Roof repair',
+        kind: 'check',
+        checkNumber: '1042',
+        checkMemo: 'Roof repair',
+        checkIssuedAt: new Date('2026-09-12T00:00:00.000Z'),
+      },
+      select: { id: true },
+    });
+
+    const response = await app.inject({
+      method: 'GET',
+      url: '/api/read/budget',
+      headers: bearer(secret),
+    });
+    expect(response.statusCode).toBe(200);
+
+    const rows = response.json<{
+      delegations: {
+        id: string;
+        kind: string;
+        checkNumber: string | null;
+        checkMemo: string | null;
+        checkIssuedAt: string | null;
+      }[];
+    }>().delegations;
+
+    expect(rows.find((row) => row.id === check.id)).toMatchObject({
+      kind: 'check',
+      checkNumber: '1042',
+      checkMemo: 'Roof repair',
+      // An instant, in UTC, like every other instant the door sends.
+      checkIssuedAt: '2026-09-12T00:00:00.000Z',
+    });
+
+    // Present and null, never absent: a key that comes and goes is two shapes.
+    const envelope = rows.find((row) => row.kind === 'envelope');
+    expect(envelope).toBeDefined();
+    for (const key of ['checkNumber', 'checkMemo', 'checkIssuedAt'] as const) {
+      expect(envelope).toHaveProperty(key, null);
+    }
+  });
+
   it('answers the overview: every figure, the cycle, the backlog, the overspent', async () => {
     const { secret } = await issue();
     const account = await makeAccount({ name: 'Checking', type: 'asset', balanceCents: 100000n });

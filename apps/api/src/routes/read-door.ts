@@ -91,6 +91,14 @@ function presentDelegation(row: BudgetRow, grouping: GroupingRef | null): Record
     id: row.id,
     name: row.name,
     kind: row.kind,
+    /*
+     * The three that describe a check. Null on an envelope, and *present* and
+     * null — a key that is sometimes absent and sometimes null is two shapes
+     * for one thing, and the client would have to tell them apart.
+     */
+    checkNumber: row.checkNumber,
+    checkMemo: row.checkMemo,
+    checkIssuedAt: dateOut(row.checkIssuedAt),
     grouping,
     balanceCents: centsOut(row.balanceCents),
     amountToDelegateCents: centsOut(row.amountToDelegateCents),
