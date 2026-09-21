@@ -6,6 +6,10 @@ phase (`v0.1.0-phase1`, and so on).
 
 ## [Unreleased]
 
+Nothing yet.
+
+## [0.78.0] — 2026-09-21
+
 ### Added
 
 - **A read door, and the token that opens it.** Eventide reads this budget
