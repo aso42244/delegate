@@ -17,8 +17,9 @@
 #
 # Four guardrails, so this cannot quietly cost money:
 #
-#   1. It runs on version tags only. Not on pushes to main, not on pull
-#      requests. Pushing a tag is a deliberate act that happens once a release.
+#   1. It runs on version tags, and on a manual dispatch that names one. Not
+#      on pushes to main, not on pull requests. Either is a deliberate act that
+#      happens once a release.
 #   2. `timeout-minutes` caps a hung build, which would otherwise sit there for
 #      the six-hour default. It is generous for what this now builds: a native
 #      amd64 image takes about a minute, and the cap is there for the case where
@@ -36,17 +37,29 @@ name: Publish the image
 on:
   push:
     tags: ['v*.*.*']
-  # Manual re-runs: a tag pushed before this workflow existed, or one whose run
-  # failed. The input reaches both the checkout and the image tags — see the
-  # note on `value=` below, which is what that took.
+  # Cutting a release from GitHub itself, with no machine holding a git
+  # credential (ADR 072). Given a version, this creates the tag when it does
+  # not exist yet — at `commit`, or at the head of `main` — and then builds it.
+  # So a session that can merge but cannot push a tag can still release, and so
+  # can a phone. A tag that already exists is simply built, which keeps this the
+  # re-run route for a run that failed.
+  #
+  # The input reaches the checkout and the image tags — see the note on
+  # `value=` below, which is what that took.
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Version tag to build, for example v0.41.0'
+        description: 'Version tag, for example v0.78.0. Created here if it does not exist yet.'
         required: true
+      commit:
+        description: 'The commit to tag, when creating it. Empty means the head of main.'
+        required: false
+        default: ''
 
 concurrency:
-  group: publish-${{ github.ref }}
+  # Keyed on the version rather than the ref, so two dispatches for two
+  # versions do not cancel each other while two for one version do.
+  group: publish-${{ github.event.inputs.tag || github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -54,7 +67,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 45
     permissions:
-      contents: read
+      # Write, for one reason: creating the tag on a manual dispatch. The token
+      # is issued to this run and expires with it, the only push here is a tag
+      # on a commit already on `main`, and a tag pushed with it starts no second
+      # run — GitHub never lets a workflow's own token trigger another workflow.
+      contents: write
       # Pushing to this repository's own package registry, and nothing wider.
       packages: write
       # Keyless signing. The certificate is issued to this workflow run and
@@ -64,7 +81,51 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.inputs.tag || github.ref }}
+          # On a push this is the tag. On a dispatch it is whichever branch the
+          # dispatch was made from, and the step below moves to the tag — after
+          # creating it, when it needs creating.
+          #
+          # The whole history: the commit being tagged may not be the head, and
+          # the ancestry check needs `main` to compare against.
+          fetch-depth: 0
+
+      # The tag exists, or is created here — and either way the tree that is
+      # built is the tag's, never the branch the dispatch happened from.
+      #
+      # Two refusals. A version that is not `vX.Y.Z` is refused before anything
+      # is written, because `deploy.sh` and the image tags both read that shape.
+      # And a commit that is not on `main` is refused: a release is a commit
+      # the gate passed and a pull request merged, and a tag on anything else
+      # would put the version number on code nobody reviewed.
+      - name: Resolve the tag, creating it if it does not exist
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          TAG: ${{ github.event.inputs.tag }}
+          COMMIT: ${{ github.event.inputs.commit }}
+        run: |
+          set -eu
+          case "$TAG" in
+            v[0-9]*.[0-9]*.[0-9]*) ;;
+            *) echo "::error::'$TAG' is not a version tag of the form vX.Y.Z"; exit 1 ;;
+          esac
+
+          if git ls-remote --exit-code --tags origin "refs/tags/$TAG" >/dev/null; then
+            echo "$TAG already exists; building it."
+            git fetch --no-tags origin "refs/tags/$TAG:refs/tags/$TAG"
+          else
+            sha=$(git rev-parse --verify "${COMMIT:-origin/main}^{commit}")
+            if ! git merge-base --is-ancestor "$sha" origin/main; then
+              echo "::error::$sha is not on main; a release is a merged commit"
+              exit 1
+            fi
+            git config user.name 'github-actions[bot]'
+            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+            git tag -a "$TAG" "$sha" -m "$TAG"
+            git push origin "refs/tags/$TAG"
+            echo "Created $TAG at $sha."
+          fi
+
+          git checkout --detach "refs/tags/$TAG"
 
       # amd64 only, so nothing here is emulated.
       #

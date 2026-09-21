@@ -317,10 +317,10 @@ esac
 if [ "$BUILD" = 'yes' ]; then
   [ -f Dockerfile ] || {
     echo 'error: no Dockerfile here. --build needs the source in this directory.' >&2
-    echo '       From your Mac:' >&2
-    echo '         git archive --format=tar.gz -o delegate-src.tar.gz <tag>' >&2
-    echo "         scp -O delegate-src.tar.gz ${USER:-you}@this-nas:$(pwd)/" >&2
-    echo '       Then here: tar xzf delegate-src.tar.gz' >&2
+    echo '       Fetch a release from GitHub, right here — the repository is public:' >&2
+    echo '         curl -fsSL -o delegate-src.tar.gz https://github.com/aso42244/delegate/archive/<tag>.tar.gz' >&2
+    echo '         mkdir delegate-src && tar xzf delegate-src.tar.gz -C delegate-src && cp -a delegate-src/*/. . && rm -rf delegate-src' >&2
+    echo '       docs/handoff.md § Releasing and deploying has the one-line form that also removes stale files.' >&2
     exit 1
   }
 

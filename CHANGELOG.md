@@ -6,7 +6,23 @@ phase (`v0.1.0-phase1`, and so on).
 
 ## [Unreleased]
 
-Nothing yet.
+### Changed
+
+- **A release is cut from GitHub, with no Mac in the loop**
+  ([ADR 072](docs/decisions/072-a-release-is-cut-from-github.md)). The publish
+  workflow, dispatched with a version and optionally the commit it names,
+  creates the tag itself — refusing a malformed version and any commit not on
+  `main` — and then builds and signs it exactly as a pushed tag always did.
+  Found the hard way: v0.78.0 was built, merged and cut from a cloud session
+  that can push a branch but not a tag, and the release stalled on one line
+  only the Mac could type. Pushing a tag by hand still works; it is simply no
+  longer required. The job's token gains `contents: write` for the tag and
+  nothing else.
+
+  The documentation no longer routes anything through the owner's Mac: where
+  things stand is read from any clone, the source-route deploy fetches GitHub's
+  archive on the NAS itself in one line, and `deploy.sh --build` says so when it
+  finds no source.
 
 ## [0.78.0] — 2026-09-21
 
