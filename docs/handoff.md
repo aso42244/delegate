@@ -1561,12 +1561,18 @@ means the weaker door sets the security level.
 
 **Model Context Protocol support was built and then removed** at the owner's
 direction, in v0.15.0 and v0.16.0, and taken out again in v0.17.0. It is not on
-the roadmap and should not be reintroduced without him asking for it. The only
-trace left in the tree is
-`apps/api/prisma/migrations/20260819180000_drop_api_tokens`, which exists
-because migrations are forward-only (ADR 003) and the creating migration had
-already been applied to the deployment — deleting that file instead would leave
-`migrate deploy` reporting drift.
+the roadmap and should not be reintroduced without him asking for it. The trace
+it left is `apps/api/prisma/migrations/20260819180000_drop_api_tokens`, which
+exists because migrations are forward-only (ADR 003) and the creating migration
+had already been applied to the deployment — deleting that file instead would
+leave `migrate deploy` reporting drift.
+
+**`api_tokens` exists again, for a different reason** — Eventide reads this
+budget through a read-only door and needs something to knock with. ADRs 069–071
+and `docs/api-for-eventide.md` are the whole of it: a token reads as the person
+who made it, opens the two routes in `routes/read-door.ts` and nothing else, and
+is managed on Settings → Access. That is not the MCP work returning; there is no
+write path and none is to be added.
 
 **Phase 5** — feature requests arriving from a Notion database and built
 automatically — was removed from the plan at the owner's direction and is not on

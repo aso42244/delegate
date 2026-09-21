@@ -6,7 +6,34 @@ phase (`v0.1.0-phase1`, and so on).
 
 ## [Unreleased]
 
-Nothing yet.
+### Added
+
+- **A read door, and the token that opens it.** Eventide reads this budget
+  through two routes and nothing else — `GET /api/read/budget` and
+  `GET /api/read/overview`, projections of what the Budget page and Overview
+  already compute, with money as strings of whole cents
+  ([ADR 070](docs/decisions/070-the-read-door-is-its-own-surface.md)). The
+  contract is [docs/api-for-eventide.md](docs/api-for-eventide.md).
+
+  The door is its own route file with its own guard, and a write path is
+  unexpressible rather than merely absent: nothing in it takes a body, and the
+  guard is the only code that knows what a bearer token is. It refuses a session
+  cookie whether or not a token rides beside it, and a token opens nothing
+  guarded by a session — not the budget's own API, not the token routes, not
+  Delegate.
+
+- **API tokens**, Delegate's first machine credential since the MCP work was
+  withdrawn ([ADR 069](docs/decisions/069-a-token-reads-as-a-person.md)). A
+  token reads as the person who made it, is stored as a SHA-256 digest, is
+  shown once, and is revoked by a timestamp. Unknown, revoked and an archived
+  account's answer identically from outside. Issuing and revoking one are
+  credential events, so the Sign-in activity card reports them.
+
+- **Settings → Access → API tokens**
+  ([ADR 071](docs/decisions/071-tokens-are-managed-on-access.md)): a card beside
+  two-factor and the household, not a ninth section. Create, name, revoke, and
+  — the half of the shape that makes it safe — when each token was last used
+  and from where.
 
 ## [0.77.1] — 2026-09-18
 
