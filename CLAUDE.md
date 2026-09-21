@@ -48,7 +48,8 @@ build failure rather than a preference:
 
 Branch → work → `npm run verify` passes → PR → squash merge → a separate
 `chore: cut vX.Y.Z` PR moving the CHANGELOG entry from `[Unreleased]` to a
-version heading → tag → wait for the publish workflow to go green → confirm the
+version heading → dispatch the publish workflow with the version and the cut
+commit (it creates the tag; ADR 072) → wait for it to go green → confirm the
 registry returns the manifest → hand over the deploy line.
 
 **The owner deploys, not you.** SSH to the NAS is password-auth and you do not

@@ -1479,6 +1479,11 @@ restarts. That is a smaller and more honest loop than the source route below: it
 deploys the artefact `npm run verify` was run against rather than recompiling it
 on a machine that has never run the tests.
 
+**A manual run of the publish workflow is the ordinary way to cut a release
+since [ADR 072](decisions/072-a-release-is-cut-from-github.md)** — it creates
+the tag when the tag does not exist. What follows is why the `value=` line in
+that workflow exists, and it still holds.
+
 **A manual re-run of the publish workflow tags nothing unless it is told to.**
 `docker/metadata-action` derives a version from `github.ref`, and on a
 `workflow_dispatch` that is `refs/heads/main` however the checkout was pointed —
@@ -1801,12 +1806,21 @@ Then a **separate** `chore: cut vX.Y.Z` PR, whose only change is moving the
 git checkout main && git pull
 git checkout -b chore/cut-v0.71.0
 # move the CHANGELOG entry, commit, PR, squash-merge
-git checkout main && git pull
-git tag -a v0.71.0 -m "v0.71.0" && git push origin v0.71.0
+gh workflow run publish.yml -f tag=v0.71.0 -f commit=<the cut commit's sha>
 ```
 
-Pushing the tag starts **Publish the image**, which builds `linux/amd64` only and
-signs it. Watch it and **wait for it to be green**:
+**The workflow creates the tag** ([ADR 072](decisions/072-a-release-is-cut-from-github.md)):
+given a version it refuses one that is not `vX.Y.Z`, refuses a commit that is
+not on `main`, tags the commit — the head of `main` when none is named — pushes
+the tag with its own token, and builds and signs the tag's tree. No machine
+needs a git credential, which is the point: v0.78.0 was cut from a cloud
+session whose proxy refuses tag pushes, and the release stalled on the one line
+only a Mac could type. From a session with the GitHub tools rather than `gh`,
+`actions_run_trigger` on `publish.yml` with the same two inputs does the same.
+
+Pushing a tag by hand still works and still starts the same run; it is simply
+no longer required. Either way **Publish the image** builds `linux/amd64` only
+and signs it. Watch it and **wait for it to be green**:
 
 ```sh
 gh run watch <run-id> --exit-status
