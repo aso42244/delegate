@@ -244,6 +244,7 @@ model User {
   updatedAt           DateTime  @updatedAt @map("updated_at")
 
   sessions            Session[]
+  apiTokens           ApiToken[]
   totpUsedCodes       TotpUsedCode[]
   bitcoinEvents       BitcoinHoldingEvent[]
   delegationEvents    DelegationEvent[]
@@ -299,6 +300,41 @@ model Session {
   @@map("sessions")
 }
 
+/// A credential for a program, which reads the budget as the person who made it.
+///
+/// Eventide reads this budget through a narrow, read-only door (ADR 070), and
+/// a program has no cookie jar and cannot answer a second-factor prompt — so it
+/// carries one of these instead. Stored as a SHA-256 digest and shown to a
+/// person exactly once; the nightly dump contains this table, and a dump that
+/// hands over a working credential is the reason passwords are hashed too.
+///
+/// **`userId` is not nullable, and that is the decision (ADR 069).** A token
+/// speaks as one person, with that person's whole access. The table that stood
+/// here before (dropped in August with the MCP work) carried a scope; this one
+/// has nothing to choose between, because the door it opens only reads.
+///
+/// Revoking is a timestamp, never a delete. The row is the answer to "which
+/// machine held this, and when did it last read the budget".
+model ApiToken {
+  id           String    @id @default(uuid()) @db.Uuid
+  /// What the holder is called, in the household's words. A label, never a hint.
+  name         String
+  /// SHA-256 of the secret, hex. Never the secret.
+  tokenHash    String    @unique @map("token_hash")
+  userId       String    @map("user_id") @db.Uuid
+  createdAt    DateTime  @default(now()) @map("created_at")
+  /// Stamped on every accepted read, with the address it came from — so a
+  /// machine nobody is running any more is visible before anybody wonders.
+  lastUsedAt   DateTime? @map("last_used_at")
+  lastUsedFrom String?   @map("last_used_from")
+  revokedAt    DateTime? @map("revoked_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("api_tokens")
+}
+
 // ---------------------------------------------------------------------------
 // What happened to credentials
 // ---------------------------------------------------------------------------
@@ -328,6 +364,8 @@ enum AuthEventKind {
   account_created
   account_archived
   account_restored
+  api_token_created // a machine credential was issued, by the account it reads as
+  api_token_revoked
 
   @@map("auth_event_kind")
 }
@@ -425,6 +463,8 @@ model Account {
   // Two orthogonal booleans. The house and the mortgage are inNetWorth only,
   // which is precisely why the mortgage does not blow up the budget identity.
   /**
+   * /**
+   * /**
    * /**
    * /**
    * /**
@@ -795,10 +835,10 @@ model Transaction {
   delegationEvents  DelegationEvent[]
 
   // "These two are not the same charge", from either side of the pair.
-  dismissedAgainst DuplicateDismissal[] @relation("dismissalFirst")
-  dismissedBy      DuplicateDismissal[] @relation("dismissalSecond")
-  pairDismissedAgainst PairDismissal[] @relation("pairDismissalFirst")
-  pairDismissedBy      PairDismissal[] @relation("pairDismissalSecond")
+  dismissedAgainst     DuplicateDismissal[] @relation("dismissalFirst")
+  dismissedBy          DuplicateDismissal[] @relation("dismissalSecond")
+  pairDismissedAgainst PairDismissal[]      @relation("pairDismissalFirst")
+  pairDismissedBy      PairDismissal[]      @relation("pairDismissalSecond")
 
   // "This charge is that bill", where the description does not say so.
   billLink BillLink?
@@ -1074,7 +1114,7 @@ model OverviewTile {
   /// members — one is full width, two are halves, three thirds, four quarters —
   /// so the width is derived from the relationship rather than declared per
   /// tile. A phone ignores rows entirely and stacks everything full width.
-  row       Int     @default(0)
+  row Int @default(0)
 
   /// Which side of the page this tile lives on: `main` or `sidebar`.
   ///
@@ -1082,7 +1122,7 @@ model OverviewTile {
   /// row, the sidebar exactly one, beneath the budget panel. A column rather
   /// than a convention over `row`, because a convention would be invisible to
   /// anybody reading the table.
-  region    String  @default("main")
+  region String @default("main")
 
   /// How tall this tile's **row** is, in pixels. Null is the tile's own height.
   ///
@@ -1094,16 +1134,16 @@ model OverviewTile {
   /// The Sankey is what this is for: it is legible at 600px and absurd at the
   /// height its own content wants, and no single default suits both it and a
   /// list of six ranked bars.
-  heightPx  Int?    @map("height_px")
+  heightPx Int? @map("height_px")
 
   /// Which chart this tile is drawn as. Null means the widget's own default.
-  display   String?
+  display String?
 
   /// What this tile has been told about itself — which delegations to show,
   /// which account to chart. The shape differs per tile and is validated at the
   /// HTTP edge; null means nothing configured, which is not the same as an empty
   /// selection.
-  config    Json?
+  config Json?
 
   createdAt DateTime @default(now()) @map("created_at")
 

@@ -22,10 +22,12 @@ import { ruleRoutes } from './routes/rules.js';
 import { settingsRoutes } from './routes/settings.js';
 import { syncRoutes } from './routes/sync.js';
 import { accountRoutes } from './routes/accounts.js';
+import { apiTokenRoutes } from './routes/api-tokens.js';
 import { appInfoRoutes } from './routes/app-info.js';
 import { bitcoinRoutes } from './routes/bitcoin.js';
 import { budgetRoutes } from './routes/budget.js';
 import { propertyRoutes } from './routes/properties.js';
+import { readDoorRoutes } from './routes/read-door.js';
 import { checkRoutes } from './routes/checks.js';
 import { transactionRoutes } from './routes/transactions.js';
 import { userRoutes } from './routes/users.js';
@@ -166,6 +168,11 @@ export async function buildApp(config: AppConfig = getConfig()): Promise<Fastify
   await app.register(transactionRoutes);
   await app.register(budgetRoutes);
   await app.register(checkRoutes);
+  await app.register(apiTokenRoutes);
+  // The one surface a bearer token opens, and the only file that knows what one
+  // is. Its own plugin so that a write path is unexpressible rather than merely
+  // absent — see ADR 070.
+  await app.register(readDoorRoutes);
 
   // Registered last: its not-found handler is the SPA fallback, so it must see
   // every API route already declared.

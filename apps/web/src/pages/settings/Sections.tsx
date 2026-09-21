@@ -5,6 +5,7 @@ import { DelegationsSection } from './Delegations.jsx';
 import { GroupingsSection } from './Groupings.jsx';
 import { HiddenBillsSection } from './HiddenBills.jsx';
 import { PropertiesSection } from './Properties.jsx';
+import { ApiTokensCard } from './ApiTokens.jsx';
 import { TorSection } from './Tor.jsx';
 import { TwoFactorCard } from './TwoFactor.jsx';
 import { UsersSection, YourAccount } from './Users.jsx';
@@ -31,7 +32,8 @@ import { UsersSection, YourAccount } from './Users.jsx';
  *   holding that contributed nothing to the identity. They keep their own cards
  *   and their own create flows; only the tab they share has changed.
  * - **Access** is who gets in and how — the household's accounts, your own
- *   credentials, and the onion service.
+ *   credentials (the second factor, and the tokens another application reads
+ *   the budget with), and the onion service.
  */
 
 export function BudgetGroupSection(): ReactNode {
@@ -61,16 +63,18 @@ export function AccessSection(): ReactNode {
   return (
     <>
       {/*
-        Three about getting in, then two about who has been.
-        
+        Three about getting in, then your machine credential, then who has been.
+
         The order is the layout: `YourAccount`, two-factor and the onion service
-        are each a third of a row, and the two tables under them are halves. A
-        section that rendered all five in one fixed block could not be arranged
-        this way, which is why the cards above are separate exports.
+        are each a third of a row; API tokens and the household share the next,
+        and sign-in activity takes the one after. A section that rendered all
+        six in one fixed block could not be arranged this way, which is why the
+        cards above are separate exports.
       */}
       <YourAccount />
       <TwoFactorCard />
       <TorSection />
+      <ApiTokensCard />
       <UsersSection />
     </>
   );

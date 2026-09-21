@@ -32,7 +32,9 @@ type AuthEventKind =
   | 'two_factor_reset'
   | 'account_created'
   | 'account_archived'
-  | 'account_restored';
+  | 'account_restored'
+  | 'api_token_created'
+  | 'api_token_revoked';
 
 interface AuthEventDto {
   readonly id: string;
@@ -64,6 +66,8 @@ const KIND_LABELS: Record<AuthEventKind, string> = {
   account_created: 'Account created',
   account_archived: 'Account archived',
   account_restored: 'Account restored',
+  api_token_created: 'API token issued',
+  api_token_revoked: 'API token revoked',
 };
 
 /**
