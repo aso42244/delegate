@@ -1,9 +1,11 @@
 import {
+  maximumProgress,
   sumCents,
   targetProgress,
   type Cents,
   type GroupingSection,
   type IdentityResult,
+  type MaximumProgress,
   type TargetProgress,
 } from '@budget/shared';
 import type { Db } from '../db/client.js';
@@ -81,6 +83,16 @@ export interface BudgetRow {
    * is most rows.
    */
   readonly target: TargetProgress | null;
+  /**
+   * The ceiling this line stops at when Delegate is pressed, and what that does
+   * to the next press. Null where there is no maximum, which is most rows.
+   *
+   * Derived here for the same reason the target's reading is: the answer is a
+   * comparison the page would otherwise need its own copy of, and the run reads
+   * the identical function — so the figure on the row is the figure the ledger
+   * will record.
+   */
+  readonly max: MaximumProgress | null;
 }
 
 export interface BudgetGrouping {
@@ -250,6 +262,7 @@ export async function buildBudgetView(
           targetCents: true,
           targetDate: true,
           targetIntervalMonths: true,
+          maxBalanceCents: true,
         },
       }),
       db.grouping.findMany({
@@ -309,6 +322,8 @@ export async function buildBudgetView(
     checkIssuedAt: null,
     // An account is not saving towards anything; a target is a delegation's.
     target: null,
+    // Nor is an account delegated into, so there is nothing to cap.
+    max: null,
   });
 
   const today = localDayKey(options.now ?? new Date(), options.timeZone);
@@ -346,6 +361,11 @@ export async function buildBudgetView(
      * those two ideas apart by name for exactly this reason.
      */
     target: targetProgress(delegation, settings.payCadence, today),
+    /*
+     * No zone and no cadence in this one: what a press moves depends only on
+     * what the line holds, what it is set to receive and where its ceiling is.
+     */
+    max: maximumProgress(delegation),
   }));
 
   return {

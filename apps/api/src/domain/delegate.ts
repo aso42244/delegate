@@ -1,4 +1,4 @@
-import type { Cents } from '@budget/shared';
+import { amountThatFits, type Cents } from '@budget/shared';
 import { newUuid } from '../db/ids.js';
 import type { Db } from '../db/client.js';
 import { ConflictError, NotFoundError } from './errors.js';
@@ -12,6 +12,13 @@ import { appendEvent, markEventsReversed } from './ledger.js';
  * add nothing", which is distinct from an explicit $0 even though both move
  * nothing here.
  *
+ * A line with a **maximum** takes only what still fits. $200 a paycheck into a
+ * line capped at $400 that already holds $275 moves $125, and the $75 goes
+ * nowhere: it stays undelegated, which is the reading at the top of the page and
+ * therefore available for whatever that payday actually needs. The arithmetic is
+ * `amountThatFits` in `@budget/shared`, the same function the row and the
+ * confirmation read, so what the dialog promises is what the ledger records.
+ *
  * The run's `created_at` defines the start of the current budget cycle. There is
  * no automatic cadence and there is not meant to be: the owner presses this when
  * the money lands. Settings → Budget carries a pay cadence, but it is a divisor
@@ -19,12 +26,26 @@ import { appendEvent, markEventsReversed } from './ledger.js';
  */
 
 export interface DelegatePreview {
+  /** What would actually move: the amounts after every maximum is applied. */
   readonly totalCents: Cents;
   readonly lineCount: number;
+  /**
+   * What the maximums hold back, across every line.
+   *
+   * Stated rather than silently subtracted from the total above. Without it the
+   * confirmation would offer a figure smaller than the column of amounts on the
+   * page adds up to, with nothing on screen to say why.
+   */
+  readonly withheldCents: Cents;
+  /** How many lines a maximum reduced, whether to part of the amount or to none. */
+  readonly cappedCount: number;
   readonly lines: ReadonlyArray<{
     readonly delegationId: string;
     readonly name: string;
+    /** After the line's maximum. This is the delta the run writes. */
     readonly amountCents: Cents;
+    /** What the maximum kept out of this line. Zero on nearly every row. */
+    readonly withheldCents: Cents;
   }>;
 }
 
@@ -32,20 +53,43 @@ export interface DelegatePreview {
 export async function previewDelegate(db: Db): Promise<DelegatePreview> {
   const lines = await db.delegation.findMany({
     where: { archivedAt: null, amountToDelegateCents: { not: null } },
-    select: { id: true, name: true, amountToDelegateCents: true },
+    // The balance and the maximum come too, because what a press moves into a
+    // line depends on how full it already is.
+    select: {
+      id: true,
+      name: true,
+      amountToDelegateCents: true,
+      balanceCents: true,
+      maxBalanceCents: true,
+    },
     orderBy: { name: 'asc' },
   });
 
-  const previewLines = lines.map((line) => ({
-    delegationId: line.id,
-    name: line.name,
+  const previewLines = lines.map((line) => {
     // Non-null by the query filter; narrowed here rather than asserted.
-    amountCents: line.amountToDelegateCents ?? 0n,
-  }));
+    const wanted = line.amountToDelegateCents ?? 0n;
+    const fits = amountThatFits({
+      balanceCents: line.balanceCents,
+      amountToDelegateCents: wanted,
+      maxBalanceCents: line.maxBalanceCents,
+    });
+
+    return {
+      delegationId: line.id,
+      name: line.name,
+      amountCents: fits,
+      withheldCents: wanted - fits,
+    };
+  });
 
   return {
     totalCents: previewLines.reduce((sum, line) => sum + line.amountCents, 0n),
+    // Every line with an amount, capped or not. A line held at its maximum is
+    // still a line this press considered, and it still gets its event below —
+    // exactly as a line set to an explicit $0 always has.
     lineCount: previewLines.length,
+    withheldCents: previewLines.reduce((sum, line) => sum + line.withheldCents, 0n),
+    cappedCount: previewLines.filter((line) => line.withheldCents > 0n).length,
     lines: previewLines,
   };
 }

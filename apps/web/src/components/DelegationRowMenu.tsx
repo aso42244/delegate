@@ -4,7 +4,9 @@ import { useState, type FormEvent, type ReactNode } from 'react';
 import { budgetApi, type BudgetRowDto } from '../api/budget.js';
 import { ApiError } from '../api/client.js';
 import { DelegationHistory } from './DelegationHistory.jsx';
+import { MaximumDialog } from './MaximumDialog.jsx';
 import { TargetDialog } from './TargetDialog.jsx';
+import { summarizeMaximum } from './max-text.js';
 import { summarizeTarget } from './target-text.js';
 import {
   DANGER_ITEM_CLASS,
@@ -27,7 +29,7 @@ import { Alert, Button, Modal, TextArea, TextField, Toggle } from './ui.jsx';
  * that does not exist.
  */
 
-type Dialog = 'none' | 'rename' | 'note' | 'adjust' | 'history' | 'target';
+type Dialog = 'none' | 'rename' | 'note' | 'adjust' | 'history' | 'target' | 'maximum';
 
 /** Rename. Its own dialog, because a name is worth seeing while it is typed. */
 function RenameDialog({
@@ -358,6 +360,7 @@ export function DelegationRowMenu({
           {dialog === 'target' && (
             <TargetDialog row={row} cadence={cadence} onClose={() => setDialog('none')} />
           )}
+          {dialog === 'maximum' && <MaximumDialog row={row} onClose={() => setDialog('none')} />}
           {dialog === 'history' && (
             <DelegationHistory
               delegationId={row.id}
@@ -463,6 +466,30 @@ export function DelegationRowMenu({
                 {row.target
                   ? summarizeTarget(row)
                   : 'What this line is saving towards. Changes nothing on its own.'}
+              </span>
+            </button>
+
+            {/*
+              Directly under the target, because the two are one subject read
+              from opposite ends: a target is the floor this line is working
+              towards and writes nothing, a maximum is the ceiling it stops at
+              and is the one that does. Still above the adjustment, which moves
+              money now rather than describing what a press should do.
+            */}
+            <button
+              type="button"
+              role="menuitem"
+              className={`${ITEM_CLASS} flex-col items-start gap-0`}
+              onClick={() => {
+                setDialog('maximum');
+                controls.close();
+              }}
+            >
+              <span>{row.max ? 'Edit the maximum' : 'Set a maximum'}</span>
+              <span className="text-label text-muted">
+                {row.max
+                  ? summarizeMaximum(row)
+                  : 'The most Delegate will put in. The rest stays available.'}
               </span>
             </button>
 

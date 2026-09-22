@@ -643,6 +643,23 @@ model Delegation {
   targetDate           DateTime? @map("target_date") @db.Date
   targetIntervalMonths Int?      @map("target_interval_months")
 
+  /**
+   * The most this line is allowed to hold when Delegate is pressed.
+   *
+   * Nullable, and null is no maximum — which is what nearly every line is. It
+   * is the other half of the sentence a target starts: a target says what the
+   * line is saving towards and never writes (ADR 047), while this one does. A
+   * line capped at $400, set to receive $200 and already holding $275, takes
+   * $125 on the next press and leaves the $75 undelegated.
+   *
+   * A cap on the **balance**, not on the amount: the amount to delegate stays
+   * exactly what the household typed, and what a press actually moves is
+   * whatever of it still fits. Only Delegate is capped — a transfer, a refund
+   * or a manual adjustment may take a line past its maximum, and none of those
+   * is a distribution this figure has anything to say about.
+   */
+  maxBalanceCents BigInt? @map("max_balance_cents")
+
   isUtility Boolean @default(false) @map("is_utility")
 
   /// Where this line sits among its neighbours, ascending.

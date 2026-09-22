@@ -49,6 +49,32 @@ export interface BudgetRowDto {
    * copy of that arithmetic is a second answer waiting to disagree.
    */
   readonly target: TargetDto | null;
+  /**
+   * The ceiling this line stops at when Delegate is pressed, and what that would
+   * do to the next press. Null on most rows.
+   *
+   * Not recomputed here either. The server reads the same function the run does,
+   * so what a row promises is what the ledger will record.
+   */
+  readonly max: MaxDto | null;
+}
+
+/**
+ * A maximum, and what it does to the next press.
+ *
+ * A target judges the amount to delegate and never moves it (ADR 047); this is
+ * the half that does. What is held back is not sent anywhere — it stays
+ * undelegated, which is the reading at the top of the page.
+ */
+export interface MaxDto {
+  readonly maxBalanceCents: string;
+  /** What still fits below the maximum. `'0'` once the line is at or over it. */
+  readonly roomCents: string;
+  /** What the next press would actually move in. */
+  readonly delegatingCents: string;
+  /** What the maximum keeps out of that press. `'0'` when it is not in the way. */
+  readonly withheldCents: string;
+  readonly status: 'room' | 'partial' | 'full';
 }
 
 /** A calendar day, `2026-12-27` — never an instant. See ADR 037. */
@@ -106,8 +132,12 @@ export interface BudgetViewDto {
 }
 
 export interface DelegatePreviewDto {
+  /** Already net of every maximum: what the press will actually move. */
   readonly totalCents: string;
   readonly lineCount: number;
+  /** What the maximums keep out of it, and how many lines they keep it out of. */
+  readonly withheldCents: string;
+  readonly cappedCount: number;
 }
 
 export interface UndoPreviewDto {
@@ -143,6 +173,8 @@ export interface UpdateDelegationInput {
   readonly targetDate?: string | null;
   /** Months between occurrences. Null is a one-off deadline. */
   readonly targetIntervalMonths?: number | null;
+  /** The ceiling a Delegate press stops at. Null clears it. */
+  readonly maxBalanceCents?: string | null;
 }
 
 export const budgetApi = {

@@ -157,6 +157,23 @@ an interval with no date has nothing to repeat from. `target_date` is a `DATE`, 
 decided day needing no zone, and crosses the wire as `2026-12-27` rather than as
 an instant.
 
+**A maximum is the half of that sentence which writes.** `max_balance_cents` is
+the most a line holds after a Delegate press: capped at $400, set to receive $200
+and already holding $275, it takes $125 and the other $75 stays undelegated —
+which is the reading at the top of the page, and therefore available for whatever
+that payday needs. Nothing is redistributed to another line
+([ADR 073](decisions/073-a-maximum-is-the-half-that-writes.md)).
+
+It caps the **balance**, not the amount, and that is what reconciles it with ADR
+047: `amount_to_delegate_cents` is never written by it, so a line spent back down
+funds in full again by itself with nothing to remember. Only Delegate is capped —
+a transfer, a refund or a manual adjustment may take a line past its maximum, and
+none of them is refused. Null is no maximum and zero is refused by a check
+constraint, because an instruction never to fund a line is what an empty amount
+to delegate already says. The arithmetic is `amountThatFits` and
+`maximumProgress` in `@budget/shared`, which the run, the read model and the
+dialog all go through.
+
 `updateDelegation` resolves those three fields **once**, as the values it will
 write, and validates and writes from that. They constrain each other and a request
 usually mentions one of them: validating the field that arrived refuses "remove
@@ -253,7 +270,10 @@ wants envelopes to reflect money that is already gone. Two outcomes, both exact:
 ## Delegate, Transfer, Adjust
 
 **Delegate** writes one `delegate_run` and one `delegate` event per line with a
-non-null amount, all sharing a `batch_id`. The run's `created_at` defines the
+non-null amount, all sharing a `batch_id`. A line with a maximum gets its event
+at the capped amount — zero when the line is already full, exactly as a line set
+to an explicit $0 always has — so undo reverses what was written and returns the
+line to the balance it actually held. The run's `created_at` defines the
 start of "this budget cycle". The owner is paid biweekly (26 cycles a year) and
 presses this manually each payday — **there is no automatic cadence**.
 

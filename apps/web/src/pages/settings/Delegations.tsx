@@ -4,6 +4,7 @@ import { Fragment, useState, type ReactNode } from 'react';
 import { budgetApi, type BudgetRowDto, type BudgetViewDto } from '../../api/budget.js';
 import { ApiError } from '../../api/client.js';
 import { Chip } from '../../components/Chip.jsx';
+import { describeMaximum } from '../../components/max-text.js';
 import { describeTarget } from '../../components/target-text.js';
 import { Alert, Button, Toggle } from '../../components/ui.jsx';
 import { SettingsCard } from './SettingsCard.jsx';
@@ -38,6 +39,9 @@ function DelegationRow({
     row.amountToDelegateCents === null
       ? ''
       : formatCentsForInput(BigInt(row.amountToDelegateCents)),
+  );
+  const [maximum, setMaximum] = useState(
+    row.max === null ? '' : formatCentsForInput(BigInt(row.max.maxBalanceCents)),
   );
   const [notes, setNotes] = useState(row.notes ?? '');
   const [problem, setProblem] = useState<string | null>(null);
@@ -83,9 +87,32 @@ function DelegationRow({
       amountToDelegateCents = parsed.value.toString();
     }
 
+    /*
+     * The ceiling, edited here as an ordinary money field rather than through
+     * the dialog the Budget row opens.
+     *
+     * A target is deliberately read-only on this page — the dialog that sets one
+     * spends most of its space saying what it does *not* do, and a terser second
+     * editor would be that explanation missing. A maximum needs no such
+     * paragraph: it is one figure, it does exactly what it says, and §9.5 asks
+     * that anything configurable elsewhere is configurable here. An empty box
+     * means no maximum, as an empty amount means ad hoc.
+     */
+    let maxBalanceCents: string | null = null;
+    const ceiling = maximum.trim();
+    if (ceiling !== '') {
+      const parsed = tryParseMoney(ceiling);
+      if (!parsed.ok || parsed.value <= 0n) {
+        setProblem('Enter a maximum like 400.00, or leave it empty for no maximum.');
+        return;
+      }
+      maxBalanceCents = parsed.value.toString();
+    }
+
     update.mutate({
       name: name.trim(),
       amountToDelegateCents,
+      maxBalanceCents,
       notes: notes.trim() === '' ? null : notes.trim(),
     });
     setExpanded(false);
@@ -109,6 +136,7 @@ function DelegationRow({
             <span className="truncate">{row.name}</span>
             {row.isUtility && <Chip kind="utility" />}
             {row.target !== null && <Chip kind="target" />}
+            {row.max !== null && <Chip kind="maximum" />}
             {row.notes !== null && row.notes.trim() !== '' && <Chip kind="note" />}
           </button>
         </td>
@@ -184,6 +212,18 @@ function DelegationRow({
                 title="Leave empty for an ad-hoc line, which receives nothing when Delegate is pressed. That is not the same as zero."
                 className="money w-28 rounded border border-line bg-canvas px-2 py-1 text-quiet text-ink"
               />
+
+              {/* Beside the amount it caps, which is the only place it reads as
+                  what it is. */}
+              <input
+                value={maximum}
+                onChange={(event) => setMaximum(event.target.value)}
+                inputMode="decimal"
+                placeholder="No max"
+                aria-label={`Maximum for ${row.name}`}
+                title="The most this line holds after a Delegate press. What does not fit stays available to delegate. Leave empty for no maximum."
+                className="money w-28 rounded border border-line bg-canvas px-2 py-1 text-quiet text-ink"
+              />
             </div>
 
             {/*
@@ -196,6 +236,12 @@ function DelegationRow({
             */}
             {row.target !== null && (
               <p className="mt-2 text-quiet text-muted">{describeTarget(row)}</p>
+            )}
+
+            {/* What the ceiling above is doing to the next press, which the box
+                itself cannot say. */}
+            {row.max !== null && (
+              <p className="mt-2 text-quiet text-muted">{describeMaximum(row)}</p>
             )}
 
             <div className="mt-2 flex flex-wrap items-center gap-2">

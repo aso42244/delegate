@@ -89,7 +89,14 @@ the reading at the top.
       "amountToDelegateCents": "25000",
       "isUtility": false,
       "notes": null,
-      "target": null
+      "target": null,
+      "max": {
+        "maxBalanceCents": "40000",
+        "roomCents": "0",
+        "delegatingCents": "0",
+        "withheldCents": "25000",
+        "status": "full"
+      }
     },
     {
       "id": "c4d8…",
@@ -103,7 +110,8 @@ the reading at the top.
       "amountToDelegateCents": null,
       "isUtility": false,
       "notes": null,
-      "target": null
+      "target": null,
+      "max": null
     }
   ],
   "accounts": [
@@ -149,6 +157,12 @@ the reading at the top.
 | `target.cyclesRemaining`                                                 | integer \| null                                 | Paychecks left before the date. Null without a date.                                                                                                                 |
 | `target.neededPerCycleCents`                                             | cents \| null                                   | What each remaining paycheck has to carry.                                                                                                                           |
 | `target.status`                                                          | `met` \| `on_track` \| `behind` \| `standing`   |                                                                                                                                                                      |
+| `delegations[].max`                                                      | object \| null                                  | The ceiling a Delegate press stops at, or null on most lines. Only Delegate is capped — a transfer, a refund or an adjustment may take a line past it.               |
+| `max.maxBalanceCents`                                                    | cents                                           | The ceiling itself, as the household typed it.                                                                                                                       |
+| `max.roomCents`                                                          | cents                                           | What still fits below it. `"0"` once the line is at or over it.                                                                                                      |
+| `max.delegatingCents`                                                    | cents                                           | What the next press would actually move into this line.                                                                                                              |
+| `max.withheldCents`                                                      | cents                                           | What the maximum keeps out of that press. `"0"` when it is not in the way; the money stays undelegated rather than going elsewhere.                                  |
+| `max.status`                                                             | `room` \| `partial` \| `full`                   | Whether the whole amount fits, some of it, or none.                                                                                                                  |
 | `accounts[]`                                                             | list                                            | In-budget accounts only, assets then debts, each in the Budget page's order. Off-budget accounts (property, retirement) are net worth, not budget, and are not here. |
 | `accounts[].type`                                                        | `asset` \| `debt`                               |                                                                                                                                                                      |
 | `accounts[].balanceCents`                                                | cents                                           | The figure the page shows, standby included. Debts positive.                                                                                                         |

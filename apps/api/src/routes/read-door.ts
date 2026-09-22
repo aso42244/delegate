@@ -116,6 +116,22 @@ function presentDelegation(row: BudgetRow, grouping: GroupingRef | null): Record
             neededPerCycleCents: centsOut(row.target.neededPerCycleCents),
             status: row.target.status,
           },
+    /*
+     * The ceiling a press stops at, and what it would do to the next one.
+     * Present and null on a line with no maximum, for the same reason the check
+     * fields above are: a key that is sometimes absent and sometimes null is two
+     * shapes for one thing.
+     */
+    max:
+      row.max === null
+        ? null
+        : {
+            maxBalanceCents: centsOut(row.max.maxBalanceCents),
+            roomCents: centsOut(row.max.roomCents),
+            delegatingCents: centsOut(row.max.delegatingCents),
+            withheldCents: centsOut(row.max.withheldCents),
+            status: row.max.status,
+          },
   };
 }
 

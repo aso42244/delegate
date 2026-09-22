@@ -20,6 +20,7 @@ import { Chips } from './Chip.jsx';
 import type { ChipKind } from './chips.js';
 import { MoneyCell } from './MoneyCell.jsx';
 import { Tile } from './Tile.jsx';
+import { describeMaximum } from './max-text.js';
 import { describeTarget } from './target-text.js';
 
 /**
@@ -126,6 +127,20 @@ function parseCents(value: string | null): bigint | null {
  * holding whether or not its price is stale, and reading `btc s` in that order
  * matches how somebody would say it out loud.
  */
+/**
+ * The sentence carried on a row's amount to delegate.
+ *
+ * Both readings that judge this figure, joined — a line can have a target it is
+ * behind on *and* a ceiling holding the money back, and hearing only one of
+ * those would leave the other as an unexplained difference.
+ */
+function amountNote(row: BudgetRowDto): string | null {
+  const sentences = [describeTarget(row), describeMaximum(row)].filter(
+    (sentence): sentence is string => sentence !== null,
+  );
+  return sentences.length === 0 ? null : sentences.join(' ');
+}
+
 function chipsFor(row: BudgetRowDto): ChipKind[] {
   const kinds: ChipKind[] = [];
 
@@ -138,6 +153,10 @@ function chipsFor(row: BudgetRowDto): ChipKind[] {
   // That a target exists, not whether it is being met — that reading lives on
   // the amount to delegate, which is the figure somebody would change.
   if (row.target !== null) kinds.push('target');
+  // And the same for a maximum: that there is a ceiling, not whether it is in
+  // the way this payday. One mark, so it reads the same on the Budget page and
+  // in the band at the top of Overview — both draw this table (§11a).
+  if (row.max !== null) kinds.push('maximum');
   if (row.notes !== null && row.notes.trim() !== '') kinds.push('note');
   // Two ways a balance stops being current, one mark. A manual one nobody has
   // confirmed lately, and a synced one whose feed is answering with an old
@@ -532,13 +551,20 @@ export function BudgetSection({
           // the 12px here was the whole of the misalignment.
           <td className="w-36 row-cell">
             {/*
-              A target marks this figure rather than adding one of its own.
+              A target and a maximum both mark this figure rather than adding
+              one of their own.
 
               The amount to delegate is the number that decides whether the
-              target is reached, so when the two disagree it is the number to
-              change — and the sentence saying by how much belongs on it, not
-              beside the name. The chip by the name says only that a target
-              exists; this says whether it is being met.
+              target is reached and the number a maximum acts on, so when any of
+              them disagree it is the number to change — and the sentence saying
+              so belongs on it, not beside the name. The chips by the name say
+              only that a target and a ceiling exist; this says what they are
+              doing to the next press.
+
+              Both sentences when both apply, in that order: what the line is
+              for, then what stops it. Yellow stays the target's alone — a line
+              held at its maximum is this working, not a thing to fix, and §9
+              keeps that colour for a thing to do.
             */}
             <MoneyCell
               valueCents={parseCents(row.amountToDelegateCents)}
@@ -546,7 +572,7 @@ export function BudgetSection({
               emphasis="quiet"
               label={`${row.name} amount to delegate`}
               warn={row.target?.status === 'behind'}
-              {...(describeTarget(row) === null ? {} : { description: describeTarget(row)! })}
+              {...(amountNote(row) === null ? {} : { description: amountNote(row)! })}
               onCommit={(cents) => onEditAmount?.(row.id, cents)}
             />
           </td>

@@ -6,7 +6,40 @@ phase (`v0.1.0-phase1`, and so on).
 
 ## [Unreleased]
 
-Nothing yet.
+### Added
+
+- **A delegation can have a maximum, and Delegate stops at it**
+  ([ADR 073](docs/decisions/073-a-maximum-is-the-half-that-writes.md)). Optional
+  on every line: a line capped at $400, set to receive $200 a paycheck and
+  already holding $275, takes **$125** on the next press. The other **$75 is not
+  moved anywhere** — it stays undelegated, so the budget's own reading rises by
+  exactly that much and offers it back for whatever the payday actually needs.
+
+  It caps the **balance**, not the amount, which is what reconciles it with
+  [ADR 047](docs/decisions/047-a-target-never-moves-an-amount.md): the figure the
+  household typed is never rewritten, so a line spent back down funds in full
+  again by itself with nothing to remember. Only Delegate is capped — a transfer,
+  a refund or a manual adjustment may still take a line past its maximum, and
+  none of them is refused.
+
+  Set from the row menu on the Budget page and from Settings → Delegations, where
+  it is an ordinary money box beside the amount it caps. The dialog shows what
+  the next press would do in the line's own figures, live as somebody types, and
+  says where the withheld money goes. The Delegate confirmation states what the
+  maximums held back rather than quietly deducting it: _"$75.00 is held back by a
+  line at its maximum and stays available to delegate."_
+
+  The new chip is **`mx`**, quiet, beside the name — a classification, not a
+  verdict, so it reads the same whether or not the ceiling is in the way this
+  payday. What the maximum is doing to the next press sits on the amount to
+  delegate, on hover and through `aria-describedby`, beside the target's sentence
+  where a line has both. Because the band at the top of Overview and the Budget
+  page draw the one `DelegationsTable`, the mark appears on both screens without
+  a second rendering of it.
+
+  One additive migration: `max_balance_cents`, nullable, with a check constraint
+  refusing zero. Every existing line gets null and behaves exactly as it did.
+  `GET /api/read/budget` carries `max`, present and null where there is none.
 
 ## [0.79.0] — 2026-09-21
 
