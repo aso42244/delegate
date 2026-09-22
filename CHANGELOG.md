@@ -6,6 +6,10 @@ phase (`v0.1.0-phase1`, and so on).
 
 ## [Unreleased]
 
+Nothing yet.
+
+## [0.80.0] — 2026-09-22
+
 ### Added
 
 - **A delegation can have a maximum, and Delegate stops at it**
