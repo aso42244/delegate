@@ -114,6 +114,8 @@ export interface MakeDelegationOptions {
   readonly isUtility?: boolean;
   readonly groupingId?: string | null;
   readonly notes?: string | null;
+  /** The ceiling a Delegate press stops at. Null is no maximum. */
+  readonly maxBalanceCents?: bigint | null;
   /** As for an account: a rebuild skips a date before the line existed. */
   readonly createdAt?: Date;
 }
@@ -132,6 +134,7 @@ export async function makeDelegation(options: MakeDelegationOptions): Promise<{ 
       isUtility: options.isUtility ?? false,
       groupingId: options.groupingId ?? null,
       notes: options.notes ?? null,
+      maxBalanceCents: options.maxBalanceCents ?? null,
       ...(options.createdAt ? { createdAt: options.createdAt } : {}),
     },
     select: { id: true },

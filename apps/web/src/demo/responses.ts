@@ -322,6 +322,7 @@ function row(
     checkMemo: null,
     checkIssuedAt: null,
     target: null,
+    max: null,
   };
 }
 

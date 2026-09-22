@@ -77,6 +77,24 @@ export const CHIPS = {
    * something is off without saying which number to change.
    */
   target: { mark: 'tg', meaning: 'Saving towards a target', tone: 'quiet' },
+  /**
+   * `mx`, because `m` is spent on a manual account and both kinds of row sit on
+   * the Budget page together.
+   *
+   * Quiet, and quiet is the argument. A maximum is a **classification** — this
+   * line stops at a ceiling — and classification is all a chip ever carries. It
+   * is also the one thing about a maximum that is true whether or not the
+   * ceiling is in the way this payday, which is what makes it safe to read at a
+   * glance on a row somebody is only passing over. What a maximum is doing to
+   * the next press changes every time the line is spent, so it lives on the
+   * amount to delegate — the figure it is about — exactly as a target's verdict
+   * does, and for the reason ADR 047 gives: a mark beside the name would say
+   * something is happening without saying to which number.
+   *
+   * And it is not yellow. Yellow is for a thing to do, and a full envelope is
+   * the feature working.
+   */
+  maximum: { mark: 'mx', meaning: 'Has a maximum — Delegate stops at it', tone: 'quiet' },
 } as const satisfies Record<string, ChipSpec>;
 
 export type ChipKind = keyof typeof CHIPS;

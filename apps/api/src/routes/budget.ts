@@ -68,6 +68,13 @@ const createDelegationSchema = z.object({
   targetDate: z.union([dayIn, z.null()]).optional(),
   /** Months between occurrences. Null is a one-off; the date is then a deadline. */
   targetIntervalMonths: z.union([z.number().int().min(1).max(120), z.null()]).optional(),
+  /**
+   * The most this line may hold when Delegate is pressed. Null is no maximum.
+   *
+   * Unlike the target above it writes: a press moves whatever of the amount
+   * still fits, and the remainder stays undelegated.
+   */
+  maxBalanceCents: nullableCents.optional(),
 });
 
 const updateDelegationSchema = z.object({
@@ -86,6 +93,8 @@ const updateDelegationSchema = z.object({
   targetDate: z.union([dayIn, z.null()]).optional(),
   /** Months between occurrences. Null is a one-off; the date is then a deadline. */
   targetIntervalMonths: z.union([z.number().int().min(1).max(120), z.null()]).optional(),
+  /** The ceiling a press stops at. Null clears it. */
+  maxBalanceCents: nullableCents.optional(),
 });
 
 /**
@@ -178,6 +187,21 @@ function presentRow(row: BudgetRow): Record<string, unknown> {
             cyclesRemaining: row.target.cyclesRemaining,
             neededPerCycleCents: centsOut(row.target.neededPerCycleCents),
             status: row.target.status,
+          },
+    /*
+     * The maximum and what it does to the next press. Sent together for the
+     * reason the target is: the row shows what will happen rather than working
+     * it out, and the run reads the same function, so the two cannot disagree.
+     */
+    max:
+      row.max === null
+        ? null
+        : {
+            maxBalanceCents: centsOut(row.max.maxBalanceCents),
+            roomCents: centsOut(row.max.roomCents),
+            delegatingCents: centsOut(row.max.delegatingCents),
+            withheldCents: centsOut(row.max.withheldCents),
+            status: row.max.status,
           },
   };
 }
@@ -455,7 +479,19 @@ export const budgetRoutes: FastifyPluginCallback = (fastify, _options, done) => 
   /** What the confirmation dialog shows before the owner commits. */
   fastify.get('/api/budget/delegate/preview', async () => {
     const preview = await previewDelegate(prisma);
-    return { totalCents: centsOut(preview.totalCents), lineCount: preview.lineCount };
+    return {
+      // Already net of every maximum — this is what the press will move.
+      totalCents: centsOut(preview.totalCents),
+      lineCount: preview.lineCount,
+      /*
+       * What the maximums keep out, stated rather than quietly deducted. The
+       * column of amounts on the page adds up to more than the total above
+       * whenever a line is full, and a confirmation that does not say why is a
+       * figure the reader has to reconcile on their own.
+       */
+      withheldCents: centsOut(preview.withheldCents),
+      cappedCount: preview.cappedCount,
+    };
   });
 
   fastify.post('/api/budget/delegate', async (request) => {

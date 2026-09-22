@@ -283,6 +283,24 @@ function DelegateDialog({ onClose }: { onClose: () => void }): ReactNode {
             Distribute <strong>{formatCents(BigInt(preview.data.totalCents))}</strong> across{' '}
             <strong>{preview.data.lineCount}</strong>{' '}
             {preview.data.lineCount === 1 ? 'line' : 'lines'}.
+            {/*
+              What the maximums keep out, said rather than quietly deducted.
+
+              The total above is already net of them, so without this sentence it
+              is smaller than the To delegate column on the page adds up to, with
+              nothing on screen to say why — and the figure it disagrees with is
+              the one the household typed. Where the money goes is the other half
+              of it, and the answer is nowhere: it stays available to delegate.
+            */}
+            {BigInt(preview.data.withheldCents) > 0n && (
+              <span className="mt-2 block text-quiet text-muted">
+                {formatCents(BigInt(preview.data.withheldCents))} is held back by{' '}
+                {preview.data.cappedCount === 1
+                  ? 'a line at its maximum'
+                  : `${preview.data.cappedCount} lines at their maximum`}{' '}
+                and stays available to delegate.
+              </span>
+            )}
             <span className="mt-2 block text-quiet text-muted">
               Lines with no amount receive nothing. This can be undone for a while afterwards.
             </span>

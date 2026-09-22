@@ -764,6 +764,7 @@ width is scarcest.
 | `u`   | Utility — tracked on the Utilities page    | Budget, Settings |
 | `n`   | Has a note                                 | Budget           |
 | `tg`  | Saving towards a target                    | Budget           |
+| `mx`  | Has a maximum — Delegate stops at it       | Budget, Settings |
 
 `p`, `r` and `a` take the yellow; the rest are the quiet grey. Yellow means
 something is worth noticing, not that something is broken.
@@ -1158,6 +1159,51 @@ dialog to type that on the row is a step in the wrong moment.
 **It is set in one place.** The row menu opens the dialog; Settings → Delegations
 shows the target and its verdict and does not offer a second, terser editor. Two
 editors for one thing would mean the explanation exists in only one of them.
+
+## A maximum is the half of that sentence which writes
+
+A delegation can also carry a **maximum**: the most it holds after a Delegate
+press. A line capped at $400, set to receive $200 a paycheck and already holding
+$275, takes $125 — and the other $75 stays undelegated, which is the reading at
+the top of the page and therefore available for whatever that payday needs. See
+[ADR 073](decisions/073-a-maximum-is-the-half-that-writes.md).
+
+**It is drawn exactly as a target is, which is the point.** The two are one
+subject read from opposite ends — a floor a line works towards, a ceiling it
+stops at — and giving the second its own idiom would make the row harder to read
+rather than more informative.
+
+**The chip says a maximum exists.** `mx`, quiet, beside the name; `m` is spent on
+a manual account and both kinds of row sit on this page together. Quiet, because
+a full envelope is this feature working rather than a thing to do, and §9 keeps
+yellow for a thing to do. Whether the ceiling is in the way _this_ payday changes
+every time the line is spent, so it belongs on the figure and not on the name.
+
+**What it does to the next press marks the amount to delegate**, on hover and
+through `aria-describedby`, beside the target's sentence where a line has both.
+It does not take the warning colour: a line held at its ceiling is correct, and
+the figure the household typed is still the figure they typed.
+
+**The chip appears on Overview without a second rendering of it.** The band at
+the top of Overview and the Budget page draw the same `DelegationsTable` (§11a),
+so a mark added to the vocabulary is on both screens or on neither.
+
+**The dialog spends its space on what a maximum _will_ do**, which is the mirror
+of the target dialog's problem. A target has to say it changes nothing; a maximum
+changes the next press, so it says so in the line's own figures, live as somebody
+types — and it says where the money goes, because that is the part somebody would
+otherwise guess at. It goes nowhere: nothing is redistributed to another line.
+
+**Only Delegate is capped.** A transfer, a refund or a manual adjustment may take
+a line past its maximum and none is refused. A cap that rejected a refund would
+be losing money to enforce a preference.
+
+**Unlike a target, it is editable in both places.** Settings → Delegations
+carries it as an ordinary money box beside the amount it caps. The target's
+read-only treatment there exists because that dialog is mostly an explanation,
+and a terser second editor would be that explanation missing; a maximum needs no
+such paragraph, and §9.5 asks that what is configurable elsewhere is configurable
+there.
 
 ## Settings, and the width the shell was taking
 

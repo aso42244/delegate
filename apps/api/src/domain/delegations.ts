@@ -109,6 +109,24 @@ function assertTargetSane(
   }
 }
 
+/**
+ * A maximum is an amount, or it is not there.
+ *
+ * Held in the database too, so a caller that never comes through here cannot
+ * write a zero either. Zero is refused for the same reason a zero target is:
+ * it would be an instruction never to fund the line, which an empty amount to
+ * delegate already says — and says without every future press silently doing
+ * nothing.
+ */
+function assertMaximumSane(maxBalanceCents: Cents | null): void {
+  if (maxBalanceCents !== null && maxBalanceCents <= 0n) {
+    throw new ValidationError(
+      'maximum_not_positive',
+      'A maximum is a ceiling to stop at. Clear it instead of setting it to zero.',
+    );
+  }
+}
+
 export interface CreateDelegationInput {
   readonly name: string;
   readonly amountToDelegateCents?: Cents | null | undefined;
@@ -127,6 +145,13 @@ export interface CreateDelegationInput {
   readonly targetDate?: Date | null | undefined;
   /** How often the date comes round, in months. Null for a one-off. */
   readonly targetIntervalMonths?: number | null | undefined;
+  /**
+   * The most this line may hold when Delegate is pressed. Null is no maximum.
+   *
+   * Unlike a target, this one writes: a press moves whatever of the amount
+   * still fits, and the rest stays undelegated rather than going anywhere.
+   */
+  readonly maxBalanceCents?: Cents | null | undefined;
 }
 
 export async function createDelegation(
@@ -141,6 +166,7 @@ export async function createDelegation(
     input.targetDate ?? null,
     input.targetIntervalMonths ?? null,
   );
+  assertMaximumSane(input.maxBalanceCents ?? null);
 
   return db.delegation.create({
     data: {
@@ -154,6 +180,7 @@ export async function createDelegation(
       targetCents: input.targetCents ?? null,
       targetDate: input.targetDate ?? null,
       targetIntervalMonths: input.targetIntervalMonths ?? null,
+      maxBalanceCents: input.maxBalanceCents ?? null,
     },
     select: { id: true },
   });
@@ -177,6 +204,14 @@ export interface UpdateDelegationInput {
   readonly targetDate?: Date | null | undefined;
   /** How often the date comes round, in months. Null for a one-off. */
   readonly targetIntervalMonths?: number | null | undefined;
+  /**
+   * The most this line may hold when Delegate is pressed. Null clears it.
+   *
+   * It stands on its own — nothing else has to be sent with it and it clears
+   * nothing else — so it needs none of the three-way resolution the target
+   * below does.
+   */
+  readonly maxBalanceCents?: Cents | null | undefined;
 }
 
 export async function updateDelegation(
@@ -252,6 +287,7 @@ export async function updateDelegation(
         : existing.targetIntervalMonths;
 
   assertTargetSane(nextTargetCents, nextTargetDate, nextTargetInterval);
+  if (input.maxBalanceCents !== undefined) assertMaximumSane(input.maxBalanceCents);
 
   await db.delegation.update({
     where: { id },
@@ -263,6 +299,7 @@ export async function updateDelegation(
       ...(input.groupingId === undefined ? {} : { groupingId: input.groupingId }),
       ...(input.isUtility === undefined ? {} : { isUtility: input.isUtility }),
       ...(input.notes === undefined ? {} : { notes: input.notes }),
+      ...(input.maxBalanceCents === undefined ? {} : { maxBalanceCents: input.maxBalanceCents }),
       // All three, always, from the values resolved above. A request that
       // mentions none of them rewrites them to what it just read, which is a
       // no-op — and one that mentions any of them cannot leave the other two
