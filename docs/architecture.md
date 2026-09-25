@@ -17,7 +17,8 @@ A fourth term corrects for pending transactions that have been categorized: the
 envelope moves the moment one is categorized, while the account balance is the
 institution's settled balance and will not include it for another day or three.
 Without it the first three terms are out of step by the amount of the charge. See
-ADR 020.
+ADR 020. An account whose institution already counts its pending charges in the
+balance it reports is marked as such and left out of this term — ADR 074.
 
 That difference is displayed as a chip beside the Budget page title — `Balanced`,
 `To delegate $1,000.00`, `Over delegated $212.00`. It is not enforced by

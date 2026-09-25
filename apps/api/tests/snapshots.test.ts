@@ -309,6 +309,43 @@ describe('the aggregate', () => {
     expect(aggregate.totalDelegationsCents).toBe(identity.delegationsCents);
   });
 
+  it('leaves out pending charges an institution already counted, as the page does', async () => {
+    const checking = await makeAccount({
+      name: 'Checking',
+      type: 'asset',
+      balanceCents: 500_000n,
+    });
+    // ADR 074: this institution's balance already carries its pending charges.
+    await prisma.account.update({
+      where: { id: checking.id },
+      data: { balanceIncludesPending: true },
+    });
+    const grocery = await makeDelegation({ name: 'Grocery' });
+
+    const pending = await prisma.transaction.create({
+      data: {
+        accountId: checking.id,
+        postedAt: new Date('2026-08-27T12:00:00Z'),
+        amountCents: -7_500n,
+        descriptionRaw: 'GROCERY STORE',
+        description: 'Grocery Store',
+        pending: true,
+      },
+      select: { id: true },
+    });
+    await prisma.transactionAllocation.create({
+      data: { transactionId: pending.id, delegationId: grocery.id, amountCents: -7_500n },
+    });
+
+    const identity = await computeBudgetIdentity(prisma);
+    await captureSnapshot(prisma, DAY);
+
+    const aggregate = await prisma.aggregateSnapshot.findFirstOrThrow();
+    expect(identity.pendingCents).toBe(0n);
+    expect(aggregate.pendingCategorizedCents).toBe(0n);
+    expect(aggregate.identityValueCents).toBe(identity.differenceCents);
+  });
+
   /**
    * The two scopes are different sums, and the house is the reason they exist.
    * A mortgage in net worth and out of the budget must move one and not the

@@ -52,6 +52,8 @@ export interface BudgetRow {
   readonly inBudget: boolean;
   readonly inNetWorth: boolean;
   readonly needsReview: boolean;
+  /** The institution's balance already carries its pending charges — ADR 074. */
+  readonly balanceIncludesPending: boolean;
   readonly balanceAsOf: Date | null;
   /** The date the feed put on this balance; null for a manual account. */
   readonly feedBalanceAsOf: Date | null;
@@ -234,6 +236,7 @@ export async function buildBudgetView(
           balanceCents: true,
           groupingId: true,
           needsReview: true,
+          balanceIncludesPending: true,
           balanceAsOf: true,
           feedBalanceAsOf: true,
           feedLastSeenAt: true,
@@ -312,6 +315,7 @@ export async function buildBudgetView(
     inBudget: account.inBudget,
     inNetWorth: account.inNetWorth,
     needsReview: account.needsReview,
+    balanceIncludesPending: account.balanceIncludesPending,
     balanceAsOf: account.balanceAsOf,
     feedBalanceAsOf: account.feedBalanceAsOf,
     feedLastSeenAt: account.feedLastSeenAt,
@@ -346,6 +350,7 @@ export async function buildBudgetView(
     inBudget: false,
     inNetWorth: false,
     needsReview: false,
+    balanceIncludesPending: false,
     balanceAsOf: null,
     feedBalanceAsOf: null,
     feedLastSeenAt: null,

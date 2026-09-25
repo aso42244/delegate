@@ -6,7 +6,22 @@ phase (`v0.1.0-phase1`, and so on).
 
 ## [Unreleased]
 
-Nothing yet.
+### Fixed
+
+- **A bank that already counts its pending charges no longer reads as
+  over-delegated** ([ADR 074](docs/decisions/074-a-bank-can-count-its-own-pending.md)).
+  The budget adds categorized pending charges back to the account balances,
+  because a feed's balance is meant to be the settled one
+  ([ADR 020](docs/decisions/020-pending-transactions-in-the-identity.md)).
+  Plains Commerce reports a balance already net of a pending ACH debit, so a
+  $200.00 transfer was taken out twice and a balanced budget read **Over
+  delegated $200.00**.
+
+  An account's row menu now has **Balance includes pending**, on synced accounts
+  only. Switched on, that account's pending charges are left out of the
+  correction — on the reading and in the nightly snapshot alike. They still
+  empty their envelopes when categorized, exactly as before. Off by default, so
+  nothing reads differently on upgrade.
 
 ## [0.80.0] — 2026-09-22
 

@@ -81,3 +81,11 @@ that account, or exclude it from the term.
 The alternative — reading `available-balance` everywhere — was rejected because
 it is optional in the feed, absent from many institutions, and would make the
 asset and debt totals disagree with what the bank's own website shows.
+
+## Amendment — 2026-09-25
+
+The institution this anticipated turned up: Plains Commerce reports a balance
+already net of a pending ACH debit, and the budget read over-delegated by exactly
+$200.00. The per-account route is what was built — an account can be marked as
+one whose balance includes its pending charges, and it is then left out of the
+fourth term. [ADR 074](074-a-bank-can-count-its-own-pending.md).

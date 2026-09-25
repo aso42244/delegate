@@ -481,6 +481,14 @@ model Account {
   // Positive magnitude for both assets and debts. See the file header.
   balanceCents BigInt @default(0) @map("balance_cents")
 
+  /// The institution's balance already carries its pending charges.
+  ///
+  /// The identity adds categorized pending charges back because the feed's
+  /// `balance` is meant to be the settled one (ADR 020). An institution that
+  /// folds pending activity into it would have those charges counted twice, so
+  /// an account marked here is left out of that term. ADR 074.
+  balanceIncludesPending Boolean @default(false) @map("balance_includes_pending")
+
   // Manual accounts confirm their balance by hand; SimpleFIN accounts have it
   // stamped on each sync. One staleness mechanism serves physical cash, the
   // hardware wallet, and property value alike — there is no property-specific

@@ -159,6 +159,7 @@ function presentRow(row: BudgetRow): Record<string, unknown> {
     inNetWorth: row.inNetWorth,
     managedAs: row.managedAs,
     needsReview: row.needsReview,
+    balanceIncludesPending: row.balanceIncludesPending,
     balanceAsOf: dateOut(row.balanceAsOf),
     feedBalanceAsOf: dateOut(row.feedBalanceAsOf),
     feedLastSeenAt: dateOut(row.feedLastSeenAt),

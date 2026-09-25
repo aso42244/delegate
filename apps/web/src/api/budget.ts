@@ -24,6 +24,8 @@ export interface BudgetRowDto {
   readonly inBudget: boolean;
   readonly inNetWorth: boolean;
   readonly needsReview: boolean;
+  /** The institution's balance already carries its pending charges — ADR 074. */
+  readonly balanceIncludesPending: boolean;
   readonly balanceAsOf: string | null;
   /** The date the feed put on this balance; null for a manual account. */
   readonly feedBalanceAsOf: string | null;
