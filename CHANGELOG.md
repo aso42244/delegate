@@ -6,6 +6,10 @@ phase (`v0.1.0-phase1`, and so on).
 
 ## [Unreleased]
 
+Nothing yet.
+
+## [0.81.0] — 2026-09-25
+
 ### Fixed
 
 - **A bank that already counts its pending charges no longer reads as
