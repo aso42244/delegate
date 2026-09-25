@@ -235,14 +235,15 @@ async function buildAggregate(
     /*
      * The fourth term: categorized pending charges the account balances do not
      * carry yet. Same condition as `computeBudgetIdentity`, so the stored
-     * identity is the same figure the Budget page shows.
+     * identity is the same figure the Budget page shows — including leaving
+     * out an account whose balance already carries its pending charges.
      */
     db.transaction.aggregate({
       where: {
         pending: true,
         archivedAt: null,
         allocations: { some: {} },
-        account: { inBudget: true, archivedAt: null },
+        account: { inBudget: true, archivedAt: null, balanceIncludesPending: false },
       },
       _sum: { amountCents: true },
     }),

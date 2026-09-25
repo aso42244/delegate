@@ -55,13 +55,19 @@ export async function computeBudgetIdentity(db: Db): Promise<IdentityResult> {
      * created settled, so there is no manual row to exclude — but the filter is
      * on the account rather than the source, because what matters is whether
      * this account is one the first two terms count at all.
+     *
+     * `balanceIncludesPending` is the exception ADR 020 anticipated: an
+     * institution that folds pending activity into the balance it reports. Its
+     * first-term figure already carries the charge, so adding it back here
+     * would count it twice and read as over-delegated by exactly its amount
+     * (ADR 074).
      */
     db.transaction.aggregate({
       where: {
         pending: true,
         archivedAt: null,
         allocations: { some: {} },
-        account: { inBudget: true, archivedAt: null },
+        account: { inBudget: true, archivedAt: null, balanceIncludesPending: false },
       },
       _sum: { amountCents: true },
     }),

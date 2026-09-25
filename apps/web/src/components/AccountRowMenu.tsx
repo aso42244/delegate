@@ -43,6 +43,11 @@ export interface AccountMenuRow {
   readonly inBudget: boolean;
   readonly inNetWorth: boolean;
   readonly needsReview: boolean;
+  /**
+   * The institution's balance already carries its pending charges — ADR 074.
+   * Absent on a caller that does not carry it, which hides the item.
+   */
+  readonly balanceIncludesPending?: boolean;
   readonly groupingId?: string | null;
   readonly nickname?: string | null;
 }
@@ -419,6 +424,21 @@ export function AccountRowMenu({
                 label={`${row.name} in net worth`}
               />
             </div>
+
+            {/* A synced account only. Most institutions report a settled
+                balance and the identity adds categorized pending charges back
+                to it (ADR 020); one that folds them into its balance would have
+                them counted twice. A manual account has no pending charges. */}
+            {row.source !== 'manual' && row.balanceIncludesPending !== undefined && (
+              <div className={ITEM_CLASS}>
+                <span>Balance includes pending</span>
+                <Toggle
+                  checked={row.balanceIncludesPending}
+                  onChange={(next) => update.mutate({ balanceIncludesPending: next })}
+                  label={`${row.name} balance includes pending`}
+                />
+              </div>
+            )}
 
             {row.needsReview && (
               <button

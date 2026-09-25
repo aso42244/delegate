@@ -26,6 +26,7 @@ interface AccountsBody {
     type: string;
     balanceCents: string;
     inBudget: boolean;
+    balanceIncludesPending: boolean;
     archivedAt: string | null;
   }[];
 }
@@ -240,6 +241,55 @@ describe('PATCH /api/accounts/:id', () => {
     const updated = await prisma.account.findUniqueOrThrow({ where: { id: account.id } });
     expect(updated.type).toBe('debt');
     expect(updated.needsReview).toBe(false);
+  });
+});
+
+describe('balance includes pending', () => {
+  /*
+   * A round trip, not an assertion on the PATCH: the list is what every screen
+   * reads, and a field written correctly and dropped from a narrow `select` on
+   * the way out has happened here twice.
+   */
+  it('is written on a synced account and read back by the list', async () => {
+    const account = await makeAccount({ name: 'Plains Checking', type: 'asset', balanceCents: 1n });
+    await prisma.account.update({
+      where: { id: account.id },
+      data: { source: 'simplefin', externalId: 'plains-1' },
+    });
+    expect((await list()).accounts[0]).toMatchObject({ balanceIncludesPending: false });
+
+    const response = await app.inject({
+      method: 'PATCH',
+      url: `/api/accounts/${account.id}`,
+      headers: { cookie },
+      payload: { balanceIncludesPending: true },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect((await list()).accounts[0]).toMatchObject({ balanceIncludesPending: true });
+
+    const budget = await app.inject({ method: 'GET', url: '/api/budget', headers: { cookie } });
+    // Ungrouped, since the account was never placed in a grouping.
+    const rows = budget.json<{
+      assets: { ungrouped: { id: string; balanceIncludesPending: boolean }[] };
+    }>().assets.ungrouped;
+    expect(rows.find((row) => row.id === account.id)?.balanceIncludesPending).toBe(true);
+  });
+
+  it('is refused on a manual account, which has no pending charges', async () => {
+    const account = await makeAccount({ name: 'Physical Cash', type: 'asset', balanceCents: 1n });
+
+    const response = await app.inject({
+      method: 'PATCH',
+      url: `/api/accounts/${account.id}`,
+      headers: { cookie },
+      payload: { balanceIncludesPending: true },
+    });
+
+    expect(response.statusCode).toBe(409);
+    expect(errorOf(response).code).toBe('balance_includes_pending_not_applicable');
+    const unchanged = await prisma.account.findUniqueOrThrow({ where: { id: account.id } });
+    expect(unchanged.balanceIncludesPending).toBe(false);
   });
 });
 

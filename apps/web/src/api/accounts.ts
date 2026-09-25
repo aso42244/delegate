@@ -13,6 +13,11 @@ export interface AccountDto {
   readonly inBudget: boolean;
   readonly inNetWorth: boolean;
   readonly needsReview: boolean;
+  /**
+   * The institution's balance already carries its pending charges, so the
+   * identity leaves them out rather than counting them twice — ADR 074.
+   */
+  readonly balanceIncludesPending: boolean;
   readonly balanceAsOf: string | null;
   /**
    * The date the feed put on this balance, not the time we last asked for it.
@@ -42,6 +47,8 @@ export interface UpdateAccountInput {
   readonly stalenessIntervalDays?: number | null;
   readonly groupingId?: string | null;
   readonly needsReview?: boolean;
+  /** Synced accounts only. */
+  readonly balanceIncludesPending?: boolean;
   /** Manual accounts only — a SimpleFIN balance is the institution's to state. */
   readonly balanceCents?: string;
   /** The mortgage secured against this property, if it is one. */

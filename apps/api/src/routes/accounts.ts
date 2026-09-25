@@ -54,6 +54,8 @@ const updateSchema = z.object({
   stalenessIntervalDays: z.number().int().nullish(),
   groupingId: z.string().uuid().nullish(),
   needsReview: z.boolean().optional(),
+  // Synced accounts only: the institution already counts its pending charges.
+  balanceIncludesPending: z.boolean().optional(),
   balanceCents: centsInLoose.optional(),
   // A property may point at the mortgage secured against it; equity is the
   // difference, computed on read.
@@ -94,6 +96,7 @@ export const accountRoutes: FastifyPluginCallback = (fastify, _options, done) =>
         inBudget: true,
         inNetWorth: true,
         needsReview: true,
+        balanceIncludesPending: true,
         balanceAsOf: true,
         feedBalanceAsOf: true,
         stalenessIntervalDays: true,
@@ -143,6 +146,9 @@ export const accountRoutes: FastifyPluginCallback = (fastify, _options, done) =>
         inBudget: account.inBudget,
         inNetWorth: account.inNetWorth,
         needsReview: account.needsReview,
+        // Whether the identity leaves this account's pending charges out, because
+        // the institution's balance already carries them — ADR 074.
+        balanceIncludesPending: account.balanceIncludesPending,
         balanceAsOf: dateOut(account.balanceAsOf),
         // How old the feed says its own snapshot is, null when it does not say
         // and for every manual account. Never inferred from when we last synced.

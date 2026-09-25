@@ -112,6 +112,11 @@ export interface UpdateAccountInput {
   readonly stalenessIntervalDays?: number | null | undefined;
   readonly groupingId?: string | null | undefined;
   readonly needsReview?: boolean | undefined;
+  /**
+   * Synced accounts only. The institution's balance already carries its pending
+   * charges, so the identity must not add them back — ADR 074.
+   */
+  readonly balanceIncludesPending?: boolean | undefined;
   /** Manual accounts only. Sets the balance outright and stamps it as of now. */
   readonly balanceCents?: Cents | undefined;
   /** Recorded on the dated valuation a balance edit writes, when there is one. */
@@ -159,6 +164,19 @@ export async function updateAccount(
     );
   }
 
+  /*
+   * A manual account has no institution to disagree with. Every row on one is
+   * created settled and moves the balance itself, so there is never a pending
+   * charge on it to leave out — and a switch that does nothing is a switch
+   * somebody turns on while looking for the one that would have helped.
+   */
+  if (input.balanceIncludesPending !== undefined && account.source === 'manual') {
+    throw new ConflictError(
+      'balance_includes_pending_not_applicable',
+      'A manual account has no pending charges. This is for an account a bank reports.',
+    );
+  }
+
   if (input.name !== undefined && input.name.trim() === '') {
     throw new ValidationError('empty_name', 'An account needs a name.');
   }
@@ -189,6 +207,9 @@ export async function updateAccount(
         : { stalenessIntervalDays: input.stalenessIntervalDays }),
       ...(input.groupingId === undefined ? {} : { groupingId: input.groupingId }),
       ...(input.needsReview === undefined ? {} : { needsReview: input.needsReview }),
+      ...(input.balanceIncludesPending === undefined
+        ? {}
+        : { balanceIncludesPending: input.balanceIncludesPending }),
       ...(input.mortgageAccountId === undefined
         ? {}
         : { mortgageAccountId: input.mortgageAccountId }),

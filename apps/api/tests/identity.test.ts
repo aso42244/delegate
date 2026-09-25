@@ -719,6 +719,67 @@ describe('pending transactions', () => {
     await expectCacheMatchesLedger();
   });
 
+  it('are not added back where the institution already counted them', async () => {
+    /*
+     * Reported from real data, and anticipated in ADR 020's consequences. A $200
+     * ACH debit was still pending in the feed while the bank's reported balance
+     * already had it taken out — the bank's own page showed it posted, with the
+     * running balance beside it. Categorizing it emptied the envelope, and the
+     * fourth term then took the $200 out a second time: over-delegated by
+     * exactly the charge on a budget that was balanced.
+     */
+    const checking = await makeAccount({
+      name: 'Plains Commerce Checking',
+      type: 'asset',
+      balanceCents: 5_000_00n,
+    });
+    await prisma.account.update({
+      where: { id: checking.id },
+      data: { source: 'simplefin', externalId: 'plains-1' },
+    });
+    const roth = await makeDelegation({ name: 'Roth' });
+    await adjustDelegationByDelta(prisma, {
+      delegationId: roth.id,
+      deltaCents: 5_000_00n,
+      actorId,
+    });
+    expect(await identityDifference()).toBe(0n);
+
+    // The feed reports the debit as pending and the balance already net of it.
+    // A feed row rather than `makeTransaction`'s manual one, which on a synced
+    // account would be a standby row and move the balance on read by itself.
+    const pending = await prisma.transaction.create({
+      data: {
+        accountId: checking.id,
+        source: 'simplefin',
+        externalId: 'plains-txn-1',
+        postedAt: new Date('2026-09-24T12:00:00Z'),
+        amountCents: -200_00n,
+        descriptionRaw: 'ACH Payment FID BKG SVC LLC MONEYLINE',
+        description: 'ACH Payment FID BKG SVC LLC MONEYLINE',
+        pending: true,
+      },
+      select: { id: true },
+    });
+    await prisma.account.update({
+      where: { id: checking.id },
+      data: { balanceCents: 4_800_00n },
+    });
+    await prisma.$transaction((tx) => categorizeTransaction(tx, pending.id, roth.id, { actorId }));
+
+    // Counted twice: the defect as reported.
+    expect(await identityDifference()).toBe(-200_00n);
+
+    await prisma.account.update({
+      where: { id: checking.id },
+      data: { balanceIncludesPending: true },
+    });
+
+    expect((await computeBudgetIdentity(prisma)).pendingCents).toBe(0n);
+    expect(await identityDifference()).toBe(0n);
+    await expectCacheMatchesLedger();
+  });
+
   it('are counted only once categorized, and only on in-budget accounts', async () => {
     const card = await makeAccount({ name: 'Card', type: 'debt', balanceCents: 0n });
     const offBudget = await makeAccount({

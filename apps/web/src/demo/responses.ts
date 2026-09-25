@@ -312,6 +312,7 @@ function row(
     inBudget: true,
     inNetWorth: true,
     needsReview: false,
+    balanceIncludesPending: false,
     balanceAsOf: null,
     feedBalanceAsOf: null,
     feedLastSeenAt: null,
