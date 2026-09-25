@@ -765,9 +765,7 @@ describe('pending transactions', () => {
       where: { id: checking.id },
       data: { balanceCents: 4_800_00n },
     });
-    await prisma.$transaction((tx) =>
-      categorizeTransaction(tx, pending.id, roth.id, { actorId }),
-    );
+    await prisma.$transaction((tx) => categorizeTransaction(tx, pending.id, roth.id, { actorId }));
 
     // Counted twice: the defect as reported.
     expect(await identityDifference()).toBe(-200_00n);
