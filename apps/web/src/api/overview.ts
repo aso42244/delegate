@@ -1,0 +1,412 @@
+import { api } from './client.js';
+
+/**
+ * Overview's two calls: the arrangement, and the data behind it.
+ *
+ * They are separate because they change for different reasons and at different
+ * rates. Moving a tile rewrites the layout and must not refetch every figure on
+ * the page; changing the period refetches the figures and must not touch the
+ * arrangement. One combined call would do both every time.
+ */
+
+export interface OverviewTileDto {
+  readonly key: string;
+  /** Which side of the page: the main grid, or the column under the panel. */
+  readonly region: 'main' | 'sidebar';
+  /** Which row. A row divides its width evenly among its members. */
+  readonly row: number;
+  /** Order within that row. */
+  readonly position: number;
+  /**
+   * How tall this tile's **row** is, in pixels. Null is the tile's own height.
+   *
+   * Per row and stored on every tile in it, because a row is not a record here —
+   * it is a number two or three tiles happen to share. A read takes the largest
+   * of them, so a row whose members disagree is still a row.
+   */
+  readonly heightPx: number | null;
+  /** Which chart this tile is drawn as; null means the tile's own default. */
+  readonly display: string | null;
+  /**
+   * What the tile has been told about itself. Null means nothing configured,
+   * which is not the same as an empty selection — one invites a choice and the
+   * other is a choice.
+   */
+  readonly config: unknown;
+}
+
+export interface OverviewLayoutDto {
+  /** Every tile this page can draw today. It grows a batch at a time. */
+  readonly catalog: readonly string[];
+  readonly columns: number;
+  readonly maxPerRow: number;
+  readonly tiles: readonly OverviewTileDto[];
+}
+
+/** Cents are decimal strings — ADR 002. Nothing here converts money to a number. */
+export interface OverviewSpendingEntryDto {
+  readonly key: string;
+  readonly name: string;
+  readonly color: string | null;
+  readonly spendCents: string;
+}
+
+export interface OverviewSpendingDto {
+  readonly since: string | null;
+  readonly cycleMissing: boolean;
+  readonly entries: readonly OverviewSpendingEntryDto[];
+}
+
+export interface OverviewBacklogDto {
+  readonly count: number;
+  readonly oldestPostedAt: string | null;
+}
+
+export interface CompositionEntryDto {
+  readonly name: string;
+  readonly balanceCents: string;
+  /** Basis points of the section total, so the split survives as an integer. */
+  readonly shareBasisPoints: number;
+}
+
+export interface CompositionDto {
+  readonly assets: readonly CompositionEntryDto[];
+  readonly debts: readonly CompositionEntryDto[];
+  readonly totalAssetsCents: string;
+  readonly totalDebtsCents: string;
+  readonly netCents: string;
+}
+
+export interface UtilityComparisonDto {
+  readonly delegationId: string;
+  readonly name: string;
+  readonly color: string | null;
+  readonly suggestedPerCycleCents: string;
+  /** Null is an ad-hoc line with no standing amount, not one funded at zero. */
+  readonly amountToDelegateCents: string | null;
+  /** The last twelve months of spending, oldest first, for the shape. */
+  readonly months: readonly string[];
+  /**
+   * The last twelve complete months against the twelve before, in basis points.
+   * Null is "not enough history to say", which is not the same as flat.
+   */
+  readonly trendBasisPoints: number | null;
+}
+
+export interface UtilitiesComparisonDto {
+  readonly cyclesPerYear: number;
+  readonly entries: readonly UtilityComparisonDto[];
+}
+
+export interface MoverDto {
+  readonly delegationId: string;
+  readonly name: string;
+  readonly color: string | null;
+  /** Signed: negative is a line that emptied over the window. */
+  readonly changeCents: string;
+}
+
+export interface MoversDto {
+  readonly cycleMissing: boolean;
+  readonly entries: readonly MoverDto[];
+}
+
+export interface SeriesPointDto {
+  readonly date: string;
+  readonly provenance: string;
+  readonly days?: number;
+  /** Every other key is a money field, as a string of cents. */
+  readonly [field: string]: string | number | undefined;
+}
+
+export interface AggregateDto {
+  readonly bucket: string;
+  readonly days: number;
+  readonly earliest: string | null;
+  readonly points: readonly SeriesPointDto[];
+  /** Today, which no night has recorded yet. Drawn apart from the stored points. */
+  readonly live: Readonly<Record<string, string>> | null;
+}
+
+export interface CompositionPointDto {
+  readonly date: string;
+  readonly provenance: string;
+  readonly bitcoinCents: string;
+  readonly otherAssetsCents: string;
+  readonly debtsCents: string;
+  /** Named fields above; the index signature is what the chart reads them by. */
+  readonly [field: string]: string | number | undefined;
+}
+
+export interface CompositionSeriesDto {
+  readonly days: number;
+  readonly points: readonly CompositionPointDto[];
+}
+
+export interface EquityDto {
+  readonly name: string | null;
+  readonly days: number;
+  readonly points: readonly SeriesPointDto[];
+}
+
+export interface TrajectoryDto {
+  readonly points: readonly SeriesPointDto[];
+  readonly payoffDate: string | null;
+  /** "Not enough history" and "never pays off" are different answers. */
+  readonly hasEnoughHistory: boolean;
+}
+
+/**
+ * A key is absent when the tile is not on the page, which is not the same as a
+ * tile with nothing in it — the first draws nothing, the second draws its empty
+ * state.
+ */
+export interface CycleChangeDto {
+  readonly startedAt: string;
+  readonly endedAt: string | null;
+  readonly changeCents: string;
+  readonly provenance: string;
+  /** The cycle in progress is not a short cycle. */
+  readonly partial: boolean;
+}
+
+export interface CycleSummaryDto {
+  readonly startedAt: string;
+  readonly endedAt: string | null;
+  readonly incomeCents: string;
+  readonly spendingCents: string;
+  readonly surplusCents: string;
+  readonly partial: boolean;
+}
+
+export interface NegativeLineDto {
+  readonly id: string;
+  readonly name: string;
+  readonly balanceCents: string;
+}
+
+export interface BurnRateDto {
+  readonly delegationId: string;
+  readonly name: string;
+  readonly color: string | null;
+  readonly perCycleCents: string;
+}
+
+export interface FlowNodeDto {
+  readonly key: string;
+  readonly name: string;
+  readonly amountCents: string;
+}
+
+export interface CashflowDto {
+  readonly cycleMissing: boolean;
+  readonly inflows: readonly FlowNodeDto[];
+  readonly outflows: readonly FlowNodeDto[];
+  readonly uncategorizedInCents: string;
+  readonly uncategorizedOutCents: string;
+  readonly surplusCents: string;
+  readonly totalInCents: string;
+}
+
+export interface PanelLineDto {
+  readonly id: string;
+  readonly name: string;
+  readonly groupingId: string | null;
+  readonly groupingName: string | null;
+  readonly color: string | null;
+  readonly balanceCents: string;
+  /** Null on an ad-hoc line with no standing amount. */
+  readonly plannedCents: string | null;
+  readonly spentCents: string;
+}
+
+export interface PayCycleDto {
+  readonly start: string;
+  readonly end: string;
+  readonly lengthDays: number;
+  readonly elapsedDays: number;
+  /** 0–10,000, so the tick's position stays an integer to the stylesheet. */
+  readonly progressBasisPoints: number;
+}
+
+export interface FigureDto {
+  readonly key: string;
+  /** Null where the figure is a count, or has no answer yet. */
+  readonly valueCents: string | null;
+  readonly count: number | null;
+}
+
+export interface OutflowDayDto {
+  readonly date: string;
+  readonly spentCents: string;
+}
+
+/** One calendar month of the band. The tile draws three, newest first. */
+export interface OutflowMonthDto {
+  readonly month: string;
+  readonly days: readonly OutflowDayDto[];
+}
+
+export interface PacePointDto {
+  readonly date: string;
+  readonly inflowCents: string;
+  readonly spentCents: string;
+  /** False after today: the future has no figure, and a flat line implies one. */
+  readonly observed: boolean;
+}
+
+export interface AllocationSliceDto {
+  readonly key: string;
+  readonly name: string;
+  readonly color: string | null;
+  readonly amountCents: string;
+}
+
+export type BillStatusDto = 'expected' | 'arrived' | 'due' | 'overdue' | 'lapsed';
+
+export interface UpcomingBillDto {
+  readonly key: string;
+  readonly name: string;
+  readonly expectedNextAt: string;
+  readonly typicalAmountCents: string;
+  readonly delegationName: string | null;
+  /** The grouping colour of where it is filed, so it matches the rest of the page. */
+  readonly color: string | null;
+  readonly status: BillStatusDto;
+}
+
+/** A bill that is late, has apparently stopped, or costs more than it did. */
+export interface BillAttentionDto {
+  readonly key: string;
+  readonly name: string;
+  readonly status: BillStatusDto;
+  readonly color: string | null;
+  readonly amountCents: string;
+  /** What is wrong, in the fewest words that are still specific. */
+  readonly note: string;
+}
+
+/** What this cycle's recurring charges come to, and how much has gone. */
+export interface BillsThisCycleDto {
+  readonly paidCents: string;
+  readonly toComeCents: string;
+  readonly paidCount: number;
+  readonly totalCount: number;
+  readonly largestDue: {
+    readonly name: string;
+    readonly amountCents: string;
+    readonly expectedNextAt: string;
+  } | null;
+}
+
+/** A check written and not yet cleared. */
+export interface OutstandingCheckDto {
+  readonly id: string;
+  readonly checkNumber: string;
+  readonly memo: string | null;
+  readonly issuedAt: string;
+  readonly amountCents: string;
+}
+
+export interface PickableDto {
+  readonly id: string;
+  readonly name: string;
+}
+
+export interface BalanceHistoryDto {
+  readonly name: string | null;
+  readonly points: readonly SeriesPointDto[];
+}
+
+export interface OverviewDataDto {
+  readonly account_balance_history?: BalanceHistoryDto;
+  readonly delegation_balance_history?: BalanceHistoryDto;
+  /** Only things that actually have history, so a picker never offers a blank. */
+  readonly pickable?: {
+    readonly accounts: readonly PickableDto[];
+    readonly delegations: readonly PickableDto[];
+  };
+  readonly figures?: readonly FigureDto[];
+  readonly daily_outflow?: readonly OutflowMonthDto[];
+  readonly income_vs_spending_pace?: readonly PacePointDto[];
+  /**
+   * Both readings, so the tile's toggle is a local switch.
+   *
+   * They are the same rows summed two ways. Sending one and re-fetching on a
+   * switch meant a layout write and a recompute of the whole page before the
+   * donut redrew — about a second, for a toggle.
+   */
+  readonly allocation?: {
+    /** What one Delegate press puts in. */
+    readonly plan: readonly AllocationSliceDto[];
+    /** What the envelopes hold now. */
+    readonly position: readonly AllocationSliceDto[];
+  };
+  readonly upcoming_bills?: readonly UpcomingBillDto[];
+  readonly bills_attention?: readonly BillAttentionDto[];
+  readonly bills_this_cycle?: BillsThisCycleDto;
+  /**
+   * Every delegation, with what it has spent this cycle.
+   *
+   * The band draws its rows from `GET /api/budget` — the same call the Budget
+   * page makes, which is what keeps the two from ever disagreeing — and takes
+   * only the spending from here, because that is the one figure a pace bar needs
+   * and the budget view does not carry.
+   */
+  readonly panel?: readonly PanelLineDto[];
+  /** Which lines the household chose to watch. Empty until somebody picks some. */
+  readonly panelSelected?: readonly string[];
+  /** Null when no payday anchor is set — then no tick is drawn at all. */
+  readonly payCycle?: PayCycleDto | null;
+  readonly cashflow?: CashflowDto;
+  /** The cashflow tile's own period, which is not the page's. */
+  readonly cashflowWindow?: string;
+  /** One aggregate series feeding three tiles — see the domain's comment. */
+  readonly aggregate?: AggregateDto;
+  readonly change_per_cycle?: readonly CycleChangeDto[];
+  readonly thirty_day_momentum?: { readonly points: readonly SeriesPointDto[] };
+  readonly delegations_negative?: readonly NegativeLineDto[];
+  /** One reading of the cycle summaries, feeding two tiles. */
+  readonly cycles?: readonly CycleSummaryDto[];
+  readonly delegation_burn_rate?: {
+    readonly cycleMissing: boolean;
+    readonly entries: readonly BurnRateDto[];
+  };
+  readonly composition?: CompositionSeriesDto;
+  readonly home_equity_over_time?: EquityDto;
+  readonly debt_trajectory?: TrajectoryDto;
+  readonly window: string;
+  readonly spending_by_grouping?: OverviewSpendingDto;
+  readonly spending_by_delegation?: OverviewSpendingDto;
+  readonly asset_debt_composition?: CompositionDto;
+  readonly utilities_vs_delegated?: UtilitiesComparisonDto;
+  readonly delegation_movers?: MoversDto;
+  readonly outstanding_checks?: readonly OutstandingCheckDto[];
+  readonly uncategorized_backlog?: OverviewBacklogDto;
+}
+
+export type LayoutSaveResult =
+  | { readonly ok: true }
+  | { readonly ok: false; readonly unknown?: readonly string[] }
+  | { readonly ok: false; readonly overfullRows?: readonly number[] }
+  | { readonly ok: false; readonly badConfig?: readonly string[] }
+  | { readonly ok: false; readonly duplicates?: readonly string[] };
+
+export const overviewApi = {
+  layout: () => api.get<OverviewLayoutDto>('/api/overview/layout'),
+
+  data: (window: string) => api.get<OverviewDataDto>(`/api/overview?window=${window}`),
+
+  /**
+   * Every tile's data, for the picker.
+   *
+   * The one deliberate exception to "only what you have": showing somebody what
+   * a tile would look like needs that tile's figures, and by definition they do
+   * not have it yet. Fetched only while Arrange is open.
+   */
+  preview: (window: string) => api.get<OverviewDataDto>(`/api/overview/preview?window=${window}`),
+
+  /** The whole arrangement, never a partial one — see the route's comment. */
+  saveLayout: (tiles: readonly OverviewTileDto[]) =>
+    api.put<LayoutSaveResult>('/api/overview/layout', { tiles }),
+};

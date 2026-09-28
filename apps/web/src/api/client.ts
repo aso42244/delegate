@@ -1,0 +1,210 @@
+import { isDemoPath } from '../demo/is-demo.js';
+import { demoResponse } from '../demo/responses.js';
+/**
+ * The API client.
+ *
+ * Every response carries cents as decimal strings (ADR 002), so nothing here
+ * converts money to a `number`. Parsing to `bigint` happens where a value is
+ * used, and formatting happens at the display edge.
+ */
+
+export interface ApiErrorBody {
+  readonly error: {
+    readonly code: string;
+    readonly message: string;
+    readonly details?: Record<string, unknown>;
+  };
+}
+
+/**
+ * Carries the server's stable error `code` so callers can branch on it without
+ * matching on prose — the message is for the user, the code is for the code.
+ */
+export class ApiError extends Error {
+  constructor(
+    readonly status: number,
+    readonly code: string,
+    message: string,
+    readonly details?: Record<string, unknown>,
+  ) {
+    super(message);
+    this.name = 'ApiError';
+  }
+}
+
+async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
+  /*
+   * The demo answers here, and only here.
+   *
+   * `/demo/overview` is the same page as `/overview` — the same components, the
+   * same queries, the same session. What differs is where the numbers come
+   * from, and this is the one place in the application that fetches anything, so
+   * it is the one place that has to know.
+   *
+   * A write is refused rather than pretended: the controls that would make one
+   * are not drawn on a demo page, so anything reaching here is a mistake worth
+   * seeing rather than swallowing.
+   *
+   * `undefined` from the fixture means "the demo has nothing to say about this"
+   * — the session, the application's own name — and those fall through to the
+   * server, because the demo is invented *money*, not an invented account.
+   */
+  if (isDemoPath()) {
+    if (method !== 'GET') {
+      throw new ApiError(403, 'demo_read_only', 'The demo cannot be changed.');
+    }
+    const invented = demoResponse(path);
+    if (invented !== undefined) return invented as T;
+  }
+
+  const response = await fetch(path, {
+    method,
+    // The session cookie is HttpOnly, so it must be sent explicitly.
+    credentials: 'same-origin',
+    headers: body === undefined ? {} : { 'content-type': 'application/json' },
+    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+  });
+
+  if (response.status === 204) return undefined as T;
+
+  const text = await response.text();
+  const parsed: unknown = text === '' ? null : JSON.parse(text);
+
+  if (!response.ok) {
+    const payload = parsed as ApiErrorBody | null;
+    throw new ApiError(
+      response.status,
+      payload?.error?.code ?? 'unknown_error',
+      payload?.error?.message ?? `Request failed with status ${response.status}`,
+      payload?.error?.details,
+    );
+  }
+
+  return parsed as T;
+}
+
+export const api = {
+  get: <T>(path: string): Promise<T> => request<T>('GET', path),
+  post: <T>(path: string, body?: unknown): Promise<T> => request<T>('POST', path, body),
+  patch: <T>(path: string, body?: unknown): Promise<T> => request<T>('PATCH', path, body),
+  // PUT where the whole resource is replaced — the Insights layout is an
+  // ordered set, and a partial update would leave positions nobody chose.
+  put: <T>(path: string, body?: unknown): Promise<T> => request<T>('PUT', path, body),
+};
+
+// --- Shapes the server returns -------------------------------------------
+
+export type UserRole = 'user' | 'admin' | 'super_admin';
+export type LandingPage = 'overview' | 'budget';
+
+export interface SessionUser {
+  readonly id: string;
+  readonly username: string;
+  /** What to call them on screen. Null falls back to the username. */
+  readonly displayName: string | null;
+  /**
+   * Where they land. Null is "never chose", which is not the same as having
+   * chosen the default — it is what lets the default move without overriding a
+   * decision somebody made.
+   */
+  readonly landingPage: LandingPage | null;
+  readonly role: UserRole;
+  readonly mustChangePassword: boolean;
+  /** The household requires a second factor and this account has none. */
+  readonly needsTwoFactor?: boolean;
+}
+
+export interface SetupState {
+  readonly needsSetup: boolean;
+  /**
+   * Whether claiming the first account needs the code from the server's logs.
+   *
+   * False on a deployment that predates the secrets volume, which has already
+   * been set up and has no token to check against.
+   */
+  readonly needsSetupToken: boolean;
+}
+
+export interface SyncStatus {
+  readonly configured: boolean;
+  /** Where the credential came from. Never the credential itself. */
+  readonly credentialSource: 'database' | 'environment' | 'none';
+  readonly connectedAt: string | null;
+  readonly credentialProblem: string | null;
+  readonly syncing: boolean;
+  readonly lastSyncAt: string | null;
+  readonly failing: boolean;
+  readonly runs: readonly {
+    readonly id: string;
+    readonly status: string;
+    readonly startedAt: string;
+    readonly finishedAt: string | null;
+    readonly accountsTouched: number;
+    readonly transactionsAdded: number;
+    readonly transactionsUpdated: number;
+    readonly transactionsReversed: number;
+    readonly error: string | null;
+  }[];
+}
+
+/**
+ * A password alone signs you in only when no second factor is set up. Otherwise
+ * the server withholds the session and returns a challenge to be exchanged,
+ * with a code, at `/api/auth/second-factor`.
+ */
+export type LoginResult =
+  | { readonly user: SessionUser; readonly secondFactorRequired?: undefined }
+  | { readonly secondFactorRequired: true; readonly challenge: string };
+
+export interface TotpStatusDto {
+  readonly enrolled: boolean;
+  readonly recoveryCodesRemaining: number;
+  /** Whether the budget requires one of every account. */
+  readonly required: boolean;
+}
+
+export interface TotpEnrolmentDto {
+  readonly secret: string;
+  readonly uri: string;
+}
+
+export const authApi = {
+  setupState: () => api.get<SetupState>('/api/auth/setup-state'),
+  setup: (username: string, password: string, setupToken: string) =>
+    api.post<{ user: SessionUser }>('/api/auth/setup', { username, password, setupToken }),
+  login: (username: string, password: string) =>
+    api.post<LoginResult>('/api/auth/login', { username, password }),
+  secondFactor: (challenge: string, code: string) =>
+    api.post<{ user: SessionUser }>('/api/auth/second-factor', { challenge, code }),
+  logout: () => api.post<void>('/api/auth/logout'),
+  me: () => api.get<{ user: SessionUser }>('/api/auth/me'),
+  changePassword: (currentPassword: string, newPassword: string) =>
+    api.post<void>('/api/auth/change-password', { currentPassword, newPassword }),
+
+  /** Your own, whatever role you hold: it is not a credential. */
+  setDisplayName: (displayName: string | null) =>
+    api.patch<{ user: SessionUser }>('/api/auth/me', { displayName }),
+
+  /**
+   * Where you land, which is yours alone — an Admin cannot set it for somebody
+   * else. Null clears the choice and returns to the default.
+   */
+  setLandingPage: (landingPage: LandingPage | null) =>
+    api.patch<{ user: SessionUser }>('/api/auth/me', { landingPage }),
+
+  totpStatus: () => api.get<TotpStatusDto>('/api/auth/totp'),
+  totpBegin: (currentPassword: string) =>
+    api.post<TotpEnrolmentDto>('/api/auth/totp/begin', { currentPassword }),
+  totpConfirm: (code: string) =>
+    api.post<{ recoveryCodes: string[] }>('/api/auth/totp/confirm', { code }),
+  totpDisable: (currentPassword: string) =>
+    api.post<{ ok: boolean }>('/api/auth/totp/disable', { currentPassword }),
+};
+
+export const syncApi = {
+  status: () => api.get<SyncStatus>('/api/sync/status'),
+  run: () => api.post<{ transactionsAdded: number }>('/api/sync'),
+  connect: (setupToken: string) =>
+    api.post<{ connectedAt: string }>('/api/sync/connect', { setupToken }),
+  disconnect: () => api.post<{ ok: boolean }>('/api/sync/disconnect'),
+};

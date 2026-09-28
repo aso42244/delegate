@@ -1,0 +1,532 @@
+import { formatCents, isBalanceStale, isFeedBalanceStale, isFeedUnseen } from '@budget/shared';
+import type { Db } from '../db/client.js';
+import { findStandbyDuplicates } from './duplicates.js';
+import { latestPrice } from './bitcoin.js';
+import { newestBackupAt } from './backup.js';
+import { proposeCheckMatches } from './checks.js';
+import { snapshotStatus } from './snapshots.js';
+import { localDayKey } from './calendar.js';
+import { findRecurringBills, overdueBills } from './recurring.js';
+import { findBehindTargets } from './targets.js';
+import { getBudgetSettings } from './settings.js';
+
+/**
+ * The banners the application raises about itself.
+ *
+ * Every one of these is a condition the owner would otherwise only discover by
+ * noticing a number was wrong. A sync that has been failing for three days looks
+ * exactly like a quiet week; a cash balance nobody has confirmed since March
+ * looks exactly like a cash balance.
+ *
+ * They are computed on read rather than stored. A stored notification has to be
+ * cleared by something, and the something is always missed — a condition that
+ * has resolved should stop being reported because it resolved, not because
+ * anybody dismissed it.
+ */
+
+/**
+ * `confirm` is not a fault and not merely information: it is something the
+ * application has worked out and will not act on until a person says so. Purple,
+ * because blue, yellow and red already mean "here is a fact", "this needs
+ * attention" and "this is wrong", and none of those is what a proposal is.
+ */
+export type NotificationSeverity = 'info' | 'confirm' | 'warning' | 'danger';
+
+export interface Notification {
+  /** Stable, so the UI can key and test on it rather than on prose. */
+  readonly kind:
+    | 'sync_failing'
+    | 'sync_warning'
+    | 'stale_balances'
+    | 'feed_not_reporting'
+    | 'uncategorized_backlog'
+    | 'bitcoin_price_stale'
+    | 'accounts_need_review'
+    | 'checks_awaiting_confirmation'
+    | 'recurring_bill_overdue'
+    | 'targets_behind'
+    | 'standby_rows_covered'
+    | 'backup_failing'
+    | 'snapshot_stale';
+  readonly severity: NotificationSeverity;
+  /**
+   * The whole of it, in a sentence. On a `danger` this is the bar's text; on
+   * everything else it is what the pill says when it is hovered or focused.
+   */
+  readonly message: string;
+  /**
+   * The pill's face: two or three words that name the condition, never the
+   * detail. It is a control roughly the width of "Balanced", so a count is the
+   * most it can carry — the message says which bank, which accounts, how old.
+   */
+  readonly pill: string;
+  /** Where to go to do something about it. */
+  readonly actionPath: string;
+}
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+function daysBetween(from: Date, to: Date): number {
+  return Math.floor((to.getTime() - from.getTime()) / DAY_MS);
+}
+
+/**
+ * How old the newest dump may be before the backup counts as failing.
+ *
+ * The dump is nightly, so one missed run is a hiccup and two is a pattern. Set
+ * lower and a slow first dump of a year's transactions on a Celeron raises a
+ * false alarm; set higher and a fortnight can pass unnoticed.
+ */
+const BACKUP_STALE_HOURS = 48;
+
+/**
+ * How long a deployment has to have existed before a missing snapshot is a
+ * fault rather than a new install.
+ *
+ * Three days rather than the backup's two: a snapshot is written for the
+ * *previous* day, so the newest date is always a day behind even when
+ * everything is working, and `snapshotStatus` already allows two days for that.
+ * Raising before the grace period has cleared both would be raising about
+ * arithmetic.
+ */
+const SNAPSHOT_GRACE_MS = 3 * 24 * 60 * 60 * 1000;
+const STALE_MS = BACKUP_STALE_HOURS * 60 * 60 * 1000;
+
+export interface NotificationOptions {
+  /**
+   * Where the dumps land. Omitted, the backup check does not run at all — which
+   * is what the integration tests want, and what any caller without the
+   * deployment's configuration should get rather than a false alarm.
+   */
+  readonly backupDir?: string;
+}
+
+export async function buildNotifications(
+  db: Db,
+  timeZone: string,
+  now: Date = new Date(),
+  options: NotificationOptions = {},
+): Promise<Notification[]> {
+  const notifications: Notification[] = [];
+  const settings = await getBudgetSettings(db);
+
+  const [
+    latestRun,
+    accounts,
+    uncategorized,
+    oldestUncategorized,
+    price,
+    checkMatches,
+    oldestUser,
+    snapshots,
+    standbyCovered,
+  ] = await Promise.all([
+    db.syncRun.findFirst({
+      orderBy: { startedAt: 'desc' },
+      select: { status: true, error: true, startedAt: true },
+    }),
+    db.account.findMany({
+      where: { archivedAt: null },
+      select: {
+        name: true,
+        source: true,
+        balanceAsOf: true,
+        feedBalanceAsOf: true,
+        feedLastSeenAt: true,
+        stalenessIntervalDays: true,
+        needsReview: true,
+      },
+    }),
+    /*
+     * The same definition the register's queue filter uses, and it has to be:
+     * the pill's whole job is to lead somebody to that list, so a count taken
+     * any other way sends them to a page that disagrees with the number that
+     * sent them. `in_budget` is in here because a row on an account the budget
+     * does not sum cannot be categorized at all.
+     */
+    db.transaction.count({
+      where: {
+        archivedAt: null,
+        allocations: { none: {} },
+        kind: 'normal',
+        account: { inBudget: true },
+      },
+    }),
+    db.transaction.findFirst({
+      where: {
+        archivedAt: null,
+        allocations: { none: {} },
+        kind: 'normal',
+        account: { inBudget: true },
+      },
+      orderBy: { postedAt: 'asc' },
+      select: { postedAt: true },
+    }),
+    latestPrice(db, timeZone, now),
+    proposeCheckMatches(db),
+    // The first account created, as a stand-in for when this deployment began.
+    db.user.findFirst({ orderBy: { createdAt: 'asc' }, select: { createdAt: true } }),
+    // Asked here rather than left to an endpoint nobody calls — see below.
+    snapshotStatus(db, timeZone, now),
+    // Cheap by construction: it reads only the standby rows, of which there
+    // are a handful during an outage and none the rest of the time.
+    findStandbyDuplicates(db).then((pairs) => pairs.length),
+  ]);
+
+  /*
+   * The backup, first, because it is the only condition here that can cost the
+   * household its data rather than its accuracy.
+   *
+   * Age of the newest dump rather than the outcome of the last attempt. Those
+   * differ exactly where it matters: this deployment's nightly dump failed with
+   * a permission error every night from go-live, logged at error level each
+   * time, and nothing read the log. "Did it throw" was being answered correctly
+   * and nobody was listening; "is there a recent backup" is the question whose
+   * answer nobody could have got wrong.
+   */
+  if (options.backupDir !== undefined) {
+    const newest = await newestBackupAt(options.backupDir);
+    const hours = newest === null ? null : (now.getTime() - newest.getTime()) / (60 * 60 * 1000);
+
+    /*
+     * A deployment younger than one backup cycle is not failing, it is new.
+     *
+     * The first account's creation is the closest thing to a deployment date
+     * without a column for one: first-run setup is the moment this stopped
+     * being an empty database. Without this an install raises a red banner on
+     * its first evening, before the nightly dump has had a chance to run at
+     * all — and a banner that is wrong on day one is one nobody trusts on day
+     * ninety, which is the day it matters.
+     */
+    const settledIn =
+      oldestUser === null ? false : now.getTime() - oldestUser.createdAt.getTime() > STALE_MS;
+
+    if (settledIn && (hours === null || hours > BACKUP_STALE_HOURS)) {
+      const days = newest === null ? 0 : daysBetween(newest, now);
+      notifications.push({
+        kind: 'backup_failing',
+        pill: 'Backup failing',
+        severity: 'danger',
+        message:
+          newest === null
+            ? 'No database backup has ever completed. Everything in this budget exists in one place.'
+            : `The newest database backup is ${days === 1 ? 'a day' : `${days} days`} old. The nightly dump is failing.`,
+        actionPath: '/settings/sync',
+      });
+    }
+  }
+
+  // A failed sync must be visible in the UI, not only in the logs — §13.
+  if (latestRun?.status === 'failed') {
+    const days = daysBetween(latestRun.startedAt, now);
+    notifications.push({
+      kind: 'sync_failing',
+      pill: 'Sync failing',
+      severity: 'danger',
+      message:
+        days >= 1
+          ? `The last sync failed ${days === 1 ? 'yesterday' : `${days} days ago`}. Balances and transactions are not up to date.`
+          : 'The last sync failed. Balances and transactions are not up to date.',
+      actionPath: '/settings/sync',
+    });
+  }
+
+  /*
+   * A run that *succeeded* while carrying feed errors.
+   *
+   * SimpleFIN reports a per-institution problem — an expired login, a bank
+   * refusing the connection — without failing the whole run, because the other
+   * institutions synced fine. Recorded on the run since the beginning, but until
+   * now it was only legible on the Settings page, so an account quietly stopped
+   * updating and everything else looked healthy. The feed's own words are used:
+   * it names the institution, and paraphrasing would lose that.
+   */
+  if (latestRun?.status === 'succeeded' && latestRun.error) {
+    notifications.push({
+      kind: 'sync_warning',
+      // Not 'Auth issue': the feed reports any per-institution problem this
+      // way, and an expired login is only the commonest of them.
+      pill: 'Sync issue',
+      severity: 'warning',
+      // Multiple institutions can complain in one run.
+      message: latestRun.error.split('\n').filter(Boolean).join(' · '),
+      actionPath: '/settings/sync',
+    });
+  }
+
+  // One mechanism serves physical cash, the hardware wallet and the house alike.
+  const stale = accounts.filter((account) =>
+    isBalanceStale(account.balanceAsOf, account.stalenessIntervalDays, now),
+  );
+  if (stale.length > 0) {
+    const names = stale
+      .slice(0, 3)
+      .map((account) => account.name)
+      .join(', ');
+    notifications.push({
+      kind: 'stale_balances',
+      pill: stale.length === 1 ? '1 stale balance' : `${stale.length} stale balances`,
+      severity: 'warning',
+      message:
+        stale.length <= 3
+          ? `${names} ${stale.length === 1 ? 'has' : 'have'} not been confirmed recently.`
+          : `${names} and ${stale.length - 3} more have not been confirmed recently.`,
+      actionPath: '/settings/accounts',
+    });
+  }
+
+  /*
+   * The bank has gone quiet about an account it is still supposed to report.
+   *
+   * A separate pill from `stale_balances` above, and separate wording, because
+   * they are different sentences and only one of them is about something the
+   * household did. "You have not confirmed this lately" is a prompt to go and
+   * count the cash; this is "the bridge is not telling us about this account",
+   * which is a prompt to go and look at the connection.
+   *
+   * **Nothing here could raise a pill before.** The row carried an `s` chip that
+   * checked both this and the manual interval, while the pill checked only the
+   * manual interval — and `staleness_interval_days` is never set on a discovered
+   * account, so for every synced account that check was permanently false. The
+   * only signal a feed had frozen was a single letter on a page somebody had to
+   * already be looking at, which is the "notice a number is wrong and work
+   * backwards" failure the pills exist to replace.
+   *
+   * **Suppressed while the run itself is failing.** A bridge that is down lists
+   * nothing, so every account would qualify at once and say the same thing
+   * `sync_failing` is already saying, louder and less accurately. This condition
+   * is specifically the interesting one: the sync is working and has forgotten
+   * an account.
+   */
+  const syncHealthy = latestRun?.status === 'succeeded';
+  const notReporting = syncHealthy
+    ? accounts.filter(
+        (account) =>
+          account.source !== 'manual' &&
+          (isFeedUnseen(account.feedLastSeenAt, now) ||
+            isFeedBalanceStale(account.feedBalanceAsOf, now)),
+      )
+    : [];
+
+  if (notReporting.length > 0) {
+    const names = notReporting
+      .slice(0, 3)
+      .map((account) => account.name)
+      .join(', ');
+    // Named apart, because the two have different answers: one is the bridge
+    // repeating an old snapshot, the other is the bridge no longer mentioning
+    // the account at all, and only the second may mean it was closed.
+    const gone = notReporting.filter((account) => isFeedUnseen(account.feedLastSeenAt, now));
+
+    notifications.push({
+      kind: 'feed_not_reporting',
+      pill:
+        notReporting.length === 1
+          ? '1 account not reporting'
+          : `${notReporting.length} not reporting`,
+      severity: 'warning',
+      message:
+        `The bank has not sent anything new for ${
+          notReporting.length <= 3 ? names : `${names} and ${notReporting.length - 3} more`
+        }` +
+        (gone.length > 0
+          ? `. ${gone.length === 1 ? 'It is' : 'They are'} no longer listed by the feed at all, which can mean the account was closed or the connection needs re-linking.`
+          : `, though the connection itself is working. The figures shown are the last ones the bank gave.`),
+      actionPath: '/settings/sync',
+    });
+  }
+
+  const needReview = accounts.filter((account) => account.needsReview);
+  if (needReview.length > 0) {
+    notifications.push({
+      kind: 'accounts_need_review',
+      pill: needReview.length === 1 ? '1 new account' : `${needReview.length} new accounts`,
+      severity: 'warning',
+      message: `${needReview.length} ${needReview.length === 1 ? 'account was' : 'accounts were'} discovered by a sync and ${needReview.length === 1 ? 'its type is' : 'their types are'} a guess.`,
+      actionPath: '/settings/accounts',
+    });
+  }
+
+  /*
+   * A check the bank appears to have cashed, waiting to be confirmed.
+   *
+   * Above the backlog and below the faults: it is not something that has gone
+   * wrong, but it is money sitting in the wrong place until somebody looks. The
+   * check line still holds the funds and the payment is still uncategorized, so
+   * nothing is lost by leaving it — it is simply not finished.
+   */
+  if (checkMatches.length > 0) {
+    const numbers = checkMatches
+      .slice(0, 3)
+      .map((match) => match.checkNumber)
+      .join(', ');
+    notifications.push({
+      kind: 'checks_awaiting_confirmation',
+      pill:
+        checkMatches.length === 1
+          ? '1 check to confirm'
+          : `${checkMatches.length} checks to confirm`,
+      severity: 'confirm',
+      message:
+        checkMatches.length === 1
+          ? `Check ${numbers} looks like it has been cashed. Confirm the match to settle it.`
+          : checkMatches.length <= 3
+            ? `Checks ${numbers} look like they have been cashed. Confirm each match to settle it.`
+            : `${checkMatches.length} checks look like they have been cashed, including ${numbers}.`,
+      actionPath: '/',
+    });
+  }
+
+  /*
+   * The feed has caught up on charges somebody typed in while it was behind.
+   *
+   * This is the one notification here that announces a **good** thing, and it
+   * exists because coming out of standby is a step nobody would otherwise know
+   * to take: the balances go on reading correctly whether or not the duplicates
+   * are cleared, so nothing on the page would ever say the outage was over.
+   *
+   * `handoff.md` records that a duplicates pill was built and removed within the
+   * hour in v0.48, because it went on announcing a proposal that had been waved
+   * away. That objection expired in v0.50 when a refusal became storable, and it
+   * would not apply here regardless: this one clears itself the moment the rows
+   * it names are archived, which is the whole action it is asking for.
+   */
+  if (standbyCovered > 0) {
+    notifications.push({
+      kind: 'standby_rows_covered',
+      pill: standbyCovered === 1 ? '1 row to clear' : `${standbyCovered} rows to clear`,
+      severity: 'confirm',
+      message:
+        standbyCovered === 1
+          ? 'The feed has delivered a charge you entered by hand while it was behind. Archive your copy to come out of standby.'
+          : `The feed has delivered ${standbyCovered} charges you entered by hand while it was behind. Archive your copies to come out of standby.`,
+      actionPath: '/transactions',
+    });
+  }
+
+  /*
+   * Did the nightly snapshot actually run.
+   *
+   * `GET /api/snapshots/status` was written to answer exactly this, and its own
+   * comment explains why: the nightly backup reported every failure correctly,
+   * into a log nobody read, and the question nobody thought to ask was whether a
+   * dump was on disk. **Nothing read the endpoint.** It was one of three routes
+   * in the tree with no caller, so the lesson was implemented and then left
+   * where the failure it describes could happen to it — a job whose evidence
+   * only exists if somebody goes looking.
+   *
+   * Insights is what quietly stops working: it gains a day a night and there is
+   * no backfill, so a job that stopped firing in March shows up as a chart that
+   * simply ends, which looks exactly like a chart nobody has looked at.
+   *
+   * The same young-deployment guard as the backup, for the same reason. A fresh
+   * install has no snapshots at all — `snapshotStatus` correctly reports `stale`
+   * — and a warning that is wrong on day one is not trusted on day ninety.
+   */
+  const settledIn =
+    oldestUser === null
+      ? false
+      : now.getTime() - oldestUser.createdAt.getTime() > SNAPSHOT_GRACE_MS;
+
+  if (settledIn && snapshots.stale) {
+    notifications.push({
+      kind: 'snapshot_stale',
+      pill: 'Insights stalled',
+      severity: 'warning',
+      message:
+        snapshots.latestDate === null
+          ? 'No nightly snapshot has ever been recorded, so Insights has no history to draw. The job runs at night and there is no backfill.'
+          : `The newest nightly snapshot is from ${snapshots.latestDate.toISOString().slice(0, 10)}. Insights gains a day a night and there is no backfill, so anything missed while the job was not running stays missing.`,
+      actionPath: '/settings/sync',
+    });
+  }
+
+  // Informational, not a fault: a backlog is the normal state before go-live.
+  if (uncategorized > 0) {
+    const age = oldestUncategorized ? daysBetween(oldestUncategorized.postedAt, now) : 0;
+    notifications.push({
+      kind: 'uncategorized_backlog',
+      pill: uncategorized === 1 ? '1 new transaction' : `${uncategorized} new transactions`,
+      severity: 'info',
+      message:
+        age >= 1
+          ? `${uncategorized} ${uncategorized === 1 ? 'transaction is' : 'transactions are'} waiting to be categorized, the oldest from ${age} ${age === 1 ? 'day' : 'days'} ago.`
+          : `${uncategorized} ${uncategorized === 1 ? 'transaction is' : 'transactions are'} waiting to be categorized.`,
+      // The filtered queue, not the whole register: this is a link for somebody
+      // who came to clear a backlog. Reaching Transactions any other way still
+      // opens on everything, which is the right default for looking something
+      // up.
+      actionPath: '/transactions?uncategorized=true',
+    });
+  }
+
+  /*
+   * A bill that has not arrived.
+   *
+   * The only condition here that is about something *not* happening, which is
+   * why nothing else could raise it: a failed autopay and a cancelled service
+   * both look like an ordinary quiet week from the inside.
+   *
+   * The one notification with a switch, on Settings → Budget. It is a reading of
+   * a schedule inferred from history rather than a fact the application knows,
+   * so a household that finds it noisy can turn it off — and the page stays
+   * either way, because turning off the telling should not hide the list.
+   */
+  if (settings.recurringAlertsEnabled) {
+    const overdue = overdueBills(await findRecurringBills(db, timeZone, now));
+    if (overdue.length > 0) {
+      const first = overdue[0]!;
+      notifications.push({
+        kind: 'recurring_bill_overdue',
+        pill: overdue.length === 1 ? '1 bill overdue' : `${overdue.length} bills overdue`,
+        severity: 'warning',
+        message:
+          overdue.length === 1
+            ? `${first.name} usually arrives every ${first.intervalDays} days and is ${first.daysLate} days late.`
+            : `${overdue.length} bills have not arrived on time, the latest being ${first.name} at ${first.daysLate} days.`,
+        actionPath: '/bills',
+      });
+    }
+  }
+
+  /*
+   * A line that will not make its date at the amount it is set to.
+   *
+   * No switch, unlike the overdue bill above, and the difference is worth
+   * stating: a bill is a schedule this application *inferred* and can be wrong
+   * about, while a target is a number the household typed. Being behind on it is
+   * arithmetic on their own figures, and turning off arithmetic is not a
+   * preference — it is hiding the answer to the question they asked.
+   */
+  const behind = await findBehindTargets(db, localDayKey(now, timeZone), settings.payCadence);
+  if (behind.length > 0) {
+    const first = behind[0]!;
+    notifications.push({
+      kind: 'targets_behind',
+      pill: behind.length === 1 ? '1 line behind' : `${behind.length} lines behind`,
+      severity: 'warning',
+      message:
+        behind.length === 1
+          ? `${first.name} needs ${formatCents(first.progress.neededPerCycleCents ?? 0n)} a paycheck to make its date.`
+          : `${behind.length} lines will not make their date at the amount they are set to, the soonest being ${first.name}.`,
+      // The Budget page: the amount that is wrong is a cell on that row, and
+      // fixing it is typing over it.
+      actionPath: '/',
+    });
+  }
+
+  // §8: a holding is never shown as zero or blank when the feed is unreachable —
+  // the last price is held and flagged. This is the flag.
+  if (price?.stale) {
+    const days = daysBetween(price.priceDate, now);
+    notifications.push({
+      kind: 'bitcoin_price_stale',
+      pill: 'Stale price',
+      severity: 'warning',
+      message: `The Bitcoin price is from ${days === 1 ? 'yesterday' : `${days} days ago`}. Holdings are valued at that price.`,
+      actionPath: '/settings/bitcoin',
+    });
+  }
+
+  return notifications;
+}

@@ -1,0 +1,12 @@
+{
+  "_comment": "Advisories the audit gate accepts, each with the reason it cannot reach this application. Reviewed when a dependency changes; an entry is a decision, not a mute button.",
+  "advisories": {
+    "1145093": {
+      "advisory": "GHSA-ggr8-5vv4-36mx",
+      "package": "deepmerge-ts",
+      "reason": "Stack exhaustion merging recursive object graphs, reached only through @prisma/config parsing Prisma config files. Ours are schema.prisma and the prisma block in package.json, both baked into the image at build time — there is no path for an attacker to supply one. Every published prisma release through 7.10 depends on the affected range, so there is nothing to upgrade to, and npm overrides do not take because @prisma/config pins an exact version. The prisma CLI is a runtime dependency because the container runs `prisma migrate deploy` on start.",
+      "reviewed": "2026-08-18",
+      "recheck": "When Prisma ships a release depending on deepmerge-ts >= 8.0.0, drop this."
+    }
+  }
+}

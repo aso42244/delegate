@@ -1,0 +1,308 @@
+import { ACCOUNT_TYPES, bitcoinValueCents } from '@budget/shared';
+import type { FastifyPluginCallback } from 'fastify';
+import { z } from 'zod';
+import { prisma } from '../db/client.js';
+import { balanceWithStandby, standbyAdjustments } from '../domain/standby.js';
+import { newestPrice } from '../domain/bitcoin.js';
+import { householdTimezone } from '../domain/settings.js';
+import {
+  archiveAccount,
+  createManualAccount,
+  placeAccount,
+  restoreAccount,
+  updateAccount,
+} from '../domain/accounts.js';
+import { ConflictError } from '../domain/errors.js';
+import { equityFor, listValuations, recordValuation } from '../domain/valuations.js';
+import { booleanQuery, centsInLoose, centsOut, dateOut } from '../http/serialize.js';
+import { AUTHENTICATED } from '../plugins/auth.js';
+
+/**
+ * The account list.
+ *
+ * The Budget page's read model carries only in-budget accounts, because that is
+ * what the identity is made of. Entering a transaction by hand needs the whole
+ * live set: a mortgage payment lands on an account that is deliberately
+ * off-budget, and leaving it unpickable would mean the register for it could
+ * never be corrected.
+ */
+
+const idParamsSchema = z.object({ id: z.string().uuid() });
+
+const listQuerySchema = z.object({
+  includeArchived: booleanQuery.optional(),
+});
+
+const createSchema = z.object({
+  name: z.string().min(1).max(100),
+  nickname: z.string().max(40).nullish(),
+  type: z.enum(ACCOUNT_TYPES),
+  balanceCents: centsInLoose,
+  inBudget: z.boolean().optional(),
+  inNetWorth: z.boolean().optional(),
+  stalenessIntervalDays: z.number().int().nullish(),
+  groupingId: z.string().uuid().nullish(),
+});
+
+const updateSchema = z.object({
+  name: z.string().min(1).max(100).optional(),
+  // Short by constraint: the point is fitting where the full name does not.
+  nickname: z.string().max(40).nullish(),
+  type: z.enum(ACCOUNT_TYPES).optional(),
+  inBudget: z.boolean().optional(),
+  inNetWorth: z.boolean().optional(),
+  stalenessIntervalDays: z.number().int().nullish(),
+  groupingId: z.string().uuid().nullish(),
+  needsReview: z.boolean().optional(),
+  // Synced accounts only: the institution already counts its pending charges.
+  balanceIncludesPending: z.boolean().optional(),
+  balanceCents: centsInLoose.optional(),
+  // A property may point at the mortgage secured against it; equity is the
+  // difference, computed on read.
+  mortgageAccountId: z.string().uuid().nullish(),
+});
+
+export const accountRoutes: FastifyPluginCallback = (fastify, _options, done) => {
+  for (const guard of AUTHENTICATED) {
+    fastify.addHook('preHandler', guard);
+  }
+
+  async function refuseIfManaged(id: string): Promise<void> {
+    const account = await prisma.account.findUnique({
+      where: { id },
+      select: { managedAs: true },
+    });
+    if (!account || account.managedAs === 'none') return;
+
+    throw new ConflictError(
+      'account_managed_elsewhere',
+      account.managedAs === 'bitcoin'
+        ? 'This is a Bitcoin holding. Edit it under Settings → Bitcoin.'
+        : 'This is a property. Edit it under Settings → Properties.',
+    );
+  }
+
+  fastify.get('/api/accounts', async (request) => {
+    const query = listQuerySchema.parse(request.query ?? {});
+
+    const accounts = await prisma.account.findMany({
+      where: query.includeArchived ? {} : { archivedAt: null },
+      select: {
+        id: true,
+        name: true,
+        type: true,
+        source: true,
+        balanceCents: true,
+        inBudget: true,
+        inNetWorth: true,
+        needsReview: true,
+        balanceIncludesPending: true,
+        balanceAsOf: true,
+        feedBalanceAsOf: true,
+        stalenessIntervalDays: true,
+        groupingId: true,
+        mortgageAccountId: true,
+        bitcoinSats: true,
+        managedAs: true,
+        nickname: true,
+        archivedAt: true,
+      },
+      // Alphabetical is the only order this system has.
+      orderBy: { name: 'asc' },
+    });
+
+    // A Bitcoin account carries no dollar balance; its worth is the quantity at
+    // today's price. Reporting the raw column showed a real holding as $0.00.
+    const price = accounts.some((account) => account.bitcoinSats !== null)
+      ? await newestPrice(prisma)
+      : null;
+
+    // Hand-entered activity on a synced account, which never wrote the stored
+    // column — see domain/standby.ts. The same figure the Budget page shows, so
+    // the two pages cannot disagree about one account's balance.
+    const standby = await standbyAdjustments(prisma);
+
+    const worthOf = (account: (typeof accounts)[number]): bigint => {
+      if (account.bitcoinSats === null) {
+        return balanceWithStandby(
+          account.type,
+          account.balanceCents,
+          standby.get(account.id) ?? 0n,
+        );
+      }
+      return price === null ? 0n : bitcoinValueCents(account.bitcoinSats, price.priceCents);
+    };
+
+    return {
+      accounts: accounts.map((account) => ({
+        id: account.id,
+        name: account.name,
+        nickname: account.nickname,
+        type: account.type,
+        source: account.source,
+        balanceCents: centsOut(worthOf(account)),
+        // How much of that figure is hand-entered rather than the bank's.
+        standbyCents: centsOut(standby.get(account.id) ?? 0n),
+        inBudget: account.inBudget,
+        inNetWorth: account.inNetWorth,
+        needsReview: account.needsReview,
+        // Whether the identity leaves this account's pending charges out, because
+        // the institution's balance already carries them — ADR 074.
+        balanceIncludesPending: account.balanceIncludesPending,
+        balanceAsOf: dateOut(account.balanceAsOf),
+        // How old the feed says its own snapshot is, null when it does not say
+        // and for every manual account. Never inferred from when we last synced.
+        feedBalanceAsOf: dateOut(account.feedBalanceAsOf),
+        stalenessIntervalDays: account.stalenessIntervalDays,
+        groupingId: account.groupingId,
+        mortgageAccountId: account.mortgageAccountId,
+        // Satoshis as a decimal string, the same reasoning as cents.
+        bitcoinSats: account.bitcoinSats?.toString() ?? null,
+        // Which Settings tab owns this row. `none` is an ordinary account.
+        managedAs: account.managedAs,
+        archivedAt: dateOut(account.archivedAt),
+      })),
+    };
+  });
+
+  /** Manual accounts only; a SimpleFIN account is discovered by a sync. */
+  fastify.post('/api/accounts', async (request, reply) => {
+    const body = createSchema.parse(request.body);
+    const created = await createManualAccount(prisma, body);
+
+    request.log.info(
+      { accountId: created.id, actorId: request.currentUser?.id },
+      'manual account created',
+    );
+    return reply.code(201).send({ account: created });
+  });
+
+  /**
+   * Ordinary accounts only.
+   *
+   * A Bitcoin holding and a property are edited on their own tabs, and this is
+   * the guard for the other direction: putting a holding in the budget from here
+   * would flip the flag without writing the dollar figure the identity reads, so
+   * the holding would silently count as zero. That was the bug this whole change
+   * exists to close, and leaving one route that could still cause it would be
+   * closing it by convention rather than by construction.
+   */
+  fastify.patch('/api/accounts/:id', async (request) => {
+    const { id } = idParamsSchema.parse(request.params);
+    await refuseIfManaged(id);
+    await updateAccount(prisma, id, {
+      ...updateSchema.parse(request.body),
+      actorId: request.currentUser?.id ?? null,
+      // A typed balance becomes a valuation dated today — the household's today.
+      timeZone: await householdTimezone(prisma, fastify.config.SCHEDULE_TIMEZONE),
+    });
+    return { ok: true };
+  });
+
+  /**
+   * Where an account sits: which grouping, and in what order among its
+   * neighbours.
+   *
+   * The whole order, not a direction — the same shape as the delegation route
+   * beside it, and for the same reason: a "move up" that races another tab's
+   * "move down" lands somewhere neither person asked for, and a list cannot.
+   */
+  fastify.post('/api/accounts/:id/place', async (request) => {
+    const { id } = idParamsSchema.parse(request.params);
+    const body = z
+      .object({
+        groupingId: z.string().uuid().nullable(),
+        orderedIds: z.array(z.string().uuid()).min(1),
+      })
+      .parse(request.body);
+
+    await prisma.$transaction(async (tx) => {
+      await placeAccount(tx, {
+        accountId: id,
+        groupingId: body.groupingId,
+        orderedIds: body.orderedIds,
+      });
+    });
+
+    return { ok: true };
+  });
+
+  fastify.post('/api/accounts/:id/archive', async (request) => {
+    const { id } = idParamsSchema.parse(request.params);
+    // Blocked while an in-budget account still holds money: the identity
+    // subtracts what the accounts hold, so this would move the bottom line.
+    await archiveAccount(prisma, id);
+
+    request.log.info({ accountId: id, actorId: request.currentUser?.id }, 'account archived');
+    return { ok: true };
+  });
+
+  fastify.post('/api/accounts/:id/restore', async (request) => {
+    const { id } = idParamsSchema.parse(request.params);
+    await restoreAccount(prisma, id);
+    return { ok: true };
+  });
+
+  // --- Valuations --------------------------------------------------------
+
+  /**
+   * Records what something was worth on a date. Manual entry only — see §8 on
+   * why there is no property valuation API behind this.
+   */
+  fastify.post('/api/accounts/:id/valuations', async (request, reply) => {
+    const { id } = idParamsSchema.parse(request.params);
+    const body = z
+      .object({
+        valueCents: centsInLoose,
+        asOf: z.coerce.date(),
+        note: z.string().max(500).nullish(),
+      })
+      .parse(request.body);
+
+    const result = await recordValuation(prisma, {
+      accountId: id,
+      valueCents: body.valueCents,
+      asOf: body.asOf,
+      note: body.note ?? null,
+      actorId: request.currentUser?.id ?? null,
+    });
+
+    request.log.info(
+      { accountId: id, isCurrent: result.isCurrent, actorId: request.currentUser?.id },
+      'valuation recorded',
+    );
+    return reply.code(201).send(result);
+  });
+
+  /** The history behind the current figure, newest first. */
+  fastify.get('/api/accounts/:id/valuations', async (request) => {
+    const { id } = idParamsSchema.parse(request.params);
+    const valuations = await listValuations(prisma, id);
+
+    return {
+      valuations: valuations.map((valuation) => ({
+        id: valuation.id,
+        valueCents: centsOut(valuation.valueCents),
+        asOf: dateOut(valuation.asOf),
+        note: valuation.note,
+      })),
+    };
+  });
+
+  /** Equity, computed on read. Null when no mortgage is linked. */
+  fastify.get('/api/accounts/:id/equity', async (request) => {
+    const { id } = idParamsSchema.parse(request.params);
+    const equity = await equityFor(prisma, id);
+
+    if (!equity) return { equity: null };
+    return {
+      equity: {
+        propertyValueCents: centsOut(equity.propertyValueCents),
+        mortgageBalanceCents: centsOut(equity.mortgageBalanceCents),
+        equityCents: centsOut(equity.equityCents),
+      },
+    };
+  });
+
+  done();
+};

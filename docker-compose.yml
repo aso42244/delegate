@@ -1,0 +1,337 @@
+# Delegate on a Synology NAS.
+#
+# Two services and two named volumes. The app publishes on HOST_PORT, which
+# defaults to 8088 so it does not collide with anything already running — the
+# container's own port 3000 is private to the compose network and cannot clash
+# with another container using 3000.
+
+services:
+  # Makes the secrets this deployment needs, once, then exits.
+  #
+  # This service is why `docker compose up -d` works with nothing configured.
+  # SESSION_SECRET and POSTGRES_PASSWORD used to be mandatory, so the shortest
+  # install was "invent two secrets, write a file, then start" — which is not a
+  # one-line deploy however short the last line is.
+  #
+  # The same image as the app, with a different command: nothing extra to pull,
+  # and no script to mount from a repository somebody may not have cloned.
+  #
+  # It never overwrites. Where a variable is already set it is written into the
+  # file rather than replaced, so a deployment that has secrets in `.env` today
+  # keeps exactly the ones it has and upgrades without noticing this ran.
+  secrets:
+    image: ${APP_IMAGE:-ghcr.io/aso42244/delegate:latest}
+    command: ['node', 'apps/api/dist/cli/init-secrets.js']
+    environment:
+      # Adopted where set, generated where not. Empty is the ordinary case now.
+      SESSION_SECRET: ${SESSION_SECRET:-}
+      DATA_ENCRYPTION_KEY: ${DATA_ENCRYPTION_KEY:-}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-delegate}
+      APP_DB_USER: ${APP_DB_USER:-}
+    volumes:
+      - delegate-secrets:/secrets
+    # One shot. `unless-stopped` would restart it for ever after it exits 0.
+    restart: 'no'
+
+  postgres:
+    # Floating, like the app's base image, and the same known gap. Pin at the
+    # next deliberate bump:
+    #   docker image inspect --format '{{index .RepoDigests 0}}' postgres:16-alpine
+    image: postgres:16-alpine
+    restart: unless-stopped
+    depends_on:
+      secrets:
+        condition: service_completed_successfully
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      # Handed to the init script below, which runs only when the data directory
+      # is empty. Set on a fresh install to get a least-privilege application
+      # role; leave empty and the application stays on the superuser, which is
+      # what every existing deployment does.
+      # The init script creates this role on an empty data directory. Connecting
+      # as it needs APP_DATABASE_URL as well — both halves, and for a long time
+      # only this one existed, so the role was created and then never used.
+      #
+      # Deliberately still opt-in rather than the default. Nothing here can tell
+      # a fresh install from an upgrade: the secrets volume is empty on the first
+      # boot of both, and pointing an existing deployment at a role its database
+      # has never heard of would break it on upgrade. The README has the two
+      # steps for moving over.
+      APP_DB_USER: ${APP_DB_USER:-delegate_app}
+      APP_DB_PASSWORD: ${APP_DB_PASSWORD:-}
+      # Read from the file the `secrets` service wrote, which is either the value
+      # from `.env` or one generated on first boot. Not POSTGRES_PASSWORD: the
+      # two cannot both be set, and a file is the only form compose can carry a
+      # value it never sees.
+      # Read as root: the official image's entrypoint evaluates `*_FILE`
+      # variables before dropping to the postgres user, so a file written 0600
+      # and owned by the app's uid is still readable here. Verified by running
+      # it rather than reasoned about — this is the kind of assumption that
+      # fails at the end of somebody's deploy, with the database refusing to
+      # start and the message naming a permission rather than a design.
+      POSTGRES_PASSWORD_FILE: /secrets/postgres-password
+      POSTGRES_DB: ${POSTGRES_DB:-delegate}
+    volumes:
+      - delegate-secrets:/secrets:ro
+      - postgres-data:/var/lib/postgresql/data
+      # Runs once, on an empty data directory. Existing deployments never see it.
+      - ./postgres/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-delegate}']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    # Postgres 16 defaults assume far more memory than a 6 GB NAS that is also
+    # running DSM and another container. These are deliberate, not tuning for
+    # performance: they stop Postgres reserving memory the machine does not have.
+    command:
+      - postgres
+      - -c
+      - shared_buffers=256MB
+      - -c
+      - work_mem=8MB
+      - -c
+      - maintenance_work_mem=64MB
+      - -c
+      - max_connections=40
+
+  app:
+    image: ${APP_IMAGE:-ghcr.io/aso42244/delegate:latest}
+    restart: unless-stopped
+    depends_on:
+      secrets:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+    environment:
+      APP_NAME: ${APP_NAME:-Delegate}
+      NODE_ENV: production
+      PORT: 3000
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      # The application's own connection.
+      #
+      # The default is the superuser, which is what every deployment has today.
+      # `APP_DATABASE_URL` overrides it outright, and that is how the app moves
+      # onto the least-privilege role — because until now there was no way to.
+      # The init script creates `delegate_app` on a fresh install and this line
+      # built its URL from POSTGRES_USER regardless, so the role was created and
+      # then never connected as. The feature existed and did nothing.
+      #
+      # One variable holding the whole URL rather than a user and a password
+      # substituted into the default: a nested default inside a nested default
+      # is not something this file can be tested for locally (ADR 019 — compose
+      # here is reasoned about, not executed), and `docker compose config` is one
+      # command that shows what it actually resolved to.
+      # Empty by default, and filled in by the entrypoint from the file the
+      # `secrets` service wrote. Compose cannot read a file, so a password it
+      # never sees is a password it cannot substitute — which is also why this
+      # is no longer assembled here out of POSTGRES_USER and POSTGRES_PASSWORD.
+      DATABASE_URL: ${DATABASE_URL:-}
+      # Points the application at a different role or an external database, and
+      # overrides everything above. This is how a deployment moves onto the
+      # least-privilege role; see the README.
+      APP_DATABASE_URL: ${APP_DATABASE_URL:-}
+      # No longer required. Empty means "use the generated one", which the
+      # entrypoint loads out of the secrets volume before anything reads it.
+      SESSION_SECRET: ${SESSION_SECRET:-}
+      # The key secrets at rest are encrypted with. Empty means "use the one in
+      # the secrets volume", which the entrypoint loads.
+      #
+      # On a deployment that predates that volume the file is seeded from
+      # SESSION_SECRET, which is what the key was derived from before — so the
+      # value does not change, nothing needs re-encrypting, and the two are
+      # simply recorded apart from each other from then on. That is the whole of
+      # ADR 029's split, performed by upgrading.
+      #
+      # This line still has to exist. Compose reads `.env` to substitute into
+      # this file and does not hand `.env` to the container, so without a name
+      # here the variable would never arrive.
+      DATA_ENCRYPTION_KEY: ${DATA_ENCRYPTION_KEY:-}
+      SESSION_TTL_SECONDS: ${SESSION_TTL_SECONDS:-604800}
+      # The ceiling a rolling session cannot roll past. 90 days.
+      SESSION_ABSOLUTE_TTL_SECONDS: ${SESSION_ABSOLUTE_TTL_SECONDS:-7776000}
+      # False by default, because plain http is the default (ADR 017). A browser
+      # never sends a Secure cookie over plain http, so turning this on without
+      # TLS in front breaks sign-in silently.
+      SESSION_COOKIE_SECURE: ${SESSION_COOKIE_SECURE:-false}
+      # Empty unless ./scripts/make-tls-cert.sh has been run and the paths point
+      # into the mounted /tls directory below. Both or neither — the app refuses
+      # to start with half a TLS configuration.
+      TLS_CERT_PATH: ${TLS_CERT_PATH:-}
+      TLS_KEY_PATH: ${TLS_KEY_PATH:-}
+      TRUSTED_ORIGINS: ${TRUSTED_ORIGINS:-}
+      # Where the SOCKS proxy lives, used only when the Bitcoin node setting
+      # says to reach it over Tor. The default is the service below, so the
+      # container next door works with no configuration at all.
+      TOR_SOCKS_URL: ${TOR_SOCKS_URL:-socks5h://tor:9050}
+      # Empty unless something sits in front. See ADR 018 — trusting a forwarded
+      # address while the port is also reachable directly removes the sign-in
+      # rate limit rather than weakening it.
+      TRUST_PROXY: ${TRUST_PROXY:-}
+      AUTH_RATE_LIMIT_MAX: ${AUTH_RATE_LIMIT_MAX:-10}
+      AUTH_RATE_LIMIT_WINDOW: ${AUTH_RATE_LIMIT_WINDOW:-5 minutes}
+      BITCOIN_PRICE_CRON: ${BITCOIN_PRICE_CRON:-5 * * * *}
+      BITCOIN_PRICE_PRIMARY: ${BITCOIN_PRICE_PRIMARY:-coingecko}
+      BITCOIN_PRICE_FALLBACK: ${BITCOIN_PRICE_FALLBACK:-coinbase}
+      SIMPLEFIN_ACCESS_URL: ${SIMPLEFIN_ACCESS_URL:-}
+      # The zone every cron expression here is read in. UTC unless .env says
+      # otherwise, which is what every deployment did before this existed.
+      SCHEDULE_TIMEZONE: ${SCHEDULE_TIMEZONE:-UTC}
+      SIMPLEFIN_SYNC_CRON: ${SIMPLEFIN_SYNC_CRON:-0 * * * *}
+      SIMPLEFIN_BACKFILL_MONTHS: ${SIMPLEFIN_BACKFILL_MONTHS:-12}
+      BACKUP_DIR: /backups
+      # The same directory as the host names it, so the Backups card can show a
+      # path somebody on the NAS can actually use. `/backups` above is true only
+      # from inside this container.
+      # The same directory as the *host* names it, so the Backups card can show a
+      # path somebody on the machine can actually use. Empty when the dumps live
+      # in a named volume, which the card then says instead of inventing a path.
+      BACKUP_HOST_DIR: ${BACKUP_DIR:-}
+      BACKUP_CRON: ${BACKUP_CRON:-30 2 * * *}
+      BACKUP_RETENTION_DAYS: ${BACKUP_RETENTION_DAYS:-30}
+    ports:
+      - '${HOST_PORT:-8088}:3000'
+    volumes:
+      # A named volume unless BACKUP_DIR names a host path.
+      #
+      # Compose reads the left-hand side as a volume name when it matches one
+      # declared below and as a host path when it looks like one, so this is both
+      # behaviours in a single line. The default means a deployment that
+      # configures nothing still gets durable backups; setting BACKUP_DIR to a
+      # host directory is what makes them reachable from outside Docker, which is
+      # what a NAS wants so they can be picked up by an off-device backup. A dump
+      # on the same disk as the database is not a backup.
+      - ${BACKUP_DIR:-delegate-backups}:/backups
+      # Read-only: the application reads these and never writes them. The
+      # `secrets` service is the only thing that does.
+      - delegate-secrets:/secrets:ro
+      # Read-only, and only meaningful when TLS_CERT_PATH is set. The directory
+      # is harmless when empty.
+      - ${TLS_DIR:-./tls}:/tls:ro
+      # The onion address, so Settings can show it. A volume of its own holding
+      # the address and nothing else: the key directory is 0700 and owned by
+      # tor, so the app — a different unprivileged user — cannot read out of it
+      # at all, and giving it the key would be wrong even if it could.
+      - tor-address:/tor:ro
+
+  # Automatic HTTPS, for a deployment that has a domain name.
+  #
+  # Behind a profile, and off by default, because the default is right for the
+  # two cases Delegate already served: a LAN address, and an origin behind a
+  # tunnel that terminates TLS itself (ADR 017). Turning it on where neither is
+  # true is one line:
+  #
+  #   DELEGATE_DOMAIN=budget.example.com docker compose --profile https up -d
+  #
+  # Caddy then requests a Let's Encrypt certificate on first start, renews it on
+  # its own, and redirects http to https. Ports 80 and 443 have to be reachable
+  # from the internet for the certificate to be issued at all.
+  #
+  # **Set TRUST_PROXY when you use this.** Every request then arrives from this
+  # container, and an application that does not know to read X-Forwarded-For
+  # buckets the whole internet into one sign-in rate limit. `172.16.0.0/12`
+  # covers Docker's default networks. The application warns at boot when a
+  # forwarded header turns up and nothing is configured to trust it.
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    profiles: ['https']
+    depends_on:
+      - app
+    environment:
+      # Not `:?`. Compose interpolates the **whole file before it applies
+      # profiles**, so a required variable inside a service nobody asked to start
+      # still refuses to parse — which is how a deployment that had never heard
+      # of Caddy failed with "DELEGATE_DOMAIN is missing a value" halfway through
+      # an upgrade.
+      #
+      # Empty is caught by the check in deploy.sh instead, where the message can
+      # name the profile and the variable together.
+      DELEGATE_DOMAIN: ${DELEGATE_DOMAIN:-}
+    ports:
+      - '${HTTP_PORT:-80}:80'
+      - '${HTTPS_PORT:-443}:443'
+    volumes:
+      - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      # The issued certificate and the account key. Losing this volume means
+      # asking Let's Encrypt for a new certificate, which is fine but rate
+      # limited — keeping it is what makes a restart free.
+      - caddy-data:/data
+      - caddy-config:/config
+
+  # A SOCKS proxy, and the onion service, for the deployments that want them.
+  #
+  # Behind a profile again. It ran by default while every deployment was one
+  # household's NAS, where a small idle daemon costs nothing and having it ready
+  # meant pasting an onion address just worked. A one-line install that lands on
+  # any machine is a different trade: most of them will never reach an onion
+  # address, and the minimum stack should be the minimum.
+  #
+  #   docker compose --profile tor up -d
+  #
+  # Nothing routes through it unless a Bitcoin node is configured to, and it
+  # publishes no ports — only the app container reaches it, over the compose
+  # network.
+  tor:
+    profiles: ['tor']
+    # Built here rather than pulled: see tor/Dockerfile for why a third-party
+    # `latest` tag was the wrong thing to put on this particular traffic.
+    build:
+      context: ./tor
+    restart: unless-stopped
+    # The hidden service forwards to an address, which the entrypoint resolves
+    # from this name before tor starts. Nothing to resolve until the app exists.
+    depends_on:
+      - app
+    volumes:
+      # The configuration, read-only: it is part of the release, not state.
+      - ./tor/torrc:/etc/tor/torrc:ro
+      # The hidden service's key, which *is* state and is the whole identity of
+      # the address. Losing this volume changes the onion address and breaks
+      # every device that had it. Back it up.
+      - tor-keys:/var/lib/tor
+      # Where the address alone is republished for the app to read. The key
+      # never leaves the volume above.
+      - tor-address:/published
+    healthcheck:
+      # The hostname file existing is the thing that actually matters: it means
+      # the hidden service was created and the address can be read. A port check
+      # would pass while the service silently failed to come up, which is the
+      # failure that has already happened once here.
+      test: ['CMD', 'test', '-f', '/var/lib/tor/delegate/hostname']
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      # First run generates a key and publishes a descriptor. A minute is
+      # generous and costs nothing.
+      start_period: 60s
+
+volumes:
+  # Where the nightly dumps land when BACKUP_DIR is not set to a host path.
+  delegate-backups:
+
+  # The session secret, the at-rest encryption key and the database password.
+  #
+  # Deliberately not in the database. The at-rest key protects exactly what a
+  # stolen `pg_dump` would otherwise hand over in the clear, and a key kept
+  # beside the ciphertext it opens protects nothing.
+  #
+  # The cost is that a dump alone is not a whole restore — you need this too.
+  # Settings shows the key so it can be copied somewhere safe, and this volume
+  # belongs in whatever backs the deployment up.
+  delegate-secrets:
+
+  # Caddy's issued certificates and account key. Only used by the https profile.
+  caddy-data:
+  caddy-config:
+
+  postgres-data:
+  # The hidden service's identity. Worth including in whatever backs up the NAS:
+  # without it the onion address cannot be recovered, only replaced.
+  tor-keys:
+  # The address alone, republished by the tor entrypoint for the app to read.
+  # Derived state: losing it costs nothing, because tor writes it again on the
+  # next start from the key it does not lose.
+  tor-address:

@@ -1,0 +1,1609 @@
+// Household budget schema.
+//
+// Conventions that hold everywhere in this file:
+//
+//   * All money is BigInt, in integer cents. Never Float, never Decimal.
+//   * Debt balances are stored as positive magnitudes. A $500 credit card
+//     balance is 50000. The budget identity subtracts them.
+//   * Transaction amounts are signed: negative is money leaving the account.
+//   * Nothing is hard-deleted. `archivedAt` marks a row archived; archived rows
+//     stay resolvable so an eight-month-old transaction can still render
+//     "Grocery (archived)" rather than a dangling id.
+//   * Tables and columns are snake_case via @@map / @map, so hand-written SQL in
+//     migrations and CLI commands never needs quoted identifiers.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------------------------
+// Enums — mirrored as string unions in @budget/shared/domain.ts
+// ---------------------------------------------------------------------------
+
+enum AccountType {
+  asset
+  debt
+
+  @@map("account_type")
+}
+
+enum AccountSource {
+  simplefin
+  manual
+
+  @@map("account_source")
+}
+
+/// Who owns an account's lifecycle.
+///
+/// A Bitcoin holding and a property are still ordinary accounts — the identity,
+/// the budget read model and the net worth chart all read the same table, and
+/// giving them their own home would mean reimplementing every one of those. What
+/// this changes is who creates and retires the row: their own Settings tab does,
+/// so neither is ever typed into Settings → Accounts by hand.
+/// Why a quantity of Bitcoin changed.
+///
+/// `opening` is the balance the ledger starts from — what was held before
+/// anybody recorded how it got there. Everything after it is an event with a
+/// date, which is what makes holdings answerable for any past day.
+enum BitcoinEventType {
+  opening
+  purchase
+  sale
+  transfer_in
+  transfer_out
+  adjustment
+
+  @@map("bitcoin_event_type")
+}
+
+enum AccountManagement {
+  none
+  bitcoin
+  property
+
+  @@map("account_management")
+}
+
+enum GroupingSection {
+  assets
+  debts
+  delegations
+
+  @@map("grouping_section")
+}
+
+enum DelegationEventType {
+  delegate
+  categorize
+  transfer
+  adjust
+
+  @@map("delegation_event_type")
+}
+
+enum TransactionKind {
+  normal
+  income
+  transfer
+
+  @@map("transaction_kind")
+}
+
+enum RuleMatchMode {
+  contains
+  starts_with
+  regex
+
+  @@map("rule_match_mode")
+}
+
+enum RuleDirection {
+  any
+  debit
+  credit
+
+  @@map("rule_direction")
+}
+
+/// How often the household is paid — see @budget/shared's PayCadence.
+///
+/// Only the count of payments a year matters to the arithmetic, so
+/// `semimonthly` covers both the 1st-and-15th pattern and the 15th-and-last-day
+/// one. Nothing here schedules a Delegate run; the cycle is still one press to
+/// the next.
+enum PayCadence {
+  weekly
+  biweekly
+  semimonthly
+  monthly
+
+  @@map("pay_cadence")
+}
+
+/// Where a person lands.
+///
+/// Two values, not every page: a landing page answers a whole question, and
+/// Overview and Budget are the two that do. Landing somebody on Rules is a
+/// setting nobody wants and one more thing to keep working.
+enum LandingPage {
+  overview
+  budget
+
+  @@map("landing_page")
+}
+
+enum UserRole {
+  user
+  admin
+  super_admin
+
+  @@map("user_role")
+}
+
+enum SyncRunStatus {
+  running
+  succeeded
+  failed
+
+  @@map("sync_run_status")
+}
+
+/// How a snapshot row came to hold the figure it holds.
+///
+/// Per row, never per day. A single date can legitimately mix `reconstructed`
+/// delegations with `interpolated` accounts, and collapsing that to one flag per
+/// day would report the whole picture as an estimate because one account was.
+///
+/// The order below is the order of trust, strongest first. `weakestProvenance`
+/// in the domain depends on it: an aggregate is only as good as the weakest row
+/// that went into it.
+enum SnapshotProvenance {
+  /// Captured live by the nightly job. The figure the application was actually
+  /// showing at the time.
+  observed
+
+  /// Derived exactly, from the delegation ledger, the Bitcoin holdings ledger or
+  /// the posted transactions of an account. Not observed, but not an estimate —
+  /// there is a right answer and this is it.
+  reconstructed
+
+  /// A manual value carried forward from the last figure a human entered on or
+  /// before this date. Manual values change in steps, not slopes: a property
+  /// worth $400,000 until somebody typed $420,000 was worth $400,000 the whole
+  /// time, not something in between.
+  carried
+
+  /// A last-resort estimate. No exact derivation was possible — a gap that
+  /// predates an account's transaction history, or a Bitcoin price that had to
+  /// be carried because no close was ever recorded for that date. Rendered
+  /// visibly as an estimate, and logged at warning level when written.
+  interpolated
+
+  @@map("snapshot_provenance")
+}
+
+// ---------------------------------------------------------------------------
+// Users and sessions
+// ---------------------------------------------------------------------------
+
+model User {
+  id           String   @id @default(uuid()) @db.Uuid
+  username     String   @unique
+  passwordHash String   @map("password_hash")
+  role         UserRole @default(user)
+
+  /// What to call this person on screen, where the username is an email address
+  /// and reads as one. Null means fall back to the username, which is what
+  /// every account did before this column existed.
+  ///
+  /// Not unique and not a credential: nothing is ever looked up by it.
+  displayName String? @map("display_name")
+
+  /// Whether this person has ever arranged Overview.
+  ///
+  /// Not derivable from the tiles themselves: somebody who removes every tile
+  /// has arranged it to nothing, and a read that saw no rows would hand them the
+  /// default back — a tile deleted on purpose reappearing on the next reload.
+  ///
+  /// So the flag is about the *act*, not the result, and it is what separates
+  /// "never chose" from "chose nothing" — the same distinction `landing_page`
+  /// makes with null.
+  overviewArranged Boolean @default(false) @map("overview_arranged")
+
+  /// Where this person lands when they open the application.
+  ///
+  /// Per person rather than per household: the two people using this budget read
+  /// it for different reasons — one for a daily glance, one to work on it — and
+  /// a single household setting would make one of them wrong every day.
+  ///
+  /// Null is the default, which is Overview. Stored rather than defaulted in the
+  /// column so that "never chose" stays distinguishable from "chose Overview",
+  /// which is what lets the default move later without overriding a choice.
+  landingPage LandingPage? @map("landing_page")
+
+  // Accounts created by an Admin start with a temporary password that must be
+  // replaced at first login.
+  mustChangePassword Boolean @default(false) @map("must_change_password")
+
+  /// The TOTP shared secret, encrypted at rest (AES-256-GCM, key derived from
+  /// SESSION_SECRET). Every nightly pg_dump contains this table, and a
+  /// plaintext secret in a stolen dump is a working second factor.
+  totpSecretEncrypted String?   @map("totp_secret_encrypted")
+  /// Set when a code from the authenticator has actually been verified. Until
+  /// then enrolment is incomplete and the secret must not gate a sign-in.
+  totpConfirmedAt     DateTime? @map("totp_confirmed_at")
+  lastLoginAt         DateTime? @map("last_login_at")
+  archivedAt          DateTime? @map("archived_at")
+  createdAt           DateTime  @default(now()) @map("created_at")
+  updatedAt           DateTime  @updatedAt @map("updated_at")
+
+  sessions            Session[]
+  apiTokens           ApiToken[]
+  totpUsedCodes       TotpUsedCode[]
+  bitcoinEvents       BitcoinHoldingEvent[]
+  delegationEvents    DelegationEvent[]
+  delegateRuns        DelegateRun[]
+  delegationTransfers DelegationTransfer[]
+  accountValuations   AccountValuation[]
+  insightLayouts      InsightLayout[]
+  overviewTiles       OverviewTile[]
+  recoveryCodes       RecoveryCode[]
+  duplicateDismissals DuplicateDismissal[]
+  pairDismissals      PairDismissal[]
+  billLinks           BillLink[]
+  authEvents          AuthEvent[]           @relation("AuthEventSubject")
+  authEventsPerformed AuthEvent[]           @relation("AuthEventActor")
+
+  @@index([archivedAt])
+  @@map("users")
+}
+
+/// A single-use code that bypasses the second factor when the authenticator is
+/// lost. Hashed with argon2id exactly like a password, because that is what it
+/// is.
+model RecoveryCode {
+  id        String    @id @default(uuid()) @db.Uuid
+  userId    String    @map("user_id") @db.Uuid
+  codeHash  String    @map("code_hash")
+  /// Set when spent rather than deleted, so a code cannot be quietly reused and
+  /// "seven of ten remaining" is answerable.
+  usedAt    DateTime? @map("used_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, usedAt])
+  @@map("recovery_codes")
+}
+
+// Sessions live in Postgres rather than in process memory: an in-memory store
+// logs the household out on every container restart and grows without bound.
+// This also avoids a Redis dependency, which is explicitly out of scope.
+model Session {
+  id        String   @id
+  userId    String   @map("user_id") @db.Uuid
+  data      Json
+  expiresAt DateTime @map("expires_at")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("sessions")
+}
+
+/// A credential for a program, which reads the budget as the person who made it.
+///
+/// Eventide reads this budget through a narrow, read-only door (ADR 070), and
+/// a program has no cookie jar and cannot answer a second-factor prompt — so it
+/// carries one of these instead. Stored as a SHA-256 digest and shown to a
+/// person exactly once; the nightly dump contains this table, and a dump that
+/// hands over a working credential is the reason passwords are hashed too.
+///
+/// **`userId` is not nullable, and that is the decision (ADR 069).** A token
+/// speaks as one person, with that person's whole access. The table that stood
+/// here before (dropped in August with the MCP work) carried a scope; this one
+/// has nothing to choose between, because the door it opens only reads.
+///
+/// Revoking is a timestamp, never a delete. The row is the answer to "which
+/// machine held this, and when did it last read the budget".
+model ApiToken {
+  id           String    @id @default(uuid()) @db.Uuid
+  /// What the holder is called, in the household's words. A label, never a hint.
+  name         String
+  /// SHA-256 of the secret, hex. Never the secret.
+  tokenHash    String    @unique @map("token_hash")
+  userId       String    @map("user_id") @db.Uuid
+  createdAt    DateTime  @default(now()) @map("created_at")
+  /// Stamped on every accepted read, with the address it came from — so a
+  /// machine nobody is running any more is visible before anybody wonders.
+  lastUsedAt   DateTime? @map("last_used_at")
+  lastUsedFrom String?   @map("last_used_from")
+  revokedAt    DateTime? @map("revoked_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("api_tokens")
+}
+
+// ---------------------------------------------------------------------------
+// What happened to credentials
+// ---------------------------------------------------------------------------
+//
+// Carried open since the August review and declined twice, on the grounds that a
+// table nobody queries is worse than no table — it looks like a control while
+// nothing reads it. That is the nightly-backup trap, which this project has
+// already paid for once. So it ships **with** the screen that shows it: Settings
+// → Users reports the most recent events without being asked, the way the backup
+// card reports the newest dump.
+//
+// Credentials only. Everyone in this household sees the whole budget by design,
+// so a read is not an event; recording one per page view would bury the dozen
+// lines a year that matter.
+
+/// Recorded at sign-in, sign-out, and every change to a credential.
+enum AuthEventKind {
+  signed_in
+  sign_in_failed
+  second_factor_failed
+  signed_out
+  password_changed
+  password_reset
+  two_factor_enrolled
+  two_factor_disabled
+  two_factor_reset
+  account_created
+  account_archived
+  account_restored
+  api_token_created // a machine credential was issued, by the account it reads as
+  api_token_revoked
+
+  @@map("auth_event_kind")
+}
+
+model AuthEvent {
+  id         String        @id @default(uuid()) @db.Uuid
+  occurredAt DateTime      @default(now()) @map("occurred_at")
+  kind       AuthEventKind
+
+  /// Who it was about, and what the screen reads.
+  ///
+  /// A username when it names a real account, and a short keyed digest
+  /// (`unknown:xxxxxxxx`) when it does not. The login form has two fields, and a
+  /// password typed into the top one must never be written down — a name that
+  /// matches no account is quite often exactly that. See `describeAttemptedUsername`.
+  subject String
+
+  /// Set when the account is known. `SetNull` rather than cascade: an audit row
+  /// outliving the account it describes is the point of one.
+  userId String? @map("user_id") @db.Uuid
+
+  /// Who did it, when that is somebody else — an administrator resetting a
+  /// password or a second factor. Null when the subject acted on themselves.
+  actorId String? @map("actor_id") @db.Uuid
+
+  /// The address as the server resolved it, so it already honours TRUST_PROXY.
+  /// Text rather than INET: over Tor this is the loopback address of the SOCKS
+  /// hop and means nothing, and an address-typed column invites arithmetic on a
+  /// value that is sometimes a fiction.
+  ip String?
+
+  user  User? @relation("AuthEventSubject", fields: [userId], references: [id], onDelete: SetNull)
+  actor User? @relation("AuthEventActor", fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([occurredAt(sort: Desc)])
+  @@map("auth_events")
+}
+
+// ---------------------------------------------------------------------------
+// Groupings — organizational only. No balance, no amount to delegate.
+// ---------------------------------------------------------------------------
+
+model Grouping {
+  id      String          @id @default(uuid()) @db.Uuid
+  name    String
+  section GroupingSection
+
+  /**
+   * Where this grouping sits among its neighbours in the same section.
+   * Zero on every row until one is moved, and the sort falls through to the name
+   * when positions tie — so an untouched budget still reads alphabetically.
+   */
+  position Int @default(0)
+
+  // Rendered as a 3px left rail or a small dot, never a filled row background.
+  color     String?
+  collapsed Boolean @default(false)
+
+  /// Set on groupings the application owns — currently only "outstanding-checks".
+  /// A key rather than a name, so the lookup does not depend on text a person
+  /// can edit. System groupings cannot be renamed or archived.
+  systemKey String? @map("system_key")
+
+  archivedAt DateTime? @map("archived_at")
+  createdAt  DateTime  @default(now()) @map("created_at")
+  updatedAt  DateTime  @updatedAt @map("updated_at")
+
+  accounts    Account[]
+  delegations Delegation[]
+  snapshots   DelegationSnapshot[]
+
+  // Name uniqueness is enforced per section, case-insensitively, among live rows
+  // only — via a partial unique index in the migration. Archiving a grouping
+  // must not permanently reserve its name.
+  @@index([section, name])
+  @@index([archivedAt])
+  @@map("groupings")
+}
+
+// ---------------------------------------------------------------------------
+// Accounts — real-world balances
+// ---------------------------------------------------------------------------
+
+model Account {
+  id     String        @id @default(uuid()) @db.Uuid
+  name   String
+  type   AccountType
+  source AccountSource
+
+  /// A short name for the places a full bank name does not fit — the budget, the
+  /// transaction register. The real name stays on Settings → Accounts, where
+  /// identifying which account this is happens to be the whole point.
+  nickname String?
+
+  // Two orthogonal booleans. The house and the mortgage are inNetWorth only,
+  // which is precisely why the mortgage does not blow up the budget identity.
+  /**
+   * /**
+   * /**
+   * /**
+   * /**
+   * /**
+   * Where this account sits among its neighbours in the same grouping.
+   * As for a delegation and for the same reason: the order the household reads
+   * its accounts in is a fact about the household, and alphabetical is nobody's
+   * reading of it. Ties fall through to the name.
+   */
+  position Int @default(0)
+
+  inBudget   Boolean @default(true) @map("in_budget")
+  inNetWorth Boolean @default(true) @map("in_net_worth")
+
+  // Positive magnitude for both assets and debts. See the file header.
+  balanceCents BigInt @default(0) @map("balance_cents")
+
+  /// The institution's balance already carries its pending charges.
+  ///
+  /// The identity adds categorized pending charges back because the feed's
+  /// `balance` is meant to be the settled one (ADR 020). An institution that
+  /// folds pending activity into it would have those charges counted twice, so
+  /// an account marked here is left out of that term. ADR 074.
+  balanceIncludesPending Boolean @default(false) @map("balance_includes_pending")
+
+  // Manual accounts confirm their balance by hand; SimpleFIN accounts have it
+  // stamped on each sync. One staleness mechanism serves physical cash, the
+  // hardware wallet, and property value alike — there is no property-specific
+  // version of this.
+  balanceAsOf           DateTime? @map("balance_as_of")
+  stalenessIntervalDays Int?      @map("staleness_interval_days")
+
+  /// The timestamp the feed itself put on this balance, and only that.
+  ///
+  /// `balanceAsOf` above cannot answer this. It takes the feed's date when there
+  /// is one and the time of the request when there is not, so afterwards a
+  /// bridge that reported a fresh snapshot is indistinguishable from one that
+  /// reported nothing about freshness at all.
+  ///
+  /// Null when the feed omits `balance-date`, and deliberately left null rather
+  /// than filled in. An unknown age must not read as a fresh one.
+  feedBalanceAsOf DateTime? @map("feed_balance_as_of")
+
+  // Set when a sync discovers an account, cleared once the owner has reviewed
+  // the guessed type and the in-budget / in-net-worth defaults.
+  needsReview Boolean @default(false) @map("needs_review")
+
+  // SimpleFIN's account id. Null for manual accounts.
+  externalId String? @map("external_id")
+
+  groupingId String? @map("grouping_id") @db.Uuid
+
+  // A property account may point at the mortgage secured against it. Equity is
+  // computed on read as property balance − mortgage balance; never stored.
+  mortgageAccountId String? @map("mortgage_account_id") @db.Uuid
+
+  /// Bitcoin held, in satoshis, never as a dollar value. The displayed balance
+  /// is quantity × the price on the date being displayed.
+  ///
+  /// A **cache** of the sum of un-reversed `bitcoin_holding_events`, kept the
+  /// same way `delegations.balance_cents` is: written inside the same
+  /// transaction as the event, rebuildable and checkable by
+  /// `recompute-balances`. The events are the truth, and they are what let the
+  /// net worth chart answer what was held on a date rather than applying
+  /// today's quantity backwards.
+  bitcoinSats BigInt? @map("bitcoin_sats")
+
+  // Which Settings tab owns this row's lifecycle. `none` is an ordinary account.
+  managedAs AccountManagement @default(none) @map("managed_as")
+
+  /// When a Bitcoin holding's `balance_cents` was last set from the price.
+  ///
+  /// Only in-budget holdings carry one: the identity sums `balance_cents`, so a
+  /// holding that counts towards the budget has to have a dollar figure there,
+  /// and it is refreshed daily rather than hourly. The banner is a reading of
+  /// the household's spending, and one that moved with the market all day would
+  /// be a reading of the market instead.
+  bitcoinRevaluedAt DateTime? @map("bitcoin_revalued_at")
+
+  /// When the feed last listed this account at all.
+  ///
+  /// The third date in ADR 032's family and the one that was missing:
+  /// `balance_as_of` is when the figure was last confirmed, `feed_balance_as_of`
+  /// is what the feed said about its own freshness, and this is whether the feed
+  /// still knows the account exists.
+  ///
+  /// An account closed at the bank stops being listed, and `upsertAccount` only
+  /// touches what the feed mentions — so without this the row kept its balance
+  /// for ever and went on counting towards the identity. `feed_balance_as_of`
+  /// nearly answered it, but is null when a bridge says nothing about freshness,
+  /// and null cannot be read as stale without manufacturing warnings out of
+  /// silence. This is stamped whatever else the feed says, so absence is a fact.
+  ///
+  /// Null means "not asked yet", never "missing".
+  feedLastSeenAt DateTime? @map("feed_last_seen_at")
+
+  archivedAt DateTime? @map("archived_at")
+  createdAt  DateTime  @default(now()) @map("created_at")
+  updatedAt  DateTime  @updatedAt @map("updated_at")
+
+  grouping          Grouping?             @relation(fields: [groupingId], references: [id])
+  mortgageAccount   Account?              @relation("PropertyMortgage", fields: [mortgageAccountId], references: [id])
+  securedProperties Account[]             @relation("PropertyMortgage")
+  transactions      Transaction[]
+  rules             CategorizationRule[]
+  valuations        AccountValuation[]
+  bitcoinEvents     BitcoinHoldingEvent[]
+  bitcoinWallets    BitcoinWallet[]
+  snapshots         AccountSnapshot[]
+
+  @@unique([source, externalId], name: "account_source_external_id")
+  @@index([archivedAt])
+  @@index([managedAs])
+  @@index([inBudget])
+  @@index([inNetWorth])
+  @@index([groupingId])
+  @@index([feedLastSeenAt])
+  @@map("accounts")
+}
+
+// Point-in-time manual valuations, so the net worth chart uses the value that
+// was true on each historical date rather than today's value applied backwards.
+model AccountValuation {
+  id         String   @id @default(uuid()) @db.Uuid
+  accountId  String   @map("account_id") @db.Uuid
+  valueCents BigInt   @map("value_cents")
+  asOf       DateTime @map("as_of") @db.Date
+  note       String?
+  actorId    String?  @map("actor_id") @db.Uuid
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  account Account @relation(fields: [accountId], references: [id])
+  actor   User?   @relation(fields: [actorId], references: [id])
+
+  @@unique([accountId, asOf])
+  @@index([accountId, asOf])
+  @@map("account_valuations")
+}
+
+// ---------------------------------------------------------------------------
+// Delegations — the envelopes
+// ---------------------------------------------------------------------------
+
+enum DelegationKind {
+  envelope
+  check
+}
+
+model Delegation {
+  id         String  @id @default(uuid()) @db.Uuid
+  name       String
+  groupingId String? @map("grouping_id") @db.Uuid
+
+  /// An outstanding check is a delegation holding money the bank has not seen
+  /// yet. Same ledger, same identity, same everything — the kind only changes
+  /// how it is presented and which operations it accepts.
+  kind DelegationKind @default(envelope)
+
+  /// The identifier when several checks are outstanding at once.
+  checkNumber             String?   @map("check_number")
+  checkMemo               String?   @map("check_memo")
+  checkIssuedAt           DateTime? @map("check_issued_at")
+  /// Where the money came from, and where any residue returns on void.
+  checkSourceDelegationId String?   @map("check_source_delegation_id") @db.Uuid
+
+  // Nullable on purpose. Null means "ad hoc line — add nothing when Delegate is
+  // pressed", and renders as an empty cell rather than $0. Null is not zero.
+  amountToDelegateCents BigInt? @map("amount_to_delegate_cents")
+
+  /**
+   * What this line is saving towards, and by when.
+   * Both nullable, and null is no target. A date without an amount is refused by
+   * a check constraint: it would be a deadline for nothing. `targetDate` is a
+   * `DATE` because it is a date key — a day already decided, needing no zone to
+   * read (ADR 037).
+   */
+  targetCents BigInt? @map("target_cents")
+
+  /**
+   * One occurrence of the target's date — an anchor, not a deadline.
+   * With `targetIntervalMonths` set, the rest of the series follows from it and
+   * the reading always looks at the next one still ahead. Without it, this is a
+   * single date and the target is a one-off.
+   */
+  targetDate           DateTime? @map("target_date") @db.Date
+  targetIntervalMonths Int?      @map("target_interval_months")
+
+  /**
+   * The most this line is allowed to hold when Delegate is pressed.
+   *
+   * Nullable, and null is no maximum — which is what nearly every line is. It
+   * is the other half of the sentence a target starts: a target says what the
+   * line is saving towards and never writes (ADR 047), while this one does. A
+   * line capped at $400, set to receive $200 and already holding $275, takes
+   * $125 on the next press and leaves the $75 undelegated.
+   *
+   * A cap on the **balance**, not on the amount: the amount to delegate stays
+   * exactly what the household typed, and what a press actually moves is
+   * whatever of it still fits. Only Delegate is capped — a transfer, a refund
+   * or a manual adjustment may take a line past its maximum, and none of those
+   * is a distribution this figure has anything to say about.
+   */
+  maxBalanceCents BigInt? @map("max_balance_cents")
+
+  isUtility Boolean @default(false) @map("is_utility")
+
+  /// Where this line sits among its neighbours, ascending.
+  ///
+  /// Alphabetical was the only order the budget had, which is why a household
+  /// ends up naming its groupings "3 - Food" and "5 - Home" — numbering by hand
+  /// to buy back an ordering the software would not give them. Ties break on
+  /// name, so a new line lands predictably rather than wherever the database
+  /// felt like putting it.
+  position Int @default(0)
+
+  // Freeform and deliberately unstructured. The owner writes "$2200, Dec 27"
+  // and does the per-cycle arithmetic himself. A real column, so structured
+  // target fields remain a purely additive migration later.
+  notes String?
+
+  // Cached aggregate of delegation_events. The events are the truth; this is an
+  // optimization, written inside the same transaction as the event insert and
+  // rebuildable with `npm run recompute-balances`.
+  balanceCents BigInt @default(0) @map("balance_cents")
+
+  archivedAt DateTime? @map("archived_at")
+  createdAt  DateTime  @default(now()) @map("created_at")
+  updatedAt  DateTime  @updatedAt @map("updated_at")
+
+  grouping     Grouping?               @relation(fields: [groupingId], references: [id])
+  checkSource  Delegation?             @relation("CheckSource", fields: [checkSourceDelegationId], references: [id])
+  checksDrawn  Delegation[]            @relation("CheckSource")
+  settledBy    Transaction?            @relation("SettledCheck")
+  events       DelegationEvent[]
+  allocations  TransactionAllocation[]
+  rules        CategorizationRule[]
+  transfersOut DelegationTransfer[]    @relation("TransferSource")
+  transfersIn  DelegationTransfer[]    @relation("TransferDestination")
+  snapshots    DelegationSnapshot[]
+
+  @@index([archivedAt])
+  @@index([groupingId])
+  @@index([isUtility])
+  @@index([kind])
+  @@map("delegations")
+}
+
+// The append-only ledger behind every delegation balance.
+//
+// A stored mutable number cannot support the two operations this app needs: a
+// pending transaction that vanishes must have its effect backed out exactly, and
+// Delegate must be undoable for hours afterwards while unrelated work continues.
+// Both are reversal of specific deltas, so deltas are what we store.
+//
+// Reversal sets reversedAt. Rows are never deleted and never otherwise mutated.
+model DelegationEvent {
+  id           String              @id @default(uuid()) @db.Uuid
+  delegationId String              @map("delegation_id") @db.Uuid
+  deltaCents   BigInt              @map("delta_cents")
+  eventType    DelegationEventType @map("event_type")
+
+  // Groups every event written by one Delegate press, or one Reconcile commit.
+  // Undo works on this. Deliberately not a foreign key: a batch may or may not
+  // have a delegate_runs row behind it.
+  batchId String? @map("batch_id") @db.Uuid
+
+  // Typed nullable references rather than one polymorphic source_id, so the
+  // database itself enforces that the source row exists. See ADR 006.
+  transactionId        String? @map("transaction_id") @db.Uuid
+  delegateRunId        String? @map("delegate_run_id") @db.Uuid
+  delegationTransferId String? @map("delegation_transfer_id") @db.Uuid
+
+  actorId    String?   @map("actor_id") @db.Uuid
+  occurredAt DateTime  @default(now()) @map("occurred_at")
+  reversedAt DateTime? @map("reversed_at")
+  createdAt  DateTime  @default(now()) @map("created_at")
+
+  delegation         Delegation          @relation(fields: [delegationId], references: [id])
+  transaction        Transaction?        @relation(fields: [transactionId], references: [id])
+  delegateRun        DelegateRun?        @relation(fields: [delegateRunId], references: [id])
+  delegationTransfer DelegationTransfer? @relation(fields: [delegationTransferId], references: [id])
+  actor              User?               @relation(fields: [actorId], references: [id])
+
+  // The balance query is SUM(delta_cents) WHERE reversed_at IS NULL, per line.
+  @@index([delegationId, reversedAt])
+  @@index([batchId])
+  @@index([transactionId])
+  @@index([eventType])
+  @@index([occurredAt])
+  @@map("delegation_events")
+}
+
+// One row per Delegate press. Its createdAt defines the start of the current
+// budget cycle. The owner presses this manually each payday — there is no
+// automatic cadence anywhere in the system.
+model DelegateRun {
+  id         String   @id @default(uuid()) @db.Uuid
+  batchId    String   @unique @map("batch_id") @db.Uuid
+  totalCents BigInt   @map("total_cents")
+  lineCount  Int      @map("line_count")
+  actorId    String?  @map("actor_id") @db.Uuid
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  // Undo reverses every event in the batch and rolls the cycle boundary back to
+  // the previous run. Set once; an undone run is never re-applied.
+  undoneAt DateTime? @map("undone_at")
+
+  actor  User?             @relation(fields: [actorId], references: [id])
+  events DelegationEvent[]
+
+  @@index([createdAt])
+  @@index([undoneAt])
+  @@map("delegate_runs")
+}
+
+// Moving money between two envelopes. No account balance changes, so this writes
+// no transaction row — the paired events net to zero against the identity.
+// Surfaced through the "Envelope transfers" filter and per-line history.
+// See ADR 004.
+model DelegationTransfer {
+  id               String @id @default(uuid()) @db.Uuid
+  fromDelegationId String @map("from_delegation_id") @db.Uuid
+  toDelegationId   String @map("to_delegation_id") @db.Uuid
+
+  // Always positive. Direction is carried by the two delegation references.
+  // May take the source line negative, which is allowed and intentional.
+  amountCents BigInt @map("amount_cents")
+
+  batchId    String    @map("batch_id") @db.Uuid
+  actorId    String?   @map("actor_id") @db.Uuid
+  createdAt  DateTime  @default(now()) @map("created_at")
+  reversedAt DateTime? @map("reversed_at")
+
+  fromDelegation Delegation        @relation("TransferSource", fields: [fromDelegationId], references: [id])
+  toDelegation   Delegation        @relation("TransferDestination", fields: [toDelegationId], references: [id])
+  actor          User?             @relation(fields: [actorId], references: [id])
+  events         DelegationEvent[]
+
+  @@index([batchId])
+  @@index([createdAt])
+  @@map("delegation_transfers")
+}
+
+// ---------------------------------------------------------------------------
+// Transactions
+// ---------------------------------------------------------------------------
+
+model Transaction {
+  id        String   @id @default(uuid()) @db.Uuid
+  accountId String   @map("account_id") @db.Uuid
+  postedAt  DateTime @map("posted_at")
+
+  // Signed: negative is money out of the account.
+  amountCents BigInt @map("amount_cents")
+
+  // What the feed gave us, kept verbatim so rules can be re-run against the
+  // original text, plus the cleaned-up name shown in the UI.
+  descriptionRaw String @map("description_raw")
+  description    String
+
+  // Pending transactions affect delegations immediately once categorized, and
+  // are matched to their posted version or reversed on the next sync.
+  pending Boolean @default(false)
+
+  // SimpleFIN's transaction id. Unique per account, which is what makes sync
+  // idempotent. Null for manual entries, and Postgres treats each NULL as
+  // distinct, so manual rows never collide.
+  externalId String?       @map("external_id")
+  source     AccountSource @default(manual)
+
+  // Credit card and mortgage payments produce two rows that are not spending.
+  // Confirmed pairs become kind = transfer and allocate to nothing.
+  pairedTransactionId String? @map("paired_transaction_id") @db.Uuid
+
+  kind TransactionKind @default(normal)
+
+  // The outstanding check this payment settled, if it settled one. `clearCheck`
+  // allocates to the delegation the check was drawn on and archives the check
+  // line, which left nothing here saying a check was involved — so the register
+  // could not mark the row. Null on everything that predates the column: which
+  // payment settled which check cannot be reconstructed afterwards, and guessing
+  // from amounts and dates is the loose matching ADR 030 exists to avoid.
+  settledCheckDelegationId String? @unique @map("settled_check_delegation_id") @db.Uuid
+
+  archivedAt DateTime? @map("archived_at")
+  createdAt  DateTime  @default(now()) @map("created_at")
+  updatedAt  DateTime  @updatedAt @map("updated_at")
+
+  account           Account                 @relation(fields: [accountId], references: [id])
+  settledCheck      Delegation?             @relation("SettledCheck", fields: [settledCheckDelegationId], references: [id])
+  pairedTransaction Transaction?            @relation("TransactionPair", fields: [pairedTransactionId], references: [id])
+  pairedBy          Transaction[]           @relation("TransactionPair")
+  allocations       TransactionAllocation[]
+  delegationEvents  DelegationEvent[]
+
+  // "These two are not the same charge", from either side of the pair.
+  dismissedAgainst     DuplicateDismissal[] @relation("dismissalFirst")
+  dismissedBy          DuplicateDismissal[] @relation("dismissalSecond")
+  pairDismissedAgainst PairDismissal[]      @relation("pairDismissalFirst")
+  pairDismissedBy      PairDismissal[]      @relation("pairDismissalSecond")
+
+  // "This charge is that bill", where the description does not say so.
+  billLink BillLink?
+
+  @@unique([accountId, externalId], name: "transaction_account_external_id")
+  @@index([postedAt])
+  @@index([accountId, postedAt])
+  @@index([pending])
+  @@index([kind])
+  @@index([archivedAt])
+  @@map("transactions")
+}
+
+// A separate table from day one. Splits are rare but must be possible, and
+// retrofitting this would be a migration through live financial data.
+// Allocation amounts must sum to the transaction amount; a transaction with no
+// allocations is inert and moves no delegation at all.
+model TransactionAllocation {
+  id            String   @id @default(uuid()) @db.Uuid
+  transactionId String   @map("transaction_id") @db.Uuid
+  delegationId  String   @map("delegation_id") @db.Uuid
+  amountCents   BigInt   @map("amount_cents")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  transaction Transaction @relation(fields: [transactionId], references: [id], onDelete: Cascade)
+  delegation  Delegation  @relation(fields: [delegationId], references: [id])
+
+  @@unique([transactionId, delegationId])
+  @@index([delegationId])
+  @@map("transaction_allocations")
+}
+
+/**
+ * What a person says about a detected bill.
+ * ADR 045 says bills are stored nowhere, and that stays true — this holds no
+ * bills. It holds corrections to what the detection concluded, which is the one
+ * kind of fact about them that cannot be derived: a thrift shop visited every
+ * fortnight has exactly the shape of a fortnightly bill, and only the household
+ * knows it is a shop.
+ * Keyed by the merchant key, because it is the merchant that is not a bill and
+ * the charges behind it change every month.
+ */
+model BillOverride {
+  id          String @id @default(uuid()) @db.Uuid
+  merchantKey String @unique @map("merchant_key")
+
+  /**
+   * What it was called when the correction was made, so a hidden one can be named.
+   */
+  label String
+
+  /**
+   * Taken off the list. Putting one back flips this; the row is never deleted.
+   */
+  hidden Boolean @default(false)
+
+  /**
+   * Shown instead of the bank's description. Null keeps what the feed sent.
+   */
+  displayName String? @map("display_name")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("bill_overrides")
+}
+
+/**
+ * A transaction somebody has said belongs to a bill.
+ * [ADR 045](../../../docs/decisions/045-a-bill-is-inferred-not-entered.md) keeps
+ * bills out of the database, and this holds none: no schedule, no amount, no
+ * name. Only the one fact the inference cannot reach — that this charge is that
+ * merchant's bill even though its description does not say so.
+ * A link answers "has it arrived" and moves the last-seen date. It is
+ * deliberately kept out of the interval arithmetic, so one correction can never
+ * drop a bill off the list by putting an unfittable gap in its history.
+ */
+model BillLink {
+  id String @id @default(uuid()) @db.Uuid
+
+  /**
+   * The merchant whose bill this is. No foreign key: a bill is a computation.
+   */
+  merchantKey String @map("merchant_key")
+
+  /**
+   * One transaction belongs to at most one bill.
+   */
+  transactionId String      @unique @map("transaction_id") @db.Uuid
+  transaction   Transaction @relation(fields: [transactionId], references: [id], onDelete: Cascade)
+
+  linkedBy String? @map("linked_by") @db.Uuid
+  linker   User?   @relation(fields: [linkedBy], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([merchantKey])
+  @@map("bill_links")
+}
+
+/**
+ * A pair of transactions somebody has said are not the same charge.
+ * [ADR 049](../../../docs/decisions/049-a-duplicate-is-proposed-never-archived.md)
+ * proposes duplicates and never archives one. This is the other half of that:
+ * a proposal you can refuse for good.
+ * Two settled transactions never change, so a wrong proposal about them would
+ * be offered again on every page load for ever. That is the difference from a
+ * cleared check ([ADR 030](../../../docs/decisions/030-a-cleared-check-is-proposed-never-cleared.md)),
+ * whose proposal expires by itself once the check clears.
+ * Keyed on the pair rather than on a row: these two are not each other, and both
+ * stay eligible to be proposed against anything else.
+ */
+model DuplicateDismissal {
+  id String @id @default(uuid()) @db.Uuid
+
+  /**
+   * Ordered by id, so one pair is one row whichever way it was read.
+   */
+  firstTransactionId  String @map("first_transaction_id") @db.Uuid
+  secondTransactionId String @map("second_transaction_id") @db.Uuid
+
+  first  Transaction @relation("dismissalFirst", fields: [firstTransactionId], references: [id], onDelete: Cascade)
+  second Transaction @relation("dismissalSecond", fields: [secondTransactionId], references: [id], onDelete: Cascade)
+
+  dismissedBy String? @map("dismissed_by") @db.Uuid
+  dismisser   User?   @relation(fields: [dismissedBy], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@unique([firstTransactionId, secondTransactionId])
+  @@map("duplicate_dismissals")
+}
+
+/// "These two are not a transfer", remembered.
+///
+/// The same table `duplicate_dismissals` is, for the sibling proposal, and it
+/// exists for the same reason: the refusal used to be component state, so a
+/// wrong suggestion returned on every page load for ever. Two settled
+/// transactions never change, so a proposal about them is permanent and the
+/// refusal has to be too.
+model PairDismissal {
+  id String @id @default(uuid()) @db.Uuid
+
+  /// Ordered by id, so one pair is one row whichever way it was read.
+  firstTransactionId  String @map("first_transaction_id") @db.Uuid
+  secondTransactionId String @map("second_transaction_id") @db.Uuid
+
+  first  Transaction @relation("pairDismissalFirst", fields: [firstTransactionId], references: [id], onDelete: Cascade)
+  second Transaction @relation("pairDismissalSecond", fields: [secondTransactionId], references: [id], onDelete: Cascade)
+
+  dismissedBy String? @map("dismissed_by") @db.Uuid
+  dismisser   User?   @relation(fields: [dismissedBy], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@unique([firstTransactionId, secondTransactionId])
+  @@map("pair_dismissals")
+}
+
+// ---------------------------------------------------------------------------
+// Auto-categorization
+// ---------------------------------------------------------------------------
+
+model CategorizationRule {
+  id   String  @id @default(uuid()) @db.Uuid
+  name String?
+
+  // Lower number wins. First match takes its action and stops.
+  priority Int
+
+  matchMode  RuleMatchMode @map("match_mode")
+  matchValue String        @map("match_value")
+
+  amountMinCents BigInt?       @map("amount_min_cents")
+  amountMaxCents BigInt?       @map("amount_max_cents")
+  accountId      String?       @map("account_id") @db.Uuid
+  direction      RuleDirection @default(any)
+
+  /**
+   * What the rule does, and exactly one of these is set.
+   * `delegationId` categorizes; `setKind` says what the transaction *is* —
+   * income or a transfer between owned accounts, both of which allocate to
+   * nothing by definition. A database check constraint holds the "exactly one"
+   * rather than leaving it to whoever writes the next caller.
+   */
+  delegationId String?          @map("delegation_id") @db.Uuid
+  setKind      TransactionKind? @map("set_kind")
+
+  enabled Boolean @default(true)
+
+  archivedAt DateTime? @map("archived_at")
+  createdAt  DateTime  @default(now()) @map("created_at")
+  updatedAt  DateTime  @updatedAt @map("updated_at")
+
+  account    Account?    @relation(fields: [accountId], references: [id])
+  delegation Delegation? @relation(fields: [delegationId], references: [id])
+
+  @@index([priority])
+  @@index([archivedAt])
+  @@map("categorization_rules")
+}
+
+// ---------------------------------------------------------------------------
+// Sync and settings
+// ---------------------------------------------------------------------------
+
+model SyncRun {
+  id         String        @id @default(uuid()) @db.Uuid
+  startedAt  DateTime      @default(now()) @map("started_at")
+  finishedAt DateTime?     @map("finished_at")
+  status     SyncRunStatus @default(running)
+
+  accountsTouched      Int @default(0) @map("accounts_touched")
+  transactionsAdded    Int @default(0) @map("transactions_added")
+  transactionsUpdated  Int @default(0) @map("transactions_updated")
+  transactionsReversed Int @default(0) @map("transactions_reversed")
+
+  // Surfaced as a persistent in-app banner when a run fails. Errors are never
+  // swallowed into logs alone.
+  error String?
+
+  // Ties every log line for this run together.
+  correlationId String @map("correlation_id")
+
+  @@index([startedAt])
+  @@index([status])
+  @@map("sync_runs")
+}
+
+// Daily close prices, so a historical net worth point uses the price that was
+// true on that date. `isClose` distinguishes the settled daily close from the
+// most recent intraday spot reading for the same day.
+/// Which Insights widgets a person has chosen, and in what order.
+///
+/// Per user, because §9.4 says the layout persists per user and two people
+/// looking at one budget can want different things from it. The widget is a
+/// string key into a fixed catalog in code rather than a foreign key: the
+/// catalog is deliberately not user-extensible, so a table would only be a
+/// second place for the list to disagree with itself.
+model InsightLayout {
+  id        String @id @default(uuid()) @db.Uuid
+  userId    String @map("user_id") @db.Uuid
+  widgetKey String @map("widget_key")
+  position  Int
+
+  /// Which chart this tile is drawn as. Null means the widget's own default;
+  /// the options are per widget, because which charts suit which data is a fact
+  /// about the widget.
+  display   String?
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, widgetKey])
+  @@index([userId, position])
+  @@map("insight_layouts")
+}
+
+/// A tile on somebody's Overview page: which widget, where, and how wide.
+///
+/// Its own table rather than columns on `InsightLayout`, because Overview
+/// replaces Insights over several releases and both pages exist meanwhile. One
+/// shared table would have each page silently editing the other's arrangement.
+/// `insight_layouts` goes when the Insights page does.
+model OverviewTile {
+  id        String @id @default(uuid()) @db.Uuid
+  userId    String @map("user_id") @db.Uuid
+  widgetKey String @map("widget_key")
+  position  Int
+
+  /// Which row this tile sits in. A row divides its width evenly among its
+  /// members — one is full width, two are halves, three thirds, four quarters —
+  /// so the width is derived from the relationship rather than declared per
+  /// tile. A phone ignores rows entirely and stacks everything full width.
+  row Int @default(0)
+
+  /// Which side of the page this tile lives on: `main` or `sidebar`.
+  ///
+  /// Two regions of different shapes — the main grid holds up to two tiles a
+  /// row, the sidebar exactly one, beneath the budget panel. A column rather
+  /// than a convention over `row`, because a convention would be invisible to
+  /// anybody reading the table.
+  region String @default("main")
+
+  /// How tall this tile's **row** is, in pixels. Null is the tile's own height.
+  ///
+  /// Per row rather than per tile, and stored on every tile in the row because a
+  /// row is not a record — it is a number two or three tiles happen to share. A
+  /// read takes the largest of them, so a row whose members disagree is still a
+  /// row rather than a ragged edge, and dragging writes the same value to each.
+  ///
+  /// The Sankey is what this is for: it is legible at 600px and absurd at the
+  /// height its own content wants, and no single default suits both it and a
+  /// list of six ranked bars.
+  heightPx Int? @map("height_px")
+
+  /// Which chart this tile is drawn as. Null means the widget's own default.
+  display String?
+
+  /// What this tile has been told about itself — which delegations to show,
+  /// which account to chart. The shape differs per tile and is validated at the
+  /// HTTP edge; null means nothing configured, which is not the same as an empty
+  /// selection.
+  config Json?
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, widgetKey])
+  @@index([userId, row, position])
+  @@index([userId, region, row, position])
+  @@map("overview_tiles")
+}
+
+/// A dated change in how much Bitcoin is held.
+///
+/// The quantity used to be one number on the account, so the net worth chart had
+/// no choice but to apply *today's* quantity to every past date — it said so in a
+/// comment. This is the ledger that fixes it, and it is the same shape as
+/// `delegation_events`: append-only, reversal by stamping rather than deleting,
+/// with a cached sum on the parent row that `recompute-balances` can rebuild and
+/// check.
+model BitcoinHoldingEvent {
+  id        String @id @default(uuid()) @db.Uuid
+  accountId String @map("account_id") @db.Uuid
+
+  /// The date the quantity changed, not the date it was typed in. A purchase
+  /// remembered three weeks late belongs on the day it happened, or every point
+  /// on the chart between the two is wrong.
+  occurredAt DateTime @map("occurred_at") @db.Date
+
+  /// Signed satoshis: negative for a sale or a transfer out.
+  deltaSats BigInt @map("delta_sats")
+
+  eventType BitcoinEventType @map("event_type")
+
+  /// What one whole Bitcoin cost in cents at the time, for cost basis. Null when
+  /// it does not apply or is not known — a transfer between your own wallets
+  /// buys nothing, and guessing a price would invent a gain.
+  priceCents BigInt? @map("price_cents")
+
+  note    String?
+  actorId String? @map("actor_id") @db.Uuid
+
+  /// Stamped rather than deleted, so a correction cannot silently rewrite what
+  /// the chart showed yesterday.
+  reversedAt DateTime? @map("reversed_at")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  account Account @relation(fields: [accountId], references: [id])
+  actor   User?   @relation(fields: [actorId], references: [id])
+
+  @@index([accountId, occurredAt])
+  @@index([reversedAt])
+  @@map("bitcoin_holding_events")
+}
+
+/// Where address data is asked for. A pinned singleton, like BudgetSettings.
+///
+/// The URL is checked before it is stored: plaintext is permitted only to an
+/// onion address or a private one, and refused anywhere else. See ADR 024 and
+/// `nodeUrlProblem`.
+model BitcoinNodeConfig {
+  id Int @id @default(1)
+
+  /// `none` until one is configured. Nothing derives addresses without it.
+  mode String @default("none")
+
+  /// e.g. https://mempool.space/api, or http://192.168.1.50:3002
+  baseUrl String? @map("base_url")
+
+  /// Superseded by `routeFor`, which decides from the address. Kept for one
+  /// release so a rollback has somewhere to land.
+  useTor Boolean @default(false) @map("use_tor")
+
+  /// Which way the last request actually went: `tor` or `direct`. A public node
+  /// prefers Tor and falls back, and that fallback must never be silent.
+  lastRoute String? @map("last_route")
+
+  /// When it last answered, and what it said. A node that has never been
+  /// reached is a different state from one that is failing now.
+  lastCheckedAt DateTime? @map("last_checked_at")
+  lastHeight    Int?      @map("last_height")
+  lastError     String?   @map("last_error")
+
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("bitcoin_node_config")
+}
+
+/// A wallet watched by its extended public key or descriptor.
+///
+/// The descriptor is **encrypted at rest**. It cannot spend, so the risk is not
+/// theft — but it reveals every address the wallet will ever use, permanently,
+/// which is a far more durable loss than a balance. The database is dumped
+/// nightly, so it is treated exactly like the SimpleFIN credential.
+model BitcoinWallet {
+  id        String @id @default(uuid()) @db.Uuid
+  accountId String @map("account_id") @db.Uuid
+
+  label String
+
+  /// xpub | ypub | zpub | descriptor — what was pasted, for the interface to
+  /// describe it. The stored form is always a descriptor either way.
+  kind String
+
+  receiveDescriptorEncrypted String @map("receive_descriptor_encrypted")
+  changeDescriptorEncrypted  String @map("change_descriptor_encrypted")
+
+  /// The first receive address, shown so the owner can confirm this is the
+  /// right wallet without the key being displayed.
+  firstAddress String @map("first_address")
+
+  /// How many unused addresses in a row end a scan. Twenty is the convention
+  /// every wallet uses.
+  gapLimit Int @default(20) @map("gap_limit")
+
+  lastScannedAt   DateTime? @map("last_scanned_at")
+  lastError       String?   @map("last_error")
+  /// What the last scan found, so a scan that changes nothing is still visible.
+  lastBalanceSats BigInt?   @map("last_balance_sats")
+
+  archivedAt DateTime? @map("archived_at")
+  createdAt  DateTime  @default(now()) @map("created_at")
+  updatedAt  DateTime  @updatedAt @map("updated_at")
+
+  account   Account                @relation(fields: [accountId], references: [id])
+  addresses BitcoinWalletAddress[]
+
+  @@index([accountId])
+  @@map("bitcoin_wallets")
+}
+
+/// The derived addresses a scan has looked at, and what each held.
+///
+/// Cached so a rescan asks a node about addresses it already knows rather than
+/// re-deriving and re-querying from zero, and so the interface can show what was
+/// actually found rather than only a total.
+model BitcoinWalletAddress {
+  id       String @id @default(uuid()) @db.Uuid
+  walletId String @map("wallet_id") @db.Uuid
+
+  /// 0 = receive, 1 = change.
+  chain Int
+  index Int
+
+  address     String
+  balanceSats BigInt @default(0) @map("balance_sats")
+  txCount     Int    @default(0) @map("tx_count")
+
+  lastSeenAt DateTime? @map("last_seen_at")
+
+  wallet BitcoinWallet @relation(fields: [walletId], references: [id], onDelete: Cascade)
+
+  @@unique([walletId, chain, index])
+  @@index([walletId])
+  @@map("bitcoin_wallet_addresses")
+}
+
+model BitcoinPrice {
+  id         String   @id @default(uuid()) @db.Uuid
+  priceDate  DateTime @map("price_date") @db.Date
+  priceCents BigInt   @map("price_cents")
+  source     String
+  isClose    Boolean  @default(false) @map("is_close")
+  fetchedAt  DateTime @default(now()) @map("fetched_at")
+
+  @@unique([priceDate, isClose])
+  @@index([priceDate])
+  @@map("bitcoin_prices")
+}
+
+// Single-row settings table. The id is pinned to 1 by a check constraint in the
+// migration so a second row cannot exist.
+/// A TOTP code that has been spent.
+///
+/// The verifier accepts a code for one period either side of now, so a code is
+/// good for about ninety seconds. Without this, anybody who saw one inside that
+/// window could use it again — and with TLS terminated by a tunnel provider,
+/// "saw one" is not hypothetical. Recovery codes were already single-use; this
+/// gives TOTP the same property.
+model TotpUsedCode {
+  id     String @id @default(uuid()) @db.Uuid
+  userId String @map("user_id") @db.Uuid
+
+  /// HMAC of the code, not the code. Worthless after ninety seconds either way,
+  /// but there is no reason to write one into the nightly dump.
+  codeHash String @map("code_hash")
+
+  expiresAt DateTime @map("expires_at")
+  usedAt    DateTime @default(now()) @map("used_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  /// The uniqueness *is* the mechanism: a replay is a failed insert rather than
+  /// a read-then-write two simultaneous requests could both pass.
+  @@unique([userId, codeHash], name: "totp_used_code")
+  @@index([expiresAt])
+  @@map("totp_used_codes")
+}
+
+/// A second-factor challenge that has been spent.
+///
+/// The challenge proves a password was accepted moments ago and is accepted by
+/// exactly one route, but it was replayable inside its five minutes: anybody who
+/// saw one could re-present it with a fresh TOTP code. Single-use closes that,
+/// with the same unique-insert trick as `totp_used_codes` — a replay is a failed
+/// insert rather than a check two simultaneous requests could both pass.
+model UsedChallenge {
+  id String @id @default(uuid()) @db.Uuid
+
+  /// HMAC of the challenge, not the challenge. It is already signed and
+  /// short-lived; there is still no reason to write one into a nightly dump.
+  challengeHash String @unique @map("challenge_hash")
+
+  /// Matches the challenge's own TTL, after which the row means nothing.
+  expiresAt DateTime @map("expires_at")
+  usedAt    DateTime @default(now()) @map("used_at")
+
+  @@index([expiresAt])
+  @@map("used_challenges")
+}
+
+model BudgetSettings {
+  id Int @id @default(1)
+
+  // How long Delegate stays undoable.
+  undoWindowHours Int @default(12) @map("undo_window_hours")
+
+  // A difference within ±this reads as "Balanced" on the Budget page bottom row.
+  identityToleranceCents BigInt @default(500) @map("identity_tolerance_cents")
+
+  /// How often the household is paid. Turns the Utilities page's monthly
+  /// average into a per-paycheck suggestion, and nothing else — the amount to
+  /// delegate on each line is per Delegate press whatever this says.
+  ///
+  /// Defaults to biweekly because that is what the arithmetic assumed before it
+  /// was configurable; an existing budget's numbers must not move on upgrade.
+  payCadence PayCadence @default(biweekly) @map("pay_cadence")
+
+  /// One payday, from which every other is generated at the cadence above.
+  ///
+  /// Turns the divisor into a schedule, which is what lets a pace bar say
+  /// whether a line is being spent faster than time is passing. Nothing is
+  /// scheduled by it and no money moves because a date arrives — a cycle is
+  /// still one Delegate press to the next.
+  ///
+  /// Null means no anchor, read as "no tick" rather than as a default.
+  nextPaydayOn DateTime? @map("next_payday_on") @db.Date
+
+  // Recorded when the owner commits the go-live Reconcile screen, so history
+  // before this date can be understood as backfill.
+  goLiveAt DateTime? @map("go_live_at")
+
+  // The SimpleFIN access URL, encrypted at rest (AES-256-GCM). It is a bearer
+  // credential for the household's bank data and the database is dumped nightly,
+  // so it is never stored in the clear. Null means "not connected in-app"; the
+  // SIMPLEFIN_ACCESS_URL environment variable is then used instead.
+  simplefinAccessUrlEncrypted String?   @map("simplefin_access_url_encrypted")
+  simplefinConnectedAt        DateTime? @map("simplefin_connected_at")
+
+  /// Whether a request arriving over the Tor onion address is answered.
+  ///
+  /// Off until somebody turns it on, and turning it on is a deliberate act from
+  /// the LAN. An onion address is unguessable, but "unguessable" and "closed"
+  /// are different properties, and only one of them survives the address being
+  /// written down somewhere.
+  remoteOverTorEnabled   Boolean   @default(false) @map("remote_over_tor_enabled")
+  remoteOverTorEnabledAt DateTime? @map("remote_over_tor_enabled_at")
+
+  /// When someone first accepted what putting Bitcoin in the budget does to the
+  /// banner. Shown once, not every time: a warning repeated on every toggle is
+  /// one nobody reads. Household-wide, because the consequence is.
+  bitcoinInBudgetAckAt DateTime? @map("bitcoin_in_budget_ack_at")
+
+  /// The IANA zone the scheduled jobs are read in, chosen in Settings.
+  ///
+  /// Null means "whatever `SCHEDULE_TIMEZONE` says", which is how every existing
+  /// deployment behaves and keeps behaving until somebody picks a zone here. The
+  /// environment variable stays the floor rather than being migrated away: it is
+  /// what the container has before it can reach the database, and a first boot
+  /// against an empty schema still has to know when to run.
+  ///
+  /// It governs **when jobs fire and nothing else**. The process clock is
+  /// untouched, because moving it would move every date the domain computes.
+  scheduleTimezone String? @map("schedule_timezone")
+
+  /**
+   * Whether an overdue recurring bill puts a pill in the page header.
+   * The page itself is always there; this is only about being told. On by
+   * default — a bill that stopped arriving is the reason to detect one at all.
+   */
+  recurringAlertsEnabled Boolean @default(true) @map("recurring_alerts_enabled")
+
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("budget_settings")
+}
+
+// ---------------------------------------------------------------------------
+// Snapshots — the daily record of the financial picture
+// ---------------------------------------------------------------------------
+//
+// The delegation ledger gives envelopes a full history. Account balances and net
+// worth never had one: only current state exists, so Insights could show today
+// and never a trend, and every day that passed without capturing state was a day
+// of history permanently lost.
+//
+// [ADR 035](../../../docs/decisions/035-the-financial-picture-is-snapshotted-nightly.md)
+// supersedes ADR 013, which decided the opposite in 2026-08 for a reason that
+// has since expired.
+//
+// Everything here is keyed by a **date**, not a timestamp, and carries its own
+// provenance. Rows are written by the nightly job for the *previous* day.
+
+/// One row per account per day.
+model AccountSnapshot {
+  id           String   @id @default(uuid()) @db.Uuid
+  snapshotDate DateTime @map("snapshot_date") @db.Date
+  accountId    String   @map("account_id") @db.Uuid
+
+  /// Positive magnitude, exactly as `accounts.balance_cents` is — a debt of $500
+  /// is 50000 here too, and the aggregate subtracts it.
+  ///
+  /// For a Bitcoin holding this is the **market value** on that date, quantity
+  /// times price, not the account's `balance_cents` — which is zero unless the
+  /// holding is in-budget and so would report a real holding as worth nothing.
+  balanceCents BigInt @map("balance_cents")
+
+  provenance SnapshotProvenance
+
+  /// The classification as it stood that night, not as it stands now.
+  ///
+  /// Reading these from the account at query time would let re-typing a credit
+  /// card as an asset, or taking the house out of net worth, silently rewrite a
+  /// year of charts. That is the same failure the aggregates below are stored to
+  /// prevent, and it applies just as much per account.
+  accountType AccountType @map("account_type")
+  inBudget    Boolean     @map("in_budget")
+  inNetWorth  Boolean     @map("in_net_worth")
+
+  /// Bitcoin only, and null on every other account. Persisted so the market
+  /// value on that date is explainable from the row itself and never has to be
+  /// re-derived from two ledgers and a price table.
+  quantitySats BigInt? @map("quantity_sats")
+  priceCents   BigInt? @map("price_cents")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  account Account @relation(fields: [accountId], references: [id])
+
+  // Idempotency: the nightly job upserts on this, so a re-run for a date that
+  // already has rows cannot duplicate them. It also serves the range scan —
+  // "every account between two dates" reads it left to right.
+  @@unique([snapshotDate, accountId])
+  // The other direction: one account, scanned across dates. What the account
+  // picker on the balance-history widget actually asks for.
+  @@index([accountId, snapshotDate])
+  @@map("account_snapshots")
+}
+
+/// One row per delegation per day.
+model DelegationSnapshot {
+  id           String             @id @default(uuid()) @db.Uuid
+  snapshotDate DateTime           @map("snapshot_date") @db.Date
+  delegationId String             @map("delegation_id") @db.Uuid
+  balanceCents BigInt             @map("balance_cents")
+  provenance   SnapshotProvenance
+
+  /// Which grouping this delegation sat in that night.
+  ///
+  /// Captured rather than joined, for the same reason the account classification
+  /// above is. The drill-down aggregates one series per grouping; reading
+  /// membership live would mean moving Grocery from "3 - Food" to "5 - Home"
+  /// retroactively moved a year of its history with it.
+  groupingId String? @map("grouping_id") @db.Uuid
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  delegation Delegation @relation(fields: [delegationId], references: [id])
+  grouping   Grouping?  @relation(fields: [groupingId], references: [id])
+
+  @@unique([snapshotDate, delegationId])
+  @@index([delegationId, snapshotDate])
+  // The default view of the drill-down: every delegation of one grouping, across
+  // a date range, aggregated.
+  @@index([groupingId, snapshotDate])
+  @@map("delegation_snapshots")
+}
+
+/// One row per day: the whole picture, stored rather than recomputed.
+///
+/// Deliberately not derived from the two tables above at query time. The point is
+/// that the chart reflects what the application actually showed on that date —
+/// after an account is archived, after a holding is retired, after the
+/// in-budget classification changes. A total recomputed from today's
+/// classification is a different number wearing the same date.
+///
+/// Two scopes, because the application has two and they answer different
+/// questions. Three totals could not serve both: net worth includes the house
+/// and the mortgage, and the identity is precisely the reading that excludes
+/// them.
+model AggregateSnapshot {
+  id           String   @id @default(uuid()) @db.Uuid
+  snapshotDate DateTime @unique @map("snapshot_date") @db.Date
+
+  // Net worth scope: every account marked in_net_worth, house and mortgage
+  // included. Debts are positive magnitudes, so net worth is assets − debts.
+  netWorthAssetsCents BigInt @map("net_worth_assets_cents")
+  netWorthDebtsCents  BigInt @map("net_worth_debts_cents")
+  netWorthCents       BigInt @map("net_worth_cents")
+
+  // Budget scope: in_budget only, which is what the identity reads.
+  budgetAssetsCents     BigInt @map("budget_assets_cents")
+  budgetDebtsCents      BigInt @map("budget_debts_cents")
+  totalDelegationsCents BigInt @map("total_delegations_cents")
+
+  /// The fourth term of the identity — categorized pending transactions the
+  /// account balances do not carry yet. Stored in its own column rather than
+  /// folded into the identity alone, so the row explains itself and the amount
+  /// in flight is answerable on its own. See ADR 020.
+  pendingCategorizedCents BigInt @map("pending_categorized_cents")
+
+  /// budgetAssets − budgetDebts − delegations + pendingCategorized.
+  ///
+  /// The same four-term figure as the chip beside the Budget page title. Omitting
+  /// the pending term would make this wander by whatever is categorized and not
+  /// yet posted, and that wander would read as miscategorisation when it is only
+  /// the settlement lag.
+  identityValueCents BigInt @map("identity_value_cents")
+
+  /// The **weakest** provenance among every row that fed this day. An aggregate
+  /// built from one interpolated account is an interpolated aggregate, whatever
+  /// the other forty rows were.
+  provenance SnapshotProvenance
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("aggregate_snapshots")
+}

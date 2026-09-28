@@ -1,0 +1,7 @@
+{
+  // Exists so ESLint's project service can find a tsconfig for the test files.
+  // It walks up from each file looking for tsconfig.json, and apps/api's own
+  // config deliberately excludes tests from the emitted build graph.
+  "extends": "../tsconfig.test.json",
+  "include": ["../src/**/*.ts", "./**/*.ts"]
+}

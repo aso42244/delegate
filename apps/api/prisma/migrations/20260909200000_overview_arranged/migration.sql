@@ -1,0 +1,12 @@
+-- Whether this person has ever arranged Overview.
+--
+-- Overview is the landing page, so a household that has arranged nothing is
+-- shown a default rather than a blank screen with a button on it. That default
+-- cannot be inferred from the absence of tiles: somebody who removes every tile
+-- has arranged it to nothing, and a read that saw no rows would hand them the
+-- default back — a tile deleted on purpose reappearing on the next reload.
+--
+-- The flag is about the act, not the result. False for every existing account,
+-- which is correct for the two who have arranged theirs: their rows exist, so
+-- the first branch never reads it, and their next save sets it.
+ALTER TABLE "users" ADD COLUMN "overview_arranged" BOOLEAN NOT NULL DEFAULT false;

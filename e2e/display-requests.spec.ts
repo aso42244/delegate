@@ -1,0 +1,105 @@
+import { expect, test, makeAccount, makeDelegation } from './fixtures.js';
+
+/**
+ * The five display changes, each asserted through the screen that was wrong.
+ *
+ * Four of the five were only visible with real data on a real page — a tile with
+ * no way to move it, an amount broken across two lines, a bank name filling a
+ * column. So these drive the interface rather than the API.
+ */
+
+/*
+ * The `insights tiles` block that stood here is gone with the page.
+ *
+ * It exercised per-tile display modes and drag reordering on Insights. Overview
+ * replaced both — its arrangement is per region with per-tile configuration, and
+ * `overview.spec.ts` asserts that a display choice and an arrangement each
+ * survive a reload against the endpoint that now holds them.
+ */
+
+test('a grouping takes a colour outside the five presets', async ({ signedIn: page, api }) => {
+  await api.post('/api/groupings', { data: { name: 'Essentials', section: 'delegations' } });
+  await page.goto('/settings/groupings');
+
+  // The palette lives behind the current swatch now: a choice made once and then
+  // left alone for months does not need seven controls open on every row.
+  await page.getByRole('button', { name: /^Colour for Essentials/ }).click();
+
+  const hex = page.getByLabel('Colour hex for Essentials');
+  await hex.fill('#123ABC');
+  await hex.press('Enter');
+
+  await page.reload();
+  await page.getByRole('button', { name: /^Colour for Essentials/ }).click();
+  await expect(page.getByLabel('Colour hex for Essentials')).toHaveValue('#123ABC');
+});
+
+test('an account nickname replaces the long name on the budget', async ({
+  signedIn: page,
+  api,
+}) => {
+  const accountId = await makeAccount(
+    'Citibank Cortex VISA Cortex Anywhere Visa Card by Citi-6666',
+    'debt',
+    50000n,
+  );
+  expect(accountId).toBeTruthy();
+  await makeDelegation(api, 'Grocery');
+
+  await page.goto('/settings/accounts');
+  await page
+    .getByRole('button', {
+      name: 'Options for Citibank Cortex VISA Cortex Anywhere Visa Card by Citi-6666',
+    })
+    .click();
+  await page.getByRole('menuitem', { name: 'Nickname' }).click();
+  await page.getByLabel('Nickname', { exact: true }).fill('Cortex Visa');
+  await page.getByRole('button', { name: 'Save' }).click();
+
+  // The dialog closing is the signal the write landed. Navigating before it does
+  // snapshots a budget that never updates.
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+
+  // The budget shows the short one; Settings keeps the full one, because that is
+  // where identifying the account is the point.
+  await page.goto('/budget');
+  await expect(page.getByText('Cortex Visa')).toBeVisible();
+  await expect(page.getByText('Citibank Cortex VISA', { exact: false })).toBeHidden();
+
+  await page.goto('/settings/accounts');
+  // Both, on one line: the short name in black, the institution's own wording
+  // after it in grey.
+  await expect(page.getByText('Cortex Visa', { exact: true })).toBeVisible();
+  await expect(page.getByText('Citibank Cortex VISA', { exact: false }).first()).toBeVisible();
+});
+
+test('an amount and its sign stay on one line', async ({ signedIn: page, api }) => {
+  const accountId = await makeAccount('Everyday Checking', 'asset', 500000n);
+  const created = await api.post('/api/transactions', {
+    data: {
+      accountId,
+      amountCents: '352763',
+      description: 'ONLINE PAYMENT, THANK YOU',
+      postedAt: '2026-08-05T00:00:00Z',
+      kind: 'income',
+    },
+  });
+  expect(created.ok(), await created.text()).toBeTruthy();
+
+  // The register opens unfiltered, and income would never have been in the
+  // queue anyway.
+  await page.goto('/transactions');
+  await expect(page.getByText('ONLINE PAYMENT, THANK YOU')).toBeVisible();
+
+  const amount = page.locator('td.money span').first();
+  await expect(amount).toContainText('3,527.63');
+
+  /**
+   * Measured on the span rather than the cell: the cell is a fixed height by
+   * design — whichever the row-height setting says — so its height says nothing
+   * about whether the text inside wrapped. A client rect per line is what
+   * actually answers the question.
+   */
+  const lineCount = await amount.evaluate((node) => node.getClientRects().length);
+  expect(lineCount).toBe(1);
+});

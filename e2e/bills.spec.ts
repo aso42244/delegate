@@ -1,0 +1,373 @@
+import { expect, makeAccount, makeDelegation, test } from './fixtures.js';
+import type { APIRequestContext, Page } from '@playwright/test';
+
+/**
+ * Bills.
+ *
+ * Everything on this page is worked out from the register, so the fixtures are
+ * just charges: three from one merchant a month apart, and the page has to
+ * decide the rest. The case worth guarding is the one nothing else here can
+ * answer — a bill that has **not** arrived, which from inside the budget looks
+ * exactly like a quiet week.
+ */
+
+/** A charge on a given day. Amounts are magnitudes; the API takes the sign. */
+async function charge(
+  api: APIRequestContext,
+  accountId: string,
+  isoDay: string,
+  amountCents: string,
+  description: string,
+): Promise<void> {
+  await api.post('/api/transactions', {
+    data: { accountId, amountCents, description, postedAt: `${isoDay}T15:00:00Z` },
+  });
+}
+
+/** Three charges a month apart, ending on the day given. */
+async function monthlyBill(
+  api: APIRequestContext,
+  accountId: string,
+  days: readonly string[],
+  amountCents = '-11800',
+  description = 'CITY WATER UTILITY',
+): Promise<void> {
+  for (const day of days) await charge(api, accountId, day, amountCents, description);
+}
+
+/** The three most recent months, so a bill reads as current whenever this runs. */
+function recentMonths(): string[] {
+  const days: string[] = [];
+  for (let back = 3; back >= 1; back -= 1) {
+    const date = new Date();
+    date.setUTCDate(date.getUTCDate() - back * 30);
+    days.push(date.toISOString().slice(0, 10));
+  }
+  return days;
+}
+
+/** Three months of charges that stopped, so the next one is late. */
+function overdueMonths(): string[] {
+  const days: string[] = [];
+  for (let back = 4; back >= 2; back -= 1) {
+    const date = new Date();
+    date.setUTCDate(date.getUTCDate() - back * 30);
+    days.push(date.toISOString().slice(0, 10));
+  }
+  return days;
+}
+
+/**
+ * Bills is the Due tile on Recurring now, so the sidebar entry is one, the
+ * heading names the page, and Due sits beside Cost rather than behind a switch.
+ * Reached by pressing the link the household presses, which is what makes this
+ * the navigation test as well.
+ */
+async function openBills(page: Page): Promise<void> {
+  await page.getByRole('link', { name: 'Recurring', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Recurring' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Due' })).toBeVisible();
+}
+
+test('says plainly when nothing has arrived three times yet', async ({ signedIn, api }) => {
+  const accountId = await makeAccount('Everyday Checking', 'asset', 500000n);
+  await charge(api, accountId, '2026-08-04', '-11800', 'CITY WATER UTILITY');
+
+  await openBills(signedIn);
+
+  // One sentence and no instructions. "No bills" and "not enough history to
+  // tell yet" are different states, and a household three weeks in is always
+  // in the second.
+  await expect(signedIn.getByText('No bill has arrived three times yet.')).toBeVisible();
+});
+
+test('a monthly charge becomes a bill with a date and a delegation', async ({ signedIn, api }) => {
+  const accountId = await makeAccount('Everyday Checking', 'asset', 500000n);
+  const home = await makeDelegation(api, 'Home & Grounds');
+  await monthlyBill(api, accountId, recentMonths());
+
+  // Filed where they always go, so the page can say where the next one lands.
+  const list = await api.get('/api/transactions?limit=100');
+  const body = (await list.json()) as { transactions: { id: string }[] };
+  for (const transaction of body.transactions) {
+    await api.post(`/api/transactions/${transaction.id}/categorize`, {
+      data: { delegationId: home },
+    });
+  }
+
+  await openBills(signedIn);
+
+  await expect(signedIn.getByText('CITY WATER UTILITY')).toBeVisible();
+  await expect(signedIn.getByRole('cell', { name: 'Monthly' })).toBeVisible();
+
+  /*
+   * The delegation is on the row's hover text at every width and in a column of
+   * its own where the tile is wide enough — it is the one column that gives way,
+   * because Due is two-thirds of the page now and a merchant name has no upper
+   * bound. The title is what holds at any width, so it is what is asserted.
+   */
+  await expect(signedIn.getByRole('row', { name: /CITY WATER UTILITY/ })).toHaveAttribute(
+    'title',
+    /Home & Grounds/,
+  );
+
+  /*
+   * And no count.
+   *
+   * "1 recurring." said how many merchants this household repeats with, which
+   * is a fact about how long it has been running rather than about the list
+   * somebody came to work through — the same argument that took "494
+   * transactions" off the register.
+   */
+  await expect(signedIn.getByText(/\d+ recurring/)).toHaveCount(0);
+});
+
+test('the bill that did not arrive is named on the page and in the header', async ({
+  signedIn,
+  api,
+}) => {
+  const accountId = await makeAccount('Everyday Checking', 'asset', 500000n);
+  await monthlyBill(api, accountId, overdueMonths());
+
+  await openBills(signedIn);
+
+  await expect(signedIn.getByRole('cell', { name: /Overdue/ })).toBeVisible();
+
+  // And the pill, which is how somebody who is not on this page finds out —
+  // the page itself no longer counts anything, so the pill is the whole of how
+  // this is said away from the row.
+  const pill = signedIn.getByRole('link', { name: /1 bill overdue/ });
+  await expect(pill).toBeVisible();
+});
+
+test('the search narrows the list to one bill', async ({ signedIn, api }) => {
+  const accountId = await makeAccount('Everyday Checking', 'asset', 500000n);
+  await monthlyBill(api, accountId, recentMonths());
+  await monthlyBill(api, accountId, recentMonths(), '-4599', 'STREAMING SERVICE');
+
+  await openBills(signedIn);
+  await expect(signedIn.getByText('STREAMING SERVICE')).toBeVisible();
+
+  await signedIn.getByLabel('Search bills').fill('water');
+
+  await expect(signedIn.getByText('CITY WATER UTILITY')).toBeVisible();
+  await expect(signedIn.getByText('STREAMING SERVICE')).toHaveCount(0);
+});
+
+test('the overdue pill can be switched off, and the page stays', async ({ signedIn, api }) => {
+  const accountId = await makeAccount('Everyday Checking', 'asset', 500000n);
+  await monthlyBill(api, accountId, overdueMonths());
+
+  await signedIn.goto('/settings/budget');
+  await signedIn.getByLabel('Tell me when a bill is overdue').click();
+
+  // Assert the write landed before navigating: the settings page saves on
+  // change, and arriving anywhere else mid-write reads a stale answer.
+  await expect(signedIn.getByLabel('Tell me when a bill is overdue')).not.toBeChecked();
+
+  await openBills(signedIn);
+
+  // Silent, but not hidden. A switch that hid the list as well would make
+  // "I turned the noise off" and "there are no bills" impossible to tell apart.
+  await expect(signedIn.getByRole('link', { name: /bill overdue/ })).toHaveCount(0);
+  await expect(signedIn.getByRole('cell', { name: /Overdue/ })).toBeVisible();
+});
+
+/**
+ * The escape hatch the first real run asked for.
+ *
+ * A thrift shop visited every fortnight has exactly the shape of a fortnightly
+ * bill, and no threshold will ever know it is a shop. Only the household does,
+ * so the page has to let them say it.
+ */
+test('a merchant that is not a bill is taken off the list, and can come back', async ({
+  signedIn,
+  api,
+}) => {
+  const accountId = await makeAccount('Everyday Checking', 'asset', 500000n);
+  await monthlyBill(api, accountId, recentMonths(), '-7150', 'SAVEWELL - 1090 SPRINGFIELD ZZ');
+  await monthlyBill(api, accountId, recentMonths());
+
+  await openBills(signedIn);
+  await expect(signedIn.getByText('SAVEWELL - 1090 SPRINGFIELD ZZ')).toBeVisible();
+
+  await signedIn
+    .getByRole('button', { name: 'Options for SAVEWELL - 1090 SPRINGFIELD ZZ' })
+    .click();
+  await signedIn.getByRole('menuitem', { name: 'Not a bill' }).click();
+
+  await expect(signedIn.getByText('SAVEWELL - 1090 SPRINGFIELD ZZ')).toHaveCount(0);
+  // The other one is untouched: this is a judgement about one merchant.
+  await expect(signedIn.getByText('CITY WATER UTILITY')).toBeVisible();
+
+  /*
+   * And nothing on this page says it was hidden.
+   *
+   * The fold at the foot of the list is gone at the owner's request — a list of
+   * corrections is not what anybody opens this page for, and Due is a tile
+   * beside another tile now with nowhere sensible for one to sit.
+   */
+  await expect(signedIn.getByRole('button', { name: /hidden/ })).toHaveCount(0);
+
+  /*
+   * It is findable again on Settings → Budget, which is what makes saying it
+   * safe — a correction nobody can find is one nobody can undo.
+   *
+   * **Not Settings → Archived**, which was tried first and is the wrong word:
+   * "archived" means `archived_at` on a row here, and a hidden bill archives
+   * nothing. The charges stay in the register, which the card says out loud
+   * because it is the question somebody asks standing in front of it.
+   */
+  await signedIn.goto('/settings/budget');
+  await expect(signedIn.getByText('Their charges stay in the register.')).toBeVisible();
+  await signedIn.getByRole('button', { name: 'Put back SAVEWELL - 1090 SPRINGFIELD ZZ' }).click();
+
+  await openBills(signedIn);
+  await expect(signedIn.getByText('SAVEWELL - 1090 SPRINGFIELD ZZ')).toBeVisible();
+});
+
+/** The charges a hidden merchant made are untouched — the fear the card answers. */
+test('hiding a bill leaves every one of its charges in the register', async ({ signedIn, api }) => {
+  const accountId = await makeAccount('Everyday Checking', 'asset', 500000n);
+  await monthlyBill(api, accountId, recentMonths(), '-7150', 'SAVEWELL - 1090 SPRINGFIELD ZZ');
+
+  await openBills(signedIn);
+  await signedIn
+    .getByRole('button', { name: 'Options for SAVEWELL - 1090 SPRINGFIELD ZZ' })
+    .click();
+  await signedIn.getByRole('menuitem', { name: 'Not a bill' }).click();
+  await expect(signedIn.getByText('SAVEWELL - 1090 SPRINGFIELD ZZ')).toHaveCount(0);
+
+  // All three, still in the register. `bill_overrides` holds a refusal keyed on
+  // the merchant and touches no transaction.
+  await signedIn.goto('/transactions');
+  await expect(signedIn.getByText('SAVEWELL - 1090 SPRINGFIELD ZZ')).toHaveCount(3);
+});
+
+test('a bill can be given a name, and the bank text moves into the menu', async ({
+  signedIn,
+  api,
+}) => {
+  const accountId = await makeAccount('Everyday Checking', 'asset', 500000n);
+  await monthlyBill(
+    api,
+    accountId,
+    recentMonths(),
+    '-10595',
+    'ACH Payment SPRINGFIELD ZZ UTILITY 555-010-0100',
+  );
+
+  await openBills(signedIn);
+  await signedIn
+    .getByRole('button', { name: 'Options for ACH Payment SPRINGFIELD ZZ UTILITY 555-010-0100' })
+    .click();
+  await signedIn.getByRole('menuitem', { name: 'Give it a name' }).click();
+
+  // `getByRole`, not `getByLabel`: the dialog's own name is "Rename …", and an
+  // accessible name is matched as a substring — so "Name" resolves to the
+  // dialog as well as to the field inside it.
+  await signedIn.getByRole('textbox', { name: 'Name' }).fill('Water & Sewer');
+  // `exact`, because an accessible name is matched as a substring and a
+  // merchant called SAVEWELL puts "Save" in its row menu's trigger.
+  await signedIn.getByRole('button', { name: 'Save', exact: true }).click();
+  await expect(signedIn.getByRole('dialog')).toHaveCount(0);
+
+  await expect(signedIn.getByText('Water & Sewer')).toBeVisible();
+
+  /*
+   * Off the row and into the menu.
+   *
+   * It was drawn under the name in small grey, which put a line of feed text on
+   * every renamed row — the exact noise renaming was for. It is still kept and
+   * still searchable; it is one press away for the person reconciling against a
+   * statement and invisible to everybody else.
+   */
+  await expect(signedIn.getByText('ACH Payment SPRINGFIELD ZZ UTILITY 555-010-0100')).toHaveCount(
+    0,
+  );
+
+  await signedIn.getByRole('button', { name: 'Options for Water & Sewer' }).click();
+  await expect(signedIn.getByText('ACH Payment SPRINGFIELD ZZ UTILITY 555-010-0100')).toBeVisible();
+});
+
+test('a renamed bill is still found by what the bank calls it', async ({ signedIn, api }) => {
+  const accountId = await makeAccount('Everyday Checking', 'asset', 500000n);
+  await monthlyBill(
+    api,
+    accountId,
+    recentMonths(),
+    '-10595',
+    'ACH Payment SPRINGFIELD ZZ UTILITY 555-010-0100',
+  );
+
+  await openBills(signedIn);
+  await signedIn
+    .getByRole('button', { name: 'Options for ACH Payment SPRINGFIELD ZZ UTILITY 555-010-0100' })
+    .click();
+  await signedIn.getByRole('menuitem', { name: 'Give it a name' }).click();
+  await signedIn.getByRole('textbox', { name: 'Name' }).fill('Water & Sewer');
+  await signedIn.getByRole('button', { name: 'Save', exact: true }).click();
+  await expect(signedIn.getByRole('dialog')).toHaveCount(0);
+
+  // Searching for the statement's words has to reach the row, or a rename
+  // would make a bill unfindable by the only name a bank statement knows.
+  await signedIn.getByLabel('Search bills').fill('springfield');
+  await expect(signedIn.getByText('Water & Sewer')).toBeVisible();
+});
+
+/**
+ * Saying so by hand, for the case no threshold reaches.
+ *
+ * A merchant that renames itself between charges gets a new merchant key, so its
+ * old bill goes overdue for ever while the new one has too little history to be
+ * detected at all. Only the household knows they are the same bill.
+ *
+ * The sibling case — a charge that has arrived but is still *pending* — is
+ * covered in the integration tests, because a pending row cannot be created
+ * through the API a person uses.
+ */
+test('a charge can be attached to a bill, and detached again', async ({ signedIn, api }) => {
+  const accountId = await makeAccount('Firefly Checking', 'asset', 500000n);
+  await monthlyBill(api, accountId, overdueMonths(), '-3000', 'REAVER MUTUAL PREMIUM');
+
+  // The same bill under the insurer's new name — on its own, too little history
+  // to be detected as anything. Yesterday, so it is inside the window of charges
+  // the dialog offers around the date this bill was expected.
+  const yesterday = new Date();
+  yesterday.setUTCDate(yesterday.getUTCDate() - 1);
+  await charge(
+    api,
+    accountId,
+    yesterday.toISOString().slice(0, 10),
+    '-3000',
+    'BADGER MUTUAL PREMIUM',
+  );
+
+  await openBills(signedIn);
+  await expect(signedIn.getByText(/Overdue/)).toBeVisible();
+
+  await signedIn.getByRole('button', { name: 'Options for REAVER MUTUAL PREMIUM' }).click();
+  await signedIn.getByRole('menuitem', { name: /^The charge did arrive/ }).click();
+  await signedIn.getByRole('button', { name: /^Attach BADGER MUTUAL PREMIUM/ }).click();
+
+  /*
+   * Not overdue any more — and the bill keeps the merchant's own name rather
+   * than taking the name of the charge attached to it, which would rename the
+   * row to the thing that went wrong.
+   */
+  // Wait for the dialog to go before reading the page underneath it. The
+  // dialog names the bill too, so a `getByText` that runs while it is still
+  // open matches twice and fails on strict mode — a race that only appears on a
+  // loaded machine, which is exactly the run that looks like a real bug.
+  await expect(signedIn.getByRole('dialog')).toHaveCount(0);
+  await expect(signedIn.getByText(/Overdue/)).toHaveCount(0);
+  await expect(signedIn.getByText('REAVER MUTUAL PREMIUM')).toBeVisible();
+
+  // And it comes back off.
+  await signedIn.getByRole('button', { name: 'Options for REAVER MUTUAL PREMIUM' }).click();
+  await signedIn.getByRole('menuitem', { name: /^The charge did arrive/ }).click();
+  await signedIn.getByRole('button', { name: /^Detach BADGER MUTUAL PREMIUM/ }).click();
+  await signedIn.getByRole('button', { name: 'Done' }).click();
+
+  await expect(signedIn.getByText(/Overdue/)).toBeVisible();
+});

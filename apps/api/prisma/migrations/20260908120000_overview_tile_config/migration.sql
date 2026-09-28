@@ -1,0 +1,19 @@
+-- What a tile has been told about itself.
+--
+-- The first tile that needs one is Delegations: it shows the lines somebody
+-- picked, and which lines those are is a fact about that tile on that person's
+-- page rather than about the household. Two more are waiting on it — the account
+-- and delegation balance histories both ask "which one", which is why they are
+-- the two tiles still absent from the catalogue.
+--
+-- JSON rather than a column per tile, because the shape genuinely differs per
+-- tile and a table with `delegation_ids`, `account_id` and a dozen nulls beside
+-- them describes the union of every tile rather than any one of them. The shape
+-- is validated at the HTTP edge, per tile key, the same way every other request
+-- body here is — the database stores what the edge already checked.
+--
+-- Null means "nothing configured", which is not the same as an empty selection:
+-- a Delegations tile with no config yet shows nothing and invites a choice,
+-- while one configured with an empty list is somebody having deliberately
+-- deselected everything. Only one of those should offer to be set up.
+ALTER TABLE "overview_tiles" ADD COLUMN "config" JSONB;

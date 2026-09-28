@@ -1,0 +1,15 @@
+{
+  // Tests are typechecked too — a test that no longer compiles is a test that
+  // stopped guarding anything. Separate from tsconfig.json because tests emit
+  // nothing and must not become part of the published build graph.
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "composite": false,
+    "declaration": false,
+    "declarationMap": false,
+    "incremental": false,
+    "types": ["node", "vitest/globals"]
+  },
+  "include": ["src/**/*.ts", "tests/**/*.ts"]
+}

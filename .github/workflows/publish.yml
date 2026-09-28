@@ -1,0 +1,207 @@
+# Builds and publishes the container image. Nothing else.
+#
+# GitHub Actions was removed in August (ADR 022) because the account's included
+# minutes were gone: the old workflow ran the whole gate — typecheck, lint, 600+
+# integration tests, ~180 Playwright browser tests, a container build — on every
+# push and every pull request. That is the expensive shape, and none of it is
+# here.
+#
+# **This publishes one architecture, amd64.** arm64 was dropped in v0.63.0 —
+# emulated, slow, and it stopped finishing; the note on `platforms` has the
+# reasoning. An arm64 host builds from source, which is what the NAS does anyway.
+#
+# **This does not gate anything.** `npm run verify` on the machine the code was
+# written on is still the only thing standing between a branch and `main`, which
+# is what ADR 022 actually decided. What changed is where the *image* comes from,
+# because a one-line deploy needs something to deploy.
+#
+# Four guardrails, so this cannot quietly cost money:
+#
+#   1. It runs on version tags, and on a manual dispatch that names one. Not
+#      on pushes to main, not on pull requests. Either is a deliberate act that
+#      happens once a release.
+#   2. `timeout-minutes` caps a hung build, which would otherwise sit there for
+#      the six-hour default. It is generous for what this now builds: a native
+#      amd64 image takes about a minute, and the cap is there for the case where
+#      something is wrong rather than to size the normal run.
+#   3. `concurrency` cancels an in-flight run when a second tag arrives.
+#   4. Layer caching, so a release that changes one file does not rebuild the
+#      world.
+#
+# The account's spending limit is set to $0, which is the guardrail that does not
+# depend on anybody's discipline: Actions refuses to run past the free allowance
+# rather than billing for it. This repository is public, and public repositories
+# get unlimited standard-runner minutes.
+name: Publish the image
+
+on:
+  push:
+    tags: ['v*.*.*']
+  # Cutting a release from GitHub itself, with no machine holding a git
+  # credential (ADR 072). Given a version, this creates the tag when it does
+  # not exist yet — at `commit`, or at the head of `main` — and then builds it.
+  # So a session that can merge but cannot push a tag can still release, and so
+  # can a phone. A tag that already exists is simply built, which keeps this the
+  # re-run route for a run that failed.
+  #
+  # The input reaches the checkout and the image tags — see the note on
+  # `value=` below, which is what that took.
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Version tag, for example v0.78.0. Created here if it does not exist yet.'
+        required: true
+      commit:
+        description: 'The commit to tag, when creating it. Empty means the head of main.'
+        required: false
+        default: ''
+
+concurrency:
+  # Keyed on the version rather than the ref, so two dispatches for two
+  # versions do not cancel each other while two for one version do.
+  group: publish-${{ github.event.inputs.tag || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      # Write, for one reason: creating the tag on a manual dispatch. The token
+      # is issued to this run and expires with it, the only push here is a tag
+      # on a commit already on `main`, and a tag pushed with it starts no second
+      # run — GitHub never lets a workflow's own token trigger another workflow.
+      contents: write
+      # Pushing to this repository's own package registry, and nothing wider.
+      packages: write
+      # Keyless signing. The certificate is issued to this workflow run and
+      # expires with it, so there is no key for anybody to hold, leak or rotate.
+      id-token: write
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # On a push this is the tag. On a dispatch it is whichever branch the
+          # dispatch was made from, and the step below moves to the tag — after
+          # creating it, when it needs creating.
+          #
+          # The whole history: the commit being tagged may not be the head, and
+          # the ancestry check needs `main` to compare against.
+          fetch-depth: 0
+
+      # The tag exists, or is created here — and either way the tree that is
+      # built is the tag's, never the branch the dispatch happened from.
+      #
+      # Two refusals. A version that is not `vX.Y.Z` is refused before anything
+      # is written, because `deploy.sh` and the image tags both read that shape.
+      # And a commit that is not on `main` is refused: a release is a commit
+      # the gate passed and a pull request merged, and a tag on anything else
+      # would put the version number on code nobody reviewed.
+      - name: Resolve the tag, creating it if it does not exist
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          TAG: ${{ github.event.inputs.tag }}
+          COMMIT: ${{ github.event.inputs.commit }}
+        run: |
+          set -eu
+          case "$TAG" in
+            v[0-9]*.[0-9]*.[0-9]*) ;;
+            *) echo "::error::'$TAG' is not a version tag of the form vX.Y.Z"; exit 1 ;;
+          esac
+
+          if git ls-remote --exit-code --tags origin "refs/tags/$TAG" >/dev/null; then
+            echo "$TAG already exists; building it."
+            git fetch --no-tags origin "refs/tags/$TAG:refs/tags/$TAG"
+          else
+            sha=$(git rev-parse --verify "${COMMIT:-origin/main}^{commit}")
+            if ! git merge-base --is-ancestor "$sha" origin/main; then
+              echo "::error::$sha is not on main; a release is a merged commit"
+              exit 1
+            fi
+            git config user.name 'github-actions[bot]'
+            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+            git tag -a "$TAG" "$sha" -m "$TAG"
+            git push origin "refs/tags/$TAG"
+            echo "Created $TAG at $sha."
+          fi
+
+          git checkout --detach "refs/tags/$TAG"
+
+      # amd64 only, so nothing here is emulated.
+      #
+      # `setup-qemu-action` is what made an arm64 build possible on an x86_64
+      # runner, and it is gone with it. See the note on `platforms` below.
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          # Issued to this workflow run, expires with it, and is not a token
+          # anybody has to create or store.
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository }}
+          # The version, and `latest`. A deployment that names a version gets
+          # exactly it; one that names nothing follows releases.
+          # Both `0.41.0` and `v0.41.0`. The semver pattern strips the leading
+          # `v`, so without the raw tag the git tag and the image tag differ by
+          # one character — which is exactly the sort of thing somebody hits at
+          # the end of a deploy, as a 404, having typed what the release is
+          # actually called.
+          #
+          # **`value=` is what makes a manual re-run work.** A `semver` pattern
+          # reads `github.ref`, and on a `workflow_dispatch` that is
+          # `refs/heads/main` however the checkout above was pointed — so every
+          # pattern matched nothing and the only tag pushed was `latest`. The
+          # image was correct and signed and simply had no version on it, which
+          # reads at the far end as `manifest unknown`: a deploy that looks like
+          # a typo for a release that built fine.
+          #
+          # `github.ref_name` is the tag on a push and the branch on a dispatch,
+          # so the input wins where there is one and nothing changes otherwise.
+          tags: |
+            type=semver,pattern={{version}},value=${{ github.event.inputs.tag || github.ref_name }}
+            type=semver,pattern=v{{version}},value=${{ github.event.inputs.tag || github.ref_name }}
+            type=semver,pattern={{major}}.{{minor}},value=${{ github.event.inputs.tag || github.ref_name }}
+            type=raw,value=latest
+
+      - id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          # **amd64 only.**
+          #
+          # arm64 was emulated through QEMU, which meant compiling argon2 and
+          # Prisma under emulation — the slow half of every release, at roughly
+          # fifteen minutes against amd64's one. On v0.63.0 it stopped finishing
+          # at all: the job hit the 45-minute cap with arm64 still inside
+          # `npm ci`, twice, on a release that changed no dependency.
+          #
+          # Nobody was pulling it. The deployment this exists for is a Synology NAS,
+          # which is x86_64, and ADR 019 already has the NAS build its own image
+          # from source — so the arm64 route is a *build* route rather than a
+          # pull, and it is the one route that is actually exercised. Somebody on
+          # a Pi or an Apple Silicon Mac builds from source, as the NAS does.
+          #
+          # Restoring it is one line plus `setup-qemu-action` above, and would
+          # want the timeout raised rather than left at 45.
+          platforms: linux/amd64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          # Keyed to the workflow so a release that changes one file reuses
+          # every layer below it.
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # Signed so `deploy.sh` can answer "did my repository build this?" before
+      # starting it. That image is handed the database and the bank feed
+      # credential, which is why the question is worth answering properly
+      # (ADR 012). Keyless: the identity is this workflow, certified through the
+      # Sigstore transparency log, with no key in existence to steal.
+      - uses: sigstore/cosign-installer@v3
+      - run: cosign sign --yes ghcr.io/${{ github.repository }}@${{ steps.build.outputs.digest }}

@@ -1,0 +1,600 @@
+# Delegate
+
+A self-hosted envelope budgeting application for a single household. It replaces a
+hand-maintained spreadsheet and a self-hosted Sure instance.
+
+The name is the verb the whole system is built around: money sits in real
+accounts, and every dollar is _delegated_ to a named envelope.
+The health of the budget is one subtraction, shown at the bottom of the Budget page
+page and recomputed on every view:
+
+```
+SUM(in-budget assets) − SUM(in-budget debts) − SUM(delegation balances)
+```
+
+A positive reading is money that has landed and not been distributed yet — the
+"available to delegate" figure. Near zero is `Balanced`. Negative is
+over-delegated. See [docs/architecture.md](docs/architecture.md) for the domain
+model, [docs/design.md](docs/design.md) for the visual language, and
+[docs/handoff.md](docs/handoff.md) for the current state of play.
+
+> **Reachable from away.** Two-factor authentication is required of every
+> account, TOTP codes are single-use, and remote access over a Tor onion service
+> is available and off until switched on from the home network. How the front
+> door is arranged is the operator's decision: a tunnel, a reverse proxy, the
+> onion service, or nothing at all. See
+> [docs/architecture.md](docs/architecture.md) and ADRs 017, 024, 026 and 027.
+
+## Status
+
+Phase 1 (MVP) in progress. Landed so far:
+
+- Money primitives, the budget identity, and the domain vocabulary shared between
+  API and UI
+- The full PostgreSQL schema with integrity constraints the database enforces
+  itself
+- The delegation event ledger: Delegate with 12-hour undo, envelope transfers,
+  manual adjustment, categorization and splits, pending reconciliation and
+  reversal, archiving rules, go-live reconciliation
+- `recompute-balances`, which rebuilds cached balances from the ledger
+- Authentication: argon2id, sessions in PostgreSQL, first-run Super Admin, three
+  roles, and Admin-only user management
+- SimpleFIN sync: hourly, windowed backfill, idempotent re-runs, the full pending
+  lifecycle, and run history surfaced to the UI
+- Auto-categorization rules, including the apply-to-existing bulk action
+- The API behind the Transactions page and the Budget page, including
+  Delegate with undo, Transfer, manual adjustment and Reconcile to Actual
+- The interface: app shell, authentication, the Budget page, the
+  Transactions page, and SimpleFIN connection in Settings
+- 289 tests plus 19 end-to-end tests in a real browser, including integration
+  tests asserting the identity behaves correctly after every mutating operation
+
+Not yet built: the per-row menu on the Budget page, and the Docker deployment
+with nightly backups.
+
+## Requirements
+
+- Node.js 22 LTS
+- PostgreSQL 16
+- Docker and Docker Compose, for deployment only — not needed to develop
+
+## Local development
+
+```bash
+npm install
+cp .env.example .env
+```
+
+Edit `.env` and set at least `DATABASE_URL`, `TEST_DATABASE_URL` and
+`SESSION_SECRET`. Generate the secret with:
+
+```bash
+openssl rand -base64 48
+```
+
+`.env` is git-ignored and must never be committed. Create the two databases,
+apply migrations, and seed:
+
+```bash
+createdb household_budget_dev && createdb household_budget_test
+npm run db:deploy
+npm run db:seed
+```
+
+The seed data is entirely invented — no real balances, institutions or personal
+details appear anywhere in this repository.
+
+### Commands
+
+| Command                    | What it does                                          |
+| -------------------------- | ----------------------------------------------------- |
+| `npm run dev`              | Run the API in watch mode                             |
+| `npm run typecheck`        | Typecheck every workspace, tests included             |
+| `npm run lint`             | ESLint, type-aware                                    |
+| `npm run format`           | Prettier, write                                       |
+| `npm test`                 | Unit tests only — no database needed                  |
+| `npm run test:integration` | Integration tests against `TEST_DATABASE_URL`         |
+| `npm run test:all`         | Both projects                                         |
+| `npm run test:e2e`         | End-to-end tests in a real browser                    |
+| `npm run db:migrate`       | Create and apply a new migration in development       |
+| `npm run db:deploy`        | Apply existing migrations (used in CI and production) |
+| `npm run db:reset`         | Drop, re-migrate and re-seed the development database |
+| `npm run simplefin:claim`  | Exchange a SimpleFIN setup token for an access URL    |
+
+Integration tests **truncate every table** in `TEST_DATABASE_URL`, and refuse to
+run unless the database name ends in `_test`. The end-to-end tests use the same
+database, so do not run both at once.
+
+End-to-end tests drive a real browser against the **built** server serving the
+**built** UI — the same artefact the NAS runs. They exist because typechecking
+and a full green suite both said nothing when the server once failed to boot:
+nothing had started the process with a UI build present. They need the browser
+once:
+
+```bash
+npx playwright install chromium
+npm run build
+npm run test:e2e
+```
+
+### Connecting SimpleFIN
+
+SimpleFIN issues a one-time **setup token**, which is exchanged once for a
+long-lived **access URL**. Get a token from
+[bridge.simplefin.org](https://bridge.simplefin.org/) after connecting your
+institutions.
+
+**The easiest route is the app itself:** sign in, go to **Settings → Sync**, paste
+the token, and press Connect. The claimed credential is stored encrypted in the
+database, so reconnecting after a redeployment needs no file editing and no SSH.
+Because the encryption key is derived from `SESSION_SECRET`, changing that
+variable means reconnecting — see
+[ADR 011](docs/decisions/011-simplefin-credential-stored-encrypted.md).
+
+There is also a command-line route, for a configuration-managed deployment:
+
+```bash
+npm run simplefin:claim -- <setup-token>
+```
+
+That prints a `SIMPLEFIN_ACCESS_URL=...` line to paste into `.env`. Two things
+worth knowing:
+
+- **A setup token can only be claimed once.** A second attempt returns 403 and
+  you need a fresh token.
+- **The access URL is a bearer credential** — it embeds Basic Auth and anyone
+  holding it can read your account data. It lives only in `.env`, which is
+  git-ignored, and no API route ever returns it.
+
+Sync then runs hourly, backfilling twelve months on its first run. Without the
+variable set the application still runs; sync simply reports itself as
+unconfigured. Institutions SimpleFIN does not support are manual
+accounts.
+
+### Rebuilding cached balances
+
+`delegations.balance_cents` is a cache; `delegation_events` is the truth.
+
+```bash
+npm run build --workspace @budget/api
+npm run recompute-balances --workspace @budget/api
+```
+
+It prints every balance it had to change and exits non-zero if there were any — a
+disagreement is a defect worth investigating, not routine maintenance. Add
+`-- --check` to report without writing, which is what CI does.
+
+## Deploying it
+
+> Written so that someone who is not the owner could follow it.
+
+**One line, on anything that runs Docker.**
+
+> **Maintainer note, once.** GitHub publishes a workflow's package as
+> **private** by default, whatever the repository's visibility — so until the
+> package is made public, the command below fails with `unauthorized` for
+> everybody except an account that has run `docker login ghcr.io`. Change it at
+> `github.com/users/aso42244/packages/container/delegate/settings` → Danger Zone
+> → Change visibility → Public. It is a one-time click; later pushes keep it.
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/aso42244/delegate/main/docker-compose.yml -o docker-compose.yml \
+  && docker compose up -d
+```
+
+That is the whole install. Nothing to configure: the first start generates the
+session secret, the encryption key and the database password into a volume of
+their own, runs the migrations and serves on port 8088.
+
+Then read the setup code out of the logs and open the app:
+
+```bash
+docker compose logs app | grep -A2 'no account yet'
+```
+
+The code is what claims the first account. Creating it cannot be authenticated —
+there is nobody to authenticate as yet — so this stands in for the assumption
+Delegate used to make, that reaching the address meant being in the house. That
+assumption does not survive an image anybody can run anywhere.
+
+### On a public address
+
+Give it a domain and start with the `https` profile:
+
+```bash
+DELEGATE_DOMAIN=budget.example.com TRUST_PROXY=172.16.0.0/12 \
+  docker compose --profile https up -d
+```
+
+Caddy requests a Let's Encrypt certificate on first start, renews it on its own,
+and redirects http to https. Ports 80 and 443 have to be reachable from the
+internet for the certificate to be issued.
+
+`TRUST_PROXY` is not optional here. Without it every request appears to come from
+the proxy container, and the sign-in rate limit becomes one shared bucket for the
+whole internet rather than one per address. The application warns at boot when a
+forwarded header arrives and nothing is configured to trust it — but set it
+rather than waiting to be told.
+
+**Do not set `TRUST_PROXY` while the application's own port is also published.**
+Anyone can then forge a header and get a fresh rate-limit bucket per request,
+which is worse than not trusting one at all. See
+[ADR 018](docs/decisions/018-a-proxy-is-trusted-only-when-configured.md).
+
+### On a LAN, or behind a tunnel
+
+The default. Plain http at the origin is correct behind a Cloudflare Tunnel or
+inside an onion service, both of which encrypt everything that crosses the
+internet, and on a network you trust
+([ADR 017](docs/decisions/017-plain-http-is-the-default-and-tls-is-optional.md),
+[docs/remote-access.md](docs/remote-access.md)). Never a port forward, a DSM
+reverse proxy or QuickConnect.
+
+An onion service is available and off until switched on
+([ADR 027](docs/decisions/027-remote-access-is-an-onion-service.md)). It needs
+its own profile, because most deployments will never reach an onion address:
+
+```bash
+docker compose --profile tor up -d
+```
+
+### Worth setting
+
+Everything below is optional. The application starts without any of it.
+
+|                     |                                                                                                                                   |
+| ------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| `APP_NAME`          | What the sidebar says. Keeps a household name out of the repository.                                                              |
+| `HOST_PORT`         | Where it publishes. `8088` by default, because DSM holds 80 and 443.                                                              |
+| `BACKUP_DIR`        | A host path for the nightly dumps. Empty keeps them in a Docker volume — durable, and invisible to whatever backs the machine up. |
+| `SCHEDULE_TIMEZONE` | The household's zone. Defaults to UTC, which puts an 8pm charge in the next day.                                                  |
+| `APP_DATABASE_URL`  | Connects as the least-privilege role rather than the superuser. See below.                                                        |
+
+Copy `.env.example` to `.env` if you want any of them, and lock it down —
+`deploy.sh` refuses to run if the permissions are wrong:
+
+```bash
+chmod 600 .env
+```
+
+### On a Synology NAS
+
+The same install, with three things worth knowing.
+
+**`sudo docker` does not work on DSM.** `sudo` resolves the command against
+`secure_path`, which does not include `/usr/local/bin`. Use `sudo -i sh -c '…'`,
+which runs root's login shell and gets a full `PATH`.
+
+**Set `BACKUP_DIR` to a shared folder**, so the dumps land somewhere Hyper Backup
+can pick up. A dump on the same disk as the database is not a backup.
+
+**`scp` to DSM needs `-O`** — its SSH server does not offer the SFTP subsystem
+that modern `scp` expects.
+
+`scripts/deploy.sh` exists for this case and does more than `docker compose up`:
+it creates missing bind-mount sources, which Synology's Docker will not do,
+chowns the backup directory to the uid the container runs as, and **proves the
+container can write there before reporting success**. That check is the one
+failure this project cannot catch anywhere but on the machine — every nightly
+dump failed silently for months because the directory was root's.
+
+### Building it yourself
+
+The image is published for `amd64` only, so on an x86_64 host there is normally
+nothing to build. **On arm64 — a Raspberry Pi, an Apple Silicon Mac — build from
+source**, which is also what an unreleased commit needs:
+
+```bash
+git clone https://github.com/aso42244/delegate.git && cd delegate \
+  && docker compose build && docker compose up -d
+```
+
+That needs a build toolchain and roughly 2 GB of memory, and takes minutes rather
+than seconds. It is how the NAS was deployed before there was a published image.
+
+### What `deploy.sh` does
+
+More than `docker compose up -d`, for three reasons — all of them things that
+went wrong once:
+
+- It **creates missing bind-mount sources**, which Synology's Docker will not do,
+  and **chowns the backup directory** to the uid the container runs as.
+- It **proves the container can write to the backup directory** before reporting
+  success. Every nightly dump failed silently for months because that directory
+  was created under `sudo` and owned by root. A bind mount replaces the image's
+  ownership entirely, so anything the Dockerfile does to that path is decoration.
+- It waits for the **health endpoint**. A container that is "up" is not
+  necessarily one that is serving: migrations run at start, and a failure there
+  leaves a process that exits seconds later.
+
+It also resolves a tag to a **digest** and records it in `.env` as `APP_IMAGE`, so
+a later bare `docker compose up -d` starts the same artefact rather than drifting
+with the tag.
+
+**Deploying from the registry verifies the signature**, so it needs `cosign` —
+one static binary, and the reason the publish workflow signs at all. The image is
+handed the database and the bank feed credential, so "did my repository build
+this?" is worth answering before starting it:
+
+```bash
+sudo curl -fsSL -o /usr/local/bin/cosign \
+  https://github.com/sigstore/cosign/releases/latest/download/cosign-linux-amd64
+sudo chmod +x /usr/local/bin/cosign
+```
+
+`--build` skips verification, because a locally built image has no registry
+signature to check. So does `--skip-verify`, which asks you to have a reason.
+
+### Later deploys, and rolling back
+
+The same command pulls the current image and restarts:
+
+```bash
+cd /volume1/docker/delegate && sudo ./scripts/deploy.sh
+```
+
+It prints the digest it replaced, and the exact command to go back to it:
+
+```bash
+sudo ./scripts/deploy.sh --digest sha256:…
+```
+
+### Backups, and restoring from one
+
+A dump is written nightly to `BACKUP_DIR` and older ones are pruned after
+`BACKUP_RETENTION_DAYS`. Retention is applied only after a dump succeeds, so a
+run of failures never deletes the last good copy.
+
+**Confirm that folder is inside whatever off-device backup already exists.** A
+dump on the same disk as the database is not a backup.
+
+To restore:
+
+```bash
+sudo docker compose exec app sh -c \
+  'RESTORE_CONFIRM=yes ./scripts/restore.sh /backups/delegate-YYYYMMDD-HHMMSS.dump'
+```
+
+It refuses to run without `RESTORE_CONFIRM=yes`, because it replaces the contents
+of the database it is pointed at.
+
+**This path is tested rather than assumed.** `./scripts/verify-restore.sh` seeds a
+database, dumps it, destroys the contents, restores, and fails unless the row
+counts and balances match exactly either side. CI runs it on every change.
+
+## Go-live order of operations
+
+The sequence matters, because balances derived from a categorized backlog are
+deliberately wrong until the last step:
+
+1. **Sync** — pulls accounts and backfills as much history as the feed holds. The
+   target is 12 months, but the institutions decide: against real accounts the
+   bridge returned roughly **six months**. Requests are split into 45-day windows,
+   because a single long request is silently capped rather than refused. See
+   [ADR 009](docs/decisions/009-simplefin-sync-cadence-and-window.md).
+2. **Build rules** — create auto-categorization rules, fastest from a transaction
+   via "always categorize like this".
+3. **Bulk-apply rules** to the existing backlog.
+4. **Categorize the remainder** by hand on the Transactions page.
+5. **Reconcile** — Settings → Reconcile. Enter each envelope's true balance. One
+   commit corrects every line. **A line left blank is not touched**, so this can
+   be done in several sittings. The first commit is also recorded as the go-live
+   date; later ones are ordinary maintenance and do not move it.
+
+Steps 1–4 will drive delegation balances deeply negative — Grocery may read
+−$9,000 when its true balance is $725. That is expected and deliberate: it buys
+full history and accurate day-one numbers. Step 5 corrects all of it at once.
+
+## Phases
+
+| Phase | Scope                                                                                                                                                                |
+| ----- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1     | MVP: auth, accounts, SimpleFIN sync, transactions, rules, delegations, the ledger, Delegate/Transfer/Adjust, Reconcile, Settings, nightly backups, Docker deployment |
+| 2     | Utilities, Insights, Bitcoin, property value and equity, transaction pairing, grouping colours, notification banners                                                 |
+| —     | Outstanding checks: written but not yet cashed, matched to the payment that clears them                                                                              |
+| 3     | Security hardening: mandatory TOTP, rate limiting, CSRF, optional TLS, dependency audit, tested restore                                                              |
+| 4     | UI polish: mobile, keyboard coverage, empty/loading/error states, accessibility                                                                                      |
+| 5     | Feature and bug requests arrive from a Notion database and are built automatically                                                                                   |
+
+**Passkeys have been dropped** — see
+[ADR 016](docs/decisions/016-passkeys-are-out-of-scope.md). TOTP is the second
+factor.
+
+**Phase 3 is done.** Rate limiting, TOTP with recovery codes, CSRF protection,
+optional TLS and the dependency audit have all shipped.
+
+**Delegate serves plain http by default.** Reaching it from outside the house
+goes through a Cloudflare Tunnel — see
+[docs/remote-access.md](docs/remote-access.md), which covers what is encrypted on
+which leg, and the two things that must be true before turning it on.
+
+[ADR 017](docs/decisions/017-plain-http-is-the-default-and-tls-is-optional.md)
+records that as a decision with its trade stated: on a trusted home network the
+exposure is other devices on that network, and passwords and two-factor codes
+cross it in clear text. TLS is supported for anyone who wants it — see below.
+
+### Optional TLS
+
+```bash
+./scripts/make-tls-cert.sh 192.168.1.10 nas.local
+```
+
+Give it every address the household will actually type.
+
+The container runs as uid 1000, not root, so the key has to be **owned** by that
+uid — the script does it, using `sudo` if it needs to, and tells you the exact
+command if it cannot. Do not widen the mode instead: the point of `600` is that
+no other account on the NAS can read the private key.
+
+Then in `.env`:
+
+```
+TLS_CERT_PATH="/tls/delegate.crt"
+TLS_KEY_PATH="/tls/delegate.key"
+SESSION_COOKIE_SECURE="true"
+```
+
+and `docker compose up -d`. The same image serves either transport; only
+configuration decides. Both paths or neither — the application refuses to start
+on half a configuration, because that would serve plain http from a deployment
+whose settings claim otherwise.
+
+Browsers warn until the certificate is trusted on each device. That warning is
+the accurate report that nothing vouches for this identity except the machine
+presenting it.
+
+### Phase 5 — requests from Notion
+
+A Notion database holds feature and bug requests. Approved ones are handed to
+Claude Code, which builds and merges them.
+
+This crosses a trust boundary the rest of the application does not, so it gets
+designed before it gets built: a request written in Notion is **input, not an
+instruction**, and an automated path from a text field to a merge on `main` is a
+path an attacker would very much like to have. At minimum it needs a recorded ADR
+covering who can approve, what an approved request is allowed to touch, and what
+CI must prove before anything merges — the hard constraints above are not
+negotiable by a request, whoever wrote it.
+
+Dependency policy and the update process are in
+[docs/dependencies.md](docs/dependencies.md).
+
+## Repository conventions
+
+- `main` is always deployable. Work happens on `feat/`, `fix/`, `chore/`, `docs/`
+  or `refactor/` branches and lands by squash-merge.
+- **`main` is not yet protected by a server-side rule.** GitHub restricts branch
+  protection on private repositories to paid plans, so the convention is currently
+  enforced by discipline rather than by GitHub refusing the push. Making the repo
+  public, or upgrading the plan, would let a rule enforce it — see
+  [open questions](docs/open-questions.md).
+- Conventional Commits.
+- CI must pass before merge: typecheck, lint, formatting, unit and integration
+  tests, and a check that cached balances agree with the ledger.
+- One PR per coherent unit of work. Schema + API + UI for one feature is one PR.
+- Architectural decisions are recorded in `docs/decisions/`.
+
+## Licence
+
+MIT. See [LICENSE](LICENSE).
+
+## Rotating the encryption key
+
+Delegate encrypts three things at rest: each account's TOTP secret, the SimpleFIN
+access URL, and every watched wallet's descriptors. By default that key is
+derived from `SESSION_SECRET`, which means rotating the session secret would make
+all of them unreadable at the same moment — see ADR 029.
+
+To separate them, on the machine running Delegate. **On Synology DSM, every
+`docker` command has to go through `sudo -i sh -c`** — plain `sudo docker` fails
+with "command not found", because `sudo` resolves the command against
+`secure_path`, which does not include `/usr/local/bin`:
+
+```sh
+# 0. Generate the key, and keep a copy somewhere off the NAS before step 2.
+openssl rand -base64 48
+```
+
+```sh
+# 1. Prove everything can be read as it stands. Writes nothing.
+sudo -i sh -c 'cd /volume1/docker/delegate && docker compose exec app \
+  npm run secrets:rekey --workspace @budget/api -- --check'
+```
+
+```sh
+# 2. Re-encrypt under the new key, in one transaction.
+sudo -i sh -c 'cd /volume1/docker/delegate && docker compose exec \
+  -e DATA_ENCRYPTION_KEY_NEW="<the key from step 0>" app \
+  npm run secrets:rekey --workspace @budget/api'
+```
+
+```sh
+# 3. Put that same value in .env as DATA_ENCRYPTION_KEY, then restart.
+sudo -i sh -c 'cd /volume1/docker/delegate && docker compose up -d'
+```
+
+**Step 3 only works because `docker-compose.yml` names `DATA_ENCRYPTION_KEY` in
+the app's `environment:` block.** Compose reads `.env` to substitute into the
+compose file; it does not hand `.env` to the container. For a while there was no
+such line, which made this procedure a trap: the secrets moved onto the new key,
+the application kept deriving the old one from `SESSION_SECRET`, and nothing
+decrypted. If you are running a compose file older than v0.40.0, add the line
+before you start.
+
+The application now refuses to boot when the key in force cannot read what is
+stored, and says which of the two causes it is. That is deliberately fatal: the
+alternative is a container that answers `/health` while nobody can sign in —
+**the second factor is decrypted before recovery codes are considered, so a wrong
+key locks out every account including the way back in.**
+
+**The order matters.** Between steps 2 and 3 the application is still reading with
+the old key and will fail; setting `DATA_ENCRYPTION_KEY` without running step 2
+makes the stored secrets unreadable. Neither is destructive — the fix in both
+cases is to finish the sequence — but do not stop in the middle.
+
+Afterwards, `SESSION_SECRET` can be rotated on its own. It invalidates live
+sessions, which is the point, and touches nothing at rest.
+
+## A least-privilege database role
+
+New deployments get one automatically: set `APP_DB_PASSWORD` in `.env` before the
+first start and point `DATABASE_URL` at `delegate_app` rather than the superuser.
+The role owns its own database — migrations need that — but cannot reach any
+other database in the cluster, create roles, or read files off the host.
+
+An **existing** deployment is not touched, because the init script only runs on an
+empty data directory. To move one over, with the application stopped:
+
+```sh
+sudo -i sh -c 'cd /volume1/docker/delegate && docker compose exec postgres \
+  psql -U postgres -d delegate -c "
+    CREATE ROLE delegate_app LOGIN PASSWORD '"'"'<a long random string>'"'"';
+    ALTER DATABASE delegate OWNER TO delegate_app;
+    ALTER SCHEMA public OWNER TO delegate_app;
+    ALTER ROLE delegate_app NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION;"'
+```
+
+Then point the application at it. `DATABASE_URL` is built inside
+`docker-compose.yml` and is not read from `.env`, so the way to change it is
+`APP_DATABASE_URL`, which overrides the whole thing:
+
+```sh
+# In .env on the NAS:
+#   APP_DATABASE_URL=postgresql://delegate_app:<password>@postgres:5432/delegate
+sudo -i sh -c 'cd /volume1/docker/delegate && docker compose config' | grep DATABASE_URL
+```
+
+Check that line says `delegate_app` **before** restarting, then:
+
+```sh
+sudo -i sh -c 'cd /volume1/docker/delegate && docker compose up -d'
+```
+
+If it fails to start, emptying `APP_DATABASE_URL` is the whole rollback — the
+superuser role is untouched. The same `sudo -i sh -c` rule applies here as above,
+and for the same reason.
+
+**On a fresh install this matters too.** The init script creates the role from
+`APP_DB_USER`/`APP_DB_PASSWORD`, but nothing connected as it until
+`APP_DATABASE_URL` existed: the role was created and then ignored. Set all three.
+
+## The onion address lives in a volume
+
+The `tor-keys` volume holds the hidden service's private key, and that key **is**
+the onion address. Losing the volume does not lose access — the service comes
+back — it loses the _name_, permanently. It cannot be recovered, only replaced,
+and every device that had the old address stops working.
+
+So it belongs in whatever backs up **off** the NAS. In DSM: Hyper Backup → the
+task → Backup Source, and whether the share holding Docker's volumes is ticked
+with a destination that is not on `/volume1`.
+
+To see where it actually is:
+
+```sh
+sudo -i sh -c 'docker volume inspect delegate_tor-keys --format "{{.Mountpoint}}"'
+```
+
+There is no way to check this from the application, which is why it is written
+down here rather than surfaced on a screen: it is DSM configuration, invisible to
+anything running inside the container.

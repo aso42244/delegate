@@ -1,0 +1,4304 @@
+# Changelog
+
+All notable changes to this project. Format follows
+[Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are tagged per
+phase (`v0.1.0-phase1`, and so on).
+
+## [Unreleased]
+
+Nothing yet.
+
+## [0.81.0] — 2026-09-25
+
+### Fixed
+
+- **A bank that already counts its pending charges no longer reads as
+  over-delegated** ([ADR 074](docs/decisions/074-a-bank-can-count-its-own-pending.md)).
+  The budget adds categorized pending charges back to the account balances,
+  because a feed's balance is meant to be the settled one
+  ([ADR 020](docs/decisions/020-pending-transactions-in-the-identity.md)).
+  Persephone Savings reports a balance already net of a pending ACH debit, so a
+  $200.00 transfer was taken out twice and a balanced budget read **Over
+  delegated $200.00**.
+
+  An account's row menu now has **Balance includes pending**, on synced accounts
+  only. Switched on, that account's pending charges are left out of the
+  correction — on the reading and in the nightly snapshot alike. They still
+  empty their envelopes when categorized, exactly as before. Off by default, so
+  nothing reads differently on upgrade.
+
+## [0.80.0] — 2026-09-22
+
+### Added
+
+- **A delegation can have a maximum, and Delegate stops at it**
+  ([ADR 073](docs/decisions/073-a-maximum-is-the-half-that-writes.md)). Optional
+  on every line: a line capped at $400, set to receive $200 a paycheck and
+  already holding $275, takes **$125** on the next press. The other **$75 is not
+  moved anywhere** — it stays undelegated, so the budget's own reading rises by
+  exactly that much and offers it back for whatever the payday actually needs.
+
+  It caps the **balance**, not the amount, which is what reconciles it with
+  [ADR 047](docs/decisions/047-a-target-never-moves-an-amount.md): the figure the
+  household typed is never rewritten, so a line spent back down funds in full
+  again by itself with nothing to remember. Only Delegate is capped — a transfer,
+  a refund or a manual adjustment may still take a line past its maximum, and
+  none of them is refused.
+
+  Set from the row menu on the Budget page and from Settings → Delegations, where
+  it is an ordinary money box beside the amount it caps. The dialog shows what
+  the next press would do in the line's own figures, live as somebody types, and
+  says where the withheld money goes. The Delegate confirmation states what the
+  maximums held back rather than quietly deducting it: _"$75.00 is held back by a
+  line at its maximum and stays available to delegate."_
+
+  The new chip is **`mx`**, quiet, beside the name — a classification, not a
+  verdict, so it reads the same whether or not the ceiling is in the way this
+  payday. What the maximum is doing to the next press sits on the amount to
+  delegate, on hover and through `aria-describedby`, beside the target's sentence
+  where a line has both. Because the band at the top of Overview and the Budget
+  page draw the one `DelegationsTable`, the mark appears on both screens without
+  a second rendering of it.
+
+  One additive migration: `max_balance_cents`, nullable, with a check constraint
+  refusing zero. Every existing line gets null and behaves exactly as it did.
+  `GET /api/read/budget` carries `max`, present and null where there is none.
+
+## [0.79.0] — 2026-09-21
+
+### Added
+
+- **The read door describes a check, not just that it is one.** Every
+  `delegations[]` row now carries `checkNumber`, `checkMemo` and `checkIssuedAt`
+  beside `kind` — the three that were already on the row the Budget page reads
+  and stopped at the door. `checkIssuedAt` is an instant in UTC like the door's
+  others; all three are present and null on an envelope rather than absent,
+  because a key that comes and goes is two shapes for one thing. No new
+  arithmetic and no write path: the door is still a projection
+  ([ADR 070](docs/decisions/070-the-read-door-is-its-own-surface.md)).
+  [docs/api-for-eventide.md](docs/api-for-eventide.md) gained the three rows in
+  the same commit; it had been wrong about them by omission. Eventide's client
+  already carries all three as optional and nullable, so they appear there with
+  no release on its side.
+
+### Changed
+
+- **A release is cut from GitHub, with no Mac in the loop**
+  ([ADR 072](docs/decisions/072-a-release-is-cut-from-github.md)). The publish
+  workflow, dispatched with a version and optionally the commit it names,
+  creates the tag itself — refusing a malformed version and any commit not on
+  `main` — and then builds and signs it exactly as a pushed tag always did.
+  Found the hard way: v0.78.0 was built, merged and cut from a cloud session
+  that can push a branch but not a tag, and the release stalled on one line
+  only the Mac could type. Pushing a tag by hand still works; it is simply no
+  longer required. The job's token gains `contents: write` for the tag and
+  nothing else.
+
+  The documentation no longer routes anything through the owner's Mac: where
+  things stand is read from any clone, the source-route deploy fetches GitHub's
+  archive on the NAS itself in one line, and `deploy.sh --build` says so when it
+  finds no source.
+
+## [0.78.0] — 2026-09-21
+
+### Added
+
+- **A read door, and the token that opens it.** Eventide reads this budget
+  through two routes and nothing else — `GET /api/read/budget` and
+  `GET /api/read/overview`, projections of what the Budget page and Overview
+  already compute, with money as strings of whole cents
+  ([ADR 070](docs/decisions/070-the-read-door-is-its-own-surface.md)). The
+  contract is [docs/api-for-eventide.md](docs/api-for-eventide.md).
+
+  The door is its own route file with its own guard, and a write path is
+  unexpressible rather than merely absent: nothing in it takes a body, and the
+  guard is the only code that knows what a bearer token is. It refuses a session
+  cookie whether or not a token rides beside it, and a token opens nothing
+  guarded by a session — not the budget's own API, not the token routes, not
+  Delegate.
+
+- **API tokens**, Delegate's first machine credential since the MCP work was
+  withdrawn ([ADR 069](docs/decisions/069-a-token-reads-as-a-person.md)). A
+  token reads as the person who made it, is stored as a SHA-256 digest, is
+  shown once, and is revoked by a timestamp. Unknown, revoked and an archived
+  account's answer identically from outside. Issuing and revoking one are
+  credential events, so the Sign-in activity card reports them.
+
+- **Settings → Access → API tokens**
+  ([ADR 071](docs/decisions/071-tokens-are-managed-on-access.md)): a card beside
+  two-factor and the household, not a ninth section. Create, name, revoke, and
+  — the half of the shape that makes it safe — when each token was last used
+  and from where.
+
+## [0.77.1] — 2026-09-18
+
+### Fixed
+
+- **The undo offer is on the button's hover, not under it.** "Delegated
+  $4,914.70 across 49 lines. Undo rolls the cycle back too." was a paragraph
+  wedged between Undo Delegation and Sync SimpleFIN — the last caption left in
+  that column, and one that appeared and disappeared with the undo window, so it
+  shifted every button below it twice a fortnight.
+
+  It is a hover panel now, the same one Sync, the backlog and the reading
+  already use. A phone is unchanged: there is no hover to open a panel with, so
+  the sentence stays on the button itself, and the confirmation dialog states it
+  in full either way.
+
+- **A test that failed one morning in fourteen.** `stops the pace lines at today`
+  anchored the pay cycle to a fixed far-future date, so where today sat inside
+  the cycle drifted by a day every day — and the pace points run to the day
+  _before_ the next payday, so on a cycle's last day there is nothing after
+  today left to be unobserved. It anchored three days out now, which holds today
+  at day eleven of fourteen whenever it runs. Found by the gate on the one
+  morning it was due.
+
+- **A control's panel opened downward off the bottom of the screen.** The panel
+  beside Sync SimpleFIN, the backlog and the budget's reading was aligned to its
+  control's top and grew down — and that zone is pinned to the foot of the
+  window, so there is almost nothing below a control in it and almost the whole
+  window above. One bank condition was enough to push the sentence naming the
+  bank past the bottom edge.
+
+  It grows upward from the control's bottom now, and is capped at the room it
+  measures rather than at a guessed fraction of the window — unbounded it would
+  have run off the top instead, which is the same defect facing the other way.
+
+  This flips where a tag's detail clamps, and the asymmetry is the point: a tag
+  can sit anywhere along a row, while a control in this zone is always near the
+  bottom, so it has one right direction rather than two.
+
+## [0.77.0] — 2026-09-15
+
+### Added
+
+- **Delegate has a favicon.** There was none at all, so every tab and every
+  bookmark showed the browser's blank-page mark. It is a white D on the accent
+  blue, as a rounded badge — chosen over an envelope, which is the obvious mark
+  for envelope budgeting and reads as _mail_ at 16px beside a tab strip that
+  already has one.
+
+  Three files: an SVG, a 32px PNG for a browser that will not take one, and a
+  square full-bleed 180px PNG for a home screen, which iOS masks and rounds
+  itself. No household name is in any of them — `APP_NAME` stays in `.env`, and a
+  mark that had to be regenerated per deployment is the one thing in the
+  interface that could carry a family name into the repository.
+
+### Changed
+
+- **A test that reported the font rather than the feature.** `a row keeps the
+height it was dragged to` asserted an exact pixel height — the one a press
+  asks for — while a row is also floored at the height its content needs, which
+  is what the test beside it exists to protect. Where those two disagreed by a
+  pixel the test failed: 119 asked for, 120 given, on `main` at v0.76.0, on any
+  machine whose fonts rasterise a shade differently from the one it was written
+  on. It asserts what it is named for now — that the height survives a reload —
+  and that a press grows the row by at least a step, which is the contract a
+  one-directional floor actually has.
+
+  This is why the gate could never pass in a cloud container, and it was read as
+  an environmental quirk for weeks rather than as the brittle assertion it was.
+
+- **Overview's Accounts & Debts tab is the Budget page's own table**
+  ([ADR 068](docs/decisions/068-one-accounts-table-on-both-screens.md)). It drew
+  a flat list of name and balance, which was the whole of what the Budget page
+  could still do and this one could not: accounts in their groupings, filing an
+  account under a grouping, and ordering accounts and groupings.
+
+  All three arrived at once rather than being designed again, because the band
+  now draws `AccountsTable` — the sibling of the `DelegationsTable` the other tab
+  has drawn since v0.71.0, and the same component the Budget page uses. Row menus,
+  folding, dragging and Move up / Move down came with it.
+
+  **"With balance" still hides an account sitting at zero**, and hiding one can
+  no longer narrow what an ordering writes: the order goes back through
+  `restoreHidden`, which puts each hidden row back after the row it followed.
+  Without that, reordering a filtered list renumbered the visible rows into
+  positions the hidden ones already held — silently, because the endpoint
+  renumbers what it is sent and leaves the rest alone. No total moves under the
+  filter either: every figure there is the server's, and a row at zero adds zero.
+
+  The Budget page is 87 lines from 270, and its behaviour is unchanged.
+
+- **Overview's band could load for ever on a budget nobody had customised.** It
+  fetched the budget only when a tile keyed `delegations` was in the stored
+  layout — but the band is pinned and always drawn, while that layout row is
+  created by the first press of "Select Delegations". A household that had never
+  pressed it saw "Loading the budget…" and nothing else. Found by making both of
+  the band's tabs read the one view.
+
+- **The Budget page is hidden from the navigation, for a fortnight's trial**
+  ([ADR 067](docs/decisions/067-the-budget-page-is-hidden-for-a-trial.md)). It is
+  not deleted and nothing about it changed: `/budget` still answers, a landing
+  preference of Budget still sends you there, and restoring the entry is one line
+  in `PAGES`.
+
+  The overlap is real and larger than it looks. Overview's band draws the _same_
+  `DelegationsTable` the Budget page draws, off the same query — every row menu,
+  editable amount, target, transfer and line history — and "Show all" widens it
+  to the whole list. What is only on the Budget page is accounts and debts in
+  their groupings, assigning an account to a grouping, ordering accounts and
+  groupings, and the columns-or-stacked arrangement from Settings → Display.
+  Those are setup tasks rather than daily ones, which is what makes a fortnight
+  a fair test.
+
+  Reaching it in the meantime means typing the address: nothing in the
+  application links to it now, because nothing but the navigation entry ever did.
+
+- **The categorization backlog is a button above Delegate, not a tag**
+  ([ADR 066](docs/decisions/066-the-backlog-is-a-control-not-a-tag.md)). "4 new
+  transactions" was a 13px pill in the column above four bordered buttons — the
+  smallest object in that corner, carrying the most actionable thing in it.
+
+  It is a control now: blue, directly above Delegate, and there only while the
+  queue is not empty. What separates it from everything still in that column is
+  that those are _conditions_ — a bank needing a fresh login, a cheque to
+  confirm, a bill that did not arrive — which you read and then decide about. A
+  backlog is a queue of work with exactly one thing anybody has ever done about
+  it, and since v0.75.0 the doing of it starts one press away.
+
+  Blue rather than yellow because a queue of new charges is what a working bank
+  feed produces, not a fault. It still opens the queue rather than the register,
+  and the sentence that says how old the oldest one is — the half a tag's face
+  never had room for — is in the panel beside it. A phone is unchanged: there is
+  no control zone below `sm`, so it stays a tag in the alert sheet there.
+
+- **The handoff says which of the gate's sixteen steps a cloud session runs.**
+  Fifteen, it turns out — every suite, the compose parse, the tor image, the
+  backup restore. The exception is the container image build, and the reason is
+  specific rather than a shrug: `Dockerfile` opens with
+  `# syntax=docker/dockerfile:1`, and that frontend resolves its base image from
+  the registry rather than the local store, so a sandbox that terminates TLS
+  cannot substitute a CA-patched base without editing the artefact the NAS runs.
+  The publish workflow builds that image on a clean runner, which is where the
+  step genuinely happens.
+
+  It said
+  the gate could not run there at all, which sent sessions to the owner with
+  untested branches. In fact only three of its steps need Docker — the compose
+  parse, the tor check and the container image — and a cloud container has had
+  PostgreSQL installed and merely stopped, which `psql -l` reports identically to
+  not having it. `docs/handoff.md` now carries the minute of setup that gets the
+  unit, integration and end-to-end suites running, and says a cloud PR should
+  name the steps it skipped rather than disclaiming the lot.
+
+## [0.76.0] — 2026-09-14
+
+### Fixed
+
+- **The categorize field in a tile gives the payee room.** The field took the
+  register's flat 256px into a tile a third the width of the page, which left the
+  payee eighty pixels and truncated the one thing you read in order to decide.
+  The payee and the field share the row now, and 256px is the field's _cap_
+  rather than its width: the register's proportions wherever there is room for
+  them, giving way in step with the payee where there is not. Its open list
+  follows the field instead of hanging over the tile's right edge, and it opens
+  upward when the bottom of the screen is close — on the last rows of a page the
+  options a search had just narrowed to were the ones nobody could reach.
+
+- **A control's hover panel opens beside it, never over the button above it.**
+  Sync SimpleFIN's panel covered Delegate; the budget reading's covered the
+  alerts. A panel that hides a control somebody might have been reaching for is
+  worse than one that hides nothing, and the whole page to the right of that
+  column is free. It is placed by the control's position rather than the
+  pointer's, so its links hold still while you aim at them.
+
+## [0.75.0] — 2026-09-12
+
+### Added
+
+- **The categorization backlog is worked from Overview**
+  ([ADR 065](docs/decisions/065-a-dashboard-you-can-work-from.md)). The tile was
+  a count, "Waiting, oldest 1d", and a link to the register — a notification
+  rather than a surface, which sent you off the screen you open every morning to
+  spend forty seconds filing three charges. It is the register's own row now,
+  without the register: date, payee, amount, and the same type-ahead with the
+  same suggestion leading it. Choosing files the charge and the row leaves.
+
+  It shows the first five and names the rest — "2 more waiting." — with the full
+  queue one press away, because sixty charges is a session at the register rather
+  than a tile on a dashboard.
+
+- **Sync SimpleFIN says when it last ran and what it found.** Its panel carried
+  the bank feed's conditions and there are nearly never any, so for most of its
+  life it opened on nothing. Hovering a quiet button now reads "Synced 12m ago."
+  and, when the run actually brought something back, "3 new transactions."
+
+  Coarse on purpose — nobody acts on the difference between 41 and 43 minutes —
+  and silent about a count of zero, which would appear on every quiet day saying
+  nothing.
+
+### Changed
+
+- **On a phone the budget's reading is a circle of colour**, beside the alert dot
+  it matches, with its words in a sheet on a press. It was a tag reading
+  `Balanced` or `To delegate $1,240.00`, which on a 375px screen is a third of
+  the header spent on something glanced at rather than read. A press gives more
+  than the tag ever did without a mouse: the reading _and_ its working.
+
+- **The title, New… and Delegate share one line on a phone.** What paid for it is
+  the reading above and the period picker below.
+
+- **`npm run verify` brings its own environment.** It sources `.env` itself, so
+  it runs from any shell. Several of its steps need `DATABASE_URL` and
+  `TEST_DATABASE_URL` exported rather than passed through a wrapper, so until now
+  the gate passed or failed on whether whoever ran it had sourced `.env` first —
+  while every document said it was one command. It is now. Anything already
+  exported still wins.
+
+- **The handoff covers a session running in the cloud.** The docs travel with
+  the clone; `.env`, the databases, Docker and the NAS do not, so the gate cannot
+  run there. Merging still never needs permission — the gate having passed is the
+  one condition on it, so a cloud session says plainly that it has not run rather
+  than implying it did.
+
+- **The handoff no longer defers to a file that does not exist.** Its opening
+  named `~/Desktop/budget-app-build-prompt.md` as the specification overriding
+  everything in it. That file is not on disk and is in no git history, so every
+  session was being told to defer to something unreadable. The ADRs are the
+  record.
+
+- **The handoff says how to find the current state rather than asserting it.**
+  It had spent ten releases insisting the NAS was on `v0.58.0`. The release
+  narrative is marked as history, and the top of the document is now a short
+  durable orientation: what to read, the commands that answer "where are we", the
+  gate, and the release-and-deploy loop end to end — including that the owner
+  types exactly one line on the NAS and never two.
+
+### Removed
+
+- **Overview's period picker is gone on a phone.** Every tile it changes is
+  hidden below `sm` and the band is cycle-shaped whatever it says, so it was a
+  control costing a third of the header and moving nothing visible. `window`
+  stays in the URL, so a link into a period still opens in it and a laptop picks
+  up where the phone left off.
+
+## [0.74.0] — 2026-09-11
+
+### Changed
+
+- **The corner of the screen answers one question**
+  ([ADR 064](docs/decisions/064-the-corner-answers-one-question.md)). The foot of
+  the sidebar had four things in it drawn as three groups. It is one group of
+  four now — the budget's reading, Delegate, Sync SimpleFIN, Sign out — 8px
+  apart, one face, one outline, under one rule.
+
+- **The budget's reading is a button, and the only thing in that group that is
+  always coloured.** Green when balanced, blue when there is money to delegate,
+  red when over-delegated — and a press goes to Overview whatever it says, not
+  only when something is wrong. It was a 13px pill, the same object as "1 account
+  not reporting", sitting above two larger bordered buttons: the thing the
+  household opens the application for looked like an annotation on the things
+  that act, and it went nowhere.
+
+  **Three states, three colours.** Over-delegation used to be yellow inside twice
+  the tolerance and red beyond it. That split is gone: over-delegated is the
+  direction that is genuinely wrong at any size, and this is read at a glance now
+  rather than compared against its own past.
+
+  On a phone it stays a tag beside the page title — there is no sidebar and so no
+  control zone — with one tone and one set of words shared with the button, so
+  the two screens cannot disagree about one budget.
+
+- **Sign out looks like the buttons above it and asks before it runs.** It was
+  borderless, in a block of its own under a second rule, and it was the only
+  control in that corner that did nothing to stop a misclick — 8px under the bank
+  sync that gets pressed several times a day, with a full page load and no undo
+  behind it. The copy on Settings → Users is deliberately left unconfirmed: it is
+  three navigations deep and on a phone it is the only route there is.
+
+- **Delegate tints blue on hover and Sign out tints red.** Colour in that group
+  means a control is reporting a **state**; a hover tint means what pressing it
+  will _do_. Neither has a state, but one distributes a pay packet and the other
+  ends the session, and 8px apart they should not look identical right up to the
+  moment they are clicked.
+
+### Removed
+
+- **The signed-in address and the account's role are gone from the sidebar**,
+  along with the divider above them. Both are on Settings → Users, which is where
+  an account is administered, and neither is a question anybody has while looking
+  at a budget.
+
+### Fixed
+
+- The budget's reading announced as an **unnamed link** once it became one:
+  `role="status"` does not support name from content, so the words inside it
+  never reached the link. It carries an explicit name now. Caught by the
+  end-to-end suite being unable to find it by name either — which is exactly what
+  a screen reader would have found.
+
+## [0.73.0] — 2026-09-11
+
+### Changed
+
+- **Everything the bank feed has to say is inside the Sync SimpleFIN button**
+  ([ADR 063](docs/decisions/063-the-feed-reports-in-its-own-button.md)). A
+  failing run, a sync warning, a stale balance, an account the feed has stopped
+  reporting, an account a sync discovered and guessed at — five yellow pills
+  stacked directly above a yellow button, every one of them answered by looking
+  at the same connection. The button takes the loudest one's colour now, and the
+  whole list opens on hover **and on focus**, most significant first, each row
+  still a link to where its condition is dealt with.
+
+  The line is what the _import_ is responsible for. A categorization backlog, a
+  cheque to confirm, a row to clear, an overdue bill, a line behind its target, a
+  stale Bitcoin price, a failing backup, a stalled snapshot — none of those is
+  anything the bridge did, and burying them in a button about the bank would be
+  hiding them. They are still pills, and so is the budget's own reading.
+
+- **On a phone every alert is one coloured dot beside the page title**, carrying
+  the loudest tone, opening the whole list as a sheet on a press. There is no
+  sidebar below `sm` and so no Sync button to fold into, and every notification
+  still has to reach the small screen — but three pills wrapped that header onto
+  three lines, and a pill's detail is a tooltip, which a touchscreen has no way
+  to open at all. The count is the dot's accessible name and the sheet behind it
+  is words, so colour is still not the only carrier.
+
+- **Delegate is no longer blue.** It was the accent, from when it was the Budget
+  page's own primary and the only loud thing on that screen. In the sidebar's
+  control zone it is one of two buttons 8px apart, and the blue one was the one
+  that moves a pay packet while the plain one below it is the one pressed daily.
+  Both are plain now; what is coloured there is a button reporting a state, and
+  Delegate has none.
+
+- **The band's header is read on the left and acted on from the right.** The
+  cycle stamp — the dates, the day, the percentage through — moves to the
+  header's left-hand track, and both controls sit together on the right in the
+  order they are decided in, so **Show selected / Show all** is the last thing on
+  the line at every width. The stamp sat between the two controls before, which
+  put a reading inside a row of things to press and left neither control able to
+  hold a position.
+
+  On a phone the two controls stack instead, tabs on top, both hard right, with
+  the reading keeping the left. Together they are about 330px, which is the whole
+  of the screen.
+
+- **"Select Delegations"** replaces "Choose which delegations show", under the
+  band and on the dialog it opens. It names the act rather than describing the
+  dialog's contents, and it was long enough on a phone to wrap under the table it
+  belongs to.
+
+### Removed
+
+- **Arrange is gone from Overview on a phone.** Every tile is full width below
+  `sm` and the band above them is pinned, so the only thing left to arrange there
+  is the order of a single column — for which the page was charging a button in
+  the header with the least room for one. What that frees, along with the alert
+  dot, gets **New…, the period picker and Delegate onto one line** above the
+  band. The arrangement is still the household's; it is edited on the machine
+  that can see the grid it describes.
+
+## [0.72.0] — 2026-09-11
+
+### Changed
+
+- **The budget is the first block of Overview**, full width and pinned above the
+  tiles ([ADR 062](docs/decisions/062-the-budget-is-the-first-block-of-overview.md)).
+  It was docked down the right in a 398px column and it was a _reading_: a chosen
+  handful of lines, a pace bar each, and nothing to act on — so every review that
+  found an overspent line ended on another page.
+
+  It is the Budget page's own table now. Editing Remaining and To delegate in
+  place, the row menu, dragging a line within a grouping or into another one,
+  reordering groupings, folding them, closing the reading against a line,
+  confirming a cheque the bank appears to have cashed — all of it, on Overview.
+
+  The width is what made that possible rather than a preference: two money
+  columns and a name you can recognise do not fit in 398px, which is what
+  v0.60.0 measured when three of them were cut to one.
+
+  **One table, not two.** `DelegationsTable` is the delegations table and
+  everything that can be done to a line in it, and both surfaces render it. They
+  differ in two props — a pace bar, and a narrowing to the chosen lines — because
+  two renderings of one budget is how two screens come to disagree about it.
+
+- **Show selected / Show all**, at the right-hand end of the band's bar. The
+  scope is in the URL, so it survives leaving the page and can be linked to, and
+  it opens on the chosen lines every time rather than remembering: the point of
+  choosing a few is that the daily open is short.
+
+  **Selected is a flat list.** Eight watched lines cut into six headed sections
+  spends more of the band on saying where a line lives than on what is in it, and
+  the reader chose them one at a time. Each row keeps its grouping's colour,
+  because the tint is how a line is found in a column.
+
+- **Accounts and Debts are one tab**, with **Accounts first** and a
+  `With balance / All` switch. They are read together — what there is, and what
+  is owed against it — and some cards genuinely hold nothing some of the time,
+  which a list that hides them silently makes somebody go looking for.
+
+- **On a phone, Overview is the band and nothing else.** It is the screen this
+  household reads most and acts on least, and a dashboard of charts beneath it is
+  a scroll past the only thing anybody opened it for. The tiles are still
+  arranged, still stored, and still there on a laptop. The four-way phone view
+  control is gone with the docked panel it belonged to.
+
+- **One region.** `region` was `main` or `sidebar`, and `sidebar` meant the single
+  column under the docked panel; there is no right-hand column now. The column
+  stays in the database and is still read, so an arrangement made before this
+  opens with every tile it had — anything parked in the sidebar comes back as a
+  row of its own — and the next save writes them all back as `main`.
+
+- **The demo moved with it**, since it draws the same pages from invented
+  figures: one grid, no sidebar region, and a chosen set for the band to open on.
+
+### Fixed
+
+- **`/api/overview` computes this cycle's spending for every line**, not only the
+  chosen ones. A selection that filtered the figures would have left the pace
+  bars missing on the one view that shows the most of them; it travels beside the
+  figures now and decides what is drawn rather than what is computed.
+
+## [0.71.0] — 2026-09-11
+
+### Changed
+
+- **Every page is a page of tiles.** There were three implementations of one box
+  — Overview's tile, Settings' card, and a bordered `<section>` five files wrote
+  out by hand — at two paddings, two heading sizes and two places for the
+  description. And two grids: Settings counted in sixths, Overview in twelfths,
+  so `span="half"` meant two different widths depending which file you were in.
+  There is one `Tile`, one twelve-column grid at 24px, and one header shape,
+  which is `PageHeader`'s. The Budget page's tables, the register, and the
+  duplicate and pair panels are on it too.
+  See [ADR 061](docs/decisions/061-every-page-is-a-page-of-tiles.md).
+
+- **Recurring shows Due and Cost at once**, two-thirds and a third, instead of
+  two views behind a switch. Neither answer is in the other, so the switch made
+  somebody press it to find out which half they had wanted — and the page could
+  only ever say half of what it knows. Both old addresses still land on it;
+  `?view=cost` is gone with the control it selected.
+
+- **The Cost half is two tiles of rows** rather than a grid of one card per
+  utility, which put the third utility below the fold. The per-cycle comparison
+  is one tile and twelve months with the monthly average is the other, in the
+  same dense rows "Spending by grouping" and "Coming up" use. Every figure still
+  names its unit: the tile's heading carries it for a column, and a row's hover
+  text carries both where a row has two.
+
+- **The Due half stops counting itself.** "10 recurring, 1 overdue." was a fact
+  about how long the household has been running rather than about the list
+  somebody came to work through — the same argument that took "494 transactions"
+  off the register. The overdue pill still says it, away from the page, which is
+  where saying it is useful.
+
+- **Hidden bills moved to Settings → Budget**, and the fold at the foot of
+  Recurring is gone. The card's description says the thing somebody actually
+  wants to know — **their charges stay in the register** — and so does the row
+  menu that hides one. Nothing is archived by hiding a bill: `bill_overrides`
+  holds a refusal keyed on the merchant and touches no transaction.
+
+- **Every dialog is `Modal`.** Transfer was the last hand-rolled overlay from
+  before ADR 038, and the Delegate and Undo confirmations moved into the sidebar
+  in 0.70.0 carrying a new one. On a phone all three were centred cards rather
+  than sheets and were measured against the window rather than the visible
+  rectangle — which put Transfer's amount field and its confirm button underneath
+  the software keyboard. Escape closes all of them now, and the backdrop closes
+  the two that are only a reading.
+
+  The confirmations were hand-rolled on the reasoning that neither holds a typed
+  figure. That is an argument for `dismissible` rather than for a second frame,
+  and it matters most there of anywhere: Delegate sits in the page header on a
+  phone, so the confirmation a small screen reaches most easily is **Undo
+  Delegation** — the destructive one.
+
+### Fixed
+
+- **The Rules page starts where every other page does.** It wrapped `PageHeader`
+  — which owns the 24px step so that no caller has to — in a column with a gap of
+  its own, so its tile began 48px below the title while Overview's began 24px
+  below. Invisible on that page alone.
+
+- **A row's `⋯` and its "Move surplus here" appear on that row alone.** The tile
+  shell carried a bare `group` class, which is the same group the table rows use
+  — so hovering anywhere over the budget drew the absorb button on every line at
+  once, and a press into the register's search box revealed fifty row menus.
+  Every test passed through it: the controls were always in the DOM, and only
+  when they appear changed.
+
+- **Widths inside a tile ask how wide the tile is**, not how wide the window is.
+  The bills and register tables and the Overview figures band were still asking
+  the window, which stopped being the same question in v0.49 when a tile stopped
+  being the whole row.
+
+- **Four more rules in the gate**, one per defect above: one tile surface, one
+  dialog implementation, no doubled step under a page title, and container
+  queries for widths. `ui-system.md` §1 is corrected with them — it recorded the
+  tile-to-tile step as 12px while both grids had been drawn at 24 since v0.59.
+
+## [0.70.0] — 2026-09-11
+
+### Changed
+
+- **Delegate is in the sidebar now, directly above Sync SimpleFIN**
+  ([ADR 061](docs/decisions/060-the-sidebar-holds-the-acts-on-the-household.md)).
+  It was the Budget page's primary button, which was right while Budget was the
+  only screen it could be pressed from — and the figure that says whether to
+  press it has been at the foot of the sidebar, on every screen, since v0.69.0.
+  The button belongs under the reading it acts on.
+
+  The undo offer goes with it, in the same slot and with the same rule: while a
+  run can still be taken back there is nothing sensible to delegate. What was
+  delegated is said under the button instead of in the Budget page's subtitle,
+  and the offer is now visible from the register, which is where a wrong press
+  actually gets noticed.
+
+  **Undo Delegation asks before it acts**, which it never did. Delegate always
+  confirmed; undo fired on the press. Two full-width buttons 8px apart, the upper
+  one distributing a pay packet, is not a place for a control that acts
+  immediately — and an accidental undo empties every line a run touched.
+
+  Below `sm` both fall back to the page header, the same way the alerts already
+  do: a phone has no sidebar, and the act this application is named for must not
+  go missing from the small screen.
+
+- **The Sync button is the sync status.** The caption under it is gone —
+  "Synced 12m ago" is a figure nobody acts on, and "Last sync failed" was a
+  second line saying what a colour says on the control you would press about it.
+  A failing run turns the button yellow, with the bridge's own error one hover
+  away. Collapsed to the rail, that tooltip carries the button's name too, since
+  a glyph is all it otherwise has.
+
+- **The panel's summary band is gone.** To spend · Spent · Remaining was three
+  aggregates across the top of a 398px column. Every line still says what is left
+  in it, what it has spent is still on its bar's tooltip, and the budget's own
+  reading is in the sidebar on every screen.
+
+- **"Choose which delegations show" sits at the right of the panel**, with the
+  figures it belongs to, rather than under the left edge of a column whose
+  content is all right-aligned.
+
+- **"All bills" and "Choose which delegations show" lost their arrows.** They are
+  links; `.linkish` already says so in the accent. Two other links still carry
+  one — "Choose which figures show" and "Open Recurring" — and are left as they
+  were rather than swept up in a change that was not about them.
+
+## [0.69.0] — 2026-09-10
+
+### Changed
+
+- **One tag.** Chips, state tags and alert pills were four families that had
+  drifted into four objects — three radii, three sizes, two colour recipes. They
+  are all `Tag` now: fully rounded, a soft fill and the same hue for the text,
+  **no border**, in one of two sizes. The border was the one that mattered; it
+  was the single thing making an alert read as a different species rather than a
+  louder one. See [ADR 059](docs/decisions/059-one-tag.md).
+
+- **The alerts moved to the foot of the sidebar.** They were beside the page
+  title, where they were not facts about the page they sat on and pushed its own
+  controls around as they came and went. They now stand above the sync button,
+  ordered so the most urgent is lowest and **the budget's own reading is always
+  last** — so the reading you look for is in the same place whatever else the
+  application has to say. A long alert gives way rather than widening the
+  sidebar.
+
+  A phone has no sidebar, so below `sm` they stay in the header where they were.
+  The budget's reading is now on every screen rather than only on Budget.
+
+### Fixed
+
+- **The demo no longer falls through to the real budget.** `/api/budget` had no
+  demo answer — the fixture was written and never wired in — so a demo page
+  asking for it got the household's own figures. Nothing had asked until the
+  reading moved into the sidebar. The fixture is typed as the DTO now, which is
+  what had let it drift.
+
+## [0.68.3] — 2026-09-09
+
+### Fixed
+
+- **Figures sit on the right of their column.** Sharing one grid across a list
+  made the figure column as wide as the longest figure in it, and the shorter
+  ones then sat against its left edge — `$153.00` adrift under `$2,201.00`. Both
+  the figure and the share are flush right now, each in a column of its own.
+
+## [0.68.2] — 2026-09-09
+
+### Fixed
+
+- **The cashflow chart fits its tile.** It was drawn about fifty pixels taller
+  than the room it had at every size, so the bottom of the flow — usually a
+  whole destination — was clipped off. The scale came from the middle bar alone,
+  and each column then added its gaps and label floors on top of it; the scale
+  is fitted to the columns now, furniture included.
+
+  Dragged shorter, the chart gives way rather than overflowing: the gaps, the
+  label floors and the type all shrink together, and past a point it is a smear
+  rather than a chart. That is the trade — the whole flow inside the tile is
+  worth more than any part of it being readable.
+
+- **A column of percentages is a column.** Every row of a ranked bar carried its
+  own grid, so the width of that row's amount decided where its percentage
+  landed — `34%` and `6%` ended up eight pixels apart down the same tile. All
+  the tiles that draw ranked bars are affected, and all of them are fixed.
+
+- **All bills reads like the daily-outflow list.** The cadence and delegation
+  sat on a second line under each name, inside a row whose height is fixed — so
+  the second line overflowed it and struck the divider below. Across the row,
+  they fit.
+
+## [0.68.1] — 2026-09-09
+
+### Fixed
+
+- **The cashflow chart keeps its width when its row changes height.** Dragging
+  the row shorter used to shrink the whole drawing — a postage stamp between two
+  bands of white, in a tile that was exactly as wide as before. It is now laid
+  out _to_ the height it is given rather than scaled to fit, so the type stays
+  one size and a shorter row simply gives the flow less room.
+
+  Two attempts at that read the height back off the page, and both fed back: a
+  taller chart makes a taller box makes a taller chart. The height is a stored
+  number now — the one the household dragged — and nothing about the drawing can
+  change it. An end-to-end test drags the row and holds both facts at once: the
+  width identical, the height smaller.
+
+## [0.68.0] — 2026-09-09
+
+### Added
+
+- **A demo, at `/demo`.** The same pages drawing invented numbers, behind the
+  same sign-in as everything else — because it _is_ the application, and the
+  only thing that differs is where the figures come from. Eighteen months of
+  history, dated backwards from today, so it is current whenever it is shown.
+
+  No database, no second container, no configuration. The whole application
+  makes exactly one `fetch`, and on a demo page that one answers from a fixture
+  computed in the browser.
+
+### Fixed
+
+- **A day with money on it is never drawn as one that has not happened.** The
+  API cuts its day keys in the household's zone and the interface compared them
+  against the browser's — two clocks that can disagree by a day. A charge posted
+  in the evening could land on a cell drawn as "not yet" and disabled, so the day
+  somebody most wants to open was the one they could not.
+
+### Removed
+
+- **The demo's second instance**, added earlier the same day and never
+  deployed. It was a second container with its own database, its own migrations,
+  a seed, a Caddy gate and four environment variables — the right shape for a
+  demo the public can reach, and the wrong one for a demo behind the household's
+  own sign-in. That is a page, and a page needs data rather than a deployment.
+
+## [0.67.0] — 2026-09-09
+
+### Added
+
+- **A read-only demo instance, at `/demo`**
+  ([ADR 058](docs/decisions/058-the-demo-is-a-second-instance.md)). A second
+  container with its own database and the same image, so there is no query that
+  could reach the household's data — they are different processes. Behind a
+  `demo` profile: a household running Delegate for itself has no use for it.
+
+  Eighteen months of invented history, dated backwards from today so a demo
+  shown in March and one shown in July are both current. Built through the
+  domain's own functions and then backdated, so the ledger and the cached
+  balances agree because the application produced them. The nightly snapshots
+  are reconstructed by `fillGaps` from the ledger — the same code that repairs a
+  real household's missed nights.
+
+  It opens with the newest pay packet undelegated, because Delegate is the
+  action this application is named for and a demo that opens with the button
+  greyed out has to be explained rather than shown.
+
+  **Only signed-in members of the household can reach it.** Caddy asks
+  `/api/auth/gate` — behind the full authenticated chain — before forwarding
+  anything.
+
+### Fixed
+
+- **A ranked bar's figure is never what gets cut.** The name column was a flat
+  8rem, which is more than a third of a tile at three to a row on a laptop, so
+  the grid overflowed and the _amount_ was what got clipped — rows reading
+  "$1,91". The name truncates now and the bar keeps a floor of its own, because
+  a truncated name is still recognisable and a truncated figure is a wrong
+  number.
+
+## [0.66.0] — 2026-09-09
+
+### Changed
+
+- **One bar, everywhere.** A grey track with a 3px coloured bar inset inside it —
+  the budget panel's construction, which is the most-read list in the
+  application. The ranked bars on Overview drew their fill at the full height of
+  the track, so a bar and its remainder were two blocks meeting at a hard edge
+  and the eye read the _boundary_ rather than the length. It is written into
+  `ui-system.md` as the one idiom.
+
+- **Spending by grouping and Spending by delegation show each row's share**, and
+  every percentage lines up. They sit in a grid column of their own, fixed width
+  and right-aligned — beside the amount they moved with whatever that amount
+  happened to be wide, so 35% sat somewhere different from 3%. The column is
+  reserved only on the tiles that have one.
+
+- **The Cashflow chart has a floor as well as a cap.** It scales both dimensions
+  together, so shortening its row shrank the width too and left a postage stamp
+  between two bands of white. Below 280px the labels stop being readable, so it
+  holds that and the row scrolls instead.
+
+### Added
+
+- **The groundwork for a read-only demo instance**, inert unless a deployment
+  asks for it. `DELEGATE_DEMO` refuses every write before it reaches a route —
+  the method is the test rather than a list of endpoints, so a route added
+  tomorrow is already covered — and signs the visitor in without a session,
+  because there is no account to protect and nothing to change. `SESSION_COOKIE_NAME`
+  keeps a demo's cookie from colliding with a real instance's on the same host.
+
+  Off by default, and a test asserts that: the cost of getting it wrong is a
+  household unable to touch its own budget.
+
+## [0.65.0] — 2026-09-09
+
+### Changed
+
+- **Ranked bars are one line: name, bar, figure**, at the same 28px row the
+  budget panel uses. They were a name and a figure with the bar on a second line
+  beneath, so a tile showed five readings where it now shows nine. The bars
+  start at the same x down the column, which is what makes them comparable.
+
+- **The Allocation tile is ranked bars, and the donut is gone.** A donut answers
+  "what share" and nothing else — the legend beside it was already carrying
+  every figure anybody read, in a column half the tile wide, on a page where a
+  tile is a third of the width. The same rows as bars sort largest first without
+  a colour key. Each row keeps its share of the total as a small figure, because
+  the bars are scaled to the largest row rather than to the total.
+
+- **Both tile switches sit in their tile's header** — Allocation's beside
+  Cashflow's. In the body the control stretched to the tile's full width,
+  because a flex column stretches its children.
+
+- **The budget panel's tabs moved to the right of its header**, with the cycle
+  on the left. The tabs are the control, and controls sit where a control is
+  looked for.
+
+### Fixed
+
+- **A row dragged short fits its content instead of clipping it.** The tile's
+  body was what scrolled, which takes the whole tile with it — so the Cashflow
+  chart kept its full height and scrolled, the Allocation donut was cut in half,
+  and rows of the spending lists were simply gone. The body holds the tile's
+  shape now: a chart scales to the room it is given and a list scrolls in place,
+  one scrollbar per overflow instead of two.
+
+  The Cashflow chart's cap was written as `max-height: min(520px, 100%)`, which
+  silently lost the cap — a `min()` containing an indefinite percentage is
+  itself indefinite. `height: 100%` with a plain pixel cap covers both cases.
+
+## [0.64.0] — 2026-09-09
+
+### Added
+
+- **A row on Overview can be dragged to its own height.** The bottom edge of any
+  tile in a row resizes the whole row, and the arrows do it from the keyboard
+  since dragging is not reachable that way. Stored on every tile in the row,
+  because a row is not a record — it is a number two or three tiles share — and
+  read back as the largest of them, so a row whose members disagree is still a
+  row. A tile moved to another row leaves the height behind: heights belong to
+  rows.
+
+- **An Outstanding checks tile** — number, what it was for, and the amount. A
+  check is money that has left the budget but not the bank, so it is the one
+  figure a statement and this application legitimately disagree about, and the
+  disagreement is exactly that list.
+
+### Changed
+
+- **Overview steps down from three tiles to two to one** as the window narrows,
+  rather than holding three until it hits a phone. A tile that keeps a third of
+  the width on a laptop is 300px of ranked bars with the names truncated to
+  nothing, which is the floor the row cap is derived from.
+
+- **The Cashflow chart is capped at 520px tall.** It scales with its width and
+  the page got 400px wider, so the chart that fitted a screen at 1200px ran off
+  the bottom of one at 1600. A row dragged taller than that gives it the room.
+
+- **The allocation donut switches instantly**, and its readings are called
+  **Current** and **Delegations** with Current first. Both readings are computed
+  and sent together now — they are the same rows summed two ways — so switching
+  is local instead of a layout write and a recompute of the whole page, which
+  took about a second for a toggle. The old names said the idea rather than the
+  thing on screen; this budget calls those amounts delegations everywhere else.
+
+### Fixed
+
+- **Today no longer reads as a day that has not happened.** Both were an outline
+  — one accent, one grey — so on the row where today meets the future they were
+  two shades of one idiom. A border means "not yet"; today is a rule beneath its
+  own cell.
+
+- **A manual re-run of the publish workflow now tags the version it built.**
+  `docker/metadata-action` derives a version from `github.ref`, and on a
+  `workflow_dispatch` that is `refs/heads/main` however the checkout was
+  pointed — so every semver pattern matched nothing and the only tag pushed was
+  `latest`. The image was correct and signed and simply had no version on it,
+  which reads at the far end as `manifest unknown`: a deploy that looks like a
+  typo for a release that built fine.
+
+  The workflow has advertised that manual re-run since it was written, so it has
+  never worked; it went unnoticed because until now every release was published
+  by a tag push.
+
+### Changed
+
+- **The published image is `amd64` only.** arm64 was built under QEMU on an
+  x86_64 runner — compiling argon2 and Prisma emulated, at roughly fifteen
+  minutes against amd64's one — and on `v0.63.0` it stopped finishing at all,
+  hitting the workflow's 45-minute cap twice on a release that changed no
+  dependency.
+
+  Nobody was pulling it. The deployment this exists for is a Synology NAS, which is
+  x86_64, and an arm64 host builds from source — which is what
+  [ADR 019](docs/decisions/019-the-image-is-built-on-the-machine-that-runs-it.md)
+  describes and what the NAS itself did for twenty releases, so it is the
+  better-exercised of the two routes. Restoring it is one line plus
+  `setup-qemu-action`, and would want the timeout raised rather than left at 45.
+
+## [0.63.0] — 2026-09-09
+
+### Added
+
+- **One way to make a thing** ([ADR 057](docs/decisions/057-one-way-to-make-a-thing.md)).
+  `New …` in every page header, with transaction, transfer, check, delegation,
+  grouping and rule behind it. Seven create buttons over five screens are gone,
+  and so is the phone's `⋯` sheet that folded four of them away below a
+  breakpoint. The dialogs did not move — each still lives with the screen that
+  owns the thing it makes.
+
+  What a page keeps is anything that is not _creating_ a thing: Delegate,
+  Arrange, Run rules, and every row-level action.
+
+- **Overview starts on an arrangement rather than an empty page.** It is the
+  landing page now, so a blank screen with a button on it was the first thing
+  anybody saw. The default is the owner's own layout — where the money went
+  across the top, Cashflow on a row of its own, what is coming below it, and the
+  daily checks in the sidebar.
+
+  It is not stored for anybody, so a later default can reach a household that
+  has never arranged theirs. **Arranging Overview to nothing sticks**: a tile
+  removed on purpose does not come back, which needed the act to be recorded
+  rather than inferred from the absence of tiles.
+
+### Changed
+
+- **Pages are wider — 1600px, from 1200.** The old cap was set when every page
+  was a table and a column of cards; on a modern desktop it left a band of empty
+  surface down each side wider than the sidebar.
+
+- **Overview fits three tiles in a row**, from two. Arithmetic rather than
+  preference: a ranked bar with a name and a figure stops being readable at
+  about 300px, and a third of what is left beside the 398px panel is now about
+  390px.
+
+- **Links look like links.** `.linkish` was used in half a dozen places and
+  never defined, so those controls rendered as plain ink beside others that
+  spelled the accent out by hand — two controls doing the same job on one screen
+  in two colours. One definition now, and everything that reads as a link points
+  at it.
+
+- **The Cashflow chart no longer carries "Categorize what is left".** The way
+  into the queue is on "Waiting to be categorized", which is the tile whose
+  whole subject that is.
+
+- **A reading closes when you click outside it.** Dialogs that hold a typed
+  amount still do not — losing that to a stray click beside the card is worse
+  than one extra keypress — but a dialog that is only a reading has nothing to
+  lose.
+
+- **Daily outflow: a day lists only what went out.** Income and confirmed
+  transfers are not a day's spending, and listing them put a credit and a card
+  payment in a list headed by what went out, with a total that agreed with
+  neither. The rows are wider and read left to right now, and days that have not
+  happened yet are drawn as outlines rather than as days that cost nothing.
+
+- **"Open in the register" filters to that day**, through a `day` parameter in
+  the URL, instead of searching for the date as text.
+
+## [0.62.0] — 2026-09-09
+
+### Added
+
+- **Overview is the first destination and Budget the second**
+  ([ADR 056](docs/decisions/056-where-a-person-lands.md)). Overview is the daily
+  read and Budget is where the work happens, and the order is the order they are
+  used in.
+
+- **Where you land is yours to choose**, on Settings → Users beside your display
+  name. Per person and not per household: two people read this budget for
+  different reasons, so one setting would make one of them wrong every day. An
+  Admin cannot set it for somebody else.
+
+  Two choices, Overview and Budget, because a landing page answers a whole
+  question and those are the two that do. Never choosing is stored as null
+  rather than as the default, which is what lets the default move later without
+  overriding a decision somebody made.
+
+- **The root is a redirect, not a page.** `/` resolves to whichever page you
+  land on, and Budget has its own address at `/budget`. This is what a landing
+  preference needed: against a root that is already a page, a preference can
+  only ever redirect away from it.
+
+### Removed
+
+- **Insights.** Overview replaced it — the same catalogue, arranged per region
+  with per-tile configuration, a docked budget beside it, and its period in the
+  URL rather than in component state. `/insights` redirects to `/overview`. The
+  page, its routes and the tests that drove them went together;
+  `insight_layouts` stays in the database because dropping it would destroy an
+  arrangement somebody made.
+
+- **Recurring** — Bills and Utilities are one page with two views, Due and Cost
+  ([ADR 055](docs/decisions/055-bills-and-utilities-are-one-page.md)). They were
+  never redundant with each other: one watches whether a charge that should have
+  landed did, the other judges whether a line is funded at what it costs. What
+  they shared was shape — both derived from the register, both lists of the same
+  merchants — and **Electricity was on both of them**, described two ways. The
+  view is in the URL so it survives leaving the page, and `/bills` and
+  `/utilities` redirect to the half they named.
+
+- **Five recurring tiles on Overview.** Coming up, Needs a look, Recurring this
+  cycle, Which way they're going, and Worth adjusting. Two of them are exception
+  lists that are empty most weeks — a tile that is usually empty and
+  occasionally urgent is worth more of a dashboard than one that always says the
+  same thing.
+
+  A utility's trend compares the last twelve months against the twelve before,
+  not six against six: these bills are seasonal, and July's electricity against
+  January's is weather rather than a trend. A line without two years behind it
+  says it does not know instead of reporting a confident 0%.
+
+- **The bill tiles open every bill in the middle of the page**, rather than
+  linking away. Somebody reading "three bills need a look" wants the other
+  twenty in front of them, not a page change and a way back. Changing a bill is
+  still Recurring's job, and the dialog's footer goes there.
+
+- **Bills carry their grouping's colour**, so a bill on Overview is the same
+  colour as the money it comes out of is everywhere else.
+
+### Changed
+
+- **A drag starts on the grip and nowhere else.** The whole card used to be the
+  handle: a grab cursor over every figure in it, and a drag begun by any stray
+  press — on a chart, on a label somebody meant to select.
+
+- **A day on the Daily outflow band opens what was spent that day.** The band
+  says a Tuesday cost $412 and the next question is always which $412. The
+  window is resolved from a calendar day in the household's own zone by a new
+  `day` filter on the register, because the browser's zone is not necessarily
+  the household's and a window computed in the client would disagree with the
+  cell it was clicked from.
+
+## [0.61.0] — 2026-09-09
+
+### Changed
+
+- **The pace bar measures what the cycle had, and only overspending is red**
+  ([ADR 054](docs/decisions/054-the-pace-bar-measures-what-the-cycle-had.md),
+  amending 053 after the first version shipped and was used).
+
+  The track's first 80% is now one number — the delegation plus whatever surplus
+  or deficit carried in, which is what this line has to spend before the next
+  payday. The reserve zone is gone: two zones meant two scales, and at 8px tall
+  the same horizontal distance meaning different amounts on either side of a
+  boundary made a row harder to read rather than easier.
+
+  It is derived as `spent + balance` rather than assembled from
+  delegation-plus-carry-in, so it holds whether or not this cycle's press has
+  run yet.
+
+  **The tick travels 0–80% only**, so it lands at the same x on every row
+  whatever that row holds — one straight vertical down the column, which was the
+  owner's stated first priority.
+
+  **The 80–100% segment is overspending past everything the line had**, full at
+  a quarter over, and it is the only red on the bar. The fill keeps the
+  grouping's colour the whole way along the cycle zone, so a line that spent
+  more than its delegation but is still solvent stays its own colour. The first
+  version turned the whole bar red at once, which made two dollars over look
+  like two hundred and took away the colour somebody uses to find the row.
+
+  **The hover text states figures and never a verdict** — "$566 spent of $830 ·
+  $105 carried in". No "On pace", no "Out of money".
+
+  Remaining is unchanged: the line's actual balance, negative when the line is.
+
+- **The Cashflow chart's period moved into its header**, on the right where a
+  tile's own control is looked for — and the two lines saying what the chart is
+  ("Where the money went") and that it has its own period are gone. A control in
+  the corner says the second by being there. "All" went with them: on a
+  household with years of imported history it drew a chart on a scale nothing
+  else on the page shares.
+
+- **Every node on the Cashflow chart states its share of the flow**, so a
+  ribbon can be read against the whole rather than only against the ribbons
+  beside it. Anything under half a percent says `<1%` rather than `0%`.
+
+- **"Utilities against what they cost" is now "Utilities: Spent vs. Delegated".**
+  The tile was right and its name was not: it puts what a utility actually costs
+  per paycheck against what the line is funded at, and the old title said
+  neither half of that.
+
+- **Spending by delegation takes each line's grouping colour.** It was drawing
+  every bar in the accent, so a column of twenty lines was one colour while the
+  chart beside it — the same rows cut by grouping — was six.
+
+- **Tile headings sit on the tile's left edge.** The drag grip was an
+  `opacity-0` box that still took its width, indenting every title by a glyph
+  and a gap, so no heading lined up with the bars beneath it. It is out of the
+  flow now and still appears on hover.
+
+- **The budget panel is always there.** It collapsed to a button, per device;
+  the answer somebody opens this page for should not be behind one. The
+  keyboard-shortcut footer went with it, and the pay cycle moved up onto the tab
+  row — `Sep 1–Sep 14 · day 5 · 36% through` — where it qualifies all three
+  tabs instead of taking a band of its own. No "of 14": the cadence is a divisor
+  and the cycle's length falls out of the anchor.
+
+- **The panel's summary says "To spend" rather than "Budgeted".** Budgeted was
+  the sum of the amounts to delegate — what one press puts in, not what there is
+  — so on lines carrying surplus it came out _smaller_ than Remaining. It is now
+  what those lines had this cycle, the same figure the bars are drawn against,
+  and the three subtract: to spend, less spent, is remaining.
+
+- **Accounts with nothing in them are left out**, and the "Balances only ·
+  what the budget counts" footnote is gone.
+
+- **The Daily outflow band draws three months**, this one and the two before it,
+  on one shared scale — so the darkest cell anywhere is the worst day of the
+  quarter, wherever it falls. Columns are days of the month, so the 1st sits
+  over the 1st and a short month stops early rather than stretching. Every cell
+  says its own date and figure on hover.
+
+### Fixed
+
+- **The Daily outflow band was labelled a day early** — "Aug 31 – Sep 29" for
+  September. The API's day keys are UTC midnight standing for a local calendar
+  day, and formatting one through the browser's zone shifts it back a day
+  anywhere west of UTC. They are read as calendar parts now, and "today" is the
+  reader's own calendar day rather than the UTC one.
+
+- **A tile moved to the sidebar stays there across a reload.**
+  `GET /api/overview/layout` stored `region`, selected it, and re-flowed by it —
+  and then left it out of the response. Every reload therefore read the whole
+  layout back as `main` and emptied the sidebar. The drag worked and the write
+  landed; the read undid it, which is why nothing in the write path looked
+  wrong. No test covered `region` at all, and there are two now: the round trip,
+  and a layout stored before the sidebar existed.
+
+  The client's `OverviewTileDto` declares `region` as required, so the missing
+  field type-checked perfectly and arrived as `undefined` — a hand-written
+  response interface is a claim about the server, not a check on it.
+
+- **The empty sidebar has a drop target somebody can hit.** It was an 8px
+  sliver. It is a proper zone now, drawn only where a region has nothing in it —
+  a populated region needs none, because the top edge of its first tile is the
+  same drop.
+
+- **The sidebar and the main column start at the same height.** That 8px strip
+  reserved 32px above the main column and pushed every tile in it below the
+  panel beside them.
+
+- **Overview's header no longer counts its own tiles.** "9 tiles." was a
+  subtitle stating something the page below it already shows.
+
+## [0.60.0] — 2026-09-09
+
+### Added
+
+- **Account balance and Delegation balance**, the last two tiles from the
+  Insights catalogue. Each charts one thing over time and carries a picker to
+  say which — stored on the tile, like the cashflow period.
+
+  **The picker offers only things that have history**, so it can never point at
+  something that draws an empty box. On a household whose snapshots start at the
+  first night that means it offers nothing at all, and says so — a list of
+  everything would make choosing wrong the default. Until one is chosen the tile
+  draws nothing rather than picking on somebody's behalf.
+
+  `delegationSeries` is a lean read rather than the drill-down the Insights page
+  uses: that returns every line of a grouping with a burn rate apiece so a
+  three-level chart can be drawn through it, and fetching a quarter's history for
+  twenty-four delegations to show one of them is the waste this endpoint exists
+  to stop.
+
+- **Tiles can live in the sidebar.** The budget panel is pinned to the top right
+  and whatever tiles are dragged in sit beneath it, one to a row — it is about
+  400px wide, and two tiles across that is neither. A `region` column says which
+  side of the page a tile is on; every existing tile keeps the arrangement it
+  has.
+
+- **A drop can mean "a row of its own".** Four edges rather than two: left and
+  right join the row, top and bottom make a new one above or below. Quarters
+  vertically, because joining is the commoner act and deserves the larger
+  target. Before this there was no drag gesture for separating two tiles at all
+  — the only route was the ⤓ button inside Arrange.
+
+- **A strip above each region** takes a drop at the very top, which no tile's own
+  edge can reach. It reserves its 8px whether or not a drag is running:
+  appearing mid-drag pushed everything below it down by 32px at the moment
+  somebody picked a tile up, so the tile they were aiming at moved out from under
+  the pointer.
+
+### Changed
+
+- **The panel's rows are name, bar, remaining.** Spent-against-budgeted moved
+  onto the bar's own tooltip and rounds to the dollar there. Three money columns
+  on a 400px panel truncated names to about ten characters — `River Perso…`,
+  `Home Mainte…` — to make room for a pair of figures that is the bar's own
+  subject. What stays is the one figure somebody reads to decide anything.
+
+- **Budgeted, Spent, Remaining**, and each label sits over its own figure. They
+  were `Planned · Spent · Held`, left-aligned labels above right-aligned numbers,
+  which read as three pairs of unrelated things.
+
+- **`formatCents` can round to whole dollars.** Rounds rather than truncates —
+  $0.99 shown as $0 would understate every figure it touched — and stays in
+  integer arithmetic throughout.
+
+### Changed
+
+- **Daily outflow draws the calendar month**, not the pay cycle. It is the one
+  reading on this page that is not cycle-shaped, and deliberately so: everything
+  else answers "how am I doing against this cycle's plan", while this answers
+  "what did each day cost" — and days belong to months. Bills arrive on dates,
+  statements close on dates, and "the 1st was the big one" is how anybody
+  describes their own spending.
+
+  It was built cycle-shaped first, on the argument that one calendar-shaped
+  figure among cycle-shaped ones is the reading somebody has to remember is
+  different. The tile says which month it is drawing, so there is nothing to
+  remember. It also needs **no payday anchor**, which makes it the one
+  cycle-adjacent tile that works on a household that has never set one.
+
+  Its rollups moved under the band — total out, average per day, and the peak
+  day. The average is over the days **elapsed**, not the days in the month:
+  dividing a month's spending by thirty on the 8th reports a figure nobody has
+  spent at, reads as comfortably low all month, and corrects itself only on the
+  last day.
+
+- **The cashflow chart's income is two nodes, not a payer each**
+  ([ADR 052](docs/decisions/052-an-income-source-is-inferred-not-entered.md),
+  amended). `Income` and `Income (manual)`, grouped by where a row came from
+  rather than by what the bank called it.
+
+  Inferring a source per payer held right up to the moment real data was drawn: a
+  year of income produced a left column of bank strings —
+  `ACH Deposit 10001 BLUE SUN CORP PAYROLL 12345678` — about 420px of text in a
+  448px gap, with the same employer drawn **twice** because the rows typed during
+  the SimpleFIN outage carry their own prefix. Both were foreseen in that ADR and
+  judged acceptable; what it missed is that naming them is work with no end. A
+  bill recurs under one descriptor and is renamed once; a payroll descriptor
+  carries a reference number that changes.
+
+  **The second node is a signal rather than a category.** It says the figures are
+  part bank and part household — the same thing the `a` chip says on an account
+  row — and it disappears on its own once the feed catches up and those rows are
+  archived.
+
+### Fixed
+
+- **Uncategorized could vanish into `Other` on the cashflow chart.** It is the
+  one node there anybody can act on, and until it is worked every other figure on
+  the chart is wrong by whatever it holds — so rolling it up because it happened
+  to be small was precisely backwards. Found with $1,048 of a real year's
+  uncategorized income filed under `Other (8)`.
+
+- **Long node names ran across the ribbons.** Truncated with the whole name on
+  hover, the way the register handles a bank description.
+
+- **Rearranging tiles silently deleted the chosen delegations.** The panel's
+  layout row is filtered out of the grid because the panel draws it, and every
+  arrange operation wrote the grid back without it. Nothing failed and nothing
+  said so, which is the worst kind of data loss. The panel's row is carried
+  through explicitly now.
+
+- **The backlog counted work nobody could do.** `buildBacklog` filtered
+  uncategorized rows by kind but not by `account.inBudget`, so it counted charges
+  on off-budget accounts — which
+  [ADR 050](docs/decisions/050-the-budget-boundary-is-a-wall.md) makes
+  impossible to categorize. The tile read 5 against a queue showing none, and the
+  same figure feeds the notification pill, so it was wrong in two places. The
+  queue's own filter has had this since ADR 050; this is the sibling that never
+  got it.
+
+- **A drag test could hang for its whole timeout rather than fail.** The tile
+  headings appear as soon as a tile is added; the bodies arrive with the next
+  fetch and change the tile's height when they do, so measuring a box before that
+  landed gave the drag a target that moved out from under the pointer —
+  Playwright waits on that until the test times out. The tests assert both bodies
+  are present first, which is the suite's own rule: after an action that triggers
+  a write, assert on the resulting state before the next action.
+
+- **The test settings row is reset from the schema's defaults** rather than by
+  listing every column. That row is pinned and survives the truncate, and a
+  column left off the list leaked from one test into the next — the pay cadence
+  once, the recurring-alerts flag once, and the payday anchor a third time. A
+  column added tomorrow is now reset without anybody remembering.
+
+## [0.59.1] — 2026-09-09
+
+### Fixed
+
+- **No arrangement could be saved on a layout made before v0.59.** Rows of four
+  were valid until the budget panel took the right of the page and the cap
+  dropped to two. Those layouts still existed, and every save of one was refused
+  for a position the grid no longer allows — including the delegation picker,
+  which re-sends the whole arrangement to change one thing. The page rendered
+  correctly and nothing on it could be changed, which is the worst of the two.
+
+  **A stored arrangement outlives the rule that shaped it**, and that is the
+  lesson rather than the cap. The layout is re-flowed on read now — a row of four
+  becomes two rows of two, in the order they were in, so the arrangement is
+  narrowed rather than reshuffled. Done on read rather than as a migration for
+  the same reason an unrecognised widget key is filtered there: the cap belongs
+  to the interface and may move again, and a migration would only fix the layouts
+  that existed on the day it ran.
+
+- **The budget panel listed accounts the budget does not count.** `in_budget`
+  decides which accounts the identity sums, and
+  [ADR 050](docs/decisions/050-the-budget-boundary-is-a-wall.md) made that a wall
+  after three places crossed it. This panel is the budget's and now stands on the
+  same side: a property and a retirement account are net worth rather than money
+  this budget can allocate, and listing them put $350,000 of house into a column
+  headed by what the household can spend.
+
+  Nothing is hidden — the composition tile beside it is net worth's own reading
+  and shows a property at equity, which is the figure design.md specifies. The
+  panel's total says what it counted rather than leaving it to be inferred.
+
+## [0.59.0] — 2026-09-08
+
+### Added
+
+- **Overview is a dashboard with the budget docked beside it.** The owner brought
+  a full visual specification; this is it reconciled with what Delegate already
+  is, and the reasoning is in
+  [ADR 053](docs/decisions/053-a-pace-bar-reads-two-marks-not-one.md).
+
+- **A pay cycle has dates.** `pay_cadence` was a divisor and stays one — money
+  still moves on Delegate presses, and nothing is scheduled by a date. One anchor
+  (`next_payday_on`) generates every boundary around it, which is what lets a bar
+  say whether a line is being spent faster than time is passing. **No anchor
+  means no tick**, never a default: a marker drawn from a guessed schedule is
+  confidently wrong, and every reading beside it is judged against it.
+
+  Semi-monthly is approximate and says so. Twenty-four paydays a year is exactly
+  two a month, so it cannot be a fixed day-count; a household paid on the 1st and
+  15th sees its second boundary land a day late.
+
+- **The pace bar.** Track split at a fixed 75% — this cycle's plan left, reserve
+  right — with the fill counting up from the left and a tick showing how far
+  through the cycle the household is. The split does not move, because the tick
+  has to read as one straight vertical down the column. **Red is a negative
+  balance**, never spent-exceeds-plan: in an envelope budget that is ordinary and
+  often correct.
+
+- **The budget panel**, docked right with three tabs — Delegations, Accounts,
+  Debts — keys 1–3, collapsible per device. On a phone the tabs are promoted onto
+  the page and Overview becomes the fourth. The Delegations tile retires into it:
+  one selection, one place, no way for two lists on one screen to disagree.
+
+- **Five new tiles.** A figures band (one tile, four slots, seven things they can
+  hold), daily outflow, in-against-out, an allocation donut that switches between
+  the plan and the position, and Upcoming from Bills. All cycle-shaped rather
+  than calendar-shaped: every figure here is measured from payday, and one
+  month-shaped reading among them would be the one somebody has to remember is
+  different.
+
+### Changed
+
+- **A row holds two tiles, not four.** The cap was arithmetic and the arithmetic
+  moved when the panel took 400px of the page.
+
+- **The spacing scale is five values**: 4, 8, 12, 16, 24. Twelve was added
+  deliberately, with the gate changed rather than worked around — a dashboard of
+  small cards has a real gap between _inside a card_ and _between blocks_. 32 was
+  proposed alongside it and left out, because 24 already separates sections.
+
+- **Two new tokens.** `--text-micro` at 10px for a tracked uppercase label above
+  a figure. And `--color-axis`: the design proposed a third text tone at
+  `#a9a6a0`, which measures about 2.4:1 and clears neither the 4.5 AA asks of
+  text nor the 3 it asks of non-text boundaries — this is that idea darkened
+  until it clears 3:1, restricted to marks a chart could be read without, and
+  measured in both palettes.
+
+- **Two palettes, not six.** Light and Dark, plus System, which follows the
+  device. **Ledger, Reading light and High contrast are removed** at the owner's
+  direction — the interface's look is settled by this project's own system, and a
+  palette nobody uses is one every future colour still has to be measured
+  against. That cost is paid on every change, by everybody, for a theme chosen by
+  nobody.
+
+  [ADR 048](docs/decisions/048-a-theme-is-a-palette-that-is-measured.md) is
+  **amended, not reversed**: a theme is still a token swap and nothing else, and
+  every palette that ships is still measured — there are simply two of them.
+
+  **No migration was needed.** `theme.ts` already fell back to the default for a
+  stored value it did not recognise, so a device sitting on Ledger lands on
+  System by a rule that was already there.
+
+  **One consequence is worth knowing rather than discovering.** The six sub-AA
+  pairs in the Light palette were accepted on 2026-09-02 partly because High
+  contrast cleared every bar and was there for anyone who needed more. It is
+  gone, so those six now stand on their own. They are recorded at their existing
+  values rather than quietly adjusted — changing a settled specification as a
+  side effect of deleting a theme is the drift ADR 048 exists to catch — and
+  whether to tighten them is now an open question rather than a closed one.
+
+  `--font-sans` and `--tracking-label` stay as tokens even though both palettes
+  set them the same. They were introduced for Ledger, which swapped the typeface;
+  what they buy — one place to change a face or a tracking value — is worth
+  having whether or not a second palette uses it.
+
+### Fixed
+
+- `docs/handoff.md` said the NAS was on `v0.55.1`. It is on `v0.58.0`. That file
+  is explicit that a stale version line is its own kind of problem.
+
+- **The Arrange picker drew each preview inside a `<button>`**, and one preview
+  contains a segmented control — also a button. A button inside a button is
+  invalid HTML: the parser hoists the inner one out of its ancestor and tears
+  apart the structure around it, which made headings elsewhere on the page
+  disappear. Shipped in v0.58.
+
+  `pointer-events-none` and `aria-hidden` were already on that preview and
+  neither helped — they stop it being _used_ and say nothing about the markup.
+  Fixed twice over: a preview now builds no interactive elements at all, and the
+  card is a div with its own Add control.
+
+- **A test-isolation leak in `resetDatabase`.** `budget_settings` survives the
+  truncate and is reset column by column, so `next_payday_on` leaked from
+  whichever test set it into every test after it. The helper's own comment
+  describes exactly this failure; the column is now in the list.
+
+## [0.58.0] — 2026-09-08
+
+### Added
+
+- **The Delegations tile, and its picker on the tile itself.** It shows the lines
+  somebody chose — Remaining as the hero, To delegate quiet — and the choice is
+  made in a dialog opened from the tile rather than in Settings.
+
+  **The dialog is a 1:1 mirror of the Budget page because it reads the same
+  data.** `GET /api/budget` already returns delegations grouped and ordered
+  exactly as that page draws them, and the tile shares its query key, so the
+  mirror is a property of where the figures come from rather than a claim two
+  orderings have to keep agreeing about. That matters here: the owner's
+  groupings are named "3 - Food" and "5 - Home" because ordering was the thing
+  missing before positions existed, and a picker that quietly sorted
+  alphabetically would undo a deliberate arrangement.
+
+  On the tile rather than in Settings also sidesteps a real permission problem:
+  household settings are administrator-only, so a shared setting would be one a
+  `user` account could not change.
+
+- **`overview_tiles.config`** — what a tile has been told about itself. JSON,
+  because the shape genuinely differs per tile and a table carrying
+  `delegation_ids`, `account_id` and a dozen nulls describes the union of every
+  tile rather than any one of them. Validated per tile key at the HTTP edge:
+  "differs" is not "anything", and a column that stores whatever arrives is one
+  whose every reader has to defend itself.
+
+  Null means nothing configured, which is not the same as an empty selection —
+  one invites a choice and the other is a choice.
+
+- **Cashflow: where the money came from and where it went**
+  ([ADR 052](docs/decisions/052-an-income-source-is-inferred-not-entered.md)).
+  Sources on the left, groupings on the right, one total between.
+
+  **The left-hand side had no stored answer.** Income allocates to nothing by
+  design — "waiting to be categorized" means waiting for a decision, and income
+  has none — so sources are **inferred**, grouped by `merchantKey` and named by
+  the newest transaction's own description. Deliberately the machinery bills
+  already use rather than a fifth idea of what makes two rows the same payer.
+  A source first appears as whatever the bank's descriptor says, which is the
+  honest starting point: naming it is a correction somebody makes, not a guess
+  this makes.
+
+  **Uncategorized appears on both sides and is not filler.** A deposit nobody has
+  marked as income and a charge nobody has filed are both real money moving
+  through; drawing them in a neutral grey would say the household spends a third
+  of its income on something called "Uncategorized". They take the warning tone,
+  and the tile links to the queue — until they are worked, every other figure on
+  the chart is wrong by that much.
+
+  **Anything under 1% of the flow rolls into `Other`**, named on hover. A ribbon
+  half a pixel tall cannot carry a label, and in the chart this was modelled on
+  its label sits on top of the two above it. Every node also gets a minimum
+  labelling _slot_: the ribbon's thickness stays proportional, and only the space
+  between nodes grows.
+
+  **The surplus is the remainder, never measured separately.** A Sankey whose
+  sides do not sum to the same figure cannot be drawn.
+
+  **It carries its own period**, defaulting to year-to-date, because it answers
+  "where did it go" at a different cadence from the figures around it. A
+  fortnight of cashflow is mostly one paycheck and one rent payment.
+
+### Fixed
+
+- **A tile's stored configuration did not survive being changed.** The figures
+  were refetched alongside the layout write rather than after it, so
+  `GET /api/overview` — which reads the stored layout to decide what to compute
+  — read the old configuration and returned the old period. It looked right
+  until a reload. **This is the second time that shape has appeared**: the first
+  drew a newly added tile empty. The refetch now compares configurations as well
+  as tile keys, and runs only on success.
+
+## [0.57.0] — 2026-09-08
+
+### Added
+
+- **Batch C: the small tiles.** Over-spent lines, this cycle's surplus, income
+  against spending, change per cycle, 30-day momentum, and what each line burns.
+  Mostly a single figure and the sentence that says what to do about it — the
+  tiles that make Overview a daily read rather than a weekly one, because a
+  chart answers "what happened" and a number answers "can I spend".
+
+  **Burn rate counts only what a line spends, never what refills it.** A
+  delegation is topped up every Delegate press, so netting the rises against the
+  falls would report a line funded exactly as fast as it is spent as burning
+  nothing at all — true of almost every healthy envelope and useless as an
+  answer.
+
+- **`text-figure`**, 24px: a tile's single number. The same size as a page title
+  and deliberately not larger — a dashboard where every tile shouts louder than
+  the page it sits on has spent the last of its hierarchy. A separate token from
+  `--text-page` because `ui-system.test.ts` holds that one to `PageHeader`
+  alone, and that rule is worth keeping.
+
+### Changed
+
+- **Tiles form rows, and a row divides its width evenly among its members.** One
+  tile is full width, two are halves, three thirds, four quarters. Dropping a
+  tile beside another puts them in the same row; the widths follow.
+
+  This **replaces the per-tile `span`** that shipped in v0.56.0. That vocabulary
+  — `third`, `half`, `two-thirds`, `full` — was `SettingsCard`'s, and borrowing
+  it was right for a page of independent cards and wrong for a dashboard: it
+  cannot express _these three share a row_. Two tiles each declaring `half` only
+  look like a row by coincidence, and inserting a third between them produces an
+  arrangement nobody asked for. The grid is **twelve** columns now rather than
+  six, because twelve divides by 1, 2, 3 and 4 with nothing left over.
+
+  Every existing tile is backfilled onto a row of its own, which is exactly what
+  a page of full-width tiles already looked like — so nothing rearranges on
+  upgrade.
+
+  **Dragging works on the page itself**, not only inside Arrange, on pointer
+  devices — a grip appears on hover to say the tile can be pulled, because
+  `design.md` is explicit that a card which moves when dragged with nothing to
+  suggest it would is a surprise rather than a feature.
+
+  **And it is never the only route.** Inside Arrange, ⤒ joins the row above, ⤓
+  takes a row of its own, and ◂ ▸ move along the reading order — the routes that
+  work from a keyboard and under a thumb.
+
+- **The Arrange panel draws each tile instead of naming it**, using the
+  household's own figures. A picker listing six titles as words asks people to
+  choose between things they cannot see. This needed a named exception:
+  `GET /api/overview` computes only the tiles somebody already has, which is
+  precisely what makes it unable to show them one they do not — so
+  `GET /api/overview/preview` computes the whole catalogue, and is requested
+  only while Arrange is open.
+
+### Fixed
+
+- **The page said it was empty twice.** The subtitle and the empty state both
+  read `No tiles yet.` — the text budget broken in the plainest way, and visible
+  in the first screenshot of the page in real use. The subtitle now states a
+  fact the body does not.
+
+- **Overview's time-series batch: seven tiles on one chart.** Net worth, assets
+  against debts, identity drift, what net worth is made of, Bitcoin over time,
+  home equity and debt trajectory. `TimeSeries` keeps ADR 035's three rules —
+  an estimated stretch draws dashed and muted with the reason on hover, today is
+  a hollow marker on a dashed final segment because no night has recorded it
+  yet, and a tile with no history says so in a sentence rather than drawing an
+  axis through nothing.
+
+  SVG here rather than the boxes `RankedBars` uses, and the split is not
+  arbitrary: a ranked bar is a row of text and a filled rectangle, which HTML
+  lays out and hands to a screen reader correctly, while a line through time is
+  not expressible in boxes at all. The figures are repeated as text under every
+  chart, because a value carried only by a line's shape is carried to nobody.
+
+- **One aggregate series feeds three tiles, and one composition series feeds
+  two.** Every field net worth, assets-against-debts and identity drift need is
+  on every stored point, so the series is computed once per request rather than
+  once per tile — and not at all when none of them is on the page.
+
+### Fixed
+
+- **"Cycle" showed the entire history when no Delegate run existed.**
+  `rangeStart` returned `Date | null` and every one of its six callers wrote
+  `start ? { gte: start } : {}`, so a household that had never pressed Delegate
+  saw every stored day under Cycle instead of nothing.
+
+  **This is the sibling of a distinction already written down.** `windowStart`
+  was given three outcomes — `since`, `all`, `no_cycle` — precisely because
+  "everything stored" and "there is no cycle yet" are different answers that a
+  null cannot tell apart, and one should show every row while the other shows
+  none. That reasoning was recorded against `windowStart` and never carried
+  across to `rangeStart`, which is the shape of mistake this project keeps
+  meeting: a lesson recorded against the feature that taught it only ever fixes
+  that feature.
+
+  `rangeStart` now returns the same three outcomes, and each of the six callers
+  answers `no_cycle` for itself rather than through a shared clause — "show
+  nothing" is a different return value in every one of them, and a `where` that
+  matched no rows would quietly look like an empty history. Verified against the
+  previous build, where the regression test reports seven days instead of none.
+
+## [0.56.0] — 2026-09-08
+
+### Added
+
+- **Overview's first batch of tiles: everything drawn as a ranked bar.**
+  Spending by grouping, spending by delegation, what it is all made of,
+  utilities against what they cost, and what moved. Batched by **what has to be
+  drawn rather than by subject**, so the primitive is built once and every tile
+  that needs it gets it — Insights drew five versions of one picture, which is
+  how one chart came to have three ways of showing a figure and two ideas about
+  where the label goes.
+
+  `RankedBars` is HTML rather than inline SVG, deliberately. A ranked bar is a
+  row of text and a filled box; the browser already lays that out, truncates it
+  and hands it to a screen reader correctly, and an SVG version would
+  reimplement all three. `SnapshotChart` is SVG because a line through time is
+  not expressible in boxes — this is.
+
+  Two rules the family follows. **The bar is scaled to the largest row, never to
+  the total**, or every row on a page with one dominant line is a stub against a
+  rail of empty space. And **the figure is always text**: the track is
+  `aria-hidden`, so a value conveyed only by length would be conveyed to nobody.
+
+- **What moved reads the nightly snapshots, and reads them leanly.** It is last
+  balance minus first **within the window**, not against today. Deliberately not
+  the drill-down the Insights page uses — that returns a full point series per
+  delegation so a chart can be drawn through it, and fetching a quarter of daily
+  history to display one difference is the waste this endpoint exists to stop.
+
+  A line with **no snapshot in the window is left out rather than reported as
+  zero**: no movement and no evidence are different answers, and only one of
+  them is a fact. Ranked by _size_ of movement rather than signed, because a
+  line that emptied by $400 is as interesting as one that filled by $400 and
+  sorting signed buries every emptied line at the bottom — which is the half
+  somebody is usually looking for.
+
+- **`net_worth_composition` moves to the time-series batch.** It is named like a
+  composition and is drawn as a stacked area over dates, so by this project's
+  own batching rule it belongs with the snapshot series rather than here.
+
+- **Overview, the dashboard that will replace Insights — the spine of it.**
+  Reachable at `/overview` and **deliberately absent from the sidebar**: the
+  twenty-one tiles are ported in batches, and this way the page can be used
+  against real data through the whole build rather than only at the end of it.
+  The release that puts it in the navigation is the release that removes
+  Insights.
+
+  A tile states a width for the desktop grid — `third`, `half`, `two-thirds`,
+  `full` — and is always full width on a phone. That is **`SettingsCard`'s
+  vocabulary rather than a second scale**, deliberately: `ui-system.md` §11
+  already records that a field's `width` and a card's `span` were nearly given
+  one name, and two vocabularies under one idea is a trap for whoever reads it
+  next. Because the width belongs to the grid rather than to the tile, **one
+  stored arrangement serves both screens** — rearranging on a phone rearranges
+  the laptop too, and there is only ever one thing to keep in step.
+
+  Arranging is optimistic, and nothing else here would be: moving a tile moves
+  rows, and `design.md`'s rule is that those can be optimistic while a change
+  that moves money cannot. A failure puts the arrangement back and says so.
+
+- **`GET /api/overview` computes only the tiles the person actually has.** The
+  page this replaces asks `GET /api/insights`, which runs **seven builders on
+  every request** whether or not the caller has the widget they feed — and again
+  on every change of the time window. That is most of why Insights feels slow,
+  and no amount of redesign would have fixed it, because it was never a
+  rendering problem. The endpoint reads the caller's own layout server-side
+  rather than being told what to fetch, so the layout is the one source of truth
+  for what gets computed and a page of two tiles cannot pay for twenty-one.
+
+  An absent key means "not on the page" and is kept distinct from a key present
+  with nothing in it — the first draws nothing, the second draws its empty
+  state. Collapsing the two would put `Nothing categorized in this window.` on a
+  page that was never asked to show spending.
+
+- **The period is in the URL.** Insights kept its window in component state, so
+  it reset to thirty days every time somebody left the page — including when
+  they left it by pressing one of its own tiles. It survives navigation, the
+  back button and a reload now, and a particular view can be linked to. The
+  default is **the cycle**, which is Delegate's own unit of time.
+
+- `overview_tiles` is its own table rather than three columns on
+  `insight_layouts`, and the reason is the transition rather than the shape.
+  Both pages exist while the tiles are ported, and one shared table would mean
+  adding a tile on Insights silently added it to Overview — two pages editing
+  one list, each unaware of the other. `insight_layouts` goes when the Insights
+  page does.
+
+- Two tiles to prove the spine end to end: **Spending by grouping** (ranked bars
+  in each grouping's own colour) and **Waiting to be categorized**. The rest
+  arrive in batches, grouped by what has to be drawn rather than by subject.
+
+### Fixed
+
+- **A refused layout no longer fails silently.** The save returns a 200 with
+  `ok: false` when it refuses a tile or a width, which was indistinguishable
+  from success on the client: the optimistic arrangement stayed on screen, the
+  server kept the old one, and the two only disagreed after a reload.
+
+- **Every tile control names the tile it acts on.** A grid of tiles each
+  carrying `Move earlier` gives a screen reader a column of identical names with
+  nothing to tell them apart — and the arrows are glyphs, so the accessible name
+  is the only name there is. `Remove Assets and debts` is the convention
+  Insights already uses. Found by an end-to-end test refusing an ambiguous
+  locator, which is the same thing a person using a screen reader would have
+  hit.
+
+- **Adding a tile no longer draws it empty.** Because `GET /api/overview` reads
+  the stored layout to decide what to compute, refetching the figures alongside
+  the layout write read the _old_ layout and came back without the tile that had
+  just been added. The refetch waits for the write to land, and only happens
+  when the set of tiles changed — reordering and resizing invalidate nothing,
+  because no figure on the page can differ because a tile moved.
+
+## [0.55.1] — 2026-09-06
+
+### Fixed
+
+- **A pill's detail stays on the screen.** The `6 not reporting` message names
+  every account it is about, and at `w-max` it ran roughly 1,500px on one line —
+  off the right of the display, with the end of the sentence unreachable by any
+  means. The cap it carried could never have helped: `max-w-[calc(100vw-3rem)]`
+  bounds the detail's _width_ while its left edge already sits wherever the pill
+  happens to be, so the two added up to more than the screen.
+
+  It is a fixed `w-96` now — the width from `ui-system.md` §2 that holds prose —
+  and **deliberately tall rather than wide**: a detail is read once and dismissed
+  by moving the mouse, so wrapping costs nothing while running past the edge
+  costs whatever was cut off.
+
+  Its position **clamps rather than flips**. Hanging it from the pill's other
+  edge was tried first and is the same bug mirrored: on a phone the pill is
+  narrower than the detail, so anchoring right puts the left edge off the left of
+  the screen. It is measured from the **pill**, never the detail, because the
+  detail is `display: none` until revealed and a hidden element has no box.
+
+  One component, so this covers every pill in the application — the
+  notifications and the budget's own reading alike.
+
+## [0.55.0] — 2026-09-06
+
+### Added
+
+- **The bank going quiet about an account now raises a pill.** Found in a review
+  of what Delegate assumes works, and it was worse than it looked: the row chip
+  checked both staleness rules, the pill checked only the manual-confirmation
+  one — and `staleness_interval_days` is never set on a discovered account, so
+  for every synced account that check was permanently false. **No notification
+  could ever fire for a frozen feed balance.** The only signal was a one-letter
+  chip on a page somebody had to already be looking at, which is the failure the
+  pills exist to replace.
+
+  `feed_not_reporting` is its own pill with its own wording, because "you have
+  not confirmed this lately" and "the bank has gone quiet" are different
+  sentences and only one is about something the household did. It is suppressed
+  while the sync itself is failing, since a bridge that is down lists nothing and
+  would set every account off at once saying what `sync_failing` already says.
+
+- **Insights says when it has stopped being recorded.** A card on Settings → Sync
+  beside Backups, and an `Insights stalled` pill once nothing has been written
+  for more than two days.
+
+  `GET /api/snapshots/status` has existed since the job did. It was written
+  _because of_ the backup failure — "check for the evidence a job leaves, not the
+  absence of an error" — and documented in `handoff.md` as the way to tell
+  whether the nightly snapshot ran. **Nothing called it**: one of three routes in
+  the tree with no caller. The lesson was implemented and then left somewhere the
+  failure it describes could happen to it.
+
+  What went wrong quietly is Insights itself. It gains a day a night and there is
+  no backfill ([ADR 035](docs/decisions/035-the-financial-picture-is-snapshotted-nightly.md)),
+  so a job that stopped firing in March draws a chart that simply ends — which
+  looks exactly like a chart nobody has looked at. The card leads with `days`
+  recorded rather than "the job ran", because a count of rows is evidence and the
+  other is an assertion about an attempt.
+
+  Silent on a deployment less than three days old, the same guard the backup card
+  uses: a fresh install genuinely has nothing recorded, and a warning that is
+  wrong on day one is not trusted on day ninety.
+
+- **`accounts.feed_last_seen_at`** — the third date in
+  [ADR 032](docs/decisions/032-a-feed-date-is-kept-apart-from-the-one-we-stamp.md)'s
+  family, amended. An account closed at the bank, or dropped when an institution
+  is re-linked, simply stops being listed; `upsertAccount` only touches what the
+  feed mentions, so the row kept its balance for ever and went on counting
+  towards the identity. `feed_balance_as_of` nearly answered it but is null when
+  a bridge says nothing about freshness, and null cannot be read as stale without
+  manufacturing warnings out of silence. This is stamped because the feed _named_
+  the account, so absence is a fact rather than an inference. Null means "not
+  asked yet", never "missing".
+
+  The row chip reads it too, so an account the pill names by name carries a mark
+  of its own.
+
+### Removed
+
+- **`PATCH /api/accounts/:id/bitcoin`**, which set a holding's quantity and which
+  no interface ever called — the third of the three uncalled routes. Settings →
+  Bitcoin reaches the same `setHoldingQuantity` through `managed-accounts.ts`, so
+  nothing is lost. Removed rather than left, because a second way in that nobody
+  uses is a second way to drift: it took an absolute quantity while the interface
+  writes dated events ([ADR 023](docs/decisions/023-bitcoin-holdings-are-a-dated-ledger.md)),
+  and the two would only ever have been compared the day they disagreed.
+
+## [0.54.2] — 2026-09-05
+
+### Fixed
+
+- **A standby duplicate names its own sides.** The row text was taught to call
+  the two rows _from the bank_ and _entered by hand_, because "first" and
+  "later" say nothing about one charge arriving from two sources on the same
+  day. The buttons underneath were left describing the re-import rule —
+  **Archive the later one** and **Archive the first**. They pressed correctly,
+  since the copy on a standby pair is always the hand-entered row whatever the
+  dates say, but under the name of a rule the pair is not decided by. That reads
+  as right until somebody relies on it.
+
+  They read **Archive my copy** and **Archive the bank's** now. A re-import is
+  unchanged: two rows the bank sent, months apart, where which one is the copy
+  genuinely is a judgement about time.
+
+  The wording moved into `components/duplicate-actions.ts` with a test, the way
+  `chips.ts` holds the chip vocabulary — an end-to-end test cannot reach this,
+  because the fixtures can only create manual accounts and a standby pair needs
+  a synced one.
+
+  Found by drawing the screen rather than by running it.
+
+## [0.54.0] — 2026-09-05
+
+### Fixed
+
+- **A refused transfer suggestion stays refused.** "Not a pair" was state inside
+  the component: it lasted until the page reloaded, and then the same wrong
+  suggestion came back — for ever, because the two settled transactions it is
+  about will never change.
+
+  This is the identical defect `duplicate_dismissals` was created for in
+  v0.50.0, in the sibling panel, and it was found the same way: by pressing the
+  button and watching the suggestion return. `handoff.md` had already written
+  down the rule that would have caught it — _before treating a refusal as not
+  worth keeping, check whether the thing being proposed about can expire on its
+  own._ A cleared check's proposal expires by itself; two settled transactions
+  cannot.
+
+  `pair_dismissals` stores it, **keyed on the pair rather than on a row**, so
+  both transactions stay eligible against anything else — a week with two $200
+  movements has one correct pairing and one wrong one, and refusing the wrong
+  one must not hide the right one.
+
+## [0.53.0] — 2026-09-05
+
+### Fixed
+
+- **The budget boundary is enforced, not just described.**
+  [ADR 050](docs/decisions/050-the-budget-boundary-is-a-wall.md). The identity
+  sums `in_budget` accounts only, and nothing else knew that. A $200 Roth
+  contribution and the four ETF purchases it paid for exposed all three places
+  that crossed it in one afternoon.
+
+  - **An out-of-budget row can no longer be categorized.** It moved a delegation
+    while no summed balance moved with it, putting the reading out by the full
+    amount — measured at exactly $200.00 from a reading of zero. Refused in
+    `setAllocations`, so every route through it refuses too, and the register
+    offers no field on such a row.
+  - **A transfer is no longer suggested across the boundary**, and the route
+    refuses one reached any other way. `confirmPair` clears the allocations on
+    both sides, so confirming would have taken $200 back out of the envelope it
+    was correctly spent from while the balance stayed gone. **Two out-of-budget
+    accounts still pair with each other.**
+  - **Those rows leave the uncategorized queue and the pill that counts them.**
+    Income and confirmed transfers were excluded from that filter long ago, for
+    the exact reason this needed to be: they allocate to nothing by design and
+    would otherwise sit there uncloseable for as long as the budget exists. They
+    stay in the register itself — it is the queue they leave, not the journal.
+
+  Those rows read `—` in the Delegation column, as income does. Without it the
+  cell renders empty, and empty reads as "not loaded" rather than "deliberately
+  nothing".
+
+  Money leaving the budget for a retirement account is **spending**, not a
+  transfer: it is no longer available to delegate, and the envelope it came out
+  of is the household's record of it. The arrival on the other side is the same
+  money seen from outside.
+
+## [0.52.0] — 2026-09-04
+
+### Added
+
+- **Standby mode: what you type in while a feed is behind.** A hand-entered row
+  on a synced account now adjusts the balance you read without touching the
+  institution's own figure underneath it. Enter the charges your bank shows and
+  Delegate does not, and the account, the section total and the reconciliation
+  at the top of the Budget page all agree with your statement — through every
+  sync, for as long as the outage lasts.
+
+  **There is no tag and nothing to switch on.** A manual row on a synced account
+  is a standby row by construction; there is no other reason to enter one. A
+  manual row on a manual account — cash, a payment app, a wallet — is the ordinary case
+  and still moves the balance directly, because there the stored balance is the
+  only balance there is. Deriving it means no state to set, none to forget to
+  clear, and no way for the two to disagree.
+
+  The row says so: a new **`a`** chip, _Adjusted by transactions entered by
+  hand_. Yellow rather than quiet, unlike `s` beside it — stale says a figure is
+  old, which is nobody's fault; this says the figure is part bank and part
+  household and there is something to do about it once the feed catches up.
+
+  It settles itself. Archive the standby rows when the feed delivers the same
+  charges and the adjustment goes with them.
+
+- **Coming out of standby.** When the feed catches up on a charge you entered by
+  hand, the duplicate panel proposes the pair and a pill on every page says how
+  many are waiting — _"3 rows to clear"_. Archive your copies and both go away.
+
+  It is announced because nothing else would say the outage was over: the
+  balances read correctly either way, so the only signal that a hand-entered row
+  has become a second copy is somebody noticing. The pill clears itself the
+  moment the rows it names are archived, which was the objection that removed
+  the duplicates pill in v0.48.
+
+  **The existing panel could not have found these.** It matches on `merchantKey`
+  — and must, since that is what stopped two different payees at one amount
+  reading as one charge twice — but a row somebody typed carries the words they
+  typed: `MANUAL - Serenity Ship Kaylee & Wash` keys to `manual serenity ship` against
+  `ach payment serenity` for the bank's own text. Nothing brings those together.
+  For a hand-entered row against a feed row **on the same account**, the match is
+  amount to the cent and within two days, with no merchant test. Safe here and
+  nowhere else: the false positive [ADR 049](docs/decisions/049-a-duplicate-is-proposed-never-archived.md)
+  was corrected for was two _feed_ rows at one amount in a week, which is a
+  household paying two bills; a hand-entered row on a synced account exists only
+  because somebody was standing in for the feed.
+
+  A refusal still sticks for good, and the copy is never in doubt — it is the
+  hand-entered one, whatever the dates say.
+
+- **Archive selection**, on the register's existing multi-select bar beside
+  _assign all to_. A fortnight of standing in for a feed is twenty-odd rows to
+  clear, and twenty passes through a row menu is how somebody decides to leave
+  them there — at which point the register is double-counted for good. Nothing
+  new happens to a row: it is the same archive, so every envelope movement is
+  reversed and nothing is hard-deleted.
+
+  There is deliberately **no "archive every standby row"** that takes no
+  selection. A proposal is confirmed per pair; a button acting on a set the
+  server chose would be the one place here where a guess archives something.
+
+### Fixed
+
+- **A sync now asks back as far as the feed has been quiet.** The request window
+  was measured from the last successful run, and a run succeeds while one
+  institution is dark — the bridge answers, lists the account, and reports the
+  problem in `errlist`, which is correctly not a failed sync. So `last_success`
+  advanced every hour through an outage and the window stayed at seven days
+  however long it ran. On the day the connection came back, a ten-day gap was
+  asked about for eight days and the remainder was never requested again: the
+  bridge still held those transactions and nothing ever asked for them.
+
+  The window is now read from the evidence on disk — for each account, the
+  newest transaction the feed has given us or the balance date the feed stamped
+  on it, whichever is later — and reaches back to the oldest of those across
+  every synced account, plus the usual overlap. A household where everything is
+  working asks for exactly the seven days it asked for before. Bounded at 90
+  days, where the bridge silently truncates.
+  [ADR 009](docs/decisions/009-simplefin-sync-cadence-and-window.md), amended.
+
+  Two things it deliberately does not count. A **manual transaction** is not
+  evidence the connection is delivering, so entering the missing charges by hand
+  during an outage cannot close the window that the recovery depends on. And a
+  **dormant account** is not a broken one — a savings account with no activity
+  for two months still gets a fresh balance date from the feed, which is what
+  `feed_balance_as_of` was added to distinguish
+  ([ADR 032](docs/decisions/032-a-feed-date-is-kept-apart-from-the-one-we-stamp.md)).
+
+- **A hand-entered row no longer writes a balance the next sync erases.**
+  `createManualTransaction` incremented `accounts.balance_cents` whatever kind of
+  account it was on, and `upsertAccount` assigns that column from the feed on
+  every run. On a synced account the two conflicted and the hourly job always
+  won: the entry worked, and then silently did not, up to an hour later. Nothing
+  covered it — 758 integration tests passed before and after the behaviour
+  changed. See standby mode above for where the row's effect went instead.
+
+- **The identity reads the same balances the page shows.** It summed the stored
+  columns, so with standby rows outstanding the reading at the top of the Budget
+  page would have disagreed with the figures underneath it by their total.
+
+- **A racy end-to-end assertion in the Bills spec.** It read the page while the
+  attach dialog was still open, and the dialog names the same bill — two matches,
+  strict-mode failure, only on a loaded machine. It now waits for the dialog to
+  close, per the convention in `handoff.md`.
+
+## [0.51.0] — 2026-09-03
+
+### Added
+
+- **A suggested categorization asks before it files.** Pressing the suggestion
+  chip used to categorize immediately, with the evidence behind the guess — _14
+  of 15 before went to Groceries_ — hidden on a tooltip. It now opens a dialog
+  showing the charge and the count, with three answers: **Not {delegation}**,
+  **Confirm delegation**, and **Confirm and always**, which files it and writes
+  the rule so the next one arrives categorized.
+
+- **A bill can be told its charge arrived.** Third correction on the Bills row
+  menu, beside "not a bill" and "give it a name": point at the payment, and the
+  bill's last-seen date moves to it. Its cadence does not change — a link is a
+  correction, not evidence about the schedule.
+  [ADR 051](docs/decisions/051-a-bill-can-be-told-a-charge-arrived.md).
+
+### Fixed
+
+- **A bill whose charge is still pending no longer reads as overdue.** Pending
+  charges are excluded from the detection because their date moves when they
+  settle — a sound reason about arithmetic, wrongly applied to the whole row, so
+  the charge that answers "has this arrived?" was excluded from answering it. A
+  life insurance payment sat in the register while its bill said Overdue · 5d.
+  Such a bill now reads **Paid, pending**, and raises no notification.
+
+### Changed
+
+- **Rules has its own place in the sidebar**, out of Settings. A rule is written
+  while categorizing and read whenever a charge lands somewhere surprising —
+  the register's rhythm rather than something configured once, and it was three
+  clicks from the page it is about. `/settings/rules` still lands on it.
+
+- **The sidebar is a little wider** — 180px rather than the ~145px `w-fit` gave
+  it, and well short of the 232px it started at. The content gutter beside it
+  comes back to 32px, which is what `design.md` §4 asks for.
+
+- **`deploy.sh` says why a tag could not be pulled.** A version tag is not
+  deployable until its image finishes building, and until then the registry
+  answers `manifest unknown` — a true statement that reads like a typo. The
+  script now names the likely cause, links the workflow, and lists the versions
+  that _are_ published, asked of the registry itself.
+
+- **An unsigned image and a wrongly signed one no longer share a message.** The
+  workflow pushes an image before it signs it, so a version is pullable a minute
+  or two before it is verifiable — and a deploy run in that window failed with
+  wording that reads like a supply-chain attack. The two are told apart now, and
+  an unrecognized verification failure is treated as the alarming kind.
+
+## [0.50.0] — 2026-09-02
+
+### Fixed
+
+- **Two different payees that cost the same are no longer read as one charge
+  twice.** Duplicate detection compared account and amount and ignored the
+  description entirely, so `ACH Payment Blue Sun` and `ACH Payment City of
+Springfi`, both $60.00 two days apart, were offered as a duplicate. The merchant key
+  is part of the match now — a store number still does not split one merchant in
+  two, but two payees are two payees.
+  [ADR 049](docs/decisions/049-a-duplicate-is-proposed-never-archived.md).
+
+- **"Not a duplicate" is remembered.** It dismissed for a session only, so the
+  same wrong pair came back on the next page load — and since two settled
+  transactions never change, it came back for ever. The refusal is stored against
+  the pair, so both rows stay eligible to be proposed against anything else.
+
+## [0.49.0] — 2026-09-02
+
+### Fixed
+
+- **A settings card's content no longer draws past its own border.** The backups
+  table asked a `sm:` breakpoint how wide the _window_ was, got 1440, and laid
+  itself out for a 640px card that was actually 345px across — so its columns
+  ran out under the card beside it. Every settings card is a query container
+  now, and content inside one sizes to the card rather than to the screen.
+
+### Changed
+
+- **Delegations and Groupings sit side by side** on Settings → Budget. Groupings
+  gave up its Section column, which said one identical word down every row, for
+  a heading above each section — and an empty section no longer draws a heading
+  over nothing.
+- **The export links read on one line each.**
+
+## [0.48.0] — 2026-09-02
+
+### Added
+
+- **Three more themes**, on Settings → Display beside Light, Dark and System.
+  [ADR 048](docs/decisions/048-a-theme-is-a-palette-that-is-measured.md).
+
+  **Ledger** is monospace on warm paper with a burnt amber accent — the whole
+  page on one grid rather than only the money column, which is what a ledger
+  wants. **Reading light** is a dim parchment ground with the blue taken out, for
+  doing this late in a lit room. **High contrast** is pure black on white with
+  every value at the far end and borders that read as real boundaries.
+
+- **Possible duplicates are read out** on the Transactions page. Reconnecting an
+  institution changes every external id, so a sync brings back a card's whole
+  recent history as though it were new — and until now that was found by
+  noticing a balance was wrong.
+
+  Same account, same amount to the cent, within two days. Both rows are shown,
+  the one carrying a categorization is marked, and either can be archived —
+  nothing happens until you say so.
+  [ADR 049](docs/decisions/049-a-duplicate-is-proposed-never-archived.md).
+
+- **Every theme's contrast is now measured by a test.** It reads the stylesheet
+  and checks the pairs that actually appear on screen against WCAG AA.
+
+  It found six pairs in the **shipped Light palette** under 4.5:1 — the worst
+  being the positive green on its own green fill at 2.76:1. Those are recorded at
+  what they measure today rather than quietly changed: the hexes are in
+  `design.md` §2, which is settled, so tightening them is your call. They can
+  never get worse without the gate failing.
+
+## [0.47.0] — 2026-09-02
+
+### Added
+
+- **Assets, Debts and their headings can be dragged into an order.** Drag a row
+  onto the row it should sit above, or a heading onto the heading it should sit
+  above.
+
+  Delegations have had this since v0.24, and the argument was that your
+  groupings are named "3 - Food" and "5 - Home" because ordering was the thing
+  missing. That argument is no different one level up or one level across.
+
+  Nothing moves until you move it: every row starts equal and ties fall through
+  to the name, so a budget nobody has rearranged still reads alphabetically. The
+  account row menu carries **Move up** and **Move down**, and Settings → Budget
+  carries arrows on every grouping — dragging is the fast way and it is not an
+  accessible one.
+
+### Fixed
+
+- **A row or heading can be dropped at the end of a list.** Dropping onto a row
+  always inserted before it, so there was no gesture that meant "after this one"
+  — the last place in every list and every grouping was unreachable by dragging.
+  The pointer's half of the row decides now, and the line shows which edge it
+  will land on. Dragging a heading over another grouping's rows means "past that
+  grouping", which is how the bottom of a long section is reached.
+
+### Changed
+
+- **The sidebar's show/hide control is a drawn icon**, the same size and stroke
+  as the destinations below it, and when the sidebar is collapsed it sits in the
+  icon column with a rule under it.
+- **Settings cards on one line end level with each other.** Three radio groups of
+  three, two and three options were drawing three different boxes.
+- **Settings cards can be a half of a row.** The grid counts in sixths now, so
+  "two side by side" is expressible — three columns could not say it.
+- **Holdings is two cards**: Bitcoin, with the node it reads addresses from
+  inside it, beside Properties. Where address data comes from is a property of
+  those holdings, not a second subject at the same weight.
+- **Access is three cards then two**: your account, two-factor and remote access
+  across the top, the household and sign-in activity beneath.
+- Settings → Budget says **Pay cadence** rather than "Paid".
+
+## [0.46.0] — 2026-09-02
+
+### Added
+
+- **A target can repeat.** Home insurance is $2,200 on the last day of April and
+  again on the last day of October — one target with a six-month interval, not a
+  date to retype twice a year.
+
+  The date you enter is an **anchor** rather than a deadline: the reading always
+  works towards the next occurrence still ahead and rolls on by itself as each
+  passes. Months rather than days, because the last day of April recurs on the
+  last day of October, which no number of days expresses — and an anchor on the
+  31st is clamped rather than allowed to roll into the next month.
+
+- **The amount it offers is editable.** Turning on "Also set the amount to
+  delegate" now reveals a money field holding the calculated figure, and what
+  gets written is whatever is in it. $274.38 a paycheck is more likely to be
+  funded at $300, and that decision belongs where it is being made.
+  [ADR 047](docs/decisions/047-a-target-never-moves-an-amount.md), amended.
+
+### Changed
+
+- Bills: the column is **Cadence**, not "Every" — the cell under it reads
+  "Monthly", and "Every Monthly" is not a sentence.
+- Bills: a renamed bill shows its name alone. The bank's description moved into
+  the row menu, where it is one press away for reconciling against a statement
+  and still searchable. Under the name it put a line of feed text on every
+  renamed row, which is what renaming was for.
+- Bills: "Fortnightly" is now **Every two weeks**, which is what Settings → Budget
+  already calls that cadence.
+
+- **Settings is eight sections, not twelve.** Half of the twelve held a single
+  card, which made the tab row a list of words to read rather than a set of
+  places to go. They are grouped by the question you came to answer: Sync,
+  Accounts, Budget, Rules, Holdings, Access, Display, Archived.
+
+  Every route that existed before still resolves — `/settings/delegations`,
+  `/settings/tor` and the rest redirect to whichever section absorbed them, so
+  bookmarks and links keep working.
+
+- **Settings cards sit side by side where they fit.** Three columns on a wide
+  screen, and each card says how much of the row it needs. Three radio buttons
+  no longer take the width of a table of forty rules; a card that has not
+  declared anything keeps the full width it always had.
+
+- **Where the section list sits is now a choice**, on Settings → Display: a row
+  across the top as before, or a rail down the side of the page. Per device, like
+  the theme and the row height.
+
+- **The sidebar is as wide as its longest label and no wider.** It was a flat
+  232px — about sixty more than "Transactions" takes, and every one of those came
+  off the page beside it. The width follows the content now, so renaming a
+  destination cannot leave it stale.
+
+## [0.45.0] — 2026-09-02
+
+### Added
+
+- **A bill can be taken off the list, or given a name of its own.** The first run
+  against real data listed a thrift shop visited every fortnight as a fortnightly
+  bill — which the detection cannot know is wrong, because that spending
+  genuinely has the shape of a bill. Only you know it is a shop.
+
+  `Not a bill` on the row menu takes it off and stops it raising anything; it is
+  listed under a fold at the foot of the page with a `Put back` beside it.
+  `Give it a name` puts your own label on a row, with the bank's description kept
+  underneath it and still searchable — reconciling against a statement needs the
+  text the statement uses.
+
+  Bills themselves are still stored nowhere. What is stored is what you said
+  back, which is the one thing about them that cannot be derived. Amendment on
+  [ADR 045](docs/decisions/045-a-bill-is-inferred-not-entered.md).
+
+### Changed
+
+- Bills that have plainly stopped sort to the bottom. A lapsed bill's expected
+  date is in the past by definition, so a plain date sort put the least
+  actionable row at the very top.
+- The Bills table gives more of its width to the merchant name, taken back from
+  columns that were wider than the longest thing they can hold.
+
+## [0.44.0] — 2026-09-02
+
+### Added
+
+- **A target on a delegation** — what the line is saving towards, and by when.
+  `"$2,200 by Dec 27"` as fields rather than freeform notes, with the
+  per-paycheck arithmetic done for you.
+
+  **It never moves the amount to delegate.** That figure is yours, typed by hand,
+  and a target only judges it: the dialog shows what each remaining paycheck
+  would have to carry beside what the line is actually set to, and offers to
+  apply it behind a switch that is off unless you turn it on. Afterwards it is an
+  ordinary amount — type over it, clear it, leave it.
+
+  A `tg` chip says a target exists; whether the line is on course shows on the
+  amount to delegate, which is the figure you would change. A pill says how many
+  lines will not make their date.
+  [ADR 047](docs/decisions/047-a-target-never-moves-an-amount.md).
+
+### Changed
+
+- The note field's placeholder is no longer `$2,200, Dec 27`. That is a target
+  now, and a note is a note again. Existing notes are untouched.
+
+## [0.43.0] — 2026-09-02
+
+### Added
+
+- **Bills** — a page of its own, listing what recurs, worked out from the
+  register and stored nowhere.
+
+  The question it exists for is the one nothing else here can answer: **the bill
+  that did not arrive.** A failed autopay and a cancelled service look identical
+  from inside the budget — no transaction, which is also what a quiet month looks
+  like — and stay invisible until a balance is wrong. Typical and last sit beside
+  each other on the row, so a subscription that renewed higher is visible too.
+
+  Deliberately conservative: three charges, every gap within a quarter of the
+  median, nothing faster than a fortnight. That last bound is what stops the
+  weekly shop being called a weekly bill. A bill that has plainly stopped reads
+  `Stopped?` and raises nothing.
+  [ADR 045](docs/decisions/045-a-bill-is-inferred-not-entered.md).
+
+- **"Tell me when a bill is overdue"**, on Settings → Budget. The first
+  notification here with a switch, and the right one to have it: every other
+  condition is a fact the application knows, while this is a reading of a
+  schedule it inferred. The page stays either way — a switch that hid the list
+  as well would make "I turned the noise off" and "there are no bills"
+  indistinguishable.
+
+- **Export**, on Settings → Sync. Three CSV files: the register, the delegation
+  ledger, and the nightly snapshots.
+
+  Three rather than one because a split transaction has one amount and two
+  envelope movements, so a single file would either double-count the amount or
+  lose the split. Money is a decimal a spreadsheet can add up, and a description
+  that a spreadsheet would otherwise _run_ — `=HYPERLINK(...)` in a merchant
+  name — is defused on the way out.
+  [ADR 046](docs/decisions/046-the-export-is-three-files.md).
+
+### Changed
+
+- The phone's tab bar takes its column count from the shared page list rather
+  than a number written beside it. It said `grid-cols-5` while the list had five
+  entries, so a sixth destination would have appeared in the sidebar and silently
+  off the end of the bar.
+
+## [0.42.0] — 2026-09-01
+
+### Added
+
+- **The queue answers from its own history.** An uncategorized row shows where
+  that merchant went the last few times — the delegation on the row, and the
+  count behind it (`2 of 2 before went to Grocery`) in the accessible name and on
+  hover. One press files it. It is also the first entry in the picker's list and
+  in the sheet on a phone, so the keyboard path and the thumb path get the same
+  advice as the eye does.
+
+  Deliberately conservative: two prior decisions and a majority of them, never a
+  split, never an archived delegation. A merchant is matched through the store
+  number that changes on every visit, and a suggestion writes nothing until
+  somebody presses it. [ADR 044](docs/decisions/044-the-queue-teaches-the-rules.md).
+
+- **"Always categorize like this"** on the row menu of a transaction already
+  filed, which turns the decision into a rule so the next one is filed on import.
+
+  The match text is a field, not a fact — pre-filled with the merchant and
+  editable before anything is created. `POST /api/rules/from-transaction` existed
+  and was called by nothing, which is just as well: it built the rule from the
+  **whole** raw description, so a rule from `AMAZON MKTPL*RT4G93` would have
+  matched the one transaction it was built from and nothing else, silently, for
+  ever.
+
+- **A rule can say what a transaction _is_**, not only which envelope it belongs
+  in. Income, or a transfer between owned accounts.
+
+  The paycheck arrives from the same payer on the same fortnight and was the one
+  thing no rule could ever handle: it lands as ordinary spending and somebody
+  marked it income by hand, every fortnight, for ever. A rule now carries an
+  action rather than a destination, and exactly one of the two — held by a check
+  constraint, not by convention.
+  [ADR 043](docs/decisions/043-a-rule-does-one-of-two-things.md).
+
+### Changed
+
+- Settings → Rules asks **"Then"** rather than "Categorizes as", in one control
+  that offers the delegations and the two labels. A rule that labels a paycheck
+  as income categorizes nothing.
+- Run rules counts what it labelled apart from what it categorized, and says so
+  only when there is something to say.
+
+## [0.41.2] — 2026-09-01
+
+### Fixed
+
+Three defects that reached the NAS in one deploy, and the reason they got there.
+
+- **`deploy.sh` replaced itself mid-run.** It sets its constants at the top,
+  `--unpack` overwrites the script, and execution continues from the old copy —
+  so a release that changes the script does not get to use the change it
+  shipped. `v0.41.0` moved image signing from `ci.yml` to `publish.yml`, and the
+  first deploy of it refused to start: the running script checked a perfectly
+  good signature against the identity of a workflow deleted in August. Unpacking
+  now happens before any argument is read, and re-execs the version it unpacked.
+
+- **A required compose variable is required everywhere.** Interpolation happens
+  before profiles are applied, so `DELEGATE_DOMAIN` marked `:?` inside the
+  bundled Caddy service stopped a deployment that had never heard of Caddy from
+  parsing its compose file at all.
+
+- **`BACKUP_DIR` empty stopped meaning `./backups`** and started meaning a Docker
+  volume, and `deploy.sh` had not caught up: it created and chowned a directory
+  nothing writes to, and said nothing about the dumps having moved somewhere an
+  off-device backup cannot see.
+
+### Added
+
+- **The gate parses the compose file**, with an empty environment and again with
+  every profile enabled.
+
+  This is the actual fix. All three defects above were in `docker-compose.yml` or
+  `deploy.sh` — files this repository had never executed, which the handoff
+  called out honestly every time and which turned out to mean the person
+  deploying was the integration test. The compose plugin had been a dangling
+  symlink to a Docker Desktop that is not installed, so it had silently never
+  worked here.
+
+  Twenty-three seconds to reproduce the failure the owner hit, against nearly
+  four minutes of test suite to be told by him instead. Verified against the real
+  defect: restoring the `:?` makes the gate fail with the message he saw.
+
+## [0.41.1] — 2026-09-01
+
+### Fixed
+
+- **The published image tag did not match the release name.** `v0.41.0` in git,
+  `0.41.0` in the registry — the semver pattern strips the leading `v` — so
+  `deploy.sh --tag v0.41.0`, which is what the documentation said to run because
+  it is what the release is called, pulled a manifest that did not exist. Both
+  forms are published now.
+- **A deploy would not restart a service behind a profile.** Tor moved behind one
+  in `v0.41.0` and `deploy.sh` runs `compose up -d` with no profiles, so a
+  deployment running the onion service would have quietly lost it.
+  `COMPOSE_PROFILES` in `.env` is the mechanism, and `.env.example` says so.
+- **`cosign` was needed again and the README no longer said so.** It was removed
+  along with the dead registry path; that path is live again now the workflow
+  signs what it pushes.
+
+## [0.41.0] — 2026-09-01
+
+### Changed
+
+- **Delegate installs anywhere, in one line**
+  ([ADR 042](docs/decisions/042-delegate-installs-anywhere-in-one-line.md)).
+  `docker compose up -d`, with nothing configured.
+
+  It was built for one household's NAS and every deployment decision assumed it.
+  Four things it quietly relied on are the same assumption in different clothes,
+  and all four are statements about _where it runs_: two secrets exist before the
+  first start, reaching the address means being in the house, plain http at the
+  origin is fine, and somebody will read the deployment notes. An image anybody
+  can run anywhere invalidates all of them at once.
+
+  - **Secrets are generated on first boot** into a volume of their own, and never
+    overwritten. An environment variable is adopted rather than replaced, so an
+    existing deployment keeps exactly what it has.
+  - **The first account is claimed with a token** printed to the logs. Only where
+    a token exists, so nothing that predates it is locked out.
+  - **HTTPS is one flag** — `DELEGATE_DOMAIN` plus the `https` profile starts
+    Caddy, which gets a real certificate and renews it unattended.
+  - **The image is published multi-arch on version tags**, `amd64` and `arm64`,
+    and signed. A NAS, a cloud VM, a Pi and an Apple Silicon Mac run the same
+    artefact.
+  - **Backups default to a Docker volume**, with `BACKUP_DIR` switching them to a
+    host path — which is what a NAS wants, so an off-device backup can reach
+    them.
+  - **Tor is behind a profile.** Most deployments will never reach an onion
+    address.
+
+  **`secrets:rekey` is no longer something to run.** The at-rest key is seeded
+  from `SESSION_SECRET` where one already exists, so the value does not change,
+  nothing is re-encrypted, and the two are recorded separately from then on —
+  which is the whole of ADR 029's split, performed by upgrading.
+
+- **GitHub builds images again, and still runs no tests**
+  (amends [ADR 022](docs/decisions/022-the-checks-run-here-not-on-github.md)).
+  `npm run verify` remains the only gate. The workflow fires on version tags
+  only, is capped by a timeout, cancels itself when superseded, and the account's
+  spending limit is set to $0. The minutes that ran out in August were the
+  private-repository allowance, consumed by a workflow that ran the whole suite
+  on every push; this repository is public and this workflow builds an artefact.
+
+### Fixed
+
+- **The deployment instructions described a model that had not existed since
+  August.** The README opened with "images are built by CI on x86_64 runners" and
+  "deployed by digest with verified provenance", and told a new deployer to
+  install `cosign` and log in to `ghcr.io` — for a registry with nothing in it and
+  signatures nothing was producing. The working route was buried as one option of
+  three. It is now the only route, and provenance is real again because the
+  publish workflow signs what it pushes.
+
+- **A reverse proxy silently disabled the sign-in rate limit.** `TRUST_PROXY`
+  unset behind one makes every request appear to come from the proxy, so ten
+  guesses per five minutes becomes ten for the whole internet at once. A footnote
+  when nothing shipped a proxy, and a real misconfiguration now that one is
+  bundled — so the application says so, once, when a forwarded header arrives and
+  nothing is configured to trust it.
+
+## [0.40.0] — 2026-09-01
+
+### Fixed
+
+- **`DATA_ENCRYPTION_KEY` never reached the container, which made the documented
+  re-key procedure a trap.** Compose reads `.env` to substitute into
+  `docker-compose.yml`; it does not hand `.env` to the container. Only variables
+  named in an `environment:` block arrive, and this one was not there.
+
+  Following the README exactly would therefore have moved every stored secret
+  onto a key the application was not using. The symptom is the worst part:
+  `verifySecondFactor` decrypts the TOTP secret **before** it considers recovery
+  codes, so it throws first — every account locked out, recovery codes included,
+  reported as "two-factor stopped working for everyone at once".
+
+  The line is there now, along with `SESSION_ABSOLUTE_TTL_SECONDS`, which was
+  missing for the same reason and had been quietly taking its default.
+
+- **The least-privilege database role was created and then never used.**
+  `postgres/init` creates `delegate_app` on a fresh install, and the app's
+  `DATABASE_URL` was built from `POSTGRES_USER` regardless — so the role existed,
+  owned the database, and nothing ever connected as it. The feature did nothing,
+  on new installs as well as old ones.
+
+  `APP_DATABASE_URL` overrides the whole URL, which is now the way an existing
+  deployment moves over _and_ the way a fresh one actually uses the role it was
+  given. Empty means the superuser, exactly as before.
+
+  Compose is reasoned about here rather than executed (ADR 019), so this one
+  carries a check rather than a claim: `docker compose config | grep DATABASE_URL`
+  shows what it resolved to, before anything restarts.
+
+### Added
+
+- **The application proves at boot that its at-rest key can read what is
+  stored**, and refuses to start when it cannot — naming which of the two causes
+  it is: a wrong `DATA_ENCRYPTION_KEY`, or one that never arrived.
+
+  Fatal on purpose. The alternative is a container that answers `/health`
+  perfectly while nobody can sign in, which is this project's oldest lesson in
+  new clothes. A fresh install has nothing encrypted yet and passes trivially.
+
+  The container smoke test in `verify.sh` now starts against the database the
+  end-to-end run just populated, with the secret those tests wrote with — so it
+  proves the image boots against real data rather than only that it serves
+  `/health`.
+
+## [0.39.0] — 2026-09-01
+
+### Added
+
+- **The Budget page has two arrangements, chosen on Settings → Display.**
+
+  **Stacked** is what it has always done and stays the default: Assets, Debts,
+  then Delegations, each the full width of the page.
+
+  **Two columns** puts the **envelopes on the left and the accounts on the
+  right** — Assets above Debts. On a wide monitor the account balances had
+  scrolled off the top by the time somebody reached the delegations they came to
+  work through, and the page was using half its width for nothing.
+
+  Below `lg` there is no room for two, so it collapses to one column and keeps
+  **its own** order: Delegations, Assets, Debts. That is the point of it on a
+  phone as well — envelopes first — rather than a silent fall back to the other
+  arrangement.
+
+  **Per device**, like row height and the theme, and for the same reason: it is a
+  fact about the screen someone is looking at. Two columns on a 27-inch monitor
+  should not put two columns on the other person's laptop, where it would only
+  squeeze both.
+
+## [0.38.0] — 2026-09-01
+
+### Security
+
+An external review of `v0.37.0` found eight low and informational items. Six are
+fixed here, one was accepted with its reason recorded, and one — an `auth_events`
+table with a screen that shows it — is separate work. Two more of the same kind
+were found while checking the report. Nothing here is above **low**: every one of
+them needs an authenticated session or a stolen cookie to matter, which is why
+they are worth fixing cheaply rather than urgently.
+
+- **The code that completes two-factor enrolment is spent.** `confirmEnrolment`
+  verified the code and never claimed it, so the code that enrolled an account
+  stayed valid for a _sign-in_ for the rest of its ninety-second window — against
+  an account that is enrolled by the time the call returns. The single-use
+  machinery already existed; enrolment simply was not using it.
+
+  This has a consequence worth knowing, because it is visible to somebody doing
+  nothing wrong: enrol and then sign in inside the same ninety seconds and the
+  authenticator is still showing the code that was just used. So a **correct but
+  spent code is now told apart from a wrong one** — "That code has already been
+  used. Wait for your authenticator to show the next one." "Not correct" would
+  send somebody to check six digits they are reading correctly, and they would
+  retype them until the period rolled over. It reveals nothing: reaching that
+  line means already holding the password and a live challenge.
+
+- **The routes that decide where this server sends a request are
+  administrator-only.** `PUT /api/bitcoin/node`, `POST /api/sync/connect` and
+  `POST /api/sync/disconnect` now require settings management.
+
+  The line is _choosing a destination_, not _making a request_. Connect stores a
+  URL the hourly job then fetches forever; the node setting names the address
+  every address lookup goes to; disconnect silently ends the household's feed.
+  `POST /api/sync` and `POST /api/bitcoin/node/check` use what is already stored
+  and choose nothing, so they stay open to every account — gating them would cost
+  an ordinary user the ability to refresh their own budget and buy nothing.
+
+- **Link-local is no longer treated as a private address.** `169.254.0.0/16`
+  reads as private and is not the same kind of thing: it holds
+  `169.254.169.254`, the instance-metadata address on every major cloud. It was
+  accepted as a plain-http node URL. No metadata service exists on the NAS, so
+  this guards where Delegate might run rather than where it runs — which is the
+  only moment it can be added for free. `isLinkLocalHost` names it separately,
+  because it is refused for a different reason than a public host is.
+
+- **A SimpleFIN setup token cannot point at the household's own network.** The
+  token is Base64 chosen by whoever pasted it, and only its scheme was checked —
+  so claiming one made this server POST to any address given to it. A real bridge
+  is public https; both rules are therefore free, and both refuse before anything
+  is sent.
+
+- **A rolling session has a ceiling it cannot roll past.** Every response pushed
+  the idle expiry out, so a session that kept being used never expired at all —
+  which is precisely the session somebody else might be holding.
+  `SESSION_ABSOLUTE_TTL_SECONDS` (90 days) is measured from `created_at` and is
+  never extended. Two expiries, answering different questions: one asks whether
+  this has been idle too long, the other whether it has existed too long.
+
+- **A password typed into the username field no longer lands in the logs.** A
+  failed sign-in records the name when it matches a real account — which a
+  mistyped password cannot — and a short keyed digest otherwise. A guessing loop
+  against one unknown name still lines up as one name; what was typed is never
+  stored.
+
+- **The SimpleFIN access URL must really be https.** The check was `https?` while
+  the message said https, so a plain-http access URL was accepted and stored —
+  and that URL carries Basic Auth credentials for the household's bank data,
+  which would then cross the internet in the clear on every hourly sync. Found
+  while checking the report rather than in it.
+
+- **Three comments that had stopped being true.** Session pruning is not "wired
+  to a nightly job" — it runs at sign-in, and always has. And the session cookie
+  is not waiting for "TLS in Phase 3": plain http at the origin is the permanent
+  default under ADR 017, in two places that still described it as a stage.
+
+**Accepted rather than fixed, with the reasoning recorded** in
+`docs/security-review-2026-09.md`: CSP violation reporting, and unencrypted
+database dumps.
+
+### Added
+
+- **A record of what happened to credentials, and the screen that reads it**
+  ([ADR 041](docs/decisions/041-an-audit-log-ships-with-the-screen-that-reads-it.md)).
+  Three reviews asked for an `auth_events` table and it was declined twice, for a
+  reason kept rather than quietly reversed: **a table nobody queries is worse
+  than no table**, because it looks like a control while nothing reads it. That
+  is the nightly-backup shape, which this project has already paid for once.
+
+  So the screen is the feature. **Settings → Users carries a third card,
+  Sign-in activity**, showing the most recent events without being asked — the
+  same posture as the backup card, which asks whether a dump is on disk rather
+  than whether the last attempt threw.
+
+  Sign-in, sign-out, a refused password, a refused code, password changed or
+  reset, two-factor enrolled, disabled or reset, and accounts created, archived
+  or restored. **Not reads** — everyone sees the whole budget by design, so
+  opening a page is not an event, and a row per page view would bury the dozen
+  lines a year that matter.
+
+  **Subject and actor are separate**, because every administrator action here is
+  done _to_ somebody and "who reset that password" is the only question worth
+  asking about one. **A name is stored only when it is a name**, on finding 6's
+  rule. And it is **pruned at ninety days**, which is the one place the
+  "nothing is ever hard-deleted" constraint is deliberately bent: that rule is
+  about the household's data, and this is the only table an _unauthenticated_
+  stranger can cause writes to — every refused sign-in is a row.
+
+## [0.37.0] — 2026-09-01
+
+### Changed
+
+- **Every notification is a pill, red ones included.** v0.36.0 kept the
+  full-width bar for the two `danger` conditions — the backup failing and the
+  sync failing — on the argument that the only copy of the household's data being
+  at risk earns the width. The owner asked for red to be a pill too, and the
+  exception was weaker than it looked: it confused _how serious this is_ with
+  _how much of the page it takes_.
+
+  Severity is already carried twice, in the colour and in the words, which is the
+  rule every other state in this application follows so that a reader who cannot
+  separate the two still gets the answer. The bar was saying it a third time in
+  floor space, on the screen whose whole purpose is the table it pushed down —
+  and a band across the top is the shape people learn to scroll past, which is a
+  poor home for the state you most want re-read.
+
+  Nothing renders above the page now. `NotificationBanners` is gone and the
+  component is `NotificationPills`.
+
+- **Nothing can be snoozed.** The X was a snooze rather than a clear — away for a
+  day, back if the condition still held — because a notification dismissed for
+  something still true is a lie the interface tells on the owner's behalf. It
+  existed because a bar was in the way. Nothing is in the way now, so a red
+  condition can no longer be hidden for a day at all.
+
+  `actionLabel` went with it: it named the bar's link, and a pill _is_ the link.
+
+## [0.36.0] — 2026-09-01
+
+### Fixed
+
+- **The categorization sheet no longer opens behind the keyboard.** Tapping
+  Categorize on a phone raised the keyboard, and the keyboard covered the sheet:
+  measured at 390×844 with the keys taking the lower 414px, the sheet ran from
+  y=264 to y=844. Its first option was the last thing above the fold and Cancel
+  sat 361px below the edge of a screen that does not scroll to reach it.
+
+  The assumption underneath is wrong on every phone and was shared by all twenty
+  dialogs in the application: `position: fixed` is laid out against the _layout_
+  viewport, which on iOS keeps its full height while the keyboard is composited
+  over the page. A sheet anchored to the bottom of the window is anchored behind
+  the keys. `Modal` reads `window.visualViewport` now — the rectangle actually on
+  screen — and a dialog became a column: header, scrolling body, and a footer
+  that holds whatever must stay reachable from anywhere in it. Split's remainder
+  and its errors moved there too, since a verdict you cannot see from the button
+  it governs is not a verdict.
+
+  Not reproducible in Chromium, which has no software keyboard, so the regression
+  test stubs the visual viewport to the shape iOS gives it. Verified failing
+  before the fix: the sheet's bottom edge was 844 against a visible 430.
+
+### Changed
+
+- **A bar is for what costs data; everything else is a pill.** A bank needing
+  re-authorization and a few transactions waiting to be categorized each raised a
+  full-width bar, so the Budget page opened with two of them stacked above it —
+  two rows of chrome carrying six words, on the screen whose whole purpose is the
+  table they pushed down.
+
+  Prominence tracks what ignoring the thing costs now. `danger` keeps the bar:
+  the backup has never completed, or the sync is failing, and in both the only
+  copy of the data is at risk or the numbers are silently stale. Everything else
+  is a **pill in the page header**, immediately right of the budget's own reading
+  and the same object as it — two or three words on its face, the whole message
+  on hover, and a press that goes where the condition is dealt with.
+
+  The pills carry no dismiss. Snoozing exists because a bar is in the way.
+
+- **"4 new transactions" opens the queue, not the register.** The pill links to
+  `/transactions?uncategorized=true`; the sidebar still opens on everything. The
+  filter moved from component state into the URL to make that possible, which is
+  what lets the two ways of arriving disagree — one means "the register" and the
+  other means "the ones I have not dealt with", and a single default cannot be
+  both.
+
+## [0.35.0] — 2026-08-31
+
+### Fixed
+
+- **The Insights order is reachable on a phone.** Reordering was drag-only, and
+  HTML5 drag fires no events under a thumb and is not reachable by keyboard at
+  all — so on a phone the grid's order was simply fixed, while the `⠿` handle was
+  still drawn over it, a grip on nothing.
+
+  Each tile carries **Move earlier / Move later** now, always visible, and the
+  handle is gone. They replace it rather than joining it: revealing them on hover
+  was worse than either, because an `opacity: 0` control still occupies its width
+  and the header then ran 26px past the card with the `×` beyond the edge of the
+  screen. The source had claimed these arrows existed for two releases before
+  they did.
+
+- **A utility's chart starts where its history does.** Months before the first
+  bill were drawn as invisible columns holding open half the chart, so the bars
+  sat squashed against the right of the card with a blank left half — a chart
+  that read as pushed out of position. The current month, which usually has no
+  bill in it yet, did the same at the other end.
+
+  Leading months and an _incomplete_ trailing one are dropped. An empty month
+  **between** two bills stays: that is a fact about the utility, and compressing
+  it out would quietly redraw the history as though the bills were consecutive.
+
+### Changed
+
+- **A figure ends where a name begins, mirrored.** Amounts sat hard against the
+  right edge of a row while names were inset 12px from the left, so every table
+  read lopsided. Both are 12px now.
+
+  This reverses part of v0.34.0, and the reason both were right in turn: that
+  change removed a _ragged_ gap between a figure and the rule that ended the row,
+  which was the only uneven edge on the page. Removing it exposed the real
+  asymmetry underneath.
+
+- **The Transactions page no longer counts itself.** "494 transactions." was a
+  fact about how long the household has been running, not about the list somebody
+  came to that page to work through — and the pager already says which of them is
+  on screen. The count is on **Settings → Sync** now, beside the connection that
+  produced it.
+
+- **Everything on a control row is 28px** — a button, a text field, a select, a
+  segmented control. Fields were 40px and the Insights window picker 36px against
+  a 28px button, so a search box beside two filter buttons sat 12px taller than
+  both and the row had no baseline. The height is written down twice and only
+  twice now: on the button, and as `.field` for anything you type into.
+
+  A field keeps its 16px font. Below that, iOS zooms the page when the field takes
+  focus, which is a worse thing to do to somebody on a phone than four pixels of
+  padding. A `textarea` is sized by its rows and an inline editor inside a table
+  row by Settings → Display; neither is on a control row.
+
+## [0.34.0] — 2026-08-31
+
+### Fixed
+
+- **The uncategorized banner clears the moment the queue does.** It was
+  invalidated at two call sites out of the dozens that can change it, and
+  categorizing was not one of them — so "12 waiting to be categorized" stayed on
+  screen after the last one was filed, and coming back to the Budget page did not
+  help because the answer was already cached. It cleared five minutes later, on
+  the poll.
+
+  Notifications are now recomputed after **any** mutation that succeeds. Done
+  once, centrally, because the list of things that can change a notification is
+  every mutation in the application, and a list like that is one somebody
+  eventually forgets to add to. They are computed on read and never stored
+  (ADR 030), so recomputing one is a cheap query rather than work.
+
+### Changed
+
+- **Insights → New tile is a dialog in the middle of the page, and every option
+  shows the shape it draws.** The picker unrolled a panel _below_ the grid, so on
+  a page with a dozen tiles pressing the button scrolled nothing into view and
+  appeared to do nothing. Each option now carries a small schematic — line, area,
+  bars, donut, list or figure — because a reader after a chart is after a shape
+  first, and choosing between "Net worth over time" and "Assets against debts"
+  from two labels means already knowing what each one draws.
+
+  Schematic rather than real data, deliberately: a live thumbnail per option
+  would mean twenty-one queries to answer a question about form, and a household
+  three days into its snapshots would see twenty-one identical flat lines — every
+  option looking the same at exactly the moment the picker is most used.
+
+- **Buttons are 28px rather than 36px**, at the owner's request — 78% of the
+  height, most visible on a phone where the Budget header carries five of them.
+  Above the 24px floor WCAG 2.5.8 sets, below the 44px both platforms publish as
+  comfortable.
+
+- **"This cycle began …" has left the Budget page.** It sat there permanently and
+  was the one line nobody was going to act on — a date, on the screen for
+  deciding where money goes. It now reads as what it is, a fact about the
+  budget's settings, on Settings → Budget beside the undo window and the pay
+  cadence that govern it. The undo offer stays on the Budget header: it is
+  transient, it is the only sign a Delegate press can still be taken back, and it
+  goes when the window closes.
+
+- **The `s` chip is grey.** Yellow is for something to act on, and how fresh a
+  figure is is not something anybody can act on. `p` (pending) and `r` (needs
+  review) keep it; everything else is the quiet grey.
+
+## [0.33.0] — 2026-08-28
+
+### Fixed
+
+- **The end of a local day is resolved against the day it is actually
+  resolving.** `localDayBounds` checked both of its probes against the _start_
+  day's key — a comparison the following midnight can never satisfy — so the end
+  bound always discarded its daylight-saving correction and returned the
+  uncorrected guess.
+
+  Invisible in `America/Chicago`, which shifts at two in the morning, where both
+  answers agree. In a zone that shifts at midnight it is an hour out on
+  transition days, which silently moves an hour of transactions into the
+  neighbouring day. Found reviewing
+  [ADR 037](docs/decisions/037-a-day-is-the-households-day.md); the regression
+  test fails without the fix in `America/Santiago`, `America/Havana`,
+  `Asia/Beirut` and `Australia/Lord_Howe`.
+
+### Added
+
+- **A day is the household's day, not UTC's**
+  ([ADR 037](docs/decisions/037-a-day-is-the-households-day.md)). The zone chosen
+  in Settings now decides which calendar day an instant falls in, everywhere the
+  application turns one into the other.
+
+  UTC runs five or six hours ahead of this household, so anything after about six
+  in the evening was already tomorrow. That was not a rounding difference; it was
+  wrong figures on screen:
+
+  - A charge at 8pm on the 31st was counted in the **next** month's utility
+    average. The month it was made in came out short and the following one long,
+    and the suggested per-paycheck amount drawn from the average was wrong in
+    both directions.
+  - The hourly price fetch filed every evening reading under **tomorrow**,
+    leaving the day it was taken on with no close and settling one for a day that
+    had not happened.
+  - A price fetched minutes ago read **stale** all evening.
+  - A balance typed in the evening recorded its valuation under tomorrow, so the
+    day it was typed on still showed the old figure.
+  - Year-to-date on New Year's Eve left out the evening it was looking at.
+
+  **No migration, and no backfill.** The three columns this was expected to move
+  were checked rather than assumed: `posted_at` already holds a true instant from
+  the feed's own epoch, and `as_of` and `price_date` are `DATE` columns holding
+  calendar days somebody decided — a decided day needs no zone. So nothing stored
+  changes; what changed is the reading of an instant at the twelve places it
+  becomes a day.
+
+  One module, `calendar.ts`, now answers "which day is this" for the whole
+  application, and it keeps the two ideas apart by name: an **instant** needs a
+  zone to place in a day, a **date key** is a day already decided and needs none.
+  Conflating them is the whole bug. Local day bounds are resolved by probing the
+  offset rather than by arithmetic, because two mornings a year are 23 and 25
+  hours long and a 24-hour window would drop an hour of transactions or count it
+  twice — asserted directly, along with tiling a full year with no gap or overlap
+  and round-tripping 365 days in four zones.
+
+  Deliberately **not** given a zone: `revalueBitcoinHoldings`, which values a
+  quantity and does not care whether the price is today's. Threading one through
+  the six layers above it to compute a flag it discards is how a parameter
+  eventually gets passed wrongly, so `latestPrice` (staleness, needs a zone) and
+  `newestPrice` (the figure, does not) are now two functions that say which
+  question they answer. Where a zone **is** needed it is a required argument, so
+  a call site that forgets it fails the build instead of silently reverting to
+  UTC.
+
+  A deployment left on UTC is unaffected: every conversion is the identity there,
+  and the tests assert it in both directions rather than only in the interesting
+  zone. On any other zone, expect a utility average to shift by up to one bill
+  once — that is the correction landing, not a regression.
+
+- **The financial picture is recorded nightly.** Three tables — one row per
+  account per day, one per delegation per day, and one for the whole picture —
+  each keyed by a date and carrying its own provenance: `observed`,
+  `reconstructed`, `carried` or `interpolated`. An aggregate takes the weakest
+  provenance among its inputs, so one estimated account makes the day's total an
+  estimate rather than hiding inside forty exact ones.
+
+  [ADR 035](docs/decisions/035-the-financial-picture-is-snapshotted-nightly.md)
+  **supersedes ADR 013**, which rejected exactly this in August. Its reason has
+  expired — it was that snapshots would miss the twelve months of history about
+  to be imported, and that import happened months ago — while the price it
+  recorded and accepted has not: a reconstructed balance is a confident line
+  drawn through transactions that can be quietly incomplete, and nothing about it
+  says so.
+
+  Two shape decisions are load-bearing. **The aggregates are stored rather than
+  derived**, so archiving an account or changing an in-budget flag cannot rewrite
+  a chart somebody has already read; each account row carries its own type and
+  budget flags, and each delegation row its grouping, as they stood that night.
+  And there are **two scopes**, because net worth includes the house and the
+  mortgage while the identity is precisely the reading that excludes them —
+  three totals could not have served both. `identity_value_cents` is the
+  four-term figure from ADR 020, so it matches the chip on the Budget page rather
+  than wandering by whatever is categorized and not yet posted.
+
+- **The nightly job that writes them**, at 03:10 in the household's zone,
+  labelling its rows for the **previous** day — a run at 03:10 on the 15th
+  records the 14th, read as "end of day the 14th".
+
+  03:10 for three reasons: off the hour so it does not contend with the hourly
+  sync on two cores, _after_ the price fetch at :05 so yesterday's Bitcoin close
+  is settled by the time a holding is valued against it, and outside 02:00–02:59
+  — an hour that does not exist locally on the spring-forward morning, where a
+  job scheduled inside it is skipped for the night.
+
+  The date is calendar arithmetic on the local date, never 24 hours subtracted
+  from an instant. Two mornings a year are not 24 hours long, and the difference
+  is a row filed under the wrong day.
+
+  **All three tables commit together or none do.** A partial day is worse than a
+  missing day: the gap-filler can see a date with no rows and repair it, and
+  cannot see a date whose accounts were written and whose aggregate was not.
+  **An `observed` row is never overwritten** — not by a reconstruction, and not
+  by a re-run — so pointing the manual trigger at any date repairs what is
+  missing and revises nothing that was seen.
+
+  A Bitcoin holding is valued at that date's close, with the quantity and the
+  price stored beside it so the figure is explainable from the row alone. When
+  the price had to be carried from an earlier day the row is `interpolated`
+  rather than `observed`: the quantity was seen and the price was guessed, and
+  the aggregate then inherits that.
+
+- **Gap filling, for the days nobody was running for.** The NAS reboots,
+  containers restart, power fails. On startup and again before each nightly run,
+  every date between the newest snapshot and yesterday is rebuilt by the most
+  accurate method available **per row**:
+
+  **Delegations** replay the append-only ledger to the end of the day — exact
+  however long the gap was, because the events are the truth and all of them are
+  still there. **SimpleFIN accounts** take the next balance actually known and
+  roll every posted transaction back out of it, through `accountBalanceDelta` so
+  a debt's opposing sign is applied in the one place that knows about it.
+  **Manual accounts** carry the last value entered on or before the date, because
+  manual values change in steps and not slopes: property worth $400,000 until
+  $420,000 was typed on the 16th was worth $400,000 on the 15th, not $410,000.
+  **Bitcoin** reads the quantity held on that date from its own dated ledger,
+  which is exact rather than carried, and only the price can be missing.
+  **Interpolation** is the last resort, marked as an estimate and logged at
+  warning level with the account and the date.
+
+  **Nothing here is a backfill.** With no snapshot stored there is no gap — only
+  history nobody chose to record — so a fresh deployment stays empty and history
+  starts at the first run, exactly as decided.
+
+  One transaction per day rather than one for the whole run: a fortnight of
+  outage should not be all-or-nothing, and a day that fails should not discard
+  the thirteen that succeeded.
+
+- **A manual balance typed on Settings → Accounts is now a dated valuation.**
+  `balance_as_of` is a single timestamp overwritten on every edit, so it could
+  say when a value was last confirmed and never what the value was in March. Only
+  properties had a history, because only they went through the valuations route —
+  which left cash and exchange accounts with no dated history at all, and the
+  gap-filler with nothing to carry forward for them.
+
+- **The eight core Insights tiles, drawn from the snapshots.** Net worth over
+  time, assets against debts, account balance history, delegation balances,
+  burn rate per cycle, identity drift, home equity and Bitcoin.
+
+  **Every chart says where its figures came from.** A stretch built from
+  estimated days is dashed and muted with the reason on hover; observed,
+  reconstructed and carried days are all exact and draw normally. **And every
+  chart ends on now** — a hollow marker past the stored history, because
+  snapshots are labelled for the previous day and a line stopping there reads as
+  stale rather than current.
+
+  **The empty state is the state these ship in.** History starts at the first
+  night, so a tile with nothing says "No history yet — the first night records
+  one" and one with a single day says so too, rather than drawing an axis
+  through a dot.
+
+  `credit_card_trend` is retired. It was hardwired to whichever card owed the
+  most; **account balance history** replaces it with a picker over every account
+  that has stored history, which is what the tile was always reaching for. A
+  layout still naming the old key is filtered against the catalogue rather than
+  handing the page a widget it cannot draw.
+
+  The delegation drill-down is three levels — every grouping, one grouping's
+  delegations, one delegation — with a breadcrumb back up. The level survives a
+  change of range, so widening from 30 days to a year widens the view you are
+  looking at. Lines in no grouping are their own level and open like any other:
+  a bucket somebody can see and cannot click into is a dead end.
+
+- **The five derived tiles.** What net worth is made of (a stacked area of
+  Bitcoin, other assets and debts, with debts below the baseline rather than
+  stacked on top — stacking a debt on an asset would make the total read as their
+  sum), change per pay cycle aligned to actual Delegate presses, 30-day momentum,
+  delegation movers, and debt trajectory.
+
+  Movers runs its bars from a centre line rather than from the left: the question
+  is which direction a line moved as much as by how much, and a ranking drawing a
+  $500 gain and a $500 drain identically would answer only half of it. Momentum
+  says "Not a month of history yet" rather than flattening, because comparing
+  against a month earlier needs a month.
+
+  There is deliberately no cash-versus-savings split in the composition. The
+  application has no such classification — an account is an asset or a debt — and
+  inventing one from account names would be a guess presented as a category.
+
+- **One range selector for the whole page**: 30 days, 90 days, 6 months, 1 year,
+  year to date, this cycle, all. The spending and cycle tiles predate snapshots
+  and `This cycle` is the only window that means anything to them, so one control
+  drives everything rather than two disagreeing above a grid that mixes both.
+
+- **`domain/history.ts` is gone**, as ADR 035 said it would be. The four tiles it
+  fed are not — they are rebuilt on stored rows. Its ledger-walking survives only
+  inside the gap-filler, where every row it writes is marked as derived. The
+  properties its tests protected moved with it: a holding valued at each day's
+  own quantity is asserted against the stored quantity and price now, rather than
+  against a chart.
+
+- **Read endpoints, returning series already shaped for a chart.** The browser is
+  handed points it can draw rather than a year of rows to reduce on a phone.
+
+  `GET /api/insights/snapshots?range=` serves everything that does not depend on
+  a picker: the aggregate series, net worth composition, home equity, 30-day
+  momentum, change per pay cycle, the debt trajectory, and the account list for
+  the balance-history picker. `…/account/:id` serves one account.
+  `…/delegations` serves the drill-down at whichever of its three levels was
+  asked for — all groupings aggregated, one grouping's delegations, or one
+  delegation.
+
+  **Downsampling follows from the range, and the reader never chooses it.** Above
+  roughly 180 stored days a series buckets to weekly and above 730 to monthly,
+  taking the **average** of each bucket rather than its last day — a weekly point
+  reporting Sunday's balance would swing with whichever day landed at the end,
+  and a net worth line is not a sampling of Sundays. **A bucket takes the weakest
+  provenance in it**, so a week containing one estimated day renders as
+  estimated: a line drawn through a bucket is no better than its worst point.
+
+  Every series carries a **live point** computed from current state and kept
+  apart from the stored history. Snapshots are labelled for the previous day, so
+  without it every chart would end a day behind and read as stale rather than
+  current.
+
+  Two things are deliberately withheld rather than guessed. **The payoff
+  projection stays hidden until there are 60 days of history** — a line fitted
+  through nine days would move by years every morning, and a number that unstable
+  reads as a fact to whoever sees it. And **the composition split has no cash
+  versus savings**: the application has no such classification, and inventing one
+  from account names would be a guess presented as a category.
+
+  Burn rate divides by the **configured pay cadence**, never a hardcoded 26. The
+  Utilities page already divides by the same figure, and two screens of one
+  household disagreeing about how often it is paid would be worse than either
+  answer.
+
+- **`GET /api/snapshots/status`**, and an administrator-only
+  `POST /api/snapshots/run`. The status reading is the answer to "did the job
+  run", taken from the rows rather than from the absence of an error — the
+  lesson the nightly backup taught, which reported every failure correctly into
+  a log nobody read while the question nobody asked was whether a dump was
+  actually on disk. It reports the newest date, how many days are stored, the
+  schedule and the zone it truly runs in, and goes stale after two days rather
+  than one, because a run is for the previous day and a one-day threshold would
+  warn every morning.
+
+- **The schedule time zone is chosen in Settings**, not only in `.env`
+  ([ADR 036](docs/decisions/036-the-schedule-timezone-is-a-setting.md)). Null
+  means "follow `SCHEDULE_TIMEZONE`", which is what every existing deployment
+  does and keeps doing until somebody picks a zone — so this changes when nothing
+  fires. The environment variable stays as the floor, because the container has
+  it before it can reach the database.
+
+  **Saving rebuilds the schedules.** `node-cron` fixes a task's zone when the
+  task is created, so a stored zone that only took effect on the next restart
+  would be a setting that reports itself working and is not — which is the shape
+  of failure this project has already paid for once, with a nightly backup that
+  logged an error into a file nobody read while failing every night for weeks.
+  It governs when jobs fire and nothing else; every date the domain computes is
+  still UTC, and moving that is recorded as an open question rather than smuggled
+  in here. **Superseded within this release by ADR 037, below** — the zone now
+  also decides which day an instant falls in.
+
+- **The zone is pickable on Settings → Budget.** The setting landed with an API
+  and no interface, which left it changeable only by editing `.env` and
+  restarting — the exact thing ADR 036 set out to remove. The picker offers what
+  the server accepts rather than a list of its own, and its hint names the zone
+  actually **in force**, which is the case that matters: nobody has chosen, and
+  the answer is coming from the environment. A page showing only the choice would
+  read blank on precisely the deployment whose zone nobody could otherwise find
+  out.
+
+### Fixed
+
+- **A racy end-to-end test that failed about three runs in five.** "A pending
+  charge is not offered as money to delegate" hovers the balance reading to check
+  its working, then reloads and asserts no tooltip is open. A hover is physical
+  pointer position rather than page state, so the cursor was still on the chip
+  when the reloaded page painted and re-fired it — the assertion found the
+  tooltip the test itself had left behind. Found while verifying unrelated work,
+  confirmed at the same rate on `main`, and fixed by moving the pointer away
+  before the reload rather than by relaxing the assertion.
+
+- **A figure sits flush with the end of its row on a phone.** The 8px inside a
+  money cell is the inset its hover background needs on a desktop; on a phone
+  there is no hover, and with the `⋯` column collapsed the money column is the
+  last thing in the row — so every figure stopped 8px short of the rule that ends
+  it. The only ragged edge on the page, and it read as the table not reaching the
+  screen. Section totals and row amounts now land on the same edge as the rules.
+
+### Changed
+
+- **On a touchscreen the row menu is a long press, and the `⋯` is gone.**
+  `RowMenuShell` already wired a long press on the row itself, so the trigger was
+  a second way into a menu that was already reachable — while costing a **40px
+  column** on a 390px screen, on every table that has one.
+
+  **Visually hidden, not removed.** A long press is not a gesture VoiceOver can
+  perform, so the button keeps its place in the accessibility tree and loses only
+  its pixels. `display: none` would have taken the same 40px back and stranded
+  every row menu for anyone using a screen reader.
+
+  Only the shell's own trigger. Settings → Groupings and Settings → Rules paint
+  the same class on an Archive button and a pair of reorder arrows that have no
+  long press behind them; hiding those would leave them unreachable by any means,
+  which is the state that rule was written to fix once already.
+
+- **A money box is the size of the money.** `w-full` made an inline editor as wide
+  as its column — on a delegation row, most of the screen for eight characters of
+  number. Inline editors are now `11ch`, which is `$999,999.99` with tabular
+  numerals, and sit against the right edge where the figure they replace already
+  was. Money fields in dialogs dropped from `full` to `sm` for the same reason: a
+  figure is not open-ended content the way a name or a pasted token is.
+
+  **Fixed, not growing with the content.** A box that resizes on every keystroke
+  moves the caret and the rows beside it while somebody is typing.
+
+### Fixed
+
+- **Nothing runs off the side of a phone any more.** Measured across all sixteen
+  screens at 390px, not eyeballed. A table of fixed columns came to 456px inside a
+  326px card and drew `NAME` and `ROLE` on top of each other; the Insights window
+  picker put 138px and its last option past the edge, unreachable; a 384px field
+  overflowed its card because `max-w-full` sat on the control rather than the
+  wrapper, where it resolved against a box the control had itself sized and so
+  could never clamp anything.
+
+- **A chip no longer wraps onto a line of its own**, which doubled the height of
+  whichever Budget row it happened to and made a column of figures read as a
+  ragged list. The name gives way now; the chip never does.
+
+- **A phone shows a table's identity column, its money, and the row menu.**
+  Everything else waits in that menu, which already carried it — the two account
+  toggles, a person's role and status. Three fixed columns of secondary facts do
+  not fit beside a name in 326px, and were not worth the name being unreadable.
+
+- **No heading, cell, label or control takes a second line at 390px.** Copy that
+  needed two was cut to fit one: the SimpleFIN and Accounts descriptions, the
+  sync status, the backups schedule line, two node notes, and a field label
+  carrying its unit — `Undo window (hours)` became `Undo window`, with the unit in
+  the hint where it does not have to fit a 128px column.
+
+- **The Transactions row leads with the control.** The delegation chip is the one
+  thing you tap on a phone and it sat on the right, where a variable-width pill
+  under right-aligned amounts made a ragged edge and moved sideways on every row.
+  It starts in the same place every row now, with the date and account quiet
+  after it.
+
+- **A utility with nothing spent in the window draws no chart**, rather than 64px
+  of empty box — which was the largest thing on the card and the part with
+  nothing in it.
+
+### Added
+
+- **`e2e/phone.spec.ts` measures both rules on every route** — nothing past the
+  edge that is not inside something built to scroll, and nothing that lines up in
+  a column taking two lines. Every fault above was visible in a screenshot for
+  weeks and none of them was noticed, so this is counted rather than looked at.
+
+## [0.32.0] — 2026-08-26
+
+### Added
+
+- **Dark mode**, on Settings → Display beside row height: System, Light or Dark,
+  remembered per device like every other display preference. System follows the
+  device and keeps following it, rather than meaning whatever it said when the tab
+  was opened.
+
+  The palette is **rotated, not inverted** — the warm neutral greys get warm dark
+  counterparts, so the application reads as itself with the lights off. Every
+  accent is lifted, because the light values sit at 2–3:1 on a dark canvas and
+  that is the usual way a dark mode ends up unreadable, and `color-scheme` is set
+  so the browser draws checkboxes, selects and scrollbars dark too.
+
+  The QR code on two-factor enrolment stays white in both themes. It is scanned
+  rather than read.
+  [ADR 034](docs/decisions/034-dark-mode-is-a-second-palette-not-an-inversion.md).
+
+- **[docs/ui-system.md](docs/ui-system.md)** — the measurements every screen uses,
+  and `ui-system.test.ts`, which enforces the mechanical half by reading the
+  source. Five rules: the spacing scale, the page header, declared field widths,
+  no bare `<details>`, and one verb for creating a thing.
+
+### Changed
+
+- **Every screen was reviewed and brought onto one system.** The look was right;
+  the execution had drifted. The audit found four page-header implementations,
+  five widths for the same kind of text input — 384px, 576px and 918px on three
+  tabs of one page — spacing at every value from 1 to 8, three verbs for creating
+  a thing (including **"Add grouping"** on Budget and **"New grouping"** in
+  Settings, opening the same dialog), four ways of saying a list is empty, and two
+  differently-built segmented controls on one page.
+
+  What changed: a **four-value spacing scale** (4, 8, 16, 24) and nothing else; a
+  **field width chosen by content** rather than inherited from a container;
+  **`New <noun>`** at every create entry point and the bare verb on every dialog
+  submit; and one `PageHeader`, `StatusLine`, `EmptyState`, `SegmentedControl` and
+  `Disclosure` in place of between three and five implementations each.
+
+  **Fewer words throughout.** One line of subtitle per page, one of description
+  per card, one short hint per field, and empty states that say `No rules yet.`
+  rather than explaining where to go instead — because the button that goes there
+  is already a few pixels above the text.
+  [ADR 033](docs/decisions/033-one-ui-system-with-a-test-that-holds-it.md).
+
+- **Settings → Bitcoin and Settings → Properties no longer park a create-form in
+  a card.** Both are a header button and a dialog now, which the settings-card
+  convention already required. On a phone the old forms wrapped a checkbox onto
+  its own line beside a field and pushed an input past the card's edge.
+
+### Fixed
+
+- **A field no longer runs off the edge of a phone card.** Every width now carries
+  `max-w-full`.
+- **The setup key wraps between groups, never inside one.** `break-all` split
+  `XRXM` across two lines as `X` and `RXM`, which is the wrong place to break a
+  string somebody is reading a character at a time.
+
+## [0.31.0] — 2026-08-25
+
+### Added
+
+- **Two-factor enrolment offers the setup key, behind "Can't scan this?"** The QR
+  code is still the first thing offered and is unchanged. What it could never
+  serve is the case a household hits most: enrolling in a password manager on the
+  machine already showing the screen, or on the phone that is holding it. There is
+  no second camera to point at anything.
+
+  The key was previously printed under the QR code permanently, as thirty-two
+  unbroken characters with nothing to copy it — so the common case carried clutter
+  and the uncommon case still meant transcribing it by hand or dragging a
+  selection across it on a phone. It is now folded away behind a button, shown in
+  groups of four, and has a Copy button.
+
+  **What is copied is the key without the spaces.** The grouping is for the eye;
+  a password manager handed `ABCD EFGH` may keep the space, and a second factor
+  producing codes that match nothing is discovered at the worst possible moment.
+
+  Nothing is newly exposed. The QR code encodes this exact secret, and anyone who
+  can read the pixels can read the letters.
+
+  **The Copy button works on a plain-http origin**, which is the interesting part.
+  `navigator.clipboard` exists only in a secure context, and this application
+  serves plain http at the origin by decision ([ADR 017](docs/decisions/017-plain-http-is-the-default-and-tls-is-optional.md))
+  — encrypted from away by the tunnel or by Tor, plain on the LAN. A copy button
+  written against that API alone would do nothing on the LAN address, which is the
+  one used most, and would do it silently. It falls back to selecting the text and
+  asking the document to copy it, and if even that is refused it leaves the key
+  selected and names the keystroke. Three outcomes, none of them silence.
+
+## [0.30.0] — 2026-08-25
+
+### Added
+
+- **Scheduled jobs run in a configured time zone.** `SCHEDULE_TIMEZONE` — an IANA
+  name, defaulting to `UTC` — is the zone every cron expression is read in, so the
+  nightly backup can run at half past two in the morning where the household
+  actually lives rather than at half past nine the previous evening.
+
+  It governs **when jobs fire and nothing else**. The process clock is untouched,
+  deliberately: moving it would also move every date the domain computes, and
+  which month a transaction lands in is not a preference. Applied to all three
+  schedules rather than only the backup — the other two are hourly and land at the
+  same instant in any zone, but passing it to one and not the others would leave a
+  future reader working out which of three schedules meant local time.
+
+  Abbreviations (`CST`) and fixed offsets (`-05:00`) are refused, because neither
+  observes daylight saving: a job set for a civil hour against an offset drifts by
+  an hour for half the year, and `CST` names two zones on two continents. An
+  unknown zone silently falls back to the process default, so it fails at startup
+  instead.
+
+  Defaulting to `UTC` means an upgrade changes nothing until `.env` says otherwise.
+
+- **A synced account now shows how old the feed's own answer is.** `balanceAsOf`
+  was answering two questions at once: it holds the feed's `balance-date` when
+  the feed sends one, and the time of our request when it does not — and
+  afterwards those are the same value. So "the bridge says this is current" could
+  not be told from "the bridge said nothing and we filled it in".
+
+  `accounts.feed_balance_as_of` records only what the feed actually said, and is
+  **null when it said nothing**. That third state is the whole point: unknown must
+  not read as fresh. Settings → Accounts marks a synced balance more than two days
+  old with the `s` chip and names the day it came from, so the question lands on
+  the bridge rather than on this application.
+
+  Found chasing ten charges that stayed marked pending for days after the card
+  had posted them. Nothing about the pending lifecycle was wrong — the stored
+  balance, the stuck rows and the card's real balance agreed to the cent, and all
+  three were behind together while the bridge reported itself healthy. The
+  application was right about everything it had been told and had no way to show
+  that what it had been told was old.
+  [ADR 032](docs/decisions/032-a-feed-date-is-kept-apart-from-the-one-we-stamp.md).
+
+### Changed
+
+- **The `s` chip reads "Balance may not be current"**, having read "Not confirmed
+  recently" — wording written for a manual balance, and wrong for a synced one
+  where there is nobody to do the confirming. The letter and its single meaning
+  are unchanged; the wording was narrower than the meaning.
+
+### Fixed
+
+- **The Backups card describes this deployment rather than the defaults.** It read
+  "nightly at 02:30 UTC, kept for 30 days" whatever `BACKUP_CRON`,
+  `SCHEDULE_TIMEZONE` and `BACKUP_RETENTION_DAYS` were set to — a small version of
+  the problem the card exists to solve, which is an interface asserting something
+  nothing checks. It now reads all three, and says "daily" rather than "nightly",
+  which stays true if the job is ever moved to the afternoon.
+
+  **And it names the directory as the host knows it.** The card showed
+  `/backups`, which is the path _inside the container_ and no use to somebody
+  standing on the NAS looking for the file — which is exactly what a person
+  chasing a missing dump is doing. Compose knows both halves of the bind mount
+  and passes the host's name through as `BACKUP_HOST_DIR`; when nothing sets it
+  the card shows the container path as before rather than inventing one.
+
+## [0.29.2] — 2026-08-25
+
+### Changed
+
+- **A closed onion address now says nothing.** With remote access off it answered
+  `403` and explained itself: that remote access exists, that it is switched off,
+  and where to switch it on. To anyone holding the address — which is the only
+  way to reach it — that confirmed a live service worth returning to. It is an
+  empty `404` now, and "off" is indistinguishable from "nothing was ever here".
+
+  **`/health` and `/api/auth/logout` are no longer exempt.** The health exemption
+  was the louder of the two leaks: a `200` confirms a running service whatever the
+  switch says. It existed so a health check would keep working, and bought
+  nothing — Docker's own check runs inside the compose network and never carries
+  an onion `Host`.
+
+  The refusal is still logged on the server, where the household can read it and
+  nobody else can. [ADR 027](docs/decisions/027-remote-access-is-an-onion-service.md).
+
+### Fixed
+
+- **The back link out of a settings section is named "Back to Settings".** On a
+  phone the tab bar links to `/settings` too, so two links with the accessible
+  name "Settings" sat on one screen — ambiguous to anyone navigating by name, and
+  one of them is a back button. Found because a test that clicked by name failed
+  intermittently.
+
+- **The settings client no longer declares `requireTotp`.** The field was removed
+  from the API when the second factor became unconditional; the web type still
+  advertised it, so it read as a `boolean` the server never sends and offered it
+  as something `update` would accept — which the strict schema refuses outright.
+
+## [0.29.1] — 2026-08-25
+
+### Fixed
+
+- **Tor still never started, for a second reason.** v0.28.2 taught the entrypoint
+  to resolve the app's address and substitute it into the configuration, and the
+  deploy never shipped that entrypoint: `compose up -d` builds a service from
+  source only when no image for it exists, and one did. The configuration is
+  bind-mounted and updated; the script that reads it is baked into the image and
+  did not. Tor received the placeholder verbatim, reported an unparseable port,
+  and restarted for ever.
+
+  `deploy.sh` passes `--build` now, so the one service built from source is
+  rebuilt on every deploy. The entrypoint also refuses to start if the
+  placeholder survives its own substitution, and says which two files disagree
+  rather than leaving tor to complain about a port.
+
+### Changed
+
+- **`npm run verify` starts Tor rather than parsing its configuration.** The
+  check that stood there ran `tor --verify-config` over a hand-substituted file,
+  and passed on the very release whose container was crash-looping — it proved
+  the file was valid, never that the entrypoint produced it. It now runs the real
+  image against a container answering to `app`, exactly as compose arranges it,
+  and asks tor whether it started.
+
+## [0.29.0] — 2026-08-24
+
+### Added
+
+- **Delegate works on a phone.** It has never had a layout for one: the sidebar
+  was a fixed 232px with no breakpoint — 59% of a 390px screen before a number
+  was drawn — and there were seven breakpoint utilities in the whole application.
+
+  - **A bottom tab bar** below `sm`, with the same five destinations and the same
+    icons the sidebar carries. It **hides as you scroll down and returns as you
+    scroll up**: the gesture for seeing more of a list gives the list more room,
+    and the one for going back to the top brings navigation with it. It never
+    hides in the first screenful, where there is nothing to reclaim.
+  - **The register is a two-line card** on a phone rather than six columns.
+    Description and amount on the first line, date and account on the second —
+    and **categorizing is a chip, not a field**, opening the picker in a bottom
+    sheet with the matches at a size a thumb can hit. A full-width text box on
+    every row read as sixty things waiting to be typed into, and nobody types
+    into it on a phone.
+  - **Settings is an index list**, because about four of thirteen tabs fit.
+    Tapping a section replaces it, and a back link returns. Tabs are unchanged
+    above `sm`, where every destination fits at once.
+  - **Dialogs are bottom sheets** below `sm`, anchored to the edge a thumb
+    reaches rather than centred wherever their own height lands them.
+  - **The Budget header keeps Delegate** and folds the other four actions into a
+    sheet. Five buttons cannot sit in a row at 390px, and Delegate is the one
+    with a moment attached.
+
+- **Sync now on Settings → Sync, and Sign out on Settings → Users.** Both existed
+  only in the sidebar, so the page named after the connection could report on it
+  and not run it — a gap regardless of screen width.
+
+### Fixed
+
+- **Controls hidden behind hover are reachable on a touchscreen.** Every row
+  menu, the absorb button, a grouping's Archive and a rule's reorder arrows were
+  `opacity: 0` until hovered, and a phone cannot hover. Touch-and-hold was wired
+  on two pages and nowhere else, which left several of them unreachable by any
+  means at all. They are drawn where `(hover: none)` matches.
+
+- **The absorb button no longer covers the name it sits beside.** It is hung out
+  of flow in the gutter left of the Remaining column — over space the name is not
+  using at 1200px, and directly on top of it at 390px. It is a pointer control
+  now, and the same action is offered in the row menu, which has room for the
+  words.
+
+- **Touch targets are 44px** where there is no hover, which is the figure both
+  platforms publish. The controls keep their size; the target grows around them.
+
+## [0.28.2] — 2026-08-24
+
+### Fixed
+
+- **Tor has never started, and now does.** `torrc` carried
+  `HiddenServicePort 80 app:3000`. Tor does no name resolution for that
+  directive, so a compose hostname is a parse error — the container died before
+  starting, restarted for ever, and no hidden service was ever created. The only
+  symptom anywhere was Settings saying "No onion address yet", which is also what
+  it says when nothing is wrong.
+
+  The entrypoint now resolves the app's address before tor starts and writes it
+  into a runtime configuration. Confirmed by running the service locally against
+  a stub: it bootstraps, creates the hidden service, and reports the address.
+
+- **The app could not have read the address even once tor worked.** It mounted
+  the key volume and read `/tor/delegate/hostname` — a directory tor keeps at
+  0700 and owns, necessarily, because the private key is in it. The app runs as a
+  different unprivileged user, so every read failed with `EACCES`, and the catch
+  around it returned `null`, which renders identically to "no service yet".
+
+  The address is republished to a volume of its own, world-readable, and the app
+  no longer mounts the key volume at all — **less** access to the key than
+  before, not more. A v3 onion address is a public key; the thing worth guarding
+  is the secret beside it.
+
+  `readOnionAddress` now stays quiet only for a missing file. Anything else is
+  logged as the misconfiguration it is.
+
+- **The troubleshooting instructions on that page did not work.** They said
+  `sudo docker compose logs tor` with no directory, which answers "no
+  configuration file provided" from anywhere but the deploy folder, and
+  `sudo docker` on DSM answers "command not found" because sudo resolves the
+  binary itself against a path without `/usr/local/bin`. The page now gives the
+  whole command.
+
+### Added
+
+- **`npm run verify` checks the Tor configuration**, with `tor --verify-config`
+  against the real file. Offline, about a second, and it would have caught the
+  above before it ever left the Mac.
+
+## [0.28.1] — 2026-08-24
+
+### Fixed
+
+- **The nightly backup has never once run, and now does.** `deploy.sh` creates
+  the backup directory under `sudo`, so it was owned by root; the container runs
+  as the unprivileged `node` user, uid 1000. Every nightly `pg_dump` since
+  go-live failed with `Permission denied`. The Dockerfile's `chown` of
+  `/backups` did nothing about it — a bind mount replaces the image's directory
+  wholesale, and the host's ownership is what the process meets.
+
+  `deploy.sh` now chowns the directory to uid 1000, and — because a bind-mount
+  permission problem cannot be caught in the image or in `npm run verify` —
+  **proves the container can write there** before reporting a successful deploy.
+
+### Added
+
+- **Settings → Sync shows the backups.** The newest dump, how many are kept, the
+  directory they land in, and the last five with their sizes. A dump missing its
+  checksum sidecar reads as `incomplete` rather than as a backup, because that is
+  what `backup.sh` leaves behind when a run dies partway.
+
+- **A red banner when no backup has landed in 48 hours**, or when none ever has.
+  This is the part that matters: the dump failed every night for weeks, was
+  logged at error level every time, and nothing anywhere read the log. The check
+  asks **whether a dump has landed**, not whether the last attempt threw — those
+  differ exactly where it counts, and only one of them was answerable from
+  inside the application.
+
+## [0.28.0] — 2026-08-24
+
+### Changed
+
+- **Settings is quieter, denser, and consistent tab to tab.** Every list obeys
+  Settings → Display like the rest of the app, and every "add" is a button in the
+  card's top right opening a dialog, rather than a form permanently open below
+  the list it adds to.
+
+  - **Sync** — the connection is a line with a dot, not a full-width green bar
+    that shouted on the days nothing was wrong. Once connected, the setup-token
+    field goes away behind **Set up new token**, beside **Disconnect**: a token
+    is claimed once and spent, and an empty box asking to be filled reads as
+    unfinished work. Recent syncs now say what each run actually did — "12
+    imported, 3 updated", or "nothing new", which is the ordinary result on an
+    hourly schedule and should not read as a fault.
+  - **Accounts** — **Rename is offered on manual accounts only.** A SimpleFIN
+    account is called whatever the institution calls it, and the next sync would
+    not restore a name typed over it — it would leave the two disagreeing with
+    nothing on the page saying they ever matched. **Short name is now Nickname**,
+    which is the supported way to call an account something else. The "Also
+    counted" footer is gone, and **Add a manual account** is a header button and
+    a dialog.
+  - **Delegations** — one 32px row per envelope, reading like the Budget page's
+    own table. Opening one gives a single line of controls — name, grouping,
+    utility, amount — with the note on a second line, instead of a stack of
+    labelled fields three hundred pixels tall.
+  - **Groupings** — a table, with the palette behind the current swatch instead
+    of seven controls open on every row for a choice made once and left for
+    months. The trigger names the colour it holds, so the choice is never carried
+    by colour alone. **New grouping** is a header button and a dialog.
+  - **Rules** — a list laid out like the register: order, rule, what it
+    categorizes as, what narrows it, and whether it is on. **Add rule** and **Run
+    rules** are header buttons. Apply-to-existing was a permanently open panel
+    running a preview query on every visit, with the toggle that changes what the
+    button does sitting some distance from the button; it is a confirmation now,
+    and the preview is fetched when it opens.
+  - **Budget** — three settings on one screen without scrolling.
+  - **Users** — row actions are behind the `⋯` menu. A row could carry Edit,
+    Reset password, Reset two-factor and Archive at once: four controls of equal
+    weight, one destructive, on every row of a table read far more often than it
+    is acted on.
+
+- **Two-factor moved from Security to Users**, where it sits beside the account
+  it protects rather than beside a network setting. `/set-up-two-factor` renders
+  the same card, so there is still exactly one enrolment flow.
+
+- **Security is now Tor**, carrying remote access and nothing else. The old
+  `/settings/security` redirects.
+
+### Removed
+
+- **Reconcile to Actual.** It existed for a single moment in a household's life —
+  turning a twelve-month backfill into day-one balances — and that moment has
+  passed. Correcting drift now happens where the drift is visible: **Manually
+  adjust** on a Budget row, or Settings → Delegations. Both write the same
+  `adjust` event the screen wrote.
+
+  **No data is removed.** Every event a reconciliation wrote is untouched: they
+  are ordinary manual adjustments and always were. `go_live_at` keeps the date it
+  holds, because on a live deployment that is a real fact about the household,
+  and migrations here are forward-only. Nothing reads it now, so the Go-live card
+  in Settings → Budget went with the screen.
+
+  [ADR 031](docs/decisions/031-reconcile-to-actual-is-removed.md).
+
+## [0.27.0] — 2026-08-24
+
+### Changed
+
+- **Every chip is one letter.** The marks beside a row's name were words —
+  `Pending`, `income`, `manual`, `utility`, `needs review`, `stale` — and at
+  eleven pixels a word costs a row's width while saying no more than its initial
+  does once the initial is known. The register and the budget are the two places
+  where width is scarcest, and they carried the most of them.
+
+  `p` pending (still yellow), `i` income, `t` transfer, `m` kept by hand,
+  `s` stale, `r` needs review, `u` utility. Two rules keep a vocabulary of
+  letters legible and both are enforced rather than promised: **one letter, one
+  meaning across the whole application** — a unit test fails if two chips ever
+  share a mark — and **the word is always there**, as real text for a screen
+  reader and as a `title` for anyone who hovers.
+
+  A mark never repeats what the row already says. The register printed "Split
+  across 2: Grocery, Household"; `sp` says the first three words in two
+  characters, so the row reads `Supply Run  sp  Grocery, Household` and the
+  merchant name keeps the width those words were spending.
+
+### Added
+
+- **Five new marks**, for things the interface knew and never said:
+  - **`c`** — this payment settled an outstanding check. `clearCheck` allocates
+    to the delegation the check was drawn on and archives the check line, which
+    is right and left nothing on the row saying a check was involved. The
+    transaction remembers the check it settled now. Null on everything that
+    predates the column: which payment settled which check cannot be
+    reconstructed afterwards, and guessing from amounts and dates is the loose
+    matching [ADR 030](docs/decisions/030-a-cleared-check-is-confirmed-not-assumed.md)
+    exists to avoid, so older rows simply carry no mark.
+  - **`btc`** and **`h`** — a Bitcoin holding and a property, on the budget.
+    Neither figure is a bank balance: a holding is a quantity times a price and
+    is revalued daily with no transaction behind it, and a property is a dated
+    valuation. Both read as ordinary balances until something says otherwise.
+    `h` for house, because `p` is spent on pending.
+  - **`sp`** — split across more than one delegation.
+  - **`n`** — this delegation has a note. Previously only visible by opening the
+    row menu.
+  - **`s`** now appears on the **budget** as well as in Settings, which is where
+    you read the number it is warning you about.
+
+## [0.26.0] — 2026-08-24
+
+### Changed
+
+- **A check the bank has cashed is now confirmed, never settled unasked.** A sync
+  used to clear an outstanding check by itself the moment a payment matched its
+  exact amount and named its number. The criteria were strict and as far as
+  anyone can tell never settled the wrong check — the problem was that settling
+  one moves money between envelopes and archives a line, and it happened at three
+  in the morning with a log entry as its only trace.
+
+  A sync now **proposes**, and a person settles. It is surfaced twice: a **purple
+  banner** at the top of every page naming the checks, and a **Confirm it
+  cleared** button on the check's own row, beside its Remaining figure. The row
+  button is always visible rather than shown on hover, because a state nobody can
+  see until they hover the right row is one the banner points at in vain.
+
+  The confirmation shows both sides in full — what you wrote, and what the bank
+  took — because the point of asking is that you can disagree. There is no reject
+  button: a proposal is recomputed from the data rather than remembered, so it
+  would only come back. Declining is categorizing the payment as whatever it
+  actually was, which the dialog says.
+
+  The matching criteria are unchanged and deliberately still strict. A proposal
+  shown as "this cleared" is one somebody confirms without reading, so a loose
+  proposal is barely safer than a loose auto-match. A check whose bank text never
+  named it still goes through the manual path on the Transactions page.
+
+  [ADR 030](docs/decisions/030-a-cleared-check-is-confirmed-not-assumed.md).
+
+- **The balance reading is a chip beside the title, not a bar across the page.**
+  It read as a full-width bar with the state on the left and the equation on the
+  right. The equation is the reason to trust the figure, but it is not read twice
+  a day, and a bar's worth of page for it pushed the budget itself down the
+  screen — roughly 200px of it.
+
+  It now sits immediately right of **Budget**, baseline-aligned with the controls
+  across the header, saying only `Balanced`, `To delegate $1,000.00` or
+  `Over delegated $212.00` — state first, then the figure. Hovering it shows the
+  full equation, and so does tabbing to it: the justification for the number has
+  to be reachable without a mouse. It is not a button and does not pretend to be
+  one; there is nothing to press.
+
+  The three labels now live in `formatIdentityLabel` in `@budget/shared`, which
+  already existed and produced exactly these strings while the Budget page built
+  its own copy and never called it. There was one wording in two places and
+  nothing keeping them in step; there is one now.
+
+### Added
+
+- **Purple, as a fourth banner colour**, for something the application has
+  worked out and will not act on until somebody says so. Blue, yellow and red
+  were already "here is a fact", "this needs attention" and "this is wrong", and
+  a proposal is none of those. `#6B3FA0` on `#F4ECFB` is 6.41:1, in line with
+  danger rather than scraping the 4.5 floor.
+
+## [0.25.0] — 2026-08-23
+
+### Changed
+
+- **Settings → Accounts is one line per account.** A row was 77px — a name, a
+  short-name box under it whether or not it held anything, a bordered dropdown
+  for a field with two values, two switches each with their own written label,
+  and a red Archive button. Ten rows came to 738px. The same accounts now take
+  289px.
+
+  The list is split into **Assets** and **Debts**, alphabetical within each, and
+  the section name sits in the first column heading rather than in a title row of
+  its own. That split removes the Type column outright: the section a row is in
+  _is_ its type.
+
+  What stays on the row is what the page exists for — the two switches, one click
+  each, under a heading that names them once instead of sixteen times — and the
+  balance, still click-to-edit on a manual account. Everything read far more often
+  than it is changed moved into the `⋯` menu the Budget page has always had:
+  Rename, **Short name**, Set balance, Type, and Archive. Settings and the Budget
+  row menu are now the same menu, which is what §9.5 asked for.
+
+  Ordering follows the name on screen rather than the one in the column. The API
+  sorts by `name`, which used to be the black text here; now the short name reads
+  first, and sorting by the grey text underneath would have put "Firefly
+  Checking" above "Firefly Bank Little Pioneer Savings" — its real name begins
+  "Big Deal Cash Back".
+
+  The source chip is shown on **manual** accounts only. Eight identical
+  `simplefin` chips said nothing; a manual account is the one whose balance is
+  yours to type and which can go stale.
+
+  Row height follows Settings → Display like every other table, so compact,
+  comfortable and dense give 32, 40 and 28px here too.
+
+- **Bitcoin and property are no longer rows on that page.** They are one line
+  under the tables — `Also counted: …` — with each name linking to the tab that
+  owns it. Amends [ADR 021](docs/decisions/021-bitcoin-and-property-are-managed-where-they-live.md),
+  which put them there so the page could not become "a lie about what the budget
+  is made of"; that reasoning holds, and now costs 30px rather than two full rows.
+
+### Fixed
+
+- **A net-worth-only Bitcoin holding no longer reads `$0.00`.** `balance_cents`
+  is written for in-budget holdings only and cleared when one leaves the budget,
+  so `0` there means the absence of a figure, not a balance of zero. The old
+  "Manage in Bitcoin" row printed it as `$0.00` next to a wallet worth six
+  figures. A figure now appears only where it is maintained.
+
+- **Archive reads as destructive again in every row menu.** It was written as
+  `ITEM_CLASS text-danger`, and those two colour utilities have equal
+  specificity — so which won came down to the order Tailwind emitted them in,
+  and it was `text-ink`. The one destructive item in the menu looked like all the
+  others. There is a `DANGER_ITEM_CLASS` now that cannot lose that race.
+
+## [0.24.0] — 2026-08-22
+
+### Added
+
+- **Close the budget's reading against one line, from the line itself.** Hover a
+  delegation while the reading is not zero and a button appears: **Move surplus
+  here** when money has landed and is not in an envelope, **Fix deficit from
+  here** when the envelopes hold more than exists.
+
+  Three choices either way — all of it, bring the line to zero (or empty it into
+  the shortfall), or an amount you type. A choice that would be refused is shown
+  disabled **with the reason**, because the reason is usually the thing worth
+  knowing: "This line holds $50.00, which is not enough."
+
+  The dialog opens on the first choice that can actually be applied, which
+  matters most in exactly the case somebody opens it for.
+
+  It is the same `adjust` event a manual adjustment has always written, with the
+  amount computed instead of typed — so history, undo and the ledger check all
+  work on it already. The difference is **recomputed on the server** when the
+  request lands: "all of it" has to mean all of it then, not whatever the page
+  was showing before the hourly sync.
+
+## [0.23.0] — 2026-08-22
+
+### Added
+
+- **Archive, on a transaction's row menu.** The API has always supported it and
+  the interface never offered it, so taking a row out of the register meant a
+  database prompt. The case it exists for arrived on its own: a re-linked
+  institution re-imports transactions that are already there.
+
+  Archive, never Delete — nothing here is hard-deleted. Archiving reverses any
+  envelope movement the transaction caused, and backs a **manual** row's amount
+  out of the account balance; a synced account's balance comes from the feed and
+  is left alone.
+
+## [0.22.1] — 2026-08-22
+
+### Fixed
+
+- **An institution reconnected at the bridge broke syncing permanently.**
+  Deleting a connection at SimpleFIN and adding it back gives every one of its
+  accounts a new external id. Delegate matches on that id, so they arrived
+  looking new — and creating one failed on the partial unique index over
+  `lower(name)`, because the original was still there under the same name. The
+  collision then recurred every hour, forever. Such an account is adopted now:
+  same row, same register, same type and nickname, new id.
+- **One account's failure stopped every other institution syncing.** Anything
+  thrown while ingesting an account escaped and failed the whole run, so a
+  household with six connections lost all six balances because one had been
+  reconnected. Per-account failures are reported on the run and skipped, which
+  is how a foreign-currency account has always been handled.
+
+## [0.22.0] — 2026-08-20
+
+### Changed
+
+- **The Delegate button becomes Undo Delegation** while the run can still be
+  undone, in red, and goes back to Delegate when the window closes. One slot,
+  because while a run is still undoable there is nothing sensible to delegate —
+  offering both would be offering the wrong one first.
+- **What was delegated is said beside the cycle date** rather than in a bar of
+  its own, and it disappears with the offer. The cycle date stays: the cycle did
+  not end when the chance to undo it did.
+
+### Fixed
+
+- **The undo offer never expired.** `previewUndoLatestDelegate` computed the
+  expiry and handed the run back regardless, so the interface kept offering an
+  undo that `undoDelegateRun` would refuse with `undo_window_expired`. The money
+  was never at risk — that refusal is real and always was — but a button that
+  cannot do what it says is worse than no button.
+
+## [0.21.0] — 2026-08-19
+
+### Added
+
+- **Delegations can be put in an order**, and it is stored on the budget rather
+  than in a browser — the same for everyone who signs in. Alphabetical was the
+  only order this application had, which is why a household ends up naming its
+  groupings "3 - Food" and "5 - Home": numbering by hand to buy back an ordering
+  the software would not give them.
+- **Drop a row onto another row** to put it in that row's place, in that row's
+  grouping. Dropping onto a grouping still sends it to the end, as before.
+- **Move up** and **Move down** in the row menu, beside the existing Move to
+  grouping. Dragging is the fast route and it is not a keyboard one, so this is
+  not a lesser alternative — it is the one that always works, including under a
+  thumb.
+
+Positions are backfilled to the order the budget already showed, so nothing
+moves on upgrade.
+
+## [0.20.0] — 2026-08-19
+
+Interface work asked for by the owner, and a second factor that is no longer
+optional.
+
+### Added
+
+- **Display names.** The username is an email address and reads as one wherever
+  it appears. A name is not a credential and nothing is looked up by it, so
+  anybody can set their own whatever role they hold — `PATCH /api/auth/me` sits
+  outside user management for that reason.
+- **Resetting somebody's second factor**, for an administrator. The way back
+  when the phone is gone and the recovery codes went with it. Sign-in demands
+  the second factor whenever one is confirmed, so before this the only route was
+  a database prompt.
+- **Add transaction on the Budget page**, beside Add grouping.
+
+### Changed
+
+- **A second factor is required of every account, always**, including the first
+  Super Admin. The `requireTotp` setting is gone with its toggle. It never did
+  what its name suggested: sign-in demanded the second factor whenever one was
+  confirmed whatever it said, so it could not rescue a locked-out account, and
+  its only real effect was to permit accounts with none at all.
+- **Settings → Users is a table**, with creating and editing in a dialog. It was
+  a permanent form at the bottom of the page and inline fields on every row,
+  which made the common case — reading who has an account — the hardest thing on
+  the screen.
+- **The Transactions register opens unfiltered**, and its columns are stated
+  rather than left to the browser. A bank description is unbounded and took 728
+  of 1112 pixels, leaving the delegation picker 87.
+- **Transfer mirrors the Budget page**: grouped dropdowns in the same order, each
+  option carrying the balance it holds.
+- **To delegate lines up with Assets and Debts.** A single `pr-3` those cells do
+  not carry had it 12 pixels out.
+- **New outstanding check** is **New check**.
+- Less prose on Utilities and Insights, and **Add from catalog** is a button in
+  the header rather than a dashed tile at the end of the grid.
+
+### Fixed
+
+- `PATCH /api/settings` refused unknown fields rather than stripping them. A
+  request still carrying `requireTotp` answered 200 with the field discarded —
+  which reads to the caller as having turned two-factor off, successfully.
+
+## [0.19.0] — 2026-08-19
+
+The budget no longer assumes the household is paid every two weeks.
+
+### Added
+
+- **Pay cadence**, on Settings → Budget: weekly (52 a year), every two weeks
+  (26), twice a month (24), or monthly (12). The count is part of each label
+  because "biweekly" is genuinely ambiguous in English, and picking the wrong
+  one would put the suggestion out by a factor of four with nothing on screen to
+  reveal it.
+- **Twice a month covers both patterns.** The 1st-and-15th and the
+  15th-and-last-day are the same 24 payments a year, and naming it by a pair of
+  dates would make half the households it fits think it did not.
+
+### Changed
+
+- `suggestedPerCycleCents` takes the number of cycles rather than assuming 26.
+  Still integer throughout and still rounded half away from zero; the doubling
+  in the new form is what keeps that exact for an odd divisor as well as an even
+  one.
+- The Utilities page names the divisor it actually used, and the server sends it
+  alongside the figures rather than leaving the interface to look it up — a page
+  saying "over 26" beside a number computed from 24 is worse than either alone.
+- Two comments that described biweekly pay as though the code depended on it.
+  One of them, on `partial` in the cycle summaries, had never matched what the
+  code did.
+
+### Unchanged, deliberately
+
+- **Nothing runs on a schedule.** A cycle is still one Delegate press to the
+  next, pressed by hand when the money lands. The cadence is a divisor, not a
+  timetable.
+- **No amount to delegate is rewritten.** Those are applied once per press, so
+  changing cadence changes what they come to over a year. That is the
+  household's decision and the interface says so rather than acting on it.
+- **An existing budget reads identically after the upgrade.** The column
+  defaults to `biweekly`, which is what the arithmetic assumed before it was a
+  setting.
+
+## [0.17.0] — 2026-08-19
+
+Model Context Protocol support, added in 0.15.0 and 0.16.0, is removed at the
+owner's direction. Settings → Connections, the API token model, the connector
+bundle and the `apps/mcp` workspace are all gone, along with their
+documentation and ADRs 030 and 031.
+
+The two fixes found while that work was being done are **kept**. Neither had
+anything to do with it beyond being noticed at the same time.
+
+### Removed
+
+- API tokens, the token scope allowlist, Settings → Connections, the
+  `apps/mcp` server and the Claude Desktop connector bundle.
+- `api_tokens` is dropped by a new migration rather than by deleting the one
+  that created it. Migrations are forward-only (ADR 003) and the deployment had
+  already applied it; removing the file would leave `migrate deploy` reporting
+  drift. Dropping rather than archiving is right here for once — the rows were
+  credentials, not a record of anything the household did.
+
+### Fixed
+
+- **A flag in a query string is text, not a truthy value.**
+  `z.coerce.boolean()` is `Boolean(value)`, and `Boolean("false")` is `true`, so
+  `GET /api/transactions?uncategorized=false` returned the uncategorized queue —
+  the Transactions page's Categorized filter had been showing the wrong list.
+  `pending` and `includeArchived` had the same fault, on transactions and on
+  accounts. The parse now lives in `http/serialize.ts` as `booleanQuery`.
+- **`.dockerignore` was anchored at the root**, so
+  `packages/shared/tsconfig.tsbuildinfo` was copied into the build context. A
+  stale one is a lie `tsc --build` believes: it concludes the project is already
+  built, emits nothing, and every workspace importing `@budget/shared` then
+  fails to resolve it. Only ever visible locally — the NAS builds from a
+  `git archive` tarball, which carries no ignored file at all.
+
+### Changed
+
+- **The container image step starts the image** and asks it for `/health`.
+  Building alone was half of what the step's name claimed, and a container that
+  builds and then exits on boot is a failure this project has had twice.
+
+## [0.3.0-phase3] — 2026-08-10
+
+Phase 3 as re-scoped, plus outstanding checks and the first pass of Phase 4.
+Passkeys were dropped from the plan and Cloudflare Access deferred, both
+recorded rather than quietly skipped.
+
+### Added
+
+- **Two-factor authentication.** TOTP with ten recovery codes, and a
+  household-wide requirement that refuses to turn on while any active account
+  would be locked out by it. The secret is stored encrypted and the recovery
+  codes as argon2id hashes, for the same reason the SimpleFIN credential is: the
+  nightly `pg_dump` is the copy most likely to leave the device. The
+  second-factor step uses a signed challenge rather than a half-authenticated
+  session — [ADR 014](docs/decisions/014-the-second-factor-step-uses-a-signed-challenge-not-a-session.md).
+- **Rate limiting** on every route that verifies a credential, and security
+  headers via helmet with a same-origin content security policy.
+- **CSRF protection** as an origin check on every state-changing request, on top
+  of the `SameSite=Lax` cookie — [ADR 015](docs/decisions/015-csrf-is-an-origin-check-not-a-token.md).
+- **Session rotation on role change.** The guards already re-read the role every
+  request, but the session id itself was minted under different privileges.
+- **Optional TLS**, terminated by the application, with plain http as the
+  documented default for a trusted LAN — [ADR 017](docs/decisions/017-plain-http-is-the-default-and-tls-is-optional.md).
+  `scripts/make-tls-cert.sh` generates a certificate with the right subject
+  alternative names, including bare IP addresses.
+- **Cloudflare Tunnel support.** `TRUST_PROXY` makes the sign-in rate limit count
+  the real client rather than `cloudflared` — without it the whole internet
+  shares one bucket. Opt-in, because trusting an unvetted `X-Forwarded-For` does
+  not weaken the limit, it removes it —
+  [ADR 018](docs/decisions/018-a-proxy-is-trusted-only-when-configured.md).
+- **Outstanding checks.** A check written and not yet cashed is modelled as a
+  delegation, so the budget identity holds through its whole life. Matched to the
+  payment that cashes it by exact amount _and_ check number as a whole token;
+  what cannot be resolved automatically is matched by hand. The spending lands on
+  the delegation the check was drawn on, never on the check line.
+- **Dependency audit in CI**, failing on a high or critical advisory in anything
+  that ships. Policy and update process in [docs/dependencies.md](docs/dependencies.md).
+- **Phase 4, first pass:** a row-height setting (40px, or 32px compact), the
+  budget showing one amount at a time on a phone with a swipe between them, and
+  `j`/`k` plus arrow-key navigation of the transaction queue.
+- **A per-row menu on Transactions**, holding Split and Match to a check. One way
+  in per device: hover, keyboard focus, or touch and hold.
+
+### Fixed
+
+- **Signing out could be undone by a request already in flight.** The session row
+  was deleted, then a poll that had been running since before the logout re-saved
+  its session — sessions are rolling — and the upsert re-created the row. Signed
+  out everywhere visible, still signed in as far as the cookie was concerned,
+  about one time in three.
+- **Sign-out left the browser rendering the budget.** The server destroyed the
+  session; the client kept drawing from a cache that was never emptied.
+- **The container could not read its own TLS key.** It runs as uid 1000, and a
+  key generated by whoever ran the script is mode 600 and owned by them. Caught
+  by CI on the first run of the TLS smoke test.
+- **Compose silently ignored `TRUSTED_ORIGINS`, `AUTH_RATE_LIMIT_*` and
+  `BITCOIN_PRICE_*`.** They were never passed through, so setting them in `.env`
+  did nothing.
+
+### Changed
+
+- **Passkeys are out of scope** — [ADR 016](docs/decisions/016-passkeys-are-out-of-scope.md).
+  TOTP covers the stolen-password threat; what passkeys add is phishing
+  resistance, which is narrow for a two-person application with no public URL to
+  impersonate. The trade is recorded: Delegate remains phishable.
+- **Cloudflare Access deferred** to a future request. Without it the sign-in page
+  will be on the public internet once the tunnel is up, and the rate limit, the
+  second factor and argon2id are what stand in its place.
+
+## [0.2.0-phase2] — 2026-08-09
+
+Phase 2: everything §12 asks for, built and tested. The pages that need
+categorized history are correct but sparse until go-live fills them.
+
+### Added
+
+- **Bitcoin** held as a quantity in satoshis, valued at the price on the date
+  being shown. Hourly fetch from CoinGecko with Coinbase as a fallback, both
+  keyless, behind a `PriceProvider` interface. A daily close is cached so the net
+  worth chart uses the price that actually applied on each date.
+- Closes settle on the following day's fetch rather than at midnight, so a
+  container stopped overnight leaves no permanent hole in the chart.
+- **Property values** recorded against an as-of date and kept as history, with
+  equity computed on read from a linked mortgage. Manual entry only — §8 rules
+  out Zillow — behind a `ValuationProvider` interface.
+- **In-app notification banners**: a failing sync, balances nobody has confirmed
+  lately, accounts a sync guessed the type of, the uncategorized backlog, and a
+  stale Bitcoin price. Computed on read and not dismissible.
+- **Grouping colours** from a curated palette, enforced server-side, expressed as
+  a soft tint that keeps near-black text above 10:1 contrast.
+- **Dragging a delegation between groupings**, as an addition to the row menu
+  rather than a replacement — dragging is not a keyboard route.
+- **The Utilities page**: twelve months per utility, the monthly average, the
+  suggested per-cycle amount, and what the line is actually funded at.
+- **The Insights page** and all twelve catalog widgets, with the chosen layout
+  persisted per user.
+- **Balance history reconstructed from the ledger** rather than stored, so the
+  time-series widgets cover history that arrived before the feature existed. See
+  [ADR 013](docs/decisions/013-historical-balances-are-reconstructed-from-the-ledger.md).
+- **Transaction pairing**: §7's heuristic exactly, suggested and confirmed, never
+  applied silently. Confirming clears any categorization, since a transfer
+  allocates to nothing.
+- An account's type can be corrected from Settings → Accounts and from the row
+  menu — the API always accepted it and no screen offered it.
+- Container images published to GHCR from `main` and version tags, signed through
+  Sigstore, and deployed **by digest with the signature verified before start**.
+  See [ADR 012](docs/decisions/012-images-are-deployed-by-digest-with-verified-provenance.md).
+- `scripts/deploy.sh`: one SSH command that resolves a tag to a digest, verifies
+  it, pins it, and waits for the health endpoint.
+- 110 further tests, and end-to-end coverage of every page added.
+
+### Fixed
+
+- `GET /api/rules/preview` read its `includeCategorized` flag with `Boolean()`,
+  and `Boolean("false")` is `true` — so asking for the safe preview returned the
+  count for the mode that overwrites categorizations made by hand.
+- Reconcile never stamped the go-live date: the domain accepted one and the route
+  never passed it.
+- `npm run typecheck` did not cover the web application at all.
+- Equity over time zipped two series positionally when each is truncated at its
+  own earliest history, subtracting a mortgage balance from the wrong date.
+- Unpairing did not refresh the suggestion list, so a reversed pair did not
+  reappear until a reload.
+- The container image was built by CI and never published, while the Compose file
+  pointed at it. The first deploy would have failed at the pull.
+- `actions/attest-build-provenance` cannot run on a user-owned private
+  repository; images are signed directly through Sigstore instead.
+- The README told the owner to authenticate to `ghcr.io` with a fine-grained
+  token. GitHub Packages only supports a classic one, and `docker login` fails
+  with `denied: denied`.
+- Several end-to-end tests raced a write and passed only on a fast machine.
+
+## [0.1.0-phase1] — 2026-08-09
+
+Phase 1: everything needed to stop using the spreadsheet, on the LAN.
+
+### Added
+
+- Repository scaffold: npm workspaces, TypeScript project references, type-aware
+  ESLint, Prettier, Vitest with separate unit and integration projects, and CI.
+- `@budget/shared`: integer-cent money primitives (parsing, formatting, even and
+  weighted distribution, JSON serialization), the budget identity and its
+  labelling, and the domain vocabulary shared with the UI.
+- PostgreSQL schema covering accounts, groupings, delegations, the delegation
+  event ledger, delegate runs, envelope transfers, transactions and allocations,
+  auto-categorization rules, users and sessions, sync runs, valuations, Bitcoin
+  price history and settings.
+- Hand-written integrity migration: case-insensitive partial unique indexes on
+  live names, and check constraints the database enforces itself.
+- Domain services: the event ledger with transactional cached balances, Delegate
+  with preview and 12-hour undo, envelope transfers, manual adjustment,
+  categorization and splits, pending reconciliation and reversal, archiving rules,
+  and go-live reconciliation.
+- `recompute-balances` CLI, with a read-only `--check` mode used by CI.
+- 116 tests, including integration tests against a real PostgreSQL asserting the
+  identity behaves correctly after delegate, undo, transfer, adjust, categorize,
+  split, pending appearing, pending vanishing and archiving.
+- Documentation: architecture, eight ADRs, phase-gated open questions.
+- CI check rejecting the forbidden terminology for the Bitcoin asset class.
+- Fastify application: validated environment configuration, structured logging
+  with a correlation id per request and redaction of credentials, a domain-to-HTTP
+  error mapping, a health check, and graceful shutdown on SIGTERM.
+- Authentication: argon2id password hashing, PostgreSQL-backed sessions, first-run
+  Super Admin creation, login and logout, forced password change on first login,
+  and session id rotation on login and password change.
+- User management for Admins: create, rename, change role, reset password,
+  archive and restore, with Super Admin immunity enforced in the domain layer.
+- 43 further integration tests covering session fixation, user enumeration, the
+  temporary-password lockout, Super Admin immunity, and session revocation on
+  archive and password reset.
+- SimpleFIN sync: hourly `node-cron` job and a manual sync endpoint, 12-month
+  backfill on first run, idempotent re-runs keyed on the feed's transaction id,
+  automatic discovery of new accounts flagged for review, and the full pending
+  lifecycle — settling under the same or a new id, and reversal when a pending
+  transaction vanishes.
+- `simplefin:claim` CLI, exchanging a one-time setup token for the access URL.
+- Sync run history with counts and errors, exposed at `/api/sync/status` to drive
+  a persistent failure banner.
+- Protocol parsing that accepts both SimpleFIN protocol versions, rejects
+  sub-cent precision rather than rounding it, and refuses non-USD accounts with a
+  visible reason.
+- 34 further tests covering idempotency, the pending lifecycle, the request
+  window, and the guarantee that the access URL never leaves the server.
+- Auto-categorization rules: matching on description (contains, starts-with,
+  regular expression), amount range, account and direction; priority ordering
+  with first match winning; applied automatically to transactions a sync
+  imports; reorder, enable, archive, and "always categorize like this" from a
+  transaction.
+- Apply-to-existing bulk action with a read-only preview, which is what makes
+  categorizing months of backlog before go-live reconciliation tractable.
+- 28 further tests covering ordering, the refusal to overwrite a categorization
+  made by hand, regular-expression safety, and cache-versus-ledger agreement
+  after a bulk apply.
+- Transactions API with search across description, account, delegation and
+  amount; filters for date, account, delegation, kind, uncategorized and pending;
+  splits with exact amounts or an even division; and bulk categorize.
+- Budget API: the read model with groupings and totals, inline creation and
+  editing, and Delegate with preview and 12-hour undo, Transfer, manual
+  adjustment and Reconcile to Actual.
+- The web application: app shell with a collapsible sidebar, authentication
+  screens, first-run Super Admin creation, and the design tokens from
+  `docs/design.md`.
+- The Budget page — three sections, inline creation, click-to-edit money
+  cells, the identity banner, Delegate with its confirmation and undo bar, and
+  Transfer.
+- The Transactions page: the uncategorized queue, a keyboard-driven delegation
+  type-ahead, search, filters and bulk categorize.
+- SimpleFIN connection from Settings, with the access URL encrypted at rest
+  (AES-256-GCM) and taking precedence over the environment variable.
+- Manual transaction entry, and a split editor that shows the remainder as
+  amounts are typed and refuses to save until the parts sum to the whole.
+- `GET /api/accounts`, since the Budget page read model deliberately carries only
+  in-budget accounts and a manual transaction may belong to an off-budget one.
+- The per-row menu on the Budget page: rename, the utility toggle, a note,
+  manual adjustment, per-line history, move to grouping, and archive. A blocked
+  archive offers Adjust and Transfer inline.
+- Per-delegation history — the only place `adjust` events are ever visible,
+  since the transaction journal exists for categorization rather than auditing.
+- Inline grouping creation on the Budget page.
+- Settings, one section per page: Sync, Accounts, Delegations, Groupings, Rules,
+  Budget, Users, Reconcile and Archived.
+- **Reconcile to Actual** — every delegation with its computed balance and an
+  editable actual, committed in one batch. A line left blank is not touched, so
+  it can be done in several sittings. The first commit is recorded as the go-live
+  date.
+- Settings → Budget: the identity tolerance and the undo window, both bounded,
+  with the derived warning and danger thresholds stated on screen.
+- Account management: create a manual account, edit it, and archive or restore
+  it. A balance is editable only on a manual account, and an in-budget account
+  holding money refuses to archive.
+- The asset and debt row menu, sharing its mechanics with the delegation menu.
+- Settings → Archived, backed by a new `GET /api/archived`.
+- Settings → Rules with reordering, and apply-to-existing behind its preview.
+- Settings → Users: create, change role, reset password, archive and restore,
+  mirroring the server's Super Admin immunity rather than reimplementing it.
+- Container images published to GHCR from `main` and version tags, with SLSA
+  build provenance attested through Sigstore.
+- `scripts/deploy.sh` — one SSH command that resolves a tag to a digest, verifies
+  its provenance, pins it, and waits for the health endpoint.
+- 70 end-to-end tests in a real browser covering the budget, transactions, manual
+  entry and splits, both row menus, reconciliation, accounts, settings and rules.
+
+### Fixed
+
+- Backfill requests are split into 45-day windows. The bridge silently caps a
+  longer range and reports it as a note rather than an error, so a twelve-month
+  request returned three months while appearing to succeed — measured against
+  real accounts, 275 transactions instead of 423.
+- Account type is guessed from the institution and account name together. A real
+  feed returns institution "Alliance Credit Card" with account name "A Person
+  (1234)", and reading the account name alone classified a credit card as an
+  asset, which adds to the budget identity instead of subtracting from it.
+- The Prisma CLI could not find the repository-root `.env`, so `npm run db:deploy`
+  failed on a clean machine.
+- `npm run simplefin:claim` failed with `ERR_MODULE_NOT_FOUND` and could never
+  have run.
+- The SimpleFIN response schema defaulted `accounts` to an empty array, so
+  unrelated JSON parsed as zero accounts and recorded a successful sync.
+- Integration test files ran concurrently against one database despite
+  `fileParallelism: false`, which is a root-level Vitest option and is ignored
+  inside a project. Replaced with a single fork for that project.
+- A missing hashed asset returned `index.html` with a 200 and `text/html`,
+  producing a blank page and a MIME error that pointed nowhere near the cause.
+  End-to-end tests now assert content type rather than status.
+- `GET /api/rules/preview` read its `includeCategorized` flag with `Boolean()`,
+  and `Boolean("false")` is `true` — so asking for the safe preview returned the
+  count for the mode that overwrites categorizations made by hand. That number is
+  read immediately before deciding whether to rewrite a year of history.
+- Reconcile never stamped the go-live date: the domain accepted one and the route
+  never passed it, so `budget_settings.go_live_at` could not be set by any path
+  through the application.
+- `npm run typecheck` did not cover the web application at all — the root
+  TypeScript project referenced only `packages/shared` and `apps/api`, so type
+  errors in `apps/web` surfaced only at build time. Adding it found two real
+  ones, including a query function receiving TanStack Query's context object as
+  its first argument.
+- A `<label>` wrapping its textarea took its accessible text from everything it
+  contained, so a filled-in note field could no longer be found by its own label.
+  Replaced with a `TextArea` primitive wiring label and control by `htmlFor`.
+- Two end-to-end tests fired a mutation and immediately navigated away, so the
+  next page rendered mid-write and the assertion then polled a static DOM. They
+  passed for months and failed only on a slow first run after a cold start.
+- The container image was built by CI and never published, while the Compose file
+  pointed at `ghcr.io/aso42244/delegate:latest`. The documented first deploy
+  would have failed at the pull.

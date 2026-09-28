@@ -1,0 +1,50 @@
+{
+  "name": "@budget/api",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc --build",
+    "clean": "rm -rf dist *.tsbuildinfo",
+    "dev": "node --watch --experimental-strip-types src/server.ts",
+    "start": "node dist/server.js",
+    "db:generate": "dotenv -e ../../.env -- prisma generate",
+    "db:migrate": "dotenv -e ../../.env -- prisma migrate dev",
+    "db:deploy": "dotenv -e ../../.env -- prisma migrate deploy",
+    "db:reset": "dotenv -e ../../.env -- prisma migrate reset --force",
+    "db:seed": "node --experimental-strip-types prisma/seed.ts",
+    "db:seed:demo": "node dist/cli/seed-demo.js",
+    "recompute-balances": "node dist/cli/recompute-balances.js",
+    "simplefin:claim": "npm run build && node dist/cli/claim-simplefin-token.js",
+    "secrets:rekey": "node dist/cli/rekey-secrets.js"
+  },
+  "prisma": {
+    "seed": "node --experimental-strip-types prisma/seed.ts"
+  },
+  "dependencies": {
+    "@bitcoinerlab/descriptors": "^2.3.6",
+    "@bitcoinerlab/secp256k1": "^1.2.0",
+    "@budget/shared": "*",
+    "@fastify/cookie": "^11.1.2",
+    "@fastify/helmet": "^13.1.0",
+    "@fastify/rate-limit": "^11.2.0",
+    "@fastify/session": "^11.1.2",
+    "@fastify/static": "^10.1.3",
+    "@prisma/client": "^6.19.1",
+    "argon2": "^0.45.1",
+    "bs58check": "^4.0.0",
+    "dotenv": "^16.6.1",
+    "fastify": "^5.11.3",
+    "fastify-plugin": "^6.0.0",
+    "node-cron": "^4.6.0",
+    "otplib": "^13.4.1",
+    "prisma": "^6.19.1",
+    "socks": "^2.8.9",
+    "undici": "^7.29.0",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@types/node-cron": "^3.0.11",
+    "dotenv-cli": "^11.0.0"
+  }
+}

@@ -1,0 +1,1951 @@
+# Handoff
+
+Everything a new session needs to pick this up.
+
+**What is authoritative:** these documents and the ADRs in `docs/decisions/`.
+This used to name the maintainer's original build prompt at
+`~/Desktop/budget-app-build-prompt.md` as the specification that overrode
+everything here — but that file is no longer on disk, so for a long time every
+session was being told to defer to something it could not read. Every decision
+that outlived the prompt is in an ADR; where two documents here disagree, the
+ADR wins, and where no ADR covers it, ask.
+
+---
+
+## If you are running in the cloud
+
+The repository is public at `github.com/aso42244/delegate`, and everything a
+session reads travels with the clone — `CLAUDE.md`, this file, `ui-system.md`,
+`design.md`, `architecture.md`, the ADRs. A cloud session is oriented exactly as
+well as a local one.
+
+**What does not travel, because it is deliberately not in the repository:**
+
+- `.env` — git-ignored, and it holds the database URLs and `SESSION_SECRET`.
+  `.env.example` is committed and shows the shape, and a working local one can be
+  made from it in a second (see below).
+- `node_modules` and the generated Prisma client.
+- The Postgres _databases_ and their contents.
+- The deployment host. Nothing here can reach it.
+
+**Everything else is here, and the whole gate runs.** This section has now been
+wrong twice in opposite directions — first that none of the gate could run in the
+cloud, then that all but three Docker steps could. Both had one cause: the checks
+everybody used, `docker info` and `psql -l`, report a **stopped daemon** and an
+**absent program** identically, and this image ships Postgres 16 and Docker
+installed and neither running.
+
+```sh
+which psql && service postgresql status      # installed? and merely down?
+which dockerd && docker info                 # same question, same trap
+```
+
+**Starting a cloud container**, which takes a couple of minutes:
+
+```sh
+npm ci && npm run db:generate                # neither travels with the clone
+
+service postgresql start
+su postgres -c "psql -c \"ALTER USER postgres PASSWORD 'change-me';\""
+su postgres -c 'psql -c "CREATE DATABASE household_budget_dev;"'
+su postgres -c 'psql -c "CREATE DATABASE household_budget_test;"'
+
+dockerd >/tmp/dockerd.log 2>&1 &             # compose, tor and the image step need it
+npx playwright install chromium chromium-headless-shell   # the image ships a build behind the pin
+
+# A build container trusts nothing this sandbox terminates TLS with, so `apk
+# add` inside both Dockerfiles fails with "certificate verify failed" — which
+# apk then reports as `tor (no such package)`, naming the wrong problem. Give
+# the two base images the proxy's CA, locally and without touching either
+# Dockerfile, which must stay correct for the NAS and for the runner:
+printf 'ARG BASE\nFROM ${BASE}\nCOPY ca-bundle.crt /tmp/c\nRUN cat /tmp/c >> /etc/ssl/certs/ca-certificates.crt && rm /tmp/c\n' > /tmp/cabase/Dockerfile
+cp /root/.ccr/ca-bundle.crt /tmp/cabase/
+docker build --build-arg BASE=alpine:3.21    -t alpine:3.21    /tmp/cabase
+docker build --build-arg BASE=node:22-alpine -t node:22-alpine /tmp/cabase
+
+cp .env.example .env                         # then any 32+ character SESSION_SECRET
+set -a && . ./.env && set +a
+npm run db:deploy                            # and again with DATABASE_URL=$TEST_DATABASE_URL
+```
+
+Then **`npm run verify` runs unmodified and fifteen of its sixteen steps pass**,
+including all three suites, the compose parse, the tor image and the backup
+restore. Verified on 2026-09-15.
+
+**The sixteenth cannot run here, and the reason is worth knowing before you spend
+an afternoon on it.** `Dockerfile` opens with `# syntax=docker/dockerfile:1`,
+which hands the build to an external BuildKit frontend — and that frontend
+resolves `FROM node:22-alpine` **against the registry**, ignoring the local image
+store. So the CA trick above works for `tor/Dockerfile`, which has no syntax
+directive, and cannot work for the main image: there is no way to substitute a
+CA-patched base without editing the Dockerfile, and editing it to suit this
+sandbox would be editing the artefact the NAS runs. Proved by adding that one
+line to a two-line Dockerfile and watching it start failing.
+
+**What covers it instead.** The publish workflow builds this exact image on an
+x86_64 runner with no interception, which is also the image that actually ships —
+so a green workflow _is_ that step, run somewhere it can be. Watch the run and
+confirm the manifest and the signature before handing over a deploy line, which
+is the rule anyway. What a cloud session genuinely does not get is the local
+`/health` smoke test of the built container; `deploy.sh` waits on `/health` on
+the NAS, so it is covered again at the far end.
+
+**Say which of the sixteen ran.** "The gate passed" is wrong here, and so is "the
+gate cannot run" — the first has been said in a PR body and the second in this
+file.
+
+**Every one of those accommodations is to the environment, never to the
+repository.** Nothing above edits a Dockerfile, a config or a test to suit this
+container — the image the NAS runs and the image the runner publishes are built
+from exactly what is committed. A gate that only passes because the thing it
+checks was altered is not a gate.
+
+**Two workarounds that should not be reinvented.** There is no need for a
+`playwright.container.config.ts` pointing at a mismatched chromium — install the
+pinned build instead; that temporary config also fails `npm run lint`, which is
+how sessions kept rediscovering it and deleting it again. And the pipe trap has a
+second shape: `npm run verify | tail` was always wrong, and so is any command
+that merely _ends_ in a pipe to `grep`, which reported a red gate as green once
+in the session that wrote this. Redirect, then read `$?` on its own.
+
+**A red gate is still a red gate.** `main` is always deployable and the gate is
+what makes that true, whichever machine it ran on.
+
+---
+
+## Start here
+
+**Read, in this order.** Not all of it — the last three are read when the task
+touches them.
+
+1. `CLAUDE.md` at the repository root. The short version of everything below.
+2. This file: **Your authority**, **Hard constraints**, **The gate**,
+   **Releasing and deploying**. Those four are durable. The release narrative
+   further down is history, not status — see the next section.
+3. `docs/ui-system.md` — **before any interface change**, including a one-line
+   one. This is the file that stops the interface drifting back into seventeen
+   dialects, and a test enforces it.
+4. `docs/design.md` — before UI work. Read as written rather than re-derived.
+   Where it and `ui-system.md` meet: the first says _why_, the second _how much_.
+5. `docs/architecture.md` — only if you touch the domain, the ledger, or money.
+6. `docs/decisions/*.md` — only the ones your task actually touches.
+
+---
+
+## How to know where things stand
+
+**Run these. Do not trust prose in this file for anything that has a version
+number in it** — this section exists because the paragraph below it spent ten
+releases insisting the NAS was on `v0.58.0`.
+
+In any clone — a cloud session is the ordinary one — after
+`git fetch --tags origin main`:
+
+```sh
+git status -sb                                  # clean tree? in sync with origin?
+git log --oneline -10 origin/main               # the newest `chore: cut vX.Y.Z` is the release
+git tag --sort=-v:refname | head -5             # what has actually been cut
+sed -n '/## \[Unreleased\]/,/^## \[0/p' CHANGELOG.md   # merged but not yet released
+gh pr list --state open                         # anything left mid-flight (or the GitHub tools)
+```
+
+How to read the answers:
+
+- **The newest `chore: cut vX.Y.Z` commit is the current release.** There is no
+  other source of truth for it in the repository.
+- **`[Unreleased]` in `CHANGELOG.md` is what is merged and not yet cut.**
+  "Nothing yet." means the last release is the whole of `main`.
+- **Assume the NAS is running the newest tag that was handed over.** The maintainer's
+  standing instruction: once the deploy line has been handed over, treat the
+  deployment as being on that version unless told otherwise.
+  Do not ask, and do not leave a version number sitting in this document with a
+  question attached to it.
+- **Nothing in the running application reports its version.** `/health` is
+  deliberately quiet and no screen shows it. If it genuinely has to be
+  established, it is `docker ps` on the NAS — which reports the digest
+  `deploy.sh` pinned — or inferring from a feature that exists in only one of the
+  candidates.
+- **A missing version number means nothing was ever cut**, not that a release was
+  withdrawn. `v0.54.1` and `v0.53.x` never existed and the gap is deliberate.
+  The exception is **`v0.46.0`, which has no published image** — its workflow run
+  never produced one, so a deploy must name `v0.47.0` or later.
+
+The sections after **Where things stand** are a release-by-release narrative kept
+for context. It is not maintained as status and it is not the changelog. When it
+disagrees with `CHANGELOG.md` or `git log`, they win.
+
+---
+
+## The gate
+
+**`npm run verify` is the only thing between a branch and `main`.** There is no
+CI: GitHub stores the code and nothing else
+([ADR 022](decisions/022-the-checks-run-here-not-on-github.md)). Nothing but you
+enforces that it passed.
+
+```sh
+npm run verify            # everything, about ten minutes
+npm run verify --quick    # everything except the container image
+```
+
+Three things about running it:
+
+- **It brings its own environment.** It sources `.env` itself, so it works from
+  any shell. It did not always: several steps need `DATABASE_URL` and
+  `TEST_DATABASE_URL` exported rather than passed through a wrapper, so the gate
+  used to pass or fail on whether whoever ran it had sourced `.env` first, while
+  every document said it was one command. Anything already exported still wins.
+- **Never pipe it.** `npm run verify | tail` reports the exit status of `tail`.
+  Redirect to a file and check `$?`.
+- **It is the merge condition, not a formality.** A session has merged on a
+  pending check twice. An exhausted timeout is not a pass and neither is an empty
+  check list.
+
+---
+
+## What this is
+
+**Delegate** — a self-hosted envelope budgeting application for one household. It
+replaces a hand-maintained spreadsheet and a self-hosted Sure instance running on
+a Synology NAS.
+
+The defining idea is an envelope budget that reconciles to zero as a
+point-in-time calculation:
+
+```
+SUM(in-budget assets)
+  − SUM(in-budget debts)
+  − SUM(delegation balances)
+  + SUM(categorized pending transactions) ≈ $0
+```
+
+The fourth term is not decoration. Categorizing a pending charge empties its
+envelope at once while the account balance is the institution's _settled_ one, so
+without it the first three are out of step by the amount of the charge and the
+page offers money that has already been spent. [ADR 020](decisions/020-pending-transactions-in-the-identity.md).
+
+That reading sits at the top of the Budget page. It is **not** enforced by
+double-entry bookkeeping — it is a health indicator, and a positive number is the
+"available to delegate" figure on payday rather than a fault.
+
+- **Repository:** `github.com/aso42244/delegate` (public)
+- **Where the work happens:** any clone. A cloud session is the ordinary one,
+  and since [ADR 072](decisions/072-a-release-is-cut-from-github.md) nothing in
+  building, releasing or deploying depends on a particular machine — the maintainer's
+  Mac is no longer part of any workflow.
+- **Maintainer's GitHub:** `aso42244`
+
+---
+
+## Your authority
+
+The maintainer has delegated architecture and expects you to act, not ask.
+
+- **Merge without asking. Ever.** If the work is complete and the gate passed,
+  merge it. Do not ask "shall I merge this?" — the maintainer's words: _if I ask
+  Claude to build it, I want Claude to merge it._ The only reasons to stop and
+  raise something first are a **security or operational concern**, and "I would
+  like to be reassured" is neither.
+- **You own the repository**: branches, PRs, merges, tags, via `gh` and `git`.
+- **You may work on the local machine** — build, run, test, restart the server.
+- **Ask only when genuinely blocked**, not for reassurance. A question you could
+  answer by reading the spec or making a reasonable engineering call is not a
+  blocker.
+- **Push back when the spec is wrong.** This has happened several times and the
+  maintainer has agreed each time. Say so, propose an alternative, then build.
+
+Things that still need the maintainer: anything destructive to real data (Prisma
+guards `migrate reset` for AI agents by design), and creating their account.
+
+---
+
+## Hard constraints
+
+These are non-negotiable. Violating one is a build failure.
+
+1. **The asset class term is banned; the asset is Bitcoin (or BTC).** Narrowed by
+   [ADR 010](decisions/010-terminology-ban-covers-the-asset-class-only.md):
+   cryptography, `node:crypto` and friends are fine. CI enforces the rest.
+2. **All money is integer cents in `BIGINT`.** Never floats, never JavaScript
+   `number` in arithmetic or persistence. Over HTTP cents travel as **decimal
+   strings** — [ADR 002](decisions/002-money-as-integer-cents.md).
+3. **Nothing is ever hard-deleted.** `archived_at` everywhere; archived rows stay
+   resolvable so old transactions render `Grocery (archived)`.
+4. **No personal data or secrets in the repository.** `.env` is git-ignored;
+   `APP_NAME` exists so a family name never lands in committed UI copy.
+5. **Reachable from outside only through a Cloudflare Tunnel**, never a port
+   forward, a DSM reverse proxy or QuickConnect. The transport to the origin is
+   plain http by decision
+   ([ADR 017](decisions/017-plain-http-is-the-default-and-tls-is-optional.md));
+   the tunnel encrypts everything that crosses the internet
+   ([ADR 018](decisions/018-a-proxy-is-trusted-only-when-configured.md),
+   [docs/remote-access.md](remote-access.md)). `TRUST_PROXY` must never be set
+   while the port is also reachable directly.
+6. **USD only.** No multi-currency, no selector.
+
+---
+
+## Where things stand
+
+> **This section is history, not status.** It is a release-by-release narrative
+> kept because the _reasons_ in it are worth having, and it is not maintained
+> version by version. For what is actually true right now, run the commands in
+> **How to know where things stand** above. Where this disagrees with
+> `CHANGELOG.md` or `git log`, they win.
+
+Two facts from the version history that are still worth carrying:
+
+- `v0.54.0` was tagged first and its publish workflow hung, so `v0.53.0` was
+  deployed while that was still building. The only thing `v0.54.0` adds is the
+  stored pair refusal (`pair_dismissals`) and its migration.
+- **`v0.46.0` has no published image.** Its workflow run never produced one, so a
+  deploy must name `v0.47.0` or later; everything it contained is in the releases
+  after it.
+
+The pattern below is worth keeping. Each of the last three releases came from the maintainer
+using the previous one against real data and sending screenshots — the thrift shop
+listed as a fortnightly bill, "Every Monthly" in a column header, home insurance
+that needed two dates a year. None of it was visible from a test fixture, and all
+of it was obvious within a minute of real use. One thing to know about `v0.41.2`: the `deploy.sh` fix
+in it ships _inside the file being replaced_, so a `--unpack` deploy still runs
+`v0.41.1`'s copy and the one after that gets the fix. The registry route is
+unaffected, and that is the ordinary deploy now.
+
+**Delegate installs anywhere in one line now**
+([ADR 042](decisions/042-delegate-installs-anywhere-in-one-line.md)):
+`docker compose up -d` with nothing configured. Secrets are generated on first
+boot, the first account is claimed with a token from the logs, HTTPS is one flag,
+and the image is published on version tags. The NAS is one deployment
+of many rather than the deployment, and it keeps working — it adopts the secrets
+already in its `.env`.
+
+318 unit, 735 integration and 217 end-to-end tests. There is no CI: GitHub stores the code and nothing else
+([ADR 022](decisions/022-the-checks-run-here-not-on-github.md)), and every gate
+runs locally through `npm run verify`.
+
+Phases 1–3 of the original plan are complete. What has been built since is
+recorded in the ADRs, and the short version is:
+
+**Accounts and access**
+
+- **A second factor is required of every account, always.** There is no setting
+  and no toggle; `requireTotp` is gone. It never worked the way its name read —
+  sign-in demanded the factor whenever one was confirmed regardless — so its
+  only effect was to permit accounts without one
+- An administrator can **reset somebody's second factor**, which is the only
+  route back from a lost phone plus lost recovery codes that is not a database
+  prompt. Done to yourself it leaves you signed in and routed to enrolment: the
+  request that deletes the sessions writes its own back on the way out
+- Display names, settable by anyone for themselves at any role
+
+**The budget itself**
+
+- Delegations carry a `position` and can be reordered — by dragging a row onto
+  another row, or from the row menu. Stored on the budget, not per browser.
+  Dragging _between_ groupings already existed; what was missing was ordering,
+  which is why the maintainer's groupings are named "3 - Food" and "5 - Home"
+
+- Pay cadence is a setting — weekly, every two weeks, twice a month, monthly —
+  and the Utilities suggestion divides by it. It is a **divisor, not a
+  schedule**: a cycle is still one Delegate press to the next, and no amount to
+  delegate is ever rewritten when it changes. Defaults to biweekly so an
+  existing budget reads identically on upgrade
+
+- **The reading at the top is closed against a line from the line itself.**
+  Hover a delegation while it is not zero: "Move surplus here", or "Fix deficit
+  from here". Three choices, an unavailable one shown disabled with its reason.
+  It writes the ordinary `adjust` event — it _is_ a manual adjustment, with the
+  amount computed — so history, undo and the ledger check work on it for free.
+  The difference is recomputed **on the server**, because "all of it" has to
+  mean all of it when the request lands
+- **Delegate becomes Undo Delegation** while the run is still undoable, and back
+  again when the window closes. The offer used never to expire: the preview
+  computed `expiresAt` and returned the run regardless, so it kept offering an
+  undo the server would refuse
+- **A transaction can be archived** from its row menu — the API always could,
+  the interface never offered it. Reverses any envelope movement; only touches
+  the account balance for a manual row
+- The delegation event ledger — Delegate with undoable runs, transfers, manual
+  adjustment, categorization and splits, pending reconciliation, archiving,
+  go-live reconciliation
+- Pending charges are a term of the identity (ADR 020)
+- Section totals are rows of their own table, so a figure sits in the column it
+  totals
+
+**Bitcoin**, which is the largest body of recent work
+
+- Holdings are a dated, append-only ledger with a cached quantity, exactly like
+  delegation balances ([ADR 023](decisions/023-bitcoin-holdings-are-a-dated-ledger.md)).
+  Historic purchases, average cost basis, and a net worth chart that values the
+  quantity held _on each date_ rather than today's applied backwards
+- Holdings and properties are created on their own Settings tab rather than under
+  Accounts ([ADR 021](decisions/021-bitcoin-and-property-are-managed-where-they-live.md)).
+  That change also fixed an in-budget holding contributing zero to the identity
+- A configurable node, Esplora over HTTP
+  ([ADR 024](decisions/024-esplora-first-and-plaintext-only-where-it-is-safe.md)).
+  The address decides the route: private goes direct, `.onion` goes over Tor,
+  anything else prefers Tor and falls back — reporting which it used
+- Wallets watched by xpub/ypub/zpub or a multisig descriptor, gap-limit scanned
+  ([ADR 025](decisions/025-a-descriptor-is-the-one-wallet-representation.md)).
+  Descriptors are encrypted at rest and never returned by the API
+
+**Security**, after two external OWASP reviews — see
+[docs/security-review-2026-08.md](security-review-2026-08.md) for what was fixed
+
+- Remote access over a Tor onion service, off until switched on from the LAN
+  ([ADR 027](decisions/027-remote-access-is-an-onion-service.md))
+- Two-factor required of every account by default, with `/set-up-two-factor` as
+  the way back for an un-enrolled one — turning the requirement on used to lock
+  people out of the page that offered enrolment
+- TOTP codes and second-factor challenges are single-use
+  ([ADR 028](decisions/028-a-totp-code-is-spent-when-used.md))
+- The at-rest key is separable from `SESSION_SECRET`, with a rehearsed
+  `secrets:rekey` ([ADR 029](decisions/029-the-at-rest-key-is-separable-from-the-session-secret.md))
+- Changing your own password revokes every other session; settings writes are
+  administrator-only; regex rules are refused by _timing_ as well as by shape
+- **A rolling session has a ceiling it cannot roll past** — 90 days from
+  `created_at`, never extended. Without it, a session that keeps being used never
+  expires at all, which is precisely the session somebody else might be holding
+- **The routes that decide _where_ this server sends a request** are
+  administrator-only. The line is choosing a destination, not making one: syncing
+  and checking the node use what is already stored and stay open to everybody
+- **A record of what happened to credentials, with the screen that reads it**
+  ([ADR 041](decisions/041-an-audit-log-ships-with-the-screen-that-reads-it.md)).
+  Refused twice before, and built the third time only because the maintainer asked for
+  the screen with it — a table nobody queries is the dead-backup trap. It is also
+  the one table here that is **pruned**, at 90 days, because it is the only one an
+  unauthenticated stranger can cause writes to
+- **A failed sign-in never writes down what was typed** unless it names a real
+  account. The login form has two fields, and a password in the top one used to
+  reach the logs verbatim
+
+**This is no longer a LAN-only application.** Any claim to the contrary is stale
+and should be deleted on sight. What remains narrowly true is that the origin
+speaks plain http by default, which is correct behind a tunnel or inside an onion
+service; ADR 017 carries the amendment.
+
+**Since v0.24.1**, in the order it shipped:
+
+- **Settings → Accounts is one line per account**, split into Assets and Debts.
+  The split deleted the Type column outright — the section a row sits in _is_ its
+  type. Bitcoin and property left the page entirely
+  ([ADR 021](decisions/021-bitcoin-and-property-are-managed-where-they-live.md)
+  is amended twice: first to a one-line footer, then to nothing)
+- **The balance reading is a chip beside the page title**, not a bar across it.
+  `Balanced`, `To delegate $1,000.00`, `Over delegated $212.00` — state first,
+  figure second, with the equation on hover _and_ on focus. The wording lives in
+  `formatIdentityLabel`, which already existed and which the page used to
+  duplicate
+- **A cleared check is confirmed, never settled unasked**
+  ([ADR 030](decisions/030-a-cleared-check-is-confirmed-not-assumed.md)). A sync
+  proposes; a person settles. Purple is the fourth banner colour, for something
+  worked out and not yet acted on
+- **Every chip is one letter** — `p i t c sp m s r btc h u n`. One letter, one
+  meaning application-wide, enforced by a unit test; the full word is always
+  carried for a screen reader and on hover. See `components/chips.ts`
+- **Settings is quieter tab by tab.** Every list obeys Settings → Display, every
+  "add" is a header button and a dialog, two-factor moved to Users, and Security
+  became Tor
+- **Reconcile to Actual is removed**
+  ([ADR 031](decisions/031-reconcile-to-actual-is-removed.md)). No data went with
+  it: every event it wrote is an ordinary manual adjustment. Correcting a
+  backfill now happens on the Budget row menu or Settings → Delegations
+- **The nightly backup runs**, and says so when it does not. It had never run
+  once: the directory was owned by root and the container runs as uid 1000, so
+  every dump failed with "Permission denied" into a log nothing read. `deploy.sh`
+  now proves the container can write there, and Settings → Sync shows the newest
+  dump with a red banner when none has landed in 48 hours
+
+**Since v0.29.2:**
+
+- **A synced account shows how old the feed's own answer is.**
+  `accounts.feed_balance_as_of` records what the bridge said about its own
+  freshness and is **null when it said nothing** — `balanceAsOf` could not tell a
+  fresh answer from an absent one, because it falls back to the time of the
+  request. Found chasing ten charges that stayed pending for days while the
+  bridge reported itself healthy; nothing about the pending lifecycle was wrong
+  ([ADR 032](decisions/032-a-feed-date-is-kept-apart-from-the-one-we-stamp.md))
+- **Scheduled jobs run in the household's zone**, an IANA name defaulting to
+  UTC. Since [ADR 037](decisions/037-a-day-is-the-households-day.md) it also
+  decides **which day an instant falls in** — the process clock is still
+  untouched; this is a stored setting the domain consults
+- **The two-factor setup key is offered behind "Can't scan this?"**, grouped and
+  copyable, for enrolling in a password manager on the machine already showing
+  the screen. The Copy button works on a plain-http origin, where
+  `navigator.clipboard` does not exist
+- **One UI system across every screen**
+  ([ADR 033](decisions/033-one-ui-system-with-a-test-that-holds-it.md)). A
+  four-value spacing scale, field widths chosen by content, `New <noun>` at every
+  create entry point, and a text budget. **`docs/ui-system.md` is the
+  measurements and `ui-system.test.ts` enforces them** — read it before any
+  interface change
+- **Dark mode**, on Settings → Display beside row height
+  ([ADR 034](decisions/034-dark-mode-is-a-second-palette-not-an-inversion.md))
+
+**Since v0.34.0 — the phone, and what it found**
+
+Almost all of this came from the maintainer using Delegate on a phone and sending
+screenshots. Nothing here was visible on a desktop, and none of it was caught by
+a test until it was written to be.
+
+- **A dialog is measured against the visual viewport, never the window**
+  ([ADR 038](decisions/038-a-dialog-is-measured-against-the-visual-viewport.md)).
+  A software keyboard is composited _over_ the page on iOS: the layout viewport
+  keeps its full height while the visible rectangle shrinks, so a sheet anchored
+  to `bottom: 0` is anchored behind the keys. Measured at 390×844 the
+  categorization sheet ran to y=844 with 430 on screen — one option above the
+  fold and Cancel 361px below it. `Modal` reads `window.visualViewport`, and a
+  dialog is now a column: header, scrolling body, and a `footer` for whatever
+  must stay reachable from anywhere in the body. **Nothing inside a dialog
+  scrolls itself**; one scroll container, and an inner cap in `vh` is a cap
+  against the viewport the keyboard just invalidated
+- **Every notification is a tag at the foot of the sidebar**
+  ([ADR 039](decisions/039-a-bar-is-for-what-costs-data.md),
+  [ADR 040](decisions/040-every-notification-is-a-pill.md),
+  [ADR 059](decisions/059-one-tag.md)). There is no banner and nothing renders
+  above the page — `Alerts` is rendered by `Sidebar`, above the sync button, most
+  urgent lowest and the budget's own reading always last. A phone has no sidebar,
+  so below `sm` they fall back to `PageHeader`. Two or three words on the face
+  (`pill` on the DTO), the whole message on hover or focus, and a press goes
+  where the condition is dealt with. **Red is a pill too**: severity is carried
+  by the colour and by the words, the way every other state here carries it, and
+  floor space was saying it a third time. Snoozing went with the bar, so nothing
+  can be hidden for a day any more
+- **The backlog pill opens the queue**, `/transactions?uncategorized=true`. That
+  filter lives in the URL rather than in component state, which is what lets the
+  sidebar mean "the register" and the pill mean "the ones I have not dealt with"
+- **Everything on a control row is 28px** — buttons, `.field` inputs and selects,
+  the segmented control. It is written down in `ui-system.md` and nowhere else
+- **Insights reorders without dragging.** HTML5 drag fires no events under a
+  thumb and is not reachable by keyboard, so the grid's order was fixed on a
+  phone while a `⠿` handle was drawn over it. Move earlier / Move later replace
+  it
+- **A utility's chart starts where its history does.** Leading empty months and
+  an incomplete trailing one are dropped; an empty month _between_ two bills
+  stays, because compressing it out would redraw the history as though the bills
+  were consecutive (`pages/utility-months.ts`)
+- **The row `⋯` is gone on a touchscreen** in favour of a long press, with the
+  trigger kept visually hidden rather than `display: none` — VoiceOver cannot
+  perform a long press, so it still needs something in the accessibility tree
+- **A figure is inset 12px from the right**, mirroring the name column's `pl-3`.
+  This reversed part of v0.34.0 and both were right in turn: the earlier change
+  removed a _ragged_ gap between a figure and the rule, which is what exposed the
+  real asymmetry underneath
+- **The register no longer counts itself.** "494 transactions" is a fact about
+  how long the household has been running, not about the list somebody came to
+  work through; it is on Settings → Sync beside the connection that produced it
+
+**Insights, and the nightly snapshot**
+
+- **The financial picture is recorded every night** at 03:10 in the household's
+  zone, labelled for the previous day
+  ([ADR 035](decisions/035-the-financial-picture-is-snapshotted-nightly.md)).
+  Three tables, each row carrying its own provenance. **ADR 035 supersedes
+  ADR 013**, which rejected exactly this in August for a reason that expired when
+  the backfill happened
+- **There is no initial backfill, by decision.** History starts at the first run,
+  so Insights resets on deploy and gains a day a night. The gap-filler exists
+  only for outages going forward, and every row it writes is marked derived
+- **`domain/history.ts` is gone** with the reconstruction it held. Its
+  ledger-walking survives inside the gap-filler
+- **The schedule time zone is a setting**
+  ([ADR 036](decisions/036-the-schedule-timezone-is-a-setting.md)), picked on
+  Settings → Budget. Null means follow `SCHEDULE_TIMEZONE`, so an existing
+  deployment fires exactly where it did. Saving rebuilds the cron tasks —
+  node-cron fixes a task's zone at creation
+- **A day is the household's day**
+  ([ADR 037](decisions/037-a-day-is-the-households-day.md)), which narrows
+  ADR 036's "when jobs fire and nothing else". `domain/calendar.ts` is the only
+  place that turns an instant into a day, and it keeps two ideas apart by name:
+  an **instant** (`posted_at`, `occurred_at` on a delegation event, `now`,
+  `created_at`) needs a zone to place in a day; a **date key** (`as_of`,
+  `price_date`, `snapshot_date`) is a day already decided and needs none.
+  Conflating them is how an 8pm charge landed in next month's average. **If you
+  are adding a zone parameter to a function that does not convert an instant,
+  you have the distinction backwards** — see `revalueBitcoinHoldings`, which
+  deliberately has none
+- **A manual balance typed on Settings → Accounts writes a dated valuation.**
+  Before this, only properties had a history and cash and exchange accounts had none
+
+**How to tell the snapshot job actually ran.** This is the question the nightly
+backup taught us to ask from the other end — not "did the attempt throw", which
+was answered correctly into a log nobody read, but "is the evidence on disk".
+
+`GET /api/snapshots/status` answers it from the rows: `days` is how many are
+stored, `latestDate` the newest, `stale` true when that is over two days old.
+Two days rather than one because a run is always for the _previous_ day, so the
+newest date is a day behind even when everything is working.
+
+- **Ran and wrote rows:** `days` ≥ 1, `latestDate` is yesterday, `stale` false.
+  The log line is `nightly snapshot written` with counts and a duration
+- **Ran and wrote nothing:** `days` stays 0. The job logs
+  `nightly snapshot wrote nothing` at **warn**, never an info line that reads
+  like success
+
+**Since v0.41.2 — the queue teaches the rules (`v0.42.0`)**
+
+Two halves of one idea, and the reason they shipped together is that they share a
+normalization neither can drift from.
+
+- **An uncategorized row says where that merchant went before**, with the count
+  behind it — `2 of 2 before went to Grocery` — and one press files it
+  ([ADR 044](decisions/044-the-queue-teaches-the-rules.md)). It writes nothing
+  until pressed, needs two prior decisions and a **majority** of them, and
+  ignores splits and archived delegations. A merchant is recognised through the
+  store number that changes on every visit, which is the whole trick: grouping on
+  the description itself finds no history at all.
+
+- **"Always categorize like this"** on the row menu turns that decision into a
+  rule. `POST /api/rules/from-transaction` had existed for months and was **called
+  by nothing** — no interface, no test — and reading it explained why nobody
+  missed it: it built the rule from the _whole_ raw description, so a rule from
+  `AMAZON MKTPL*RT4G93` would have matched exactly the transaction it was built
+  from and nothing else, for ever, silently. The needle is the merchant part now,
+  and it is offered **in a field the reader can edit** because where a merchant's
+  name ends is a guess
+
+- **A rule can say what a transaction _is_**, not only which envelope it belongs
+  in ([ADR 043](decisions/043-a-rule-does-one-of-two-things.md)). The paycheck
+  arrives from the same payer on the same fortnight and was the one thing no rule
+  could ever touch: it lands as ordinary spending and somebody marked it income
+  by hand, every fortnight, for ever. A rule carries an **action** rather than a
+  destination — a delegation, or a label — and exactly one of the two, held by a
+  check constraint rather than by convention. A labelling rule never touches a
+  categorized row even under `includeCategorized`, because `updateTransaction`
+  refuses that for one row and a bulk action must not do what the single action
+  refuses
+
+- Two things deliberately **not** built, both recorded in ADR 044: a bulk "accept
+  every suggestion", and a preview of what a new rule would match. The second is
+  the one worth revisiting — Settings → Rules previews the bulk apply and this
+  dialog previews nothing, so a needle that is too broad shows up only after the
+  next sync
+
+**Since v0.42.0 — Bills, and the way out (`v0.43.0`)**
+
+- **Bills is a page of its own**, sixth in the sidebar
+  ([ADR 045](decisions/045-a-bill-is-inferred-not-entered.md)). Everything on it
+  is worked out from the register and **stored nowhere** — there is no bills
+  table and nothing to maintain, because a hand-kept list of bills is a second
+  copy of what the transactions already say and is wrong within a month, in the
+  direction nobody notices.
+
+  It answers the one question nothing else here can: **the bill that did not
+  arrive.** Every other condition this application raises is about something that
+  happened; a failed autopay leaves no trace and looks exactly like a quiet
+  month. Typical and last sit beside each other on the row, so a subscription
+  that renewed higher shows up too.
+
+  The bound that does the real work is **nothing faster than a fortnight**.
+  Groceries and coffee recur in the plain sense and their gaps are regular enough
+  that a tolerant check would call the weekly shop a weekly bill. A bill that has
+  plainly stopped reads `Stopped?` and raises nothing — a warning nobody can act
+  on teaches people to stop reading warnings
+
+- **The overdue pill has a switch**, on Settings → Budget, and it is the first
+  notification here that does. It is the right one to have it: every other
+  condition is a fact the application knows, while this is a reading of a
+  schedule it inferred. **The page stays either way** — hiding the list as well
+  would make "I turned the noise off" and "there are no bills" indistinguishable
+
+- **Export**, on Settings → Sync: the register, the delegation ledger and the
+  nightly snapshots, as three CSVs
+  ([ADR 046](decisions/046-the-export-is-three-files.md)). Three rather than one
+  because a split has one amount and two envelope movements, so one wide file
+  would either double-count the amount or lose the split. Money is a **decimal**
+  rather than cents — ADR 002 is a rule about JSON, and a spreadsheet column of
+  `-4210` is one somebody sums and acts on — and a description that a spreadsheet
+  would otherwise _run_ is defused on the way out. **It is not a backup**: no
+  ids, no credentials, and it cannot restore anything
+
+- `merchantKey` is now load-bearing in three places — suggestions, the rule
+  dialog, and what counts as one bill. That is why it lives in `@budget/shared`,
+  and why a change to it now moves three features at once
+
+**Since v0.43.0 — targets, and the promise around them (`v0.44.0`)**
+
+- **A delegation can carry a target**: what it is saving towards, and by when
+  ([ADR 047](decisions/047-a-target-never-moves-an-amount.md)). This is the
+  migration `architecture.md` had been anticipating beside `notes` — the maintainer
+  was writing `"$1200, Dec 27"` there and doing the per-paycheck arithmetic by
+  hand.
+
+- **It never moves the amount to delegate, and that is the whole feature.** That
+  figure is multiplied by every line on the next Delegate press, so an
+  application that rewrote it on its own would be moving real money for a reason
+  nobody asked for. A target only judges it: the dialog shows what each remaining
+  paycheck would have to carry beside what the line is set to, and offers to
+  apply the figure behind **a switch that is off unless somebody turns it on**.
+  Afterwards it is an ordinary amount — typed over, cleared, left alone. The
+  maintainer asked for exactly this: optional, overridable by hand, and unmistakable
+  about what setting one does
+
+- **The chip says a target exists; the amount to delegate says whether it is
+  being met.** `tg` beside the name, and the figure itself turns warning with the
+  sentence on hover and through `aria-describedby`. A yellow letter beside a name
+  says something is wrong without saying which number to change
+
+- **The pill has no switch**, unlike the overdue bill from ADR 045, and the
+  difference is worth keeping straight: a bill is a schedule this application
+  _inferred_, while a target is a number the household typed. Turning off
+  arithmetic on their own figures is hiding the answer to the question they asked
+
+- `notes` is a note again. Existing notes are untouched, including the ones that
+  say `"$1200, Dec 27"` — a text field somebody wrote by hand is not something to
+  parse and overwrite
+
+**Since v0.44.0 — the first real run of Bills, and what it asked for (`v0.45.0`)**
+
+- **A bill can be taken off the list, or given a name of its own.** Thirteen
+  bills came out of the maintainer's real register and one of them was **SAVEWELL**, a
+  thrift shop visited every fortnight. The detection was not wrong in a way any
+  threshold could fix — that spending genuinely has the shape of a fortnightly
+  bill — so the fix is that a person can say otherwise. Amendment on
+  [ADR 045](decisions/045-a-bill-is-inferred-not-entered.md).
+
+- **"Stored nowhere" still holds for bills.** `bill_overrides` contains no bills,
+  no dates and no amounts; every figure is still derived on every request. It
+  holds the one class of fact that cannot be derived — what somebody said back.
+  Hidden rather than deleted, listed under a fold with `Put back`, and a rename
+  **labels** rather than replaces: the bank's text stays under the name and stays
+  searchable, because reconciling against a statement needs the words the
+  statement uses
+
+- **Two corrections and no more.** Every other figure on the row is arithmetic
+  over transactions and would be a lie if it were editable. If the cadence looks
+  wrong the answer is that this is not a bill, never that the number should be
+  overwritten
+
+- Lapsed bills sort to the bottom now. A lapsed bill's expected date is in the
+  past by definition, so a plain date sort put the least actionable row at the
+  very top — which is exactly where the first real run put that thrift shop
+
+**Since v0.45.0 — the first targets and bills entered for real (`v0.46.0`)**
+
+Everything here came from the maintainer using the two features against their own data
+and sending screenshots. None of it was visible from a test fixture.
+
+- **A target can repeat**, and its date is an **anchor** rather than a deadline
+  ([ADR 047](decisions/047-a-target-never-moves-an-amount.md), amended). The
+  first one entered was home insurance: $1,200 on the last day of April and again
+  on the last day of October. A single date recorded the April one and went stale
+  the moment it passed, leaving the same target to be retyped twice a year —
+  which is the by-hand arithmetic the feature exists to stop.
+
+  **Months, not days**, because the last day of April recurs on the last day of
+  October and no number of days says that. `addMonthsToDayKey` keeps the end of
+  the month and clamps a day the next month does not have
+
+- **The amount the dialog offers is editable.** The switch reveals a money field
+  holding the calculated figure, and what is written is whatever is in it.
+  $274.38 a paycheck is more likely to be funded at $300, and that decision
+  belongs in the moment it is being made rather than on the row afterwards
+
+- **`updateDelegation` resolves the target's three fields once** and validates and
+  writes from that. Doing it any other way went wrong twice in one afternoon —
+  the fields constrain each other and a request usually mentions one of them
+
+- **Bills, from the same review**: the column is `Cadence` rather than "Every"
+  ("Every Monthly" is not a sentence); a renamed bill shows its name alone with
+  the bank's text moved into the row menu, where it stays searchable; and nothing
+  says "fortnightly" any more — Settings → Budget already calls that cadence
+  "Every two weeks"
+
+**And the shell, from the same review (`v0.46.0`)**
+
+- **Settings is eight sections rather than twelve**, grouped by the question
+  somebody came to answer. Half of the twelve held a single card. **Every old
+  route redirects** — a section that moves is a bookmark that breaks and a test
+  that fails for a reason unrelated to what it tests
+- **Settings cards are a three-column grid**, and a card declares its `span`,
+  defaulting to the whole row. Display was three radio groups stacked down a
+  1,200px page, each using a fifth of its own row
+- **Where the section list sits is a per-device preference** — a row on top or a
+  rail down the side. The rail lives inside the Settings page rather than in the
+  shell: it belongs to Settings and disappears with it
+- **The sidebar is `w-fit`**, as wide as "Transactions" needs and no wider. It
+  was a flat 232px. The two things that make intrinsic sizing safe are written
+  down in `ui-system.md` §12: labels hold their line, and anything of
+  uncontrolled length is capped, because `w-fit` takes the widest child and an
+  email address is wider than anything anybody navigates to
+
+**And the second pass over the shell (`v0.47.0`)**
+
+- **Assets, Debts and their headings can be dragged into an order.** Delegations
+  have had a position since v0.24; the same argument applies one level up and one
+  level across, and the maintainer asked for it the first day of using the page.
+  Nothing moves until it is moved — every row starts at zero and a tie falls
+  through to the name — so an untouched budget still reads alphabetically. The
+  account row menu and Settings → Budget's arrows are the routes that work
+  without a mouse
+- **Settings cards on one line end level**, and the grid counts in **sixths** so
+  a card can be a half. Three columns could not express "two side by side"
+- **Holdings is Bitcoin beside Properties**, with the node folded into the
+  Bitcoin card: where address data comes from is a property of those holdings
+  rather than a subject at the same weight. **Access is three across then two**
+- The card prop is `span`, not `width` — a field's `width` is its own scale, and
+  two vocabularies under one name is a trap
+- **A drop lands on the edge the pointer is nearest.** Dropping onto a row always
+  inserted _before_ it, so nothing could be placed last — found by the maintainer in
+  the first minute of using it. A heading dragged over another grouping's rows
+  means "past that grouping", which is how the bottom of a long section is
+  reached; what is being dragged is kept in state because `dataTransfer` is empty
+  during `dragover` in every browser
+- **The sidebar's toggle is a drawn icon** rather than `«`/`»`, and joins the
+  icon column when collapsed. Same mistake the nav icons were fixed for
+
+**Since v0.47.0 — three themes, and duplicates found rather than stumbled on (`v0.48.0`)**
+
+- **Six palettes were built and are now two.** Light and Dark, plus System,
+  which follows the device. Ledger, Reading light and High contrast were removed
+  on 2026-09-08 at the maintainer's direction: the interface's look is settled by this
+  project's own system, and a palette nobody uses is one every future colour
+  still has to be measured against. A theme is still a token swap and nothing
+  else — ADR 048 is amended, not reversed. No migration was needed, because
+  `theme.ts` already fell back to the default for a value it did not recognise
+
+- **`theme-contrast.test.ts` measures every palette** against WCAG AA on the
+  pairs that actually appear on screen. **It found six pairs in the shipped
+  Light palette under 4.5:1**, the worst being positive green on its own green
+  fill at **2.76:1**. They are recorded at today's values rather than changed:
+  `design.md` §2 is the maintainer's settled specification, so tightening them is their
+  call — and they can no longer get worse without the gate failing. **This is an
+  open question for the maintainer, not a closed one**
+
+- **Possible duplicates are read out** on the Transactions page
+  ([ADR 049](decisions/049-a-duplicate-is-proposed-never-archived.md)): same
+  account, same amount to the cent, within two days. It writes nothing. The
+  re-import case is the one from `handoff.md` — reconnecting an institution
+  brings a card's whole history back, and until now that was found by noticing a
+  balance was wrong
+
+- **No pill for duplicates**, and the reason is worth keeping: one was built and
+  taken out within the hour, because it is computed on the server and went on
+  saying "1 possible duplicate" after the panel had been waved off. ADR 030 is
+  why it was not fixed by storing the refusal. The uncategorized-backlog pill
+  already leads to that page
+
+**Since v0.48.0 — a card's content stays inside the card (`v0.49.0`)**
+
+- **A settings card is a query container.** The backups table drew its columns
+  out past the card's border and under the card beside it: it sized itself with
+  `sm:`, which asks how wide the _window_ is. That was the right question while a
+  card was always the whole row and the wrong one from the moment cards started
+  taking a third of it — on a 1440px screen that card is 345px across and was
+  being handed the 640px layout. **Content inside a card uses `@sm:`/`@md:`/`@lg:`
+  now, never `sm:`**, and an e2e test measures the boxes rather than reading the
+  text, because this failure was invisible to every test that only looked for
+  words
+
+- **Delegations and Groupings share a row** on Settings → Budget. Groupings paid
+  for the width with its Section column, which repeated one identical word down
+  every row — a heading above each section now, and no heading over an empty one
+
+- **The three export links read on one line each**
+
+- **The Light palette's contrast exceptions were settled on the strength of a
+  theme that no longer exists.** Asked whether to tighten the six sub-AA pairs,
+  the maintainer kept the palette as designed — partly because High contrast cleared
+  every bar and was there for anyone who needed more. **High contrast was removed
+  on 2026-09-08**, so the six now stand on their own. They are recorded at their
+  existing values rather than quietly adjusted, because changing a settled
+  specification as a side effect of deleting a theme is the drift ADR 048 exists
+  to catch. **This is open again**, and it is the maintainer's call rather than a session's
+
+- **A GUI deploy button was scoped and then dropped**, deliberately. A container
+  cannot replace itself with a different image, so the only two routes are a
+  root-owned watcher script on the NAS or mounting `/var/run/docker.sock` into
+  this container. The second hands root on the NAS to the process that holds the
+  bank credential and faces the tunnel, and is not on the table. The maintainer chose
+  to keep the one-line deploy as the only way in. **Do not build this without
+  asking again**
+
+**Since v0.49.0 — the duplicate panel was wrong twice (`v0.50.0`)**
+
+Both of these were mistakes in **ADR 049 itself**, not in the code that
+implemented it, and both were found the first time a person used the feature
+against real data. Worth reading as a pair.
+
+- **The match ignored the description.** `ACH Payment Blue Sun (Corp Solu` and
+  `ACH Payment City of Springfi`, both $60.00, two days apart on one account,
+  were offered as one charge twice — a household paying two bills in a week.
+  ADR 049 argued a different description is still a duplicate, because a feed
+  rewords its own text between pending and posted. **That reasoning bought a
+  speculative case and paid in false positives:** a re-import, the case the
+  feature exists for, replays the feed's own rows, so the descriptions come back
+  identical and never needed the looseness. `merchantKey` is in the bucket now
+
+- **"Not a duplicate" lasted a session.** So the same wrong pair returned on
+  every page load — and because two settled transactions never change, it
+  returned for ever. **ADR 030 was the wrong authority to borrow.** A cleared
+  check's proposal expires by itself once the check clears; there is nothing to
+  remember. Two settled rows are permanent, so the proposal is permanent, so the
+  refusal has to be too. `duplicate_dismissals` stores it, **keyed on the pair
+  rather than on a row**, so both rows stay eligible against anything else
+
+- The general lesson, which is the one to carry: **a proposal that cannot be
+  refused permanently is one somebody stops reading.** `bill_overrides` learned
+  it about the thrift shop; this learned it again. Before citing ADR 030 for a
+  new proposal, check whether the thing being proposed about can expire on its
+  own. If it cannot, the refusal has to be storable
+
+**Since v0.50.0 — the page contradicted the register (`v0.51.0`)**
+
+- **A bill whose charge was still pending read as Overdue.** A $30.00
+  insurance payment sat in the register while the Bills page said **Overdue ·
+  5d**. Pending charges are excluded from bill detection because a pending date
+  moves when it settles — **a sound reason about arithmetic, applied to the whole
+  row**, so the charge that answers "has this arrived?" was excluded from
+  answering it. Pending charges are separated now: the schedule is still fitted
+  from settled ones only, and a pending charge newer than the last settled one
+  reads **Paid, pending** and announces nothing.
+
+  The shape of this mistake is worth carrying: _a filter justified by one
+  question was applied to every question._ Worth checking wherever a `where`
+  clause carries a comment explaining why
+
+- **A bill can be told its charge arrived**
+  ([ADR 051](decisions/051-a-bill-can-be-told-a-charge-arrived.md)). The general
+  case no threshold reaches: a merchant that renames itself gets a new merchant
+  key, so its old bill goes overdue for ever while the new one needs three months
+  to be detected at all. **A link moves the last-seen date and never the
+  cadence** — fitting one would put a gap in the history that fails the tolerance
+  test, and the bill would vanish from the page, which is a spectacularly
+  unhelpful answer to "this did arrive"
+
+- **A suggested categorization asks before it files.** The evidence behind the
+  guess lived on a `title` — invisible to anybody not hovering — and the press
+  was immediate and silent. Three answers now, and the third, **Confirm and
+  always**, writes the rule. That route existed but was buried in a row menu and
+  reachable only _after_ the row was filed, which is not the moment somebody
+  knows the decision repeats
+
+- **Rules left Settings for the sidebar.** Seven settings sections;
+  `/settings/rules` redirects. A rule is written while categorizing and read when
+  a charge lands somewhere surprising — the register's rhythm, not a thing
+  configured once
+
+- **The sidebar is 180px**, up from the ~145px `w-fit` gave it and short of the
+  232px it started at, and the gutter beside it is back to the 32px `design.md`
+  §4 asks for. Both from the maintainer looking at it: the first width was right
+  arithmetic and read as cramped
+
+**Since v0.51.0 — the feed broke, and two things about that were wrong (`v0.52.0`)**
+
+Both were found by the maintainer using Delegate through a real SimpleFIN outage on
+two institutions, entering by hand the charges the bank showed and this
+did not. Neither was visible from a test fixture and neither had a test.
+
+- **The request window was measured from the last successful run**, and a run
+  succeeds while one institution is dark — the bridge answers, lists the account,
+  and reports the problem in `errlist`, which is correctly not a failed sync. So
+  `last_success` advanced every hour through the outage and the window stayed at
+  seven days however long it ran. On the day the connection came back, a ten-day
+  gap was asked about for eight days and the rest was never requested again: the
+  bridge still held those transactions, and nothing ever asked.
+
+  It is read from the evidence now — per account, the newest transaction the feed
+  delivered or the balance date it stamped, whichever is later — and a backfill
+  button was scoped first and dropped, because it only works if somebody
+  remembers to press it on a day they may not know an outage happened.
+  [ADR 009](decisions/009-simplefin-sync-cadence-and-window.md) amended.
+
+  Two guards the shape needs. **A dormant account is not a broken one** — a
+  savings account with no activity for two months still gets a fresh balance
+  date, and judging on transactions alone would pin the window at its 90-day
+  ceiling for ever; `feed_balance_as_of` is the second time ADR 032's column has
+  paid for itself. And **manual rows are not evidence**, or entering the missing
+  charges by hand would silently close the window the recovery depends on.
+
+- **Standby mode**, which is the rest of it. A hand-entered row on a synced
+  account used to increment `accounts.balance_cents`, and `upsertAccount`
+  assigns that column from the feed on every run, so the entry worked and then
+  silently did not, up to an hour later. **758 integration tests passed before
+  and after the behaviour changed** — nothing had ever covered it.
+
+  The stored column is the institution's alone now, and the adjustment is
+  applied on read: the figure somebody sees is the bank's plus what has been
+  typed in since its feed went quiet. **There is no tag and nothing to switch
+  on** — a manual row on a synced account is a standby row by construction,
+  while one on a manual account is the ordinary case and still moves the balance
+  directly. New chip `a`, and the identity uses the adjusted balances too,
+  because a reconciliation computed from figures nobody can see is a reading
+  that cannot be checked.
+
+  **Coming out of standby is announced**, because nothing else would say the
+  outage was over — the balances read correctly either way. The existing
+  duplicate panel could not find these pairs: it matches on `merchantKey`, and
+  `manual serenity ship` against `ach payment serenity` is not a near miss. So a
+  second rule matches a hand-entered row against a feed row on the same account
+  by amount and date alone. **Safe there and nowhere else** — ADR 049's false
+  positive was two _feed_ rows at one amount in a week, which is a household
+  paying two bills, whereas a hand-entered row on a synced account exists only
+  because somebody was standing in for the feed.
+
+  The pill for it clears itself once the rows are archived, which is exactly the
+  objection that removed the v0.48 duplicates pill. Before reaching for that
+  precedent again, check whether the proposal's own action makes it go away.
+
+**Since v0.52.0 — the budget boundary, and a lesson that had already been written down (`v0.53.0`, `v0.54.0`)**
+
+Both releases came out of one screenshot: a $200 retirement contribution, the four fund
+purchases it paid for, and a transfer suggestion offering to undo a correct
+categorization.
+
+- **The budget boundary is a wall now, not a description**
+  ([ADR 050](decisions/050-the-budget-boundary-is-a-wall.md)). `in_budget`
+  decides which accounts the identity sums, and nothing else knew that. Three
+  places crossed it. **Categorizing an off-budget row was permitted** and moved a
+  delegation while no summed balance moved with it — measured at exactly $200.00
+  of drift from a reading of zero. **A transfer was suggested across it**, and
+  `confirmPair` clears both sides' allocations, so confirming would have taken
+  the money back out of the envelope it was correctly spent from. **The queue
+  held rows that could never leave it** — the same case income and confirmed
+  transfers were excluded for, missed when that filter was written.
+
+  The judgement worth keeping: **money leaving the budget for a retirement
+  account is spending, not a transfer.** The envelope budget's subject is not net
+  worth but what is left to allocate, and money in an IRA is not. The envelope it
+  came out of is the record; the arrival is the same money seen from outside, and
+  counting that too would double it.
+
+- **A refused pair stays refused.** "Not a pair" was a `Set` in component state,
+  so it lasted until the page reloaded and the same wrong suggestion came back
+  for ever. `pair_dismissals` stores it now, keyed on the pair.
+
+  **This is the lesson to actually carry from these two releases.** It is the
+  identical defect `duplicate_dismissals` was created for in v0.50.0, in the
+  sibling panel — and the rule that catches it was already written in this
+  document, in the v0.50.0 section: _before treating a refusal as not worth
+  keeping, check whether the thing being proposed about can expire on its own._
+  Nobody applied it to pairing. A lesson recorded against the feature it came
+  from is a lesson that only fixes that feature. **When one of these rules is
+  written down, go and check every sibling it could apply to the same day** —
+  this application proposes in at least five places (duplicates, pairs, cleared
+  checks, categorization suggestions, inferred bills) and they do not share an
+  implementation.
+
+- Smaller, from the same review: an off-budget row reads `—` in the Delegation
+  column rather than an empty cell, because empty reads as "not loaded" and the
+  em-dash reads as "deliberately nothing". Caught by reading the render path
+  after the maintainer asked what those rows would look like — no test distinguishes
+  an empty cell from an em-dash one.
+
+**Since v0.54.2 — a review of what the application assumes about itself (`v0.55.0`)**
+
+The maintainer asked for a sweep: machinery that exists but is wired to nothing, and
+failure modes the application would meet in silence. 103 routes against 110
+callers, 30 environment variables, 13 settings columns, four scheduled jobs.
+Four findings, all fixed here, and **three of the four are the same mistake** —
+a lesson learned, written down against the feature that taught it, and never
+carried to its siblings.
+
+- **No notification could ever fire for a frozen feed balance.** The row chip
+  checked both staleness rules; the pill checked only `isBalanceStale` — and
+  `staleness_interval_days` is never set on a discovered account, so for every
+  synced account that check was permanently false. The only signal a feed had
+  gone quiet was a one-letter chip on a page somebody had to already be looking
+  at, which is precisely the failure the pills exist to replace. This is what
+  happened to Persephone Savings during the September outage and it was found in
+  review rather than by anybody noticing.
+
+- **Nothing recorded whether the feed still listed an account at all.**
+  `accounts.feed_last_seen_at` is the third date in
+  [ADR 032](decisions/032-a-feed-date-is-kept-apart-from-the-one-we-stamp.md)'s
+  family, amended. `feed_balance_as_of` nearly answered it but is null when a
+  bridge says nothing about its own freshness, and null cannot be read as stale
+  without manufacturing warnings out of silence. The new column is stamped
+  because the feed _named_ the account, so absence is a fact rather than an
+  inference.
+
+- **`GET /api/snapshots/status` was read by nothing.** It was written because of
+  the backup failure — check for the evidence a job leaves, not the absence of an
+  error — and documented here as the way to tell whether the nightly snapshot
+  ran. It had no caller. **The lesson was implemented and then left in the exact
+  place the failure it describes could happen to it.** Insights is what fails
+  quietly: it gains a day a night with no backfill, so a job that stopped in
+  March draws a chart that simply ends, and nothing throws.
+
+- `PATCH /api/accounts/:id/bitcoin` was removed, the third route with no caller.
+
+**The habit worth keeping from this.** Delegate proposes, schedules or infers in
+at least nine places and they share no implementation. When a rule like "a
+refusal has to be storable" or "check for the evidence, not the error" gets
+written down, **go and check every sibling it could apply to the same day**. That
+is ten minutes; each of these findings was an afternoon. The review that found
+them was itself only possible because the routes, the env vars and the settings
+columns could each be diffed against their callers — worth repeating
+occasionally, and cheap.
+
+**Since v0.55.0 — a detail that ran off the screen (`v0.55.1`)**
+
+The `feed_not_reporting` pill from `v0.55.0` worked on its first real morning:
+six accounts, named in the message. And the message ran about 1,500px on one
+line, off the right of the display, with the end of the sentence unreachable.
+
+- **A pill's detail is `w-96` and wraps**, positioned so it is always wholly on
+  screen. The old `w-max max-w-[calc(100vw-3rem)] left-0` could never have
+  worked: the cap bounds the detail's _width_ while `left-0` puts its left edge
+  wherever the pill happens to sit, and the two were never compared against each
+  other. Tall rather than wide is the maintainer's stated preference and the right
+  trade — a detail is read once and dismissed by moving the mouse, so wrapping
+  costs nothing while overflowing costs whatever was cut off.
+
+- **It clamps rather than flips.** Anchoring to the pill's other edge was the
+  first attempt and is the same bug mirrored: on a phone the pill is narrower
+  than the detail, so right-anchoring puts the left edge off the _left_. Measured
+  from the **pill**, never the detail — the detail is `display: none` until
+  revealed and a hidden element has no box, while the pill is always on screen
+  and the detail's width is a constant.
+
+- Two end-to-end tests **measure boxes rather than read text**, the same reason
+  the settings-card overflow needed it in `v0.49.0`: every assertion that only
+  looks for words passes while the words are off the screen. Both were checked
+  against the previous build and fail there — and reproducing it needed the real
+  condition, six synced accounts with a stale feed date and a succeeded run,
+  because the detail is only as wide as its content and a short fixture passes
+  against the broken code.
+
+**Since v0.58.0 — the dashboard the maintainer designed (`v0.59.0`)**
+
+The maintainer brought a full visual specification for Overview and asked for it
+reconciled with what Delegate already is rather than dropped on top. Most of the
+work was deciding which half of each disagreement was right, and the reasoning is
+in [ADR 053](decisions/053-a-pace-bar-reads-two-marks-not-one.md).
+
+- **A pay cycle has dates now, and `pay_cadence` is still a divisor.** Money
+  moves on Delegate presses and nothing is scheduled by a date; what one anchor
+  adds — `next_payday_on`, on Settings → Budget — is the other half of a question
+  the budget could never answer: not "how much is left" but "how much is left
+  **for how long**". A line that has spent 90% of its money is fine on the last
+  day of a cycle and alarming on the second.
+
+  **No anchor means no tick.** Not a default — a marker drawn from a guessed
+  schedule is confidently in the wrong place, and every pace reading is judged
+  against it. Three tiles draw nothing at all rather than something plausible.
+
+  Semi-monthly is approximate and says so in the code: 24 paydays a year is
+  exactly two a month, so it cannot be a fixed day-count, and a household paid on
+  the 1st and 15th sees its second boundary land a day late.
+
+- **A hand-written response interface is a claim, not a check.** `region` was
+  stored, selected and re-flowed by, and then left out of the layout response —
+  so every reload read the sidebar back as empty. The client's
+  `OverviewTileDto` declares `region` as required, so the missing field
+  type-checked perfectly and arrived as `undefined`. The write path was innocent
+  and looked it; the defect lived entirely on the way out.
+
+  Two things follow. **A round-trip test is the only one that catches this** —
+  asserting on what a PUT returned proves nothing about what a GET gives back,
+  and there was no test touching `region` at all. And **the compiler agrees with
+  whatever the interface says**, so a field's presence in a DTO is not evidence
+  the server sends it.
+
+  Checked the same day: no other route in `apps/api/src/routes` selects a column
+  and then drops it when mapping the response.
+
+- **A field added to a model is a field every narrow `select` has to be checked
+  against.** `landing_page` was added, written correctly, and read back as null
+  on every request — because `requireSession` builds `currentUser` from its own
+  select and that one had not been touched. The root then redirected to the
+  default however anybody chose. **This is the second time in two releases**:
+  `region` was stored, selected and re-flowed by, then dropped on the way out of
+  the layout response. Both were caught end-to-end rather than anywhere nearer.
+
+  Grep the model's field name across `apps/api/src` the same day you add it, and
+  read every `select` that comes back.
+
+- **Bills and Utilities are one page called Recurring**
+  ([ADR 055](decisions/055-bills-and-utilities-are-one-page.md)). Two views —
+  Due watches time, Cost judges amount — because neither answer is in the other,
+  and one entry because Electricity was on both pages described two ways. The
+  glance is five tiles on Overview; the page is where something is changed.
+
+  **Widening a window changes every average taken from it.** Utilities now
+  fetches twenty-four months for the trend, and the first cut of that let the
+  longer window into the average — eleven months of bills averaged over twelve,
+  on a household whose history is shorter than the window. The suggestion moved
+  without anything about the household having changed. The existing tests caught
+  it, which is what they were for; the fix is to slice to the months the page
+  draws _before_ filtering for complete ones.
+
+- **The pace bar splits at a fixed 80%** — what this cycle had to spend on the
+  left, overspending past it on the right ([ADR 054](decisions/054-the-pace-bar-measures-what-the-cycle-had.md),
+  amending 053, after the two-zone version shipped and the maintainer used it). What
+  the cycle had is `spent + balance`, derived rather than assembled from
+  delegation-plus-carry-in, so it holds whether or not the press has run yet.
+
+  The split does not move and the tick only ever travels 0 → 80%, so it lands at
+  the same x on every row: the tick is a **time** marker and has to read as one
+  straight vertical down the column.
+
+  **Only the segment past 80% is red.** The fill keeps the grouping's colour the
+  whole way, so a line that overspent its delegation but is still solvent stays
+  its own colour — ordinary and often correct in an envelope budget — and red's
+  _width_ now says how far past. The first version turned the whole bar red at
+  once, which made two dollars over look like two hundred and took away the
+  colour somebody uses to find the row.
+
+  **The hover text is figures, never a verdict.** "On pace" and "Out of money"
+  were both proposed and refused.
+
+- **The budget is docked beside the dashboard**, three tabs, keys 1–3,
+  collapsible per device, and promoted to a segmented control on a phone. It is
+  **not** the Budget page and does not replace it — the maintainer chose that
+  knowingly, so the same line reads two ways on two screens. They read the same
+  domain functions, so they differ in presentation and never in arithmetic.
+
+- **The spacing scale is five values.** 12px was added deliberately with the gate
+  changed rather than worked around; 32 was proposed alongside and refused,
+  because 24 already separates sections. A third text tone was proposed at
+  `#a9a6a0` and **refused** — 2.4:1, clearing neither bar — and `--color-axis` is
+  that idea darkened to clear 3:1, restricted to marks a chart could be read
+  without, and measured in both palettes.
+
+- **A row holds two tiles**, down from four, because the panel took 400px and a
+  quarter of what is left is 250px.
+
+**Two defects found on the way, both worth the shape rather than the detail.**
+
+- The Arrange picker drew each tile's preview **inside a `<button>`**, and one
+  preview contains a segmented control — also a button. A button inside a button
+  is invalid HTML; the parser hoists the inner one out and tears apart the
+  structure around it, which made headings elsewhere vanish. It shipped in
+  v0.58.0. `pointer-events-none` and `aria-hidden` were already on that preview
+  and neither helped: **they stop it being used and say nothing about the
+  markup.**
+
+- `resetDatabase` truncates every table it discovers but resets `budget_settings`
+  **column by column**, because that row is pinned. A new column therefore leaked
+  from whichever test set it into every test after. The helper's own comment
+  describes that failure exactly, and it happened anyway — which is the argument
+  for discovering columns there the way tables already are.
+
+**Since v0.69.0 — Delegate moves to the sidebar (`v0.70.0`)**
+
+Recorded here as a pointer rather than a summary, because it was built in a
+parallel session and its reasoning is its own:
+[ADR 060](decisions/060-the-sidebar-holds-the-acts-on-the-household.md) and the
+0.70.0 entry in `CHANGELOG.md`. The short version is that Delegate and its undo
+left the Budget page's header for the foot of the sidebar, under the reading
+they act on, and Undo Delegation asks before it fires — which it never did.
+
+**Since v0.70.0 — the box everything is drawn in (`v0.71.0`)**
+
+The maintainer put five screenshots side by side and said the interface was "just a
+little bit different" on each page. That was right, and the difference was not
+taste: it is the drift ADR 033 exists to stop, arriving in the one thing that ADR
+never put a number on — **the box**. Counted rather than felt:
+
+- **Three implementations of one surface**, at two paddings (`p-4`, and `p-3` on
+  the two suggestion panels), two heading sizes (`text-section` on a tile,
+  `text-base` on a card), and two places for the description — beside the title
+  on Overview, under it on Settings.
+- **Two grids.** Settings counted in sixths, Overview in twelfths, so
+  `span="half"` emitted `lg:col-span-3` in one file and `lg:col-span-6` in
+  another. One word, two meanings, nothing at a call site to tell them apart.
+- **Two hand-rolled dialogs**, both on Budget, the only two left after ADR 038 —
+  so the dialog somebody opens _to type an amount_ put its amount field and its
+  confirm button under the software keyboard on iOS, and Escape did nothing.
+- **Window queries inside a box that is not the window**, which is the v0.49
+  defect surviving in four places.
+
+All of it is [ADR 061](decisions/061-every-page-is-a-page-of-tiles.md), and the
+part worth carrying is not the tile — it is **why nothing caught any of it.**
+`ui-system.test.ts` had five rules and every one of them was about something with
+a name: a page header, a field width, a `<details>`, a create button. The box had
+no name, so it was written out by hand and nothing was looking. The four new
+rules are each written against a defect that actually happened, and the
+page-title one was checked against the Rules page as it stood before the fix.
+
+**The one trap in it, and it was found in a screenshot rather than by a test.**
+Overview's tile shell carried a bare `group` class for its drag grip — harmless
+while one component had it, and a collision the moment every box on every page
+became that component. `.group:hover .row-menu-trigger` reveals a row's `⋯` and
+its absorb button and matches _any_ hovered ancestor with the class, so hovering
+anywhere over the budget drew "Move surplus here" on every line at once, and
+`.group:focus-within` meant a press into the register's search box did it to
+fifty rows. **Every test passed**, because each control is still in the DOM and
+still reachable and nothing asserts when one appears. It is `group/tile` now.
+The rule to carry: a utility class that is effectively global stops being safe
+the moment a second thing uses it, and Tailwind's named groups exist for that —
+this codebase was already using them (`group/toggle`, `group/bar`), just not
+where it mattered most.
+
+**Two settled decisions were reversed, both deliberately and both recorded.**
+`design.md` §5's "no card box" for the budget tables was written when Budget was
+the only page — the contrast it reached for was against nothing. And the hidden
+bills fold left the Recurring page at the maintainer's request.
+
+**The hidden-bills move is the one to read.** They went to Settings → Archived
+first, and the maintainer's reaction inside a minute was to ask whether hiding a bill
+archived its transactions. It does not — `bill_overrides` is one row per merchant
+carrying a refusal and a name, and it touches no transaction — but **the word
+made the wrong claim**, because "archived" means `archived_at` on a row
+everywhere else here. They are on Settings → Budget now, beside the switch that
+governs overdue notifications, and the card's description and the row menu both
+say _the charges stay in the register_ out loud. The lesson is the ordinary one
+and it is cheap: a list of put-away things looks like it belongs under
+"Archived", and where a word already means something exact in this application,
+borrowing it for something adjacent is a claim you did not mean to make. An e2e
+test now proves the charges are still there, because that was the fear.
+
+### Known gaps to fix
+
+None outstanding. The September security review is closed — see
+[docs/security-review-2026-09.md](security-review-2026-09.md).
+
+- **The least-privilege `delegate_app` role** is opt-in, two steps in the README.
+  Nothing can tell a fresh install from an upgrade at the moment the connection
+  string is written, so making it automatic would break existing deployments.
+- **Pinning base-image digests** is deferred to the next deliberate base bump.
+
+### Where a new session should probably look first
+
+Not a backlog — there is none. These are the things most likely to be worth
+doing next, in the order they would pay off:
+
+- **Five ideas were argued on 2026-09-01, and all five are built.** The queue suggestions and labelling rules (ADRs 043 and
+  044), recurring bills and the export (045 and 046), and targets (047). There is
+  no backlog behind them.
+
+  Ask rather than picking. Phases 1–3 and the deploy work are done and the
+  September review is closed, so nothing here is urgent.
+
+- If something does need doing and the end-to-end suite misbehaves, **read
+  "Before believing a suite of failures" below before touching the branch.**
+  Four different specs failed intermittently across one long session on
+  2026-09-01, each passing alone and in clean runs, on a machine at six days
+  uptime and a load average of 3.5 at rest.
+
+### Deployment
+
+**Since [ADR 042](decisions/042-delegate-installs-anywhere-in-one-line.md) there
+is a published image**, signed and built by a workflow that fires on version tags
+and runs no tests. **`amd64` only since v0.63.0** — arm64 was emulated, slow, and
+then stopped finishing inside the 45-minute cap on a release that changed no
+dependency. An arm64 host builds from source, which is what the NAS did for
+twenty releases before ADR 042 and is therefore the better-exercised route.
+
+**Two things about a registry deploy.** It verifies the signature, so `cosign`
+has to be on the NAS — the README has the one command. And **`COMPOSE_PROFILES`
+must name `tor`** in `.env` if the onion service is wanted: it moved behind a
+profile in `v0.41.0`, and a deploy that does not name it will not bring it back
+up.
+
+**The package is public, done on 2026-09-01 and verified** — an anonymous token
+is issued and the manifest lists `linux/amd64`.
+
+Worth keeping the reason it needed doing at all: GitHub publishes a workflow's
+package as **private** by default, whatever the repository's visibility. Until
+that was changed, `docker compose up -d` answered `unauthorized` for everybody
+who had not run `docker login ghcr.io` — which is the entire one-line install,
+for everybody who is not the maintainer. It is a property of the package rather than
+of each version, so every later push inherits it; only deleting the package or
+renaming the image would reset it.
+
+So the ordinary deploy is now:
+
+```sh
+cd /volume1/docker/delegate && sudo ./scripts/deploy.sh --tag <version>
+```
+
+Both `0.41.0` and `v0.41.0` are published, so either form works — the semver
+pattern strips the `v` and a raw tag puts it back, because a release the git tag
+calls `v0.41.0` and the registry calls `0.41.0` is a 404 waiting at the end of a
+deploy.
+
+which pulls the image, verifies it was built by this repository's workflow, and
+restarts. That is a smaller and more honest loop than the source route below: it
+deploys the artefact `npm run verify` was run against rather than recompiling it
+on a machine that has never run the tests.
+
+**A manual run of the publish workflow is the ordinary way to cut a release
+since [ADR 072](decisions/072-a-release-is-cut-from-github.md)** — it creates
+the tag when the tag does not exist. What follows is why the `value=` line in
+that workflow exists, and it still holds.
+
+**A manual re-run of the publish workflow tags nothing unless it is told to.**
+`docker/metadata-action` derives a version from `github.ref`, and on a
+`workflow_dispatch` that is `refs/heads/main` however the checkout was pointed —
+so the semver patterns match nothing and the only tag pushed is `latest`. The
+image is correct and signed and simply has no version on it, which reads at the
+NAS as `manifest unknown`: a deploy that looks like a typo for a release that
+built fine. Fixed in v0.63.0 by passing
+`value=${{ github.event.inputs.tag || github.ref_name }}` to each pattern.
+
+**A tag is not deployable the moment it is pushed, and there are _two_ ready
+signals rather than one.** The publish workflow takes a couple of minutes now
+that nothing is emulated, and it pushes the image before it signs it, as separate
+steps. So a version passes through two states on the way to deployable:
+
+1. **Not in the registry.** The pull fails with `manifest unknown`, which is true
+   and reads like a typo.
+2. **Pushed but not signed.** The pull succeeds and resolves a digest, then
+   `cosign verify` fails — which, worded carelessly, reads like a supply-chain
+   attack on a release cut four minutes ago.
+
+Both happened on `v0.50.0`, in that order, and the second is the worse failure
+because the obvious way past it looks like `--skip-verify`. `deploy.sh` now names
+each one and says the image may still be building; an unsigned image and a
+_wrongly_ signed one no longer share a message, and an unrecognized cosign
+failure is treated as the alarming kind rather than the benign one.
+
+**The rule: do not hand over a deploy command until the workflow run has
+completed** — not until the tag resolves, until the run is green. Check with:
+
+```sh
+gh run list --workflow publish.yml --limit 1
+```
+
+**The source route needs no other machine.** The repository is public, so the
+NAS fetches the source itself from GitHub and builds it natively — nothing is
+pulled from a registry, nothing is signed, and no tag is needed. Keep it for an
+unreleased commit, for a day the registry is unreachable, or for a release whose
+image has not been published yet; v0.78.0 went out this way on 2026-09-21. Still
+one line, on the NAS, with the commit sha (or a tag) in the URL:
+
+```sh
+cd /volume1/docker/delegate && curl -fsSL -o delegate-src.tar.gz https://github.com/aso42244/delegate/archive/<sha-or-tag>.tar.gz && sudo sh -c 'set -e; rm -rf delegate-src; mkdir delegate-src; tar xzf delegate-src.tar.gz -C delegate-src; src=$(ls -d delegate-src/*); for e in $(ls -A "$src"); do case "$e" in .env|backups|tls) echo "refusing $e"; exit 1;; esac; rm -rf "./$e"; done; cp -a "$src"/. .; rm -rf delegate-src' && sudo ./scripts/deploy.sh --build
+```
+
+The `sh -c` does by hand what `--unpack` does for a `git archive` tarball,
+because GitHub's archive carries a top-level folder that `--unpack` does not
+expect: it removes what the tarball owns before copying it in — plain `tar xzf`
+only ever adds, so a source file deleted between two releases would survive the
+upgrade and get compiled, which is exactly how v0.4.0 failed to build — and it
+refuses outright if the archive ever claims `.env`, `backups` or `tls`. Expect
+the build to take about fifteen minutes on the Synology NAS. `--unpack` still takes a
+`git archive` tarball if one is ever put in that directory.
+
+Things that have cost time and are worth knowing: Synology's Docker will not
+create a missing bind-mount source, so `deploy.sh` makes them **and chowns the
+backup directory to uid 1000**, which the container runs as; and the `tor`
+service builds from source, so the first deploy after it landed takes noticeably
+longer.
+
+A successful deploy now ends with `Backups: the container can write to the backup
+directory.` If it instead prints a warning, the nightly dump will fail silently
+until the chown it names is run — that is the one failure this project cannot
+catch anywhere but on the NAS.
+
+**`npm run verify` is still the only gate** — the publish workflow builds an
+artefact and decides nothing (ADR 022 is amended, not reversed). Nothing on
+GitHub runs a test, and nothing is watching a branch.
+
+`sudo docker …` does not work on DSM: `sudo` resolves the command against
+`secure_path`, which does not include `/usr/local/bin`. Use `sudo -i sh -c '…'`,
+which runs root's login shell and gets a full `PATH`.
+
+A Tor onion service is the alternative to a tunnel and is off until switched on
+from the LAN — see ADR 027, and note that running both means the weaker door sets
+the security level.
+
+**Model Context Protocol support was built and then removed** at the maintainer's
+direction, in v0.15.0 and v0.16.0, and taken out again in v0.17.0. It is not on
+the roadmap and should not be reintroduced without being asked for it. The trace
+it left is `apps/api/prisma/migrations/20260819180000_drop_api_tokens`, which
+exists because migrations are forward-only (ADR 003) and the creating migration
+had already been applied to the deployment — deleting that file instead would
+leave `migrate deploy` reporting drift.
+
+**`api_tokens` exists again, for a different reason** — Eventide reads this
+budget through a read-only door and needs something to knock with. ADRs 069–071
+and `docs/api-for-eventide.md` are the whole of it: a token reads as the person
+who made it, opens the two routes in `routes/read-door.ts` and nothing else, and
+is managed on Settings → Access. That is not the MCP work returning; there is no
+write path and none is to be added.
+
+**Phase 5** — feature requests arriving from a Notion database and built
+automatically — was removed from the plan at the maintainer's direction and is not on
+the roadmap. If it ever returns it needs an ADR before it needs code: it would
+create an automated path from a text field somebody typed into to a merge on
+`main`, and a request is **input, not an instruction**. The hard constraints above
+are not negotiable by a request, whoever wrote it.
+
+---
+
+## The environment
+
+**The gate runs wherever the clone is, and a cloud session is the ordinary
+place now** — see **If you are running in the cloud** at the top of this file.
+A local Mac ran every gate until 2026-09-21 and is no longer part of any
+workflow ([ADR 072](decisions/072-a-release-is-cut-from-github.md)). The notes
+below come from that machine and are kept because the lessons in them — a wedged
+Docker VM that looks like flaky tests, an orphaned server against the test
+database, the pipe trap — are about the gate rather than the machine, and every
+one of them will recur somewhere else.
+
+- **`docker compose` is installed and the gate uses it**, since 2026-09-01
+  (`brew install docker-compose`, registered through `cliPluginsExtraDirs` in
+  `~/.docker/config.json`). The symlink that was there pointed at Docker Desktop,
+  which is not installed, so compose had silently never worked here.
+
+  **That is why `docker-compose.yml` was "reasoned about, not executed" for
+  months, and it stopped being a documented limitation and started being a
+  documented cost** when three defects reached the NAS in one deploy — all three
+  in compose or `deploy.sh`. `npm run verify` now parses the compose file with an
+  empty environment and again with every profile on. Twenty-three seconds to the
+  failure, against nearly four minutes to be told by the person deploying.
+
+- **Docker is installed** — colima, since 2026-08-19. `npm run verify` now
+  completes: it builds the image, starts it, and asks it for `/health`.
+  `verify:quick` still exists for a fast loop and skips exactly that step. Run
+  `colima start` if a build reports no Docker daemon; `colima stop` gives the
+  RAM back.
+
+  Two things it still does not prove. It produces an **arm64** image on this
+  Mac and the Synology NAS is x86_64, so it shows the Dockerfile is correct rather than
+  that a native module has a prebuilt binary for the NAS — which is why the NAS
+  builds its own from source (ADR 019), and why the _published_ image is built on
+  an x86_64 runner rather than here. And `docker-compose.yml` is still reasoned
+  about rather than executed, so say so plainly when changing it.
+
+  **`tor/` is no longer in that category**, and the cost of it having been there
+  is worth remembering. The image and its entrypoint shipped un-run, carrying
+  `HiddenServicePort 80 app:3000` — a parse error, because tor does no DNS for
+  that directive. The container died at startup and restarted for ever, no onion
+  address was ever created, and the only symptom anywhere was Settings reporting
+  "No onion address yet", which is also what it says when nothing is wrong.
+  Nobody could tell the two apart for two weeks.
+
+  `npm run verify` now runs `tor --verify-config` against the real file. It is
+  offline, takes about a second, and would have caught this before it left the
+  Mac. The whole service can be exercised locally too — build `./tor`, run it on
+  a network with a container aliased `app`, and watch for the address.
+
+  **The first thing this caught was a lie in `.dockerignore`**, on its very first
+  run. `*.tsbuildinfo` is anchored at the root, so
+  `packages/shared/tsconfig.tsbuildinfo` was copied into the build context — and
+  a stale one is a lie `tsc --build` believes: it concludes the project is
+  already built, emits nothing, and every workspace importing `@budget/shared`
+  then fails to resolve it. The pattern is `**/*.tsbuildinfo` now.
+
+  Worth knowing _why_ nobody had hit it. The NAS builds from a `git archive`
+  tarball, which carries no ignored file at all, so the local build context and
+  the deployed one were different and only the local one was broken. **If a build
+  fails here while the NAS is fine, suspect that difference before suspecting the
+  release.**
+
+- **`npm run verify` fills colima's disk, and it fails as something unrelated.**
+  Every run builds a container image, and nothing removes the one it replaces.
+  Ten runs in a day left 93 images and 60GB inside the VM, and the gate then
+  failed at the **tor** step — `Failed to parse/validate config`, from
+  `Error creating directory /var/lib/tor/.tor: No space left on device` five
+  lines earlier. Nothing about tor was wrong, and the host had 152GB free: the
+  VM has its own disk.
+
+  `docker image prune -f` reclaimed 13.8GB and the gate passed unchanged. Worth
+  knowing because the symptom names the wrong subsystem, and because it will
+  recur on any day with a lot of verifies. Seen 2026-09-05.
+
+- **Colima can wedge, and it looks exactly like flaky tests.** It has happened
+  once, on 2026-08-20. End-to-end tests began timing out at about 42 seconds
+  each, a _different_ one every run, and the suite took 9.2 minutes instead of
+  40 seconds. Nothing was wrong with the branch and there were no orphaned
+  servers — but `ps aux` itself was taking over two minutes to return and
+  `colima status` did not answer at all. `colima stop` took roughly an hour to
+  complete; load average dropped from 5.14 to 2.66 the moment it did, and the
+  suite came back green in 2.0 minutes.
+
+  So if end-to-end tests start timing out on a different test each run, check
+  the machine before the branch: `uptime`, and whether colima answers. **Do not
+  raise a Playwright timeout to make it go away** — a timeout raised to paper
+  over contention is how the racy tests in this suite got written the first
+  time. `colima start` again when the image step is needed.
+
+- **A 403 `two_factor_required` from a fixture is an enrolment race, not a code
+  fault — and it is fixed now.** Both suites enrol by confirming with the
+  _previous_ period's code, so a later sign-in still has an unspent one (a code
+  is spent when used, ADR 028). "Previous" is worked out when the code is
+  generated, so a run that crosses a period boundary between generating and
+  validating offers one two steps back, and the server refuses it. Enrolment then
+  silently did not happen and every later request answered 403 — surfacing as
+  "expected 403 to be 200" in a helper thirty lines away, or as a fixture blowing
+  up in an unrelated spec.
+
+  Both **retry once and then assert** now, which removes the flake and makes the
+  remaining case a named failure. Seen twice on 2026-09-02, in
+  `auth-events.test.ts` and then in `manual-entry.spec.ts`; the second was found
+  in one read because `e2e/fixtures.ts` had started reporting the status and body
+  of a failed fixture request.
+
+- **Orphaned servers are the other thing to watch for.** A `verify` run that is
+  interrupted can leave `node apps/api/dist/server.js` running against the
+  **test** database, still executing the sync, price and backup schedules. It
+  answers `/health` perfectly well, so the next run looks broken for reasons that
+  have nothing to do with the branch — that cost an afternoon once, with two
+  end-to-end failures and an eleven-minute hang on a documentation-only change.
+  `ps aux | grep 'apps/api/dist/server.js'` before believing a strange failure.
+
+### Commands
+
+```bash
+npm run verify            # everything, in the order CI used to run it
+npm run verify:quick      # the same, minus the container image build
+
+npm run test              # 318 unit
+npm run test:integration  # 735 integration
+npm run test:e2e          # 217 end-to-end, needs a build first
+```
+
+`npm run verify` is the gate. It runs migrations, typecheck, lint, formatting,
+**the compose file parsed with an empty environment and again with every profile
+enabled**, the forbidden-terminology rule, the dependency audit, all three
+suites, the cached-balances-against-ledger check, a real backup-and-restore, the
+tor image against its real entrypoint, and the container image build.
+
+The compose step is early and cheap on purpose — two seconds, inside `--quick`.
+It exists because three defects reached the NAS in one deploy and every one was
+in a file this repository had never executed; it reproduces the worst of them in
+twenty-three seconds. It replaced GitHub Actions and is the _only_ thing standing between a
+branch and `main` now — nothing on a server is watching.
+
+Most commands need the environment loaded first:
+
+```bash
+set -a && . ./.env && set +a
+```
+
+Integration and end-to-end tests share `TEST_DATABASE_URL` and truncate it, so
+never run both at once. A schema change must be applied to the **test** database
+too, or ~190 tests fail in a way that looks like a code fault.
+
+`prisma migrate dev` is interactive and will hang. Write the migration SQL by
+hand and apply it with `migrate deploy`.
+
+---
+
+## Workflow
+
+- `main` is always deployable. Never commit to it directly.
+
+  This used to be discipline rather than enforcement, because branch protection
+  needed a paid plan on a private repository. **The repository is public now, so
+  a protection rule is available and free** — and worth turning on, because the
+  discipline demonstrably failed on 2026-09-01: a changelog commit went straight
+  to `main`, and a branch was merged on a gate that had not actually passed.
+  Neither was malice or haste; both were a rule with nothing behind it.
+
+- Branch names: `feat/`, `fix/`, `chore/`, `docs/`, `refactor/` + kebab.
+- Conventional Commits. Squash-merge. Delete the branch.
+- **`npm run verify` must actually pass before merging**, and nothing enforces
+  that but you. There is no CI. When there _was_, a session merged on a pending
+  check by accident twice — an exhausted timeout is not a pass, and neither is an
+  empty check list.
+- PR descriptions state what changed, why, how it was tested, and any deferrals.
+- Commit messages and PR bodies end with the co-author trailer and the Claude
+  Code footer respectively.
+
+---
+
+## Releasing and deploying
+
+Two halves. **You do all of the first half. The maintainer types one line for the
+second, and that is the whole of the maintainer's part.**
+
+### On GitHub — yours, end to end
+
+```sh
+git checkout -b feat/what-it-is           # feat|fix|chore|docs|refactor + kebab
+# ... the work ...
+npm run verify                            # must actually pass
+gh pr create --title "..." --body "..."
+gh pr merge <n> --squash --delete-branch
+```
+
+Then a **separate** `chore: cut vX.Y.Z` PR, whose only change is moving the
+`[Unreleased]` entry in `CHANGELOG.md` under a version heading:
+
+```sh
+git checkout main && git pull
+git checkout -b chore/cut-v0.71.0
+# move the CHANGELOG entry, commit, PR, squash-merge
+gh workflow run publish.yml -f tag=v0.71.0 -f commit=<the cut commit's sha>
+```
+
+**The workflow creates the tag** ([ADR 072](decisions/072-a-release-is-cut-from-github.md)):
+given a version it refuses one that is not `vX.Y.Z`, refuses a commit that is
+not on `main`, tags the commit — the head of `main` when none is named — pushes
+the tag with its own token, and builds and signs the tag's tree. No machine
+needs a git credential, which is the point: v0.78.0 was cut from a cloud
+session whose proxy refuses tag pushes, and the release stalled on the one line
+only a Mac could type. From a session with the GitHub tools rather than `gh`,
+`actions_run_trigger` on `publish.yml` with the same two inputs does the same.
+
+Pushing a tag by hand still works and still starts the same run; it is simply
+no longer required. Either way **Publish the image** builds `linux/amd64` only
+and signs it. Watch it and **wait for it to be green**:
+
+```sh
+gh run watch <run-id> --exit-status
+```
+
+Then confirm the registry actually has it, because a green workflow has not
+always meant a pullable tag:
+
+```sh
+TOKEN=$(curl -fsSL "https://ghcr.io/token?scope=repository:aso42244/delegate:pull&service=ghcr.io" \
+  | sed -n 's/.*"token":"\([^"]*\)".*/\1/p')
+curl -s -o /dev/null -w '%{http_code}\n' \
+  -H "Authorization: Bearer $TOKEN" \
+  -H 'Accept: application/vnd.oci.image.index.v1+json' \
+  "https://ghcr.io/v2/aso42244/delegate/manifests/v0.71.0"     # want 200
+```
+
+**Do not hand over a deploy line until that returns 200.** A tag is not a
+release.
+
+Then verify the signature **the way `deploy.sh` will**, rather than by guessing a
+URL. An earlier version of this file said to fetch `sha256-<digest>.sig` over
+HTTP; that 404s on every release ever published here, because it is not how
+cosign stores a signature — a check that always fails is one nobody keeps
+running. Install cosign (`deploy.sh` prints the one-liner) and run the real
+thing, which works from a cloud session:
+
+```sh
+cosign verify \
+  --certificate-oidc-issuer 'https://token.actions.githubusercontent.com' \
+  --certificate-identity-regexp '^https://github\.com/aso42244/delegate/\.github/workflows/publish\.yml@refs/.+$' \
+  ghcr.io/aso42244/delegate:vX.Y.Z
+```
+
+**No signature at all is ordinary for a minute after the tag**: the workflow
+pushes the image and signs it as a separate step, so a version is pullable
+slightly before it is verifiable. `deploy.sh` tells that case apart from a
+signature belonging to somebody else, and so should you. This has bitten twice — once a workflow that hung, once a
+`workflow_dispatch` where `docker/metadata-action` read `github.ref`, matched no
+semver pattern, and pushed only `latest`. Both ended as `manifest unknown` on the
+deployment host, after it had been announced as ready.
+
+### On the deployment host — the maintainer's, and it is one line
+
+**The maintainer types exactly one line. Never give two.** No `cd` then a command
+as separate steps, no "first check X", no follow-up verification to run. One
+copy-pasteable line in its own fenced `bash` block, and nothing else:
+
+```bash
+cd /volume1/docker/delegate && sudo ./scripts/deploy.sh --tag v0.71.0
+```
+
+That is the whole interface. It pulls the tag, resolves it to a digest, verifies
+the image was built and signed by this repository's workflow, restarts, and waits
+for `/health`. Everything else — building, testing, tagging, publishing, checking
+the manifest — happened before the line was handed over.
+
+If a release supersedes one not yet deployed, give the newer line and say plainly
+that it includes the earlier one. Do not give a queue.
+
+Rules that go with this:
+
+- **You have no access to the deployment host.** You cannot deploy, and that is
+  settled: hand over the line and stop.
+- **Then assume it is deployed.** See **How to know where things stand**.
+- The source route (`--unpack` a `git archive` tarball, `--build`) still exists
+  and is documented below, but the registry route is the ordinary one.
+
+---
+
+## Things learned the hard way
+
+Each of these cost real time. They are the reason the test suite looks the way it
+does.
+
+- **Tests that import modules never exercise the thing that boots.** The server
+  crashed on startup twice — once from two not-found handlers, once from a broken
+  CLI entrypoint — with typechecking and hundreds of tests green. CI now builds
+  the web app, smoke-tests CLI entrypoints, and starts the container image.
+- **A 200 status does not mean a correct body.** A missing hashed asset returned
+  `index.html` with a 200 and `text/html`, producing a blank page and a MIME
+  error that pointed nowhere near the cause. End-to-end tests assert **content
+  type**, not status.
+- **Reconnecting an institution at the bridge changes every account's external
+  id.** Delegate matches on that id, so the accounts come back looking new and
+  collide with the originals on the partial unique index over `lower(name)` —
+  which then repeats every hour forever. `upsertAccount` adopts an account whose
+  id the feed no longer mentions. The distinguishing signal is exactly that: an
+  institution that is merely erroring still lists its accounts.
+- **A failure while ingesting one account used to fail the whole run**, so six
+  connections went stale because one had been reconnected. Reported and skipped
+  now. Worth remembering as a shape: this sync touches several independent
+  things, and a loop over them should not be all-or-nothing.
+- **A boolean in a query string is text.** `z.coerce.boolean()` is
+  `Boolean(value)`, so `?uncategorized=false` meant `true` and the Transactions
+  page's Categorized filter showed the queue. Parse with `booleanQuery` in
+  `http/serialize.ts`; there is one place for it now.
+- **The SimpleFIN bridge silently caps a long date range** at 90 days and reports
+  it as a note, not an error. A twelve-month request returned three months while
+  looking entirely successful. Requests are split into 45-day windows, which is
+  what the bridge recommends. Real accounts hold roughly **six months** of
+  history, whatever the window.
+- **Only run against real data finds real bugs.** The first live sync classified
+  a credit card as an asset because the signal was in the institution name, not
+  the account name — which would have thrown the identity off by twice the
+  balance in the wrong direction.
+- **Resetting your own second factor may or may not end your session**, and
+  nothing decides which. The reset deletes that account's sessions; the request
+  that did it then writes its own session back, because `rolling: true`
+  refreshes the expiry on every response, and the two are not ordered against
+  each other. Both landings are fine — signed out, or sent to enrolment — so the
+  end-to-end test accepts either. Worth making deterministic if it ever matters:
+  the choice is to destroy the actor's session deliberately, which is arguably
+  what removing your own credential should do.
+- **`compose up -d` does not rebuild a service it already has an image for.**
+  `tor` is the one service built from source here, and its configuration is
+  _mounted_ while the entrypoint that reads it is _baked in_. A release changed
+  both; the deploy shipped the new file to the old script, which knew nothing
+  about the placeholder in it, and tor reported an unparseable port and restarted
+  for ever. `deploy.sh` passes `--build` now. **When one half of a pair is
+  mounted and the other is in the image, a deploy can ship one without the
+  other.**
+- **A check that exercises the artefact is not the same as one that exercises
+  the thing.** `tor --verify-config` over a hand-substituted torrc passed on the
+  very release whose container was crash-looping, because it proved the file was
+  valid and never that the entrypoint produced it. `npm run verify` starts the
+  real image against a container aliased `app` and asks tor whether it started.
+  Twenty seconds, and the only thing that would have caught it.
+- **A bind mount replaces the image's directory, ownership and all.** The
+  Dockerfile ran `chown -R node:node /backups` and it counted for nothing: at
+  runtime the host directory takes that path, and the host's ownership is what
+  the process meets. `deploy.sh` created it under `sudo`, so it was root's, and
+  the container runs as uid 1000. Every nightly `pg_dump` since go-live failed
+  with "Permission denied". Anything done to a mount point at build time is
+  decoration — the check that matters runs on the machine that has the mount,
+  which is why `deploy.sh` now writes a file there before reporting success.
+- **A thing that fails quietly is worse than one that does not run at all,
+  because it is trusted.** That sentence was in the comment at the top of
+  `backup.sh` while the backup it describes failed every night for weeks. The
+  code was right and nobody was reading it. What was missing was the question
+  asked from the other end: not "did the attempt throw" — which was answered
+  correctly, into a log — but "is there a recent dump on disk", which nothing
+  asked until somebody went looking by hand. **When something matters, check for
+  the evidence it leaves, not for the absence of an error.**
+- **Before believing a suite of failures, look at the machine.** The end-to-end
+  suite once took **1.3 hours** instead of two minutes, with seven multi-minute
+  timeouts scattered across specs the branch had not touched — each of which
+  passed in under a second on its own. The Mac had 41 days of uptime, load
+  average near 6 at rest and WindowServer at 45% CPU. A restart fixed all seven.
+  Scattered timeouts in unrelated specs are an environment signal, not a code
+  one; `uptime` costs nothing to check.
+- **After a restart, wait before testing.** Load average was **110** two minutes
+  in and took about seven minutes to fall below four. Testing into that
+  reproduces exactly the flakes you are trying to rule out.
+- **Anything that races a write eventually fails on a slower machine.** Three
+  separate tests have now been fixed for this: navigating away before a write
+  landed, clicking a second control before the first one's PATCH returned, and
+  asserting on text before an async query had rendered the _other_ element that
+  matched it. Each passed locally for weeks and failed on a CI runner. There is
+  no helper for this — `networkidle` fights the notification poll and a test
+  hook does not belong in production code. The convention is: **after any action
+  that triggers a write, assert on the resulting UI state before the next
+  action.** That is what web-first assertions are for.
+- **A banner's copy can collide with a page's own copy.** The uncategorized
+  notification and the Transactions subtitle both contain "waiting to be
+  categorized", so a substring `getByText` resolved to two elements — but only
+  once the notification query landed, which made it intermittent. Prefer exact
+  text where two parts of the interface describe the same thing.
+- **Navigating straight after a mutation makes an end-to-end test lie.** Two
+  specs pressed a key that fired a write and immediately went to another page.
+  The Budget page reads its balances once on load, so arriving mid-write
+  snapshots a number that never updates — and `toContainText` then polls a static
+  DOM for its whole timeout. It passed for months and failed only on the slow
+  first run after a cold server start, which is exactly the run that looks like a
+  real bug. Wait for a UI signal that the write landed (the row leaving the
+  queue, the dialog closing) before navigating.
+- **A query string carries text, so a flag in one must be parsed, not coerced.**
+  `GET /api/rules/preview` read its `includeCategorized` flag with `Boolean(...)`,
+  and `Boolean("false")` is `true` — so asking for the safe preview returned the
+  count for the mode that overwrites categorizations made by hand. Nothing
+  called it with the flag until Settings → Rules did, which is why it survived.
+  It is now an explicit `z.enum(['true','false'])`.
+- **`npm run typecheck` did not cover the web app.** The root `tsconfig.json`
+  referenced only `packages/shared` and `apps/api`, so type errors in
+  `apps/web` surfaced only at `npm run build` — the same shape of hole as the
+  two boot crashes above. `apps/web` is now in the references, and a real error
+  (`row.inBudget` on a type that did not have it) was sitting there when it was
+  added.
+- **Playwright found two genuine accessibility defects on first run**: hint text
+  inside a `<label>` polluting the accessible name, and a combobox and its
+  listbox sharing one `aria-label`.
+- **A phone keyboard does not shrink the window.** Every `100vh`, `45vh`,
+  `inset-0` and `bottom: 0` in this application means the _layout_ viewport,
+  which on iOS keeps its full height while the keyboard is drawn over the page.
+  If a thing is anchored to the bottom of the screen and contains a field, it is
+  anchored behind the keys. `dvh` does not help — it tracks the browser's
+  retracting chrome, not the keyboard — and `interactive-widget=resizes-content`
+  is Chrome-on-Android only. `window.visualViewport` is the answer, and
+  `useVisualViewport` already wraps it.
+- **Chromium has no software keyboard, so the condition cannot be produced —
+  only the shape of it.** The regression test stubs `window.visualViewport` to a
+  window still 844 tall with 430 on screen. The disagreement between the two
+  rectangles _is_ the bug, and that is reproducible exactly. Verify a test like
+  this fails without the fix; this one did, at 844 against 430.
+- **An `opacity: 0` control still occupies its width.** Adding hover-revealed
+  arrows beside the Insights drag handle pushed the card header 26px past its
+  own edge with the `×` off-screen. Two more elements then needed `min-w-0`
+  before it fit: **a flex item and a grid item both default to their content
+  width**, so a header's controls will size the card rather than the column
+  unless told not to.
+- **Playwright matches an accessible name as a substring.** The backlog pill
+  reads "4 new transactions", so `getByRole('link', { name: 'Transactions' })`
+  started matching the sidebar _and_ the pill. Reach for `exact: true` on a
+  navigation locator once anything else on the page can contain the word.
+- **A hidden tooltip is out of the accessibility tree entirely.** `getByRole
+('tooltip')` finds nothing until it is revealed, so a test has to hover first —
+  which is the behaviour worth asserting anyway.
+- **A single fixed width anywhere sets the whole column.** Three rounds went into
+  a `⋯` column that would not collapse on a phone, suspecting CSS specificity;
+  the cause was one unpatched empty `<td className="w-10 ...">` in the same
+  column.
+- **A profile does not stop a service, it stops managing it.** Moving `tor`
+  behind a compose profile in `v0.41.0` was expected to stop the container on the
+  next deploy. What happened is the opposite and worse: `compose up -d` left it
+  running and simply stopped tracking it, so it kept working while ageing out of
+  every future release — and would have stayed down silently the first time it
+  stopped, with Settings reporting "no onion address", which is also what it says
+  when nothing is wrong. `COMPOSE_PROFILES` in `.env` is what keeps a profiled
+  service part of a deployment that wants it.
+- **A compose variable marked required (`:?`) is required everywhere**, including
+  inside a service no profile has enabled: interpolation happens before profiles
+  are applied. `DELEGATE_DOMAIN` was `:?` inside the bundled Caddy service, and a
+  NAS that had never heard of Caddy failed halfway through an upgrade.
+- **A deploy script that unpacks a release replaces itself.** `deploy.sh` sets
+  its constants at the top, `--unpack` overwrites the file, and execution
+  continues from the old copy — so a release that changes the script does not get
+  to use the change it shipped. That produced a signature failure against a
+  perfectly good signature, because the running script was checking for a
+  workflow deleted a month earlier. It re-execs after unpacking now.
+- **`npm run verify | tail` reports `tail`'s exit code, not the gate's.** A
+  pipeline's status is its last command. That turned a real end-to-end failure
+  into an apparently successful run, and a branch was committed and a pull
+  request opened on a gate that had not passed. Redirect and check instead:
+  `npm run verify > /tmp/v.log 2>&1; echo $?`. The one rule this project has
+  about merging is worth more than the convenience of a pipe.
+- **Routing around the terminology ban produced worse engineering** — a database
+  round trip per money transaction, collidable correlation ids, `Math.random()`
+  in the auth path. All fixed once the ban was narrowed.
+
+---
+
+## Design
+
+`docs/design.md` is the maintainer's visual specification and is **settled** — read it
+as written. **`docs/ui-system.md` is the measurements**: the spacing scale, field
+widths, button rules and the text budget every screen uses. Read it before
+touching any interface, and note that `ui-system.test.ts` enforces the mechanical
+half by reading the source — a UI change that ignores the scale fails `verify`
+rather than merging quietly.
+Six conflicts with the build prompt were found and resolved with the
+maintainer; the reasoning is recorded at the bottom of that file. The ones that shape
+behaviour:
+
+- The row menu says **Archive**, never Delete, and includes **Manually adjust**
+  and **History for this line**.
+- A **positive** balance reading is informational (accent blue,
+  `$4,890.00 to delegate`), never a warning. Yellow and red are for
+  over-delegation only. Thresholds derive from the configured tolerance.
+- Grouping colour is a soft row tint plus a chip; contrast must hold at 4.5:1.
+- The page is called **Insights**, not Metrics.
+
+UI polish notes from the maintainer exist but are **deferred to Phase 4** by the
+maintainer's instruction. Do not chase them now.

@@ -1,0 +1,718 @@
+import type { Locator } from '@playwright/test';
+import {
+  expect,
+  ageLatestDelegateRun,
+  makeAccount,
+  makeDelegation,
+  makePendingSpend,
+  makeSucceededSyncRun,
+  makeSyncWarning,
+  openNew,
+  test,
+} from './fixtures.js';
+
+/**
+ * The Budget page, driven in a real browser.
+ *
+ * These cover what unit and integration tests structurally cannot: that the page
+ * boots, that an edit reaches the server and comes back changed, and that the
+ * headline figure agrees with the rows beneath it after every operation.
+ */
+
+test('signing in reaches the budget', async ({ signedIn }) => {
+  await expect(signedIn.getByRole('heading', { name: 'Budget', exact: true })).toBeVisible();
+  await expect(signedIn.getByRole('navigation', { name: 'Main' })).toBeVisible();
+});
+
+test('an empty budget reads as balanced', async ({ signedIn }) => {
+  await expect(signedIn.getByRole('status')).toContainText('Balanced');
+});
+
+test('money that has landed reads as available to delegate, not as a fault', async ({
+  signedIn,
+}) => {
+  await makeAccount('Everyday Checking', 'asset', 489000n);
+  await signedIn.reload();
+
+  // The ordinary payday state. It must not be styled as a warning.
+  const banner = signedIn.getByRole('status');
+  await expect(banner).toContainText('To delegate $4,890.00');
+  await expect(banner).not.toContainText('Over delegated');
+});
+
+/**
+ * The reason the totals are rows of the table rather than a heading above it.
+ * Laid out separately they have to be kept in step by hand, and drift is
+ * invisible until someone reads a column of figures that does not add up to the
+ * number on top of it.
+ */
+test('a section total sits in the column it totals', async ({ signedIn, api }) => {
+  await makeAccount('Everyday Checking', 'asset', 1379665n);
+  await makeDelegation(api, 'Grocery', '40000');
+  await signedIn.reload();
+
+  const right = async (locator: Locator): Promise<number> => {
+    const box = await locator.boundingBox();
+    if (!box) throw new Error('not rendered');
+    return box.x + box.width;
+  };
+
+  const aligned = async (total: Locator, row: Locator): Promise<void> => {
+    // Sub-pixel, because a column edge lands on a fraction at some zoom levels.
+    expect(Math.abs((await right(total)) - (await right(row)))).toBeLessThanOrEqual(1);
+  };
+
+  const sectionOf = (heading: string): Locator =>
+    signedIn
+      .getByRole('table')
+      .filter({ has: signedIn.getByRole('heading', { name: heading, exact: true }) });
+
+  // Assets: one money column, so one total to place.
+  await aligned(
+    sectionOf('Assets').locator('thead .money'),
+    signedIn.getByRole('button', { name: 'Everyday Checking balance' }),
+  );
+
+  // Delegations: two, including the quieter one on the right.
+  const delegationTotals = sectionOf('Delegations').locator('thead .money');
+  await aligned(delegationTotals.nth(0), signedIn.getByRole('button', { name: 'Grocery balance' }));
+  await aligned(
+    delegationTotals.nth(1),
+    signedIn.getByRole('button', { name: 'Grocery amount to delegate' }),
+  );
+});
+
+/**
+ * Reported from real data: exactly balanced, then a card charge went pending.
+ * Categorizing it emptied the envelope while the card's reported balance stayed
+ * put, and the page offered that money to delegate a second time.
+ */
+test('a pending charge is not offered as money to delegate', async ({ signedIn, api }) => {
+  await makeAccount('Firefly Checking', 'asset', 100_000n);
+  const card = await makeAccount('Cortex Citi VISA', 'debt', 0n, 'simplefin');
+  const grocery = await makeDelegation(api, 'Grocery');
+
+  await signedIn.reload();
+  await signedIn.getByRole('button', { name: 'Grocery balance' }).click();
+  const balance = signedIn.getByLabel('Grocery balance');
+  await balance.fill('1000.00');
+  await balance.press('Enter');
+  const reading = signedIn.getByRole('status');
+  await expect(reading).toContainText('Balanced');
+
+  // No term at all while nothing is pending — it would be four words of noise in
+  // a line that exists to be checked at a glance.
+  await reading.hover();
+  await expect(signedIn.getByRole('tooltip')).not.toContainText('Pending');
+
+  // Move the pointer off the reading before reloading. A hover is physical
+  // position, not page state: leaving the cursor on the chip means the reloaded
+  // page re-fires the hover as soon as it paints, and the assertion below that
+  // no tooltip is open finds the one this line left behind. It failed about
+  // three runs in five, on a test that touches none of it.
+  await signedIn.mouse.move(0, 0);
+
+  await makePendingSpend(card, grocery, -31_250n);
+  await signedIn.reload();
+
+  await expect(reading).toContainText('Balanced');
+  // The working is a hover away now rather than printed beside the reading, so
+  // the term has to be found where it actually lives.
+  await expect(signedIn.getByRole('tooltip')).toHaveCount(0);
+  await reading.hover();
+  await expect(signedIn.getByRole('tooltip')).toContainText('− Pending $312.50');
+});
+
+test('a delegation is created by typing a name and pressing Enter', async ({ signedIn }) => {
+  const field = signedIn.getByLabel('Add to Delegations');
+  await field.fill('Grocery');
+  await field.press('Enter');
+
+  // Typing sixty of these by hand is the go-live path, so a name has to be enough.
+  await expect(signedIn.getByRole('cell', { name: 'Grocery', exact: true })).toBeVisible();
+  await expect(field).toHaveValue('');
+});
+
+test('editing a balance records the difference and updates the identity', async ({
+  signedIn,
+  api,
+}) => {
+  await makeAccount('Everyday Checking', 'asset', 100000n);
+  await makeDelegation(api, 'Grocery');
+  await signedIn.reload();
+
+  await signedIn.getByRole('button', { name: 'Grocery balance' }).click();
+  const input = signedIn.getByLabel('Grocery balance');
+  await input.fill('650.00');
+  await input.press('Enter');
+
+  await expect(signedIn.getByRole('button', { name: 'Grocery balance' })).toContainText('$650.00');
+  // Assets 1000 − Delegations 650 = 350 still to delegate.
+  await expect(signedIn.getByRole('status')).toContainText('To delegate $350.00');
+});
+
+test('an unparseable amount is kept on screen rather than discarded', async ({ signedIn, api }) => {
+  await makeDelegation(api, 'Grocery');
+  await signedIn.reload();
+
+  await signedIn.getByRole('button', { name: 'Grocery balance' }).click();
+  const input = signedIn.getByLabel('Grocery balance');
+  await input.fill('not a number');
+  await input.press('Enter');
+
+  // Silently dropping what someone typed is how a mistyped amount becomes an
+  // unnoticed wrong number.
+  await expect(input).toBeVisible();
+  await expect(input).toHaveValue('not a number');
+  await expect(input).toHaveAttribute('aria-invalid', 'true');
+});
+
+test('Escape abandons an edit', async ({ signedIn, api }) => {
+  await makeDelegation(api, 'Grocery');
+  await signedIn.reload();
+
+  await signedIn.getByRole('button', { name: 'Grocery balance' }).click();
+  const input = signedIn.getByLabel('Grocery balance');
+  await input.fill('999.00');
+  await input.press('Escape');
+
+  await expect(signedIn.getByRole('button', { name: 'Grocery balance' })).toContainText('$0.00');
+});
+
+test('an ad-hoc line shows an em-dash rather than zero', async ({ signedIn, api }) => {
+  await makeDelegation(api, 'Occasional', null);
+  await signedIn.reload();
+
+  // Null means "adds nothing when Delegate is pressed", which reads differently
+  // from a deliberate $0.
+  await expect(signedIn.getByRole('button', { name: 'Occasional amount to delegate' })).toHaveText(
+    '—',
+  );
+});
+
+test('Delegate previews, distributes, and can be undone', async ({ signedIn, api }) => {
+  await makeAccount('Everyday Checking', 'asset', 30000n);
+  await makeDelegation(api, 'Grocery', '20000');
+  await makeDelegation(api, 'Power', '10000');
+  await signedIn.reload();
+
+  await signedIn.getByRole('button', { name: 'Delegate', exact: true }).click();
+
+  const dialog = signedIn.getByRole('dialog', { name: 'Confirm delegate' });
+  await expect(dialog).toContainText('$300.00');
+  await expect(dialog).toContainText('2 lines');
+
+  await dialog.getByRole('button', { name: 'Delegate', exact: true }).click();
+
+  // Distributed: the identity lands on balanced.
+  await expect(signedIn.getByRole('status')).toContainText('Balanced');
+  await expect(signedIn.getByRole('button', { name: 'Grocery balance' })).toContainText('$200.00');
+
+  /*
+   * The Delegate button has become the undo, in the same slot: while the run can
+   * still be undone there is nothing sensible to delegate.
+   */
+  await expect(signedIn.getByRole('button', { name: 'Delegate', exact: true })).toHaveCount(0);
+  // Scoped away from the confirmation's own button, which carries the same name.
+  const undo = signedIn
+    .getByRole('navigation', { name: 'Main' })
+    .getByRole('button', { name: 'Undo Delegation' });
+  await expect(undo).toBeVisible();
+
+  // The cycle *date* is no longer here: it is a fact about the budget's settings
+  // rather than something to act on, and it lives with them now.
+  await expect(signedIn.getByText(/This cycle began/)).toHaveCount(0);
+
+  /*
+   * What was delegated, on the button's own hover rather than under it.
+   *
+   * It was a paragraph in the column — the last caption this zone had, and one
+   * that appeared and vanished with the undo window, moving every button below
+   * it twice a fortnight. Hovering is how the other three controls here say
+   * what they have to say.
+   */
+  await undo.hover();
+  const offer = signedIn.getByRole('tooltip');
+  await expect(offer).toContainText('Delegated $300.00 across 2 lines');
+  await expect(offer).toContainText('Undo rolls the cycle back too');
+
+  /*
+   * Undoing asks first now. It fired on the press until this release, which was
+   * fine while the button sat in the Budget header and is not fine in the
+   * sidebar, 8px above Sync SimpleFIN: a misclick there took a whole
+   * distribution back out of the envelopes with nothing to catch it.
+   */
+  await undo.click();
+  const confirm = signedIn.getByRole('dialog', { name: 'Confirm undo delegation' });
+  await expect(confirm).toContainText('$300.00');
+  await confirm.getByRole('button', { name: 'Undo Delegation' }).click();
+
+  await expect(signedIn.getByRole('button', { name: 'Grocery balance' })).toContainText('$0.00');
+  await expect(signedIn.getByRole('status')).toContainText('To delegate $300.00');
+
+  // And back to Delegate, with the offer gone.
+  await expect(signedIn.getByRole('button', { name: 'Delegate', exact: true })).toBeVisible();
+  await expect(signedIn.getByText(/Undo rolls the cycle back too/)).toHaveCount(0);
+});
+
+/**
+ * The offer closes when the window does, not when something else happens to
+ * refetch — on a tab left open that would be never.
+ *
+ * The window is a setting, so this drives it to an hour, delegates, and then
+ * moves the run into the past. What is under test is that the interface asks
+ * again rather than trusting what it was told at the time.
+ */
+test('the undo offer expires back into a Delegate button', async ({ signedIn, api }) => {
+  await makeAccount('Everyday Checking', 'asset', 30000n);
+  await makeDelegation(api, 'Grocery', '20000');
+  await signedIn.reload();
+
+  await signedIn.getByRole('button', { name: 'Delegate', exact: true }).click();
+  await signedIn
+    .getByRole('dialog', { name: 'Confirm delegate' })
+    .getByRole('button', { name: 'Delegate', exact: true })
+    .click();
+
+  await expect(signedIn.getByRole('button', { name: 'Undo Delegation' })).toBeVisible();
+
+  // Age the run past the undo window, the way twelve hours would.
+  await api.patch('/api/settings', { data: { undoWindowHours: 1 } });
+  await ageLatestDelegateRun(2);
+
+  await signedIn.reload();
+  await expect(signedIn.getByRole('button', { name: 'Delegate', exact: true })).toBeVisible();
+  await expect(signedIn.getByText(/Undo rolls the cycle back too/)).toHaveCount(0);
+
+  /*
+   * The cycle did not end when the chance to undo it did — it is still recorded,
+   * on Settings → Budget beside the undo window and the pay cadence that govern
+   * it. The Budget header carries only the offer, and only while there is one.
+   */
+  await signedIn.goto('/settings/budget');
+  await expect(signedIn.getByText(/^Cycle began/)).toBeVisible();
+});
+
+test('Transfer moves between envelopes without moving the bottom line', async ({
+  signedIn,
+  api,
+}) => {
+  await makeAccount('Everyday Checking', 'asset', 30000n);
+  await makeDelegation(api, 'Grocery');
+  await makeDelegation(api, 'Dining');
+  await signedIn.reload();
+
+  await signedIn.getByRole('button', { name: 'Grocery balance' }).click();
+  const balance = signedIn.getByLabel('Grocery balance');
+  await balance.fill('300.00');
+  await balance.press('Enter');
+  await expect(signedIn.getByRole('status')).toContainText('Balanced');
+
+  await openNew(signedIn, 'Transfer');
+  const dialog = signedIn.getByRole('dialog', { name: 'Transfer between delegations' });
+  // The balance is part of the option label now, so choosing where to move
+  // money from means comparing what the candidates hold while the list is open.
+  await dialog.getByLabel('From').selectOption({ label: 'Grocery — $300.00' });
+  await dialog.getByLabel('To').selectOption({ label: 'Dining — $0.00' });
+  await dialog.getByLabel('Amount').fill('100.00');
+  await dialog.getByRole('button', { name: 'Transfer' }).click();
+
+  await expect(signedIn.getByRole('button', { name: 'Grocery balance' })).toContainText('$200.00');
+  await expect(signedIn.getByRole('button', { name: 'Dining balance' })).toContainText('$100.00');
+  // Envelope-to-envelope movement nets to zero across the delegations total.
+  await expect(signedIn.getByRole('status')).toContainText('Balanced');
+});
+
+test('a negative delegation balance is the only red in the table', async ({ signedIn, api }) => {
+  await makeAccount('Card', 'debt', 54321n);
+  await makeDelegation(api, 'Grocery');
+  await signedIn.reload();
+
+  await signedIn.getByRole('button', { name: 'Grocery balance' }).click();
+  const input = signedIn.getByLabel('Grocery balance');
+  await input.fill('-25.00');
+  await input.press('Enter');
+
+  const negative = signedIn.getByRole('button', { name: 'Grocery balance' });
+  await expect(negative).toHaveClass(/text-negative/);
+
+  // Debts are liabilities but are never rendered red.
+  await expect(signedIn.getByRole('button', { name: 'Card balance' })).not.toHaveClass(
+    /text-negative/,
+  );
+});
+
+test('the sidebar collapses and stays collapsed across a reload', async ({ signedIn }) => {
+  await signedIn.getByRole('button', { name: 'Collapse sidebar' }).click();
+  await expect(signedIn.getByRole('button', { name: 'Expand sidebar' })).toBeVisible();
+
+  await signedIn.reload();
+
+  // Persisted per device, so it survives a refresh.
+  await expect(signedIn.getByRole('button', { name: 'Expand sidebar' })).toBeVisible();
+});
+
+/**
+ * Collapsing a grouping moves rows, not money.
+ *
+ * It used to send the change, refetch the entire budget, and only then move
+ * anything — one to two seconds of nothing happening, for a preference the
+ * browser already knew the answer to. The cache is updated first now, which is
+ * what makes the risk worth a test: an optimistic update that never reaches the
+ * server looks perfect until the page is reloaded.
+ */
+test('a collapsed grouping folds at once and is still folded after a reload', async ({
+  signedIn,
+  api,
+}) => {
+  await makeDelegation(api, 'Grocery');
+  await api.post('/api/groupings', { data: { name: 'Essentials', section: 'delegations' } });
+  await signedIn.goto('/budget');
+
+  await signedIn.getByRole('button', { name: 'Options for Grocery' }).click();
+  await signedIn.getByRole('menuitem', { name: 'Move to grouping' }).click();
+  await signedIn.getByRole('menuitem', { name: 'Essentials' }).click();
+  await expect(signedIn.getByRole('cell', { name: 'Grocery', exact: true })).toBeVisible();
+
+  // Scoped to the grouping's own row: the row menu still carries an "Essentials"
+  // item, so the bare name matches more than one control.
+  const toggle = signedIn
+    .getByRole('row')
+    .filter({ hasText: 'Essentials' })
+    .getByRole('button')
+    .first();
+
+  await toggle.click();
+
+  // Folded, and the row it was holding is gone from the table. The chevron is
+  // the only thing that says so now, so the state is read from `aria-expanded`
+  // rather than from prose that is no longer there.
+  await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+  await expect(signedIn.getByRole('cell', { name: 'Grocery', exact: true })).toBeHidden();
+
+  // And it actually reached the server, which the optimistic update would hide.
+  await signedIn.reload();
+  await expect(signedIn.getByRole('cell', { name: 'Grocery', exact: true })).toBeHidden();
+
+  // Unfolding is the same trip in reverse.
+  await signedIn
+    .getByRole('row')
+    .filter({ hasText: 'Essentials' })
+    .getByRole('button')
+    .first()
+    .click();
+  await expect(signedIn.getByRole('cell', { name: 'Grocery', exact: true })).toBeVisible();
+  await signedIn.reload();
+  await expect(signedIn.getByRole('cell', { name: 'Grocery', exact: true })).toBeVisible();
+});
+
+/**
+ * The Transfer dropdowns mirror the page beneath them.
+ *
+ * This dialog is only ever opened while looking at the Budget page, so a flat
+ * alphabetical list made finding a line in the dialog a different act from
+ * finding it on the page.
+ */
+test('Transfer lists delegations grouped as the page groups them', async ({ signedIn, api }) => {
+  await makeAccount('Everyday Checking', 'asset', 30000n);
+
+  const grouping = async (name: string): Promise<string> => {
+    const created = await api.post('/api/groupings', {
+      data: { name, section: 'delegations' },
+    });
+    return ((await created.json()) as { grouping: { id: string } }).grouping.id;
+  };
+
+  const essentials = await grouping('Essentials');
+  const fun = await grouping('Discretionary');
+
+  const grocery = await makeDelegation(api, 'Grocery');
+  const dining = await makeDelegation(api, 'Dining');
+  await makeDelegation(api, 'Odds and Ends');
+
+  await api.patch(`/api/delegations/${grocery}`, { data: { groupingId: essentials } });
+  await api.patch(`/api/delegations/${dining}`, { data: { groupingId: fun } });
+
+  await signedIn.goto('/budget');
+  await openNew(signedIn, 'Transfer');
+
+  const from = signedIn
+    .getByRole('dialog', { name: 'Transfer between delegations' })
+    .getByLabel('From');
+
+  // Grouped, and each option carries the balance it holds.
+  await expect(from.locator('optgroup')).toHaveCount(2);
+  await expect(from.locator('optgroup').nth(0)).toHaveAttribute('label', 'Discretionary');
+  await expect(from.locator('optgroup').nth(1)).toHaveAttribute('label', 'Essentials');
+  await expect(from.locator('optgroup[label="Essentials"] option')).toHaveText(['Grocery — $0.00']);
+
+  // Ungrouped lines sit after the groupings, as they do on the page.
+  await expect(from.locator('> option')).toHaveText([
+    'Choose a delegation',
+    'Odds and Ends — $0.00',
+  ]);
+});
+
+/**
+ * Closing the reading at the top of the page against one line.
+ *
+ * The arithmetic is proved in the integration suite. What only a browser shows
+ * is the part that makes it usable: the button appears on hover, the option
+ * that cannot be taken says why rather than vanishing, and the dialog opens on
+ * something that can actually be applied.
+ */
+test('surplus is moved into a line, and the reading lands on zero', async ({ signedIn, api }) => {
+  await makeAccount('Everyday Checking', 'asset', 30000n);
+  await makeDelegation(api, 'Grocery');
+  await signedIn.reload();
+
+  // $300 in the bank, nothing delegated.
+  await expect(signedIn.getByRole('status')).toContainText('To delegate $300.00');
+
+  await signedIn
+    .getByRole('row', { name: /Grocery/ })
+    .getByRole('button', { name: 'Move surplus here' })
+    .click();
+
+  const dialog = signedIn.getByRole('dialog', { name: 'Move surplus into Grocery' });
+  await expect(dialog).toContainText('Move all $300.00 here');
+  // Not over-spent, so bringing it to zero is offered with the reason it is not.
+  await expect(dialog).toContainText('This line is not over-spent.');
+
+  await dialog.getByRole('button', { name: 'Apply' }).click();
+
+  await expect(signedIn.getByRole('button', { name: 'Grocery balance' })).toContainText('$300.00');
+  await expect(signedIn.getByRole('status')).toContainText('Balanced');
+
+  // Nothing left to move, so the button is gone.
+  await expect(signedIn.getByRole('button', { name: 'Move surplus here' })).toHaveCount(0);
+});
+
+test('a deficit is covered from a line that can afford it', async ({ signedIn, api }) => {
+  await makeAccount('Everyday Checking', 'asset', 30000n);
+  const grocery = await makeDelegation(api, 'Grocery');
+  await api.post(`/api/delegations/${grocery}/adjust`, { data: { deltaCents: '50000' } });
+  await signedIn.reload();
+
+  // $300 in the bank against $500 delegated.
+  await expect(signedIn.getByRole('status')).toContainText('Over delegated $200.00');
+
+  await signedIn
+    .getByRole('row', { name: /Grocery/ })
+    .getByRole('button', { name: 'Fix deficit from here' })
+    .click();
+
+  const dialog = signedIn.getByRole('dialog', { name: 'Fix the shortfall from Grocery' });
+  await expect(dialog).toContainText('Cover the whole $200.00 from here');
+  // It can cover the lot, so emptying it would overshoot.
+  await expect(dialog).toContainText('emptying it would overshoot');
+
+  await dialog.getByRole('button', { name: 'Apply' }).click();
+
+  await expect(signedIn.getByRole('button', { name: 'Grocery balance' })).toContainText('$300.00');
+  await expect(signedIn.getByRole('status')).toContainText('Balanced');
+});
+
+/**
+ * The case the dialog exists for: a line too small to cover the shortfall.
+ * It has to open on something that can be applied rather than on a dead option.
+ */
+test('a line too small to cover it opens on emptying itself', async ({ signedIn, api }) => {
+  await makeAccount('Everyday Checking', 'asset', 30000n);
+  const rent = await makeDelegation(api, 'Rent');
+  await api.post(`/api/delegations/${rent}/adjust`, { data: { deltaCents: '45000' } });
+  const odds = await makeDelegation(api, 'Odds and Ends');
+  await api.post(`/api/delegations/${odds}/adjust`, { data: { deltaCents: '5000' } });
+  await signedIn.reload();
+
+  await expect(signedIn.getByRole('status')).toContainText('Over delegated $200.00');
+
+  await signedIn
+    .getByRole('row', { name: /Odds and Ends/ })
+    .getByRole('button', { name: 'Fix deficit from here' })
+    .click();
+
+  const dialog = signedIn.getByRole('dialog', { name: 'Fix the shortfall from Odds and Ends' });
+  await expect(dialog).toContainText('which is not enough');
+
+  // Opened on the choice that works, not the one that does not.
+  await dialog.getByRole('button', { name: 'Apply' }).click();
+
+  await expect(signedIn.getByRole('button', { name: 'Odds and Ends balance' })).toContainText(
+    '$0.00',
+  );
+  // $50 of the $200 closed.
+  await expect(signedIn.getByRole('status')).toContainText('Over delegated $150.00');
+});
+
+test('a custom amount moves only part of the surplus', async ({ signedIn, api }) => {
+  await makeAccount('Everyday Checking', 'asset', 30000n);
+  await makeDelegation(api, 'Grocery');
+  await signedIn.reload();
+
+  await signedIn
+    .getByRole('row', { name: /Grocery/ })
+    .getByRole('button', { name: 'Move surplus here' })
+    .click();
+
+  const dialog = signedIn.getByRole('dialog', { name: 'Move surplus into Grocery' });
+  await dialog.getByRole('radio', { name: /Some of it/ }).check();
+  await dialog.getByLabel('Amount to move here').fill('120.00');
+  await dialog.getByRole('button', { name: 'Apply' }).click();
+
+  await expect(signedIn.getByRole('button', { name: 'Grocery balance' })).toContainText('$120.00');
+  await expect(signedIn.getByRole('status')).toContainText('To delegate $180.00');
+});
+
+/**
+ * The reading used to be a full-width bar carrying the state on the left and the
+ * equation on the right. It is the first control in the sidebar's foot now — a
+ * coloured button that goes to Overview (ADR 064) — and the equation, the reason
+ * to trust the number, is still one hover or one focus away.
+ */
+test('the reading states itself, and shows its working on demand', async ({ signedIn, api }) => {
+  await makeAccount('Firefly Checking', 'asset', 100_000n);
+  await makeDelegation(api, 'Grocery', '40000');
+
+  await signedIn.goto('/budget');
+
+  /*
+   * The words are a `role="status"` live region inside the link, because they
+   * change on every edit and that change is the point. The link around them is
+   * what takes focus and what goes somewhere.
+   */
+  const reading = signedIn.getByRole('status');
+  await expect(reading).toHaveText('To delegate $1,000.00');
+  const control = signedIn.getByRole('link', { name: 'To delegate $1,000.00' });
+
+  // The working is not on the page until it is asked for.
+  await expect(signedIn.getByRole('tooltip')).toHaveCount(0);
+
+  await reading.hover();
+  const working = signedIn.getByRole('tooltip');
+  await expect(working).toBeVisible();
+  await expect(working).toContainText('Assets $1,000.00');
+  await expect(working).toContainText('= $1,000.00');
+
+  // And by keyboard, because a reading only a mouse can reach is one some people
+  // never get. It is a real tab stop now rather than a `tabIndex` on a span —
+  // there is something to press, and it is where the lines are.
+  await signedIn.mouse.move(0, 0);
+  await expect(working).toBeHidden();
+  await control.focus();
+  await expect(signedIn.getByRole('tooltip')).toBeVisible();
+});
+
+/**
+ * A pill's detail has to stay on the screen.
+ *
+ * The "6 not reporting" message names every account it is about, and at
+ * `w-max` it ran roughly 1,500px on one line — off the right of the display,
+ * with the end of the sentence unreachable by any means. The cap it had could
+ * not have helped: `max-w-[calc(100vw-3rem)]` bounds the detail's *width*
+ * while its left edge already sits wherever the pill does.
+ *
+ * Measured rather than read, for the reason the settings-card overflow was:
+ * every assertion that only looks for words passes while the words are off the
+ * screen.
+ */
+test('every pill keeps its detail inside the viewport', async ({ signedIn, api }) => {
+  /*
+   * The owner's own case, reproduced: six synced accounts whose feed has gone
+   * quiet, which is the `feed_not_reporting` pill — and its message names every
+   * account it is about. At `w-max` that ran about 1,500px on one line.
+   *
+   * Long bank names on purpose. The detail is as wide as its content, so the
+   * bug only appears once there is enough content, and a short fixture would
+   * have passed against the broken code.
+   */
+  const stale = new Date(Date.now() - 9 * 24 * 60 * 60 * 1000);
+  for (const name of [
+    'Persephone Savings & Loan PERSEPHONE+ CHECKING (1111)',
+    'Firefly Bank Big Deal Cash Back (2222)',
+    'Firefly Bank Little Prairie Savings (3333)',
+    'Firefly Bank Everyday Checking (4444)',
+    'Cortex Citi VISA Anywhere Card (5555)',
+    'Ariel Bank Online Savings Account (7777)',
+  ]) {
+    await makeAccount(name, 'asset', 10_000n, 'simplefin', stale);
+  }
+  await makeSucceededSyncRun();
+  await makeDelegation(api, 'Grocery', '40000');
+
+  await signedIn.setViewportSize({ width: 1280, height: 800 });
+  await signedIn.goto('/budget');
+
+  /*
+   * In the sidebar, which is where these live above `sm`. They are links and the
+   * budget's own reading is a status, so the thing they share is the detail they
+   * describe — not a role.
+   *
+   * Near the *left* edge now rather than wherever the page title left them,
+   * which is the mirror of the case this test was written for: the detail is
+   * 384px wide and the sidebar is about 190, so anchoring it to the tag's left
+   * edge is fine here and it is the right edge that has to be checked. Both are,
+   * below.
+   */
+  const pills = signedIn.locator('nav[aria-label="Main"] [aria-describedby]');
+  // Waited for before counting: `count()` does not retry, and the reading is
+  // rendered from a query rather than being in the first paint.
+  await expect(pills.first()).toBeVisible();
+  const count = await pills.count();
+  expect(count).toBeGreaterThan(0);
+
+  for (let index = 0; index < count; index += 1) {
+    const pill = pills.nth(index);
+    await pill.hover();
+
+    const detail = signedIn.getByRole('tooltip');
+    await expect(detail).toBeVisible();
+
+    const box = await detail.boundingBox();
+    expect(box).not.toBeNull();
+    // Both edges, because the fix flips the detail to hang from the pill's
+    // right edge near the screen edge — and a flip that overshoots the other
+    // way is the same bug mirrored.
+    expect(box!.x).toBeGreaterThanOrEqual(0);
+    expect(box!.x + box!.width).toBeLessThanOrEqual(1280);
+
+    await signedIn.mouse.move(0, 0);
+  }
+});
+
+/**
+ * A phone has nothing that opens on hover, which is the stronger claim.
+ *
+ * This used to assert that a pill's detail stayed inside a 390px screen — the
+ * `w-max` sentence that named six accounts and ran about 1,500px on one line.
+ * That clamping still matters and is still proved, on the screen where pills
+ * still exist: the sidebar, in the test above.
+ *
+ * Below `sm` there are no pills left. The notifications are one dot and the
+ * budget's reading is a circle, and both open a **sheet** on a press (ADR 063,
+ * ADR 065) — because a tooltip is a pointer's gesture and a touchscreen has no
+ * way to perform one. So the thing worth guarding here is that nothing in the
+ * header hides what it has to say behind a hover a thumb cannot do.
+ */
+test('nothing on a phone hides its words behind a hover', async ({ signedIn }) => {
+  await makeSyncWarning(
+    'Connection to Persephone Savings & Loan may need attention. Auth required — the saved login was rejected and no accounts were refreshed on this run.',
+  );
+
+  await signedIn.setViewportSize({ width: 390, height: 844 });
+  await signedIn.goto('/budget');
+
+  // The alert is on screen, and it is a dot rather than a pill with a tooltip.
+  const dot = signedIn.getByRole('button', { name: /^\d+ alerts?$/ });
+  await expect(dot).toBeVisible();
+  await expect(signedIn.locator('header [role="tooltip"]')).toHaveCount(0);
+
+  // Pressing it opens the whole sentence, inside the screen.
+  await dot.click();
+  const sheet = signedIn.getByRole('dialog', { name: 'Alerts' });
+  await expect(sheet).toContainText('Persephone Savings & Loan');
+
+  const box = (await sheet.boundingBox())!;
+  expect(box.x).toBeGreaterThanOrEqual(0);
+  expect(box.x + box.width).toBeLessThanOrEqual(390);
+});

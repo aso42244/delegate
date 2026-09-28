@@ -1,0 +1,442 @@
+import { bitcoinValueCents } from '@budget/shared';
+import type { FastifyPluginCallback } from 'fastify';
+import { z } from 'zod';
+import { prisma } from '../db/client.js';
+import { NODE_MODES, SUGGESTED_NODES, reachOf } from '@budget/shared';
+import {
+  fetchAndRecordPrice,
+  latestPrice,
+  newestPrice,
+  providerByName,
+} from '../domain/bitcoin.js';
+import { householdTimezone } from '../domain/settings.js';
+import { checkNode, readNodeSettings, saveNodeSettings } from '../domain/bitcoin-node.js';
+import { addWallet, archiveWallet, listWallets, scanWallet } from '../domain/bitcoin-wallets.js';
+import { createHolding, updateHolding } from '../domain/managed-accounts.js';
+import { costBasis, recordHoldingEvent, reverseHoldingEvent } from '../domain/bitcoin-holdings.js';
+import { centsInLoose, centsOut, dateOut } from '../http/serialize.js';
+import { AUTHENTICATED, requireSettingsManagement } from '../plugins/auth.js';
+
+/**
+ * Bitcoin holdings and the current price.
+ *
+ * The holding is a quantity of satoshis on an account; what it is worth is
+ * computed here rather than stored. A stored dollar value would be wrong within
+ * the minute and would make every historical point on the net worth chart wrong
+ * too.
+ */
+
+const idParamsSchema = z.object({ id: z.string().uuid() });
+
+/**
+ * Satoshis, as a decimal string of whole units — the same reasoning as cents.
+ * 21 million Bitcoin is 2.1 × 10^15 satoshis, which is inside a JS safe integer
+ * today, but the value crosses JSON as a string so it can never quietly stop
+ * being exact.
+ */
+const satsIn = z
+  .string()
+  .regex(/^\d+$/, 'Satoshis must be a whole, non-negative number, as a string')
+  .transform((value) => BigInt(value));
+
+export const bitcoinRoutes: FastifyPluginCallback = (fastify, _options, done) => {
+  for (const guard of AUTHENTICATED) {
+    fastify.addHook('preHandler', guard);
+  }
+
+  /**
+   * The current price, the holdings, and what they are worth.
+   *
+   * `stale` is carried rather than hidden: a price nobody could refresh today is
+   * still the best answer available, and showing it marked beats showing a zero.
+   */
+  fastify.get('/api/bitcoin', async () => {
+    const [price, accounts, settings] = await Promise.all([
+      // The household's day decides whether today's price has been fetched yet.
+      latestPrice(prisma, await householdTimezone(prisma, fastify.config.SCHEDULE_TIMEZONE)),
+      prisma.account.findMany({
+        where: { archivedAt: null, managedAs: 'bitcoin' },
+        select: {
+          id: true,
+          name: true,
+          bitcoinSats: true,
+          inBudget: true,
+          inNetWorth: true,
+          balanceAsOf: true,
+          stalenessIntervalDays: true,
+          bitcoinRevaluedAt: true,
+        },
+        orderBy: { name: 'asc' },
+      }),
+      prisma.budgetSettings.findUnique({
+        where: { id: 1 },
+        select: { bitcoinInBudgetAckAt: true },
+      }),
+    ]);
+
+    const holdings = accounts.map((account) => ({
+      id: account.id,
+      name: account.name,
+      sats: account.bitcoinSats?.toString() ?? '0',
+      inBudget: account.inBudget,
+      inNetWorth: account.inNetWorth,
+      valueCents:
+        price === null
+          ? null
+          : centsOut(bitcoinValueCents(account.bitcoinSats ?? 0n, price.priceCents)),
+      balanceAsOf: dateOut(account.balanceAsOf),
+      stalenessIntervalDays: account.stalenessIntervalDays,
+      // Only in-budget holdings carry one, and it is what the identity is
+      // balanced against.
+      revaluedAt: dateOut(account.bitcoinRevaluedAt),
+    }));
+
+    return {
+      price:
+        price === null
+          ? null
+          : {
+              priceCents: centsOut(price.priceCents),
+              priceDate: dateOut(price.priceDate),
+              source: price.source,
+              fetchedAt: dateOut(price.fetchedAt),
+              stale: price.stale,
+            },
+      holdings,
+      // False once someone has read what an in-budget holding does to the
+      // banner. The UI asks before the first one, not before every one.
+      inBudgetWarningDue: settings?.bitcoinInBudgetAckAt == null,
+    };
+  });
+
+  /**
+   * A holding, created where it is managed.
+   *
+   * No account has to exist first. This is the whole point: a Bitcoin holding is
+   * still an ordinary row in `accounts`, because the identity and the net worth
+   * chart both read that table — but it is created, renamed and retired here
+   * rather than typed into Settings → Accounts as a separate step.
+   */
+  fastify.post('/api/bitcoin/holdings', async (request, reply) => {
+    const body = z
+      .object({
+        name: z.string().min(1).max(100),
+        sats: satsIn.optional(),
+        inBudget: z.boolean().optional(),
+        inNetWorth: z.boolean().optional(),
+        stalenessIntervalDays: z.number().int().nullish(),
+      })
+      .parse(request.body);
+
+    const created = await prisma.$transaction((tx) => createHolding(tx, body));
+
+    request.log.info(
+      { accountId: created.id, actorId: request.currentUser?.id },
+      'Bitcoin holding created',
+    );
+    return reply.code(201).send({ holding: created });
+  });
+
+  fastify.patch('/api/bitcoin/holdings/:id', async (request) => {
+    const { id } = idParamsSchema.parse(request.params);
+    const body = z
+      .object({
+        name: z.string().min(1).max(100).optional(),
+        sats: satsIn.optional(),
+        inBudget: z.boolean().optional(),
+        inNetWorth: z.boolean().optional(),
+        stalenessIntervalDays: z.number().int().nullish(),
+      })
+      .parse(request.body);
+
+    await prisma.$transaction((tx) => updateHolding(tx, id, body));
+    return { ok: true };
+  });
+
+  /**
+   * The one-time acknowledgement of what an in-budget holding does to the banner.
+   *
+   * Household-wide, because the consequence is: the identity everyone reads gets
+   * balanced against a Bitcoin price up to a day old. Shown once rather than on
+   * every toggle — a warning repeated every time is one nobody reads.
+   */
+  fastify.post('/api/bitcoin/in-budget-acknowledgement', async (request) => {
+    await prisma.budgetSettings.update({
+      where: { id: 1 },
+      data: { bitcoinInBudgetAckAt: new Date() },
+    });
+    request.log.info(
+      { actorId: request.currentUser?.id },
+      'Bitcoin in-budget warning acknowledged',
+    );
+    return { ok: true };
+  });
+
+  /*
+   * `PATCH /api/accounts/:id/bitcoin` was here and is gone.
+   *
+   * It set a holding's quantity absolutely, and no interface ever called it —
+   * one of three routes in the tree with no caller, found in a review. Settings
+   * → Bitcoin writes through `managed-accounts.ts`, which reaches the same
+   * `setHoldingQuantity`, so nothing is lost by removing it.
+   *
+   * Removed rather than left, because a second way in that nobody uses is a
+   * second way to drift: this one took an absolute quantity while the interface
+   * writes dated events (ADR 023), and the two would only ever have been
+   * compared the day they disagreed.
+   */
+
+  // --- The holdings ledger ------------------------------------------------
+
+  /**
+   * The dated history behind a holding, newest first, with what it cost.
+   *
+   * Reversed events are carried rather than hidden: a correction is part of the
+   * story of what the chart showed, and dropping it would make the history read
+   * as though nobody ever got anything wrong.
+   */
+  fastify.get('/api/bitcoin/holdings/:id/events', async (request) => {
+    const { id } = idParamsSchema.parse(request.params);
+
+    const [events, basis, account, price] = await Promise.all([
+      prisma.bitcoinHoldingEvent.findMany({
+        where: { accountId: id },
+        orderBy: [{ occurredAt: 'desc' }, { createdAt: 'desc' }],
+        select: {
+          id: true,
+          occurredAt: true,
+          deltaSats: true,
+          eventType: true,
+          priceCents: true,
+          note: true,
+          reversedAt: true,
+        },
+      }),
+      costBasis(prisma, { accountId: id }),
+      prisma.account.findUnique({ where: { id }, select: { bitcoinSats: true } }),
+      // Only the figure is wanted here, so no zone is needed to get it.
+      newestPrice(prisma),
+    ]);
+
+    const heldSats = account?.bitcoinSats ?? 0n;
+    const worthCents = price === null ? null : bitcoinValueCents(heldSats, price.priceCents);
+
+    return {
+      events: events.map((event) => ({
+        id: event.id,
+        occurredAt: dateOut(event.occurredAt),
+        deltaSats: event.deltaSats.toString(),
+        eventType: event.eventType,
+        priceCents: event.priceCents === null ? null : centsOut(event.priceCents),
+        // What this event's Bitcoin cost, so a row can be read on its own.
+        costCents:
+          event.priceCents === null
+            ? null
+            : centsOut(
+                bitcoinValueCents(
+                  event.deltaSats < 0n ? -event.deltaSats : event.deltaSats,
+                  event.priceCents,
+                ),
+              ),
+        note: event.note,
+        reversedAt: dateOut(event.reversedAt),
+      })),
+      costBasis: {
+        costCents: centsOut(basis.costCents),
+        basisSats: basis.basisSats.toString(),
+        // Held Bitcoin whose cost nobody knows — an opening balance, a transfer
+        // in. Reported rather than valued at zero, which would read as "free".
+        unpricedSats: basis.unpricedSats.toString(),
+      },
+      // Only against the priced portion, because that is the only part a gain
+      // can honestly be computed for.
+      unrealizedCents:
+        price === null || basis.basisSats === 0n
+          ? null
+          : centsOut(bitcoinValueCents(basis.basisSats, price.priceCents) - basis.costCents),
+      worthCents: worthCents === null ? null : centsOut(worthCents),
+    };
+  });
+
+  /** A dated purchase, sale, transfer or correction. */
+  fastify.post('/api/bitcoin/holdings/:id/events', async (request, reply) => {
+    const { id } = idParamsSchema.parse(request.params);
+    const body = z
+      .object({
+        eventType: z.enum(['opening', 'purchase', 'sale', 'transfer_in', 'transfer_out']),
+        sats: satsIn,
+        occurredAt: z.coerce.date(),
+        priceCents: centsInLoose.nullish(),
+        note: z.string().max(500).nullish(),
+      })
+      .parse(request.body);
+
+    const result = await prisma.$transaction((tx) =>
+      recordHoldingEvent(tx, {
+        accountId: id,
+        eventType: body.eventType,
+        sats: body.sats,
+        occurredAt: body.occurredAt,
+        priceCents: body.priceCents ?? null,
+        note: body.note ?? null,
+        actorId: request.currentUser?.id ?? null,
+      }),
+    );
+
+    request.log.info(
+      { accountId: id, eventId: result.id, actorId: request.currentUser?.id },
+      'Bitcoin holding event recorded',
+    );
+    return reply.code(201).send({ id: result.id, balanceSats: result.balanceSats.toString() });
+  });
+
+  /** Backs one out. Stamped, never deleted — see the domain header. */
+  fastify.post('/api/bitcoin/events/:id/reverse', async (request) => {
+    const { id } = idParamsSchema.parse(request.params);
+    const result = await prisma.$transaction((tx) => reverseHoldingEvent(tx, id));
+    return result;
+  });
+
+  // --- Watched wallets ----------------------------------------------------
+
+  fastify.get('/api/bitcoin/holdings/:id/wallets', async (request) => {
+    const { id } = idParamsSchema.parse(request.params);
+    const wallets = await listWallets(prisma, id);
+    return {
+      wallets: wallets.map((wallet) => ({
+        id: wallet.id,
+        label: wallet.label,
+        kind: wallet.kind,
+        // The key itself is never returned. This is enough to recognise the
+        // wallet and nothing more.
+        firstAddress: wallet.firstAddress,
+        gapLimit: wallet.gapLimit,
+        lastScannedAt: dateOut(wallet.lastScannedAt),
+        lastError: wallet.lastError,
+        lastBalanceSats: wallet.lastBalanceSats?.toString() ?? null,
+        addressesSeen: wallet.addressesSeen,
+      })),
+    };
+  });
+
+  fastify.post('/api/bitcoin/holdings/:id/wallets', async (request, reply) => {
+    const { id } = idParamsSchema.parse(request.params);
+    const body = z
+      .object({
+        label: z.string().min(1).max(100),
+        key: z.string().min(1).max(2000),
+        gapLimit: z.number().int().min(1).max(200).optional(),
+      })
+      .parse(request.body);
+
+    const created = await addWallet(
+      prisma,
+      { accountId: id, label: body.label, key: body.key, gapLimit: body.gapLimit },
+      request.server.config.dataKey,
+    );
+
+    // The key is deliberately absent from this line. It is not a spending
+    // credential, but it is every address the wallet will ever use.
+    request.log.info(
+      { accountId: id, walletId: created.id, actorId: request.currentUser?.id },
+      'Bitcoin wallet watched',
+    );
+    return reply.code(201).send({ wallet: created });
+  });
+
+  fastify.post('/api/bitcoin/wallets/:id/scan', async (request) => {
+    const { id } = idParamsSchema.parse(request.params);
+    const result = await scanWallet(prisma, id, request.server.config.dataKey, {
+      torSocksUrl: request.server.config.TOR_SOCKS_URL,
+    });
+    return {
+      balanceSats: result.balanceSats.toString(),
+      addressesChecked: result.addressesChecked,
+      used: result.used,
+      recorded: result.eventId !== null,
+    };
+  });
+
+  fastify.post('/api/bitcoin/wallets/:id/archive', async (request) => {
+    const { id } = idParamsSchema.parse(request.params);
+    await archiveWallet(prisma, id);
+    return { ok: true };
+  });
+
+  // --- The node -----------------------------------------------------------
+
+  fastify.get('/api/bitcoin/node', async () => {
+    const settings = await readNodeSettings(prisma);
+    return {
+      mode: settings.mode,
+      baseUrl: settings.baseUrl,
+      // How it will be reached, decided by the address rather than asked about.
+      route: settings.route,
+      reach: settings.baseUrl === null ? null : reachOf(settings.baseUrl),
+      lastCheckedAt: dateOut(settings.lastCheckedAt),
+      lastHeight: settings.lastHeight,
+      lastError: settings.lastError,
+      // Which way it actually went, so a fall back to clearnet is never silent.
+      lastRoute: settings.lastRoute,
+      suggestions: SUGGESTED_NODES,
+    };
+  });
+
+  /**
+   * Stores where to ask. The URL is checked here rather than when it is used —
+   * a public endpoint saved over plain http would sit looking fine and then send
+   * every address lookup across the internet in the clear.
+   *
+   * **Administrator-only**, unlike the check below it. This is the one route
+   * that decides where this server sends a request; `node/check` merely asks the
+   * address already stored. Choosing the destination is the thing worth gating.
+   */
+  fastify.put('/api/bitcoin/node', { preHandler: [requireSettingsManagement] }, async (request) => {
+    const body = z
+      .object({
+        mode: z.enum(NODE_MODES),
+        baseUrl: z.string().max(500).nullish(),
+      })
+      .parse(request.body);
+
+    const result = await saveNodeSettings(prisma, body, {
+      torSocksUrl: request.server.config.TOR_SOCKS_URL,
+    });
+
+    request.log.info(
+      // The URL is not a secret, but it is not logged either: on Tor it names
+      // which onion service the household talks to.
+      { mode: body.mode, route: result.route, actorId: request.currentUser?.id },
+      'Bitcoin node configured',
+    );
+    return result;
+  });
+
+  /** Asks for the chain tip, which is the cheapest proof a node is answering. */
+  fastify.post('/api/bitcoin/node/check', async (request) =>
+    checkNode(prisma, { torSocksUrl: request.server.config.TOR_SOCKS_URL }),
+  );
+
+  /** Fetch now, rather than waiting for the hour. */
+  fastify.post('/api/bitcoin/refresh', async (request) => {
+    const result = await fetchAndRecordPrice(
+      prisma,
+      [
+        providerByName(request.server.config.BITCOIN_PRICE_PRIMARY),
+        providerByName(request.server.config.BITCOIN_PRICE_FALLBACK),
+      ],
+      // The day this reading is filed under is the household's, not UTC's.
+      await householdTimezone(prisma, request.server.config.SCHEDULE_TIMEZONE),
+    );
+
+    if (!result) return { updated: false };
+    return {
+      updated: true,
+      priceCents: centsOut(result.priceCents),
+      source: result.source,
+      closesSettled: result.closesSettled,
+    };
+  });
+
+  done();
+};

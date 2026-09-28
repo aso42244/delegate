@@ -1,0 +1,383 @@
+import type { Locator, Page } from '@playwright/test';
+import {
+  expect,
+  makeAccount,
+  makeSuccessfulSync,
+  makeSyncFailure,
+  makeSyncWarning,
+  test,
+} from './fixtures.js';
+
+/**
+ * What the application says about a sync, and where.
+ *
+ * SimpleFIN reports an expired bank login per-institution without failing the
+ * run, because the other institutions synced fine. That was recorded on the run
+ * from the beginning but legible only on the Settings page, so an account could
+ * quietly stop updating while everything else looked healthy.
+ *
+ * These used to be tags of their own: full-width bars, then pills beside the
+ * page title, then a column at the foot of the sidebar. They are **inside the
+ * Sync SimpleFIN button** now. Five yellow pills stacked directly above a yellow
+ * button, every one of them answered by looking at the same connection, was one
+ * sentence said five times — and it crowded out the alerts the feed has nothing
+ * to do with. The button takes the colour of the loudest, and the whole list
+ * opens on hover and on focus.
+ */
+
+const WARNING = 'Connection to Firefly Bank may need attention. Auth required';
+
+/** The control, which is the only face these conditions have now. */
+function syncButton(page: Page): Locator {
+  return page.getByRole('button', { name: /Sync SimpleFIN/ });
+}
+
+test('a feed complaint is folded into Sync, on every page, and names the bank', async ({
+  signedIn,
+}) => {
+  await makeSyncWarning(WARNING);
+  await signedIn.reload();
+
+  // No tag of its own anywhere.
+  await expect(signedIn.getByRole('link', { name: 'Sync issue' })).toHaveCount(0);
+
+  const button = syncButton(signedIn);
+  await expect(button).toBeVisible();
+
+  /*
+   * A hidden panel is out of the accessibility tree entirely, so nothing can ask
+   * about it by role until it is revealed — which is also the behaviour worth
+   * testing: the button is quiet until somebody reaches for it.
+   */
+  await expect(signedIn.getByRole('tooltip')).toHaveCount(0);
+  await button.hover();
+  const panel = signedIn.getByRole('tooltip');
+  await expect(panel).toContainText('Sync issue');
+  // The bank's name is the part that matters and the part a pill cannot carry.
+  await expect(panel).toContainText(WARNING);
+
+  // Every row is still a link to where the condition is dealt with, and the
+  // panel takes the pointer so it can be reached rather than merely read.
+  await panel.getByRole('link', { name: /Sync issue/ }).click();
+  await expect(signedIn).toHaveURL(/\/settings\/sync$/);
+
+  // On every page, because the sidebar is.
+  for (const path of ['/transactions', '/recurring', '/overview', '/settings']) {
+    await signedIn.goto(path);
+    await syncButton(signedIn).hover();
+    await expect(signedIn.getByRole('tooltip')).toContainText(WARNING);
+  }
+});
+
+/**
+ * The keyboard gets the same list.
+ *
+ * Hover is a pointer's gesture, and the panel is the only place these sentences
+ * exist now — so a reader who tabs to the button has to be handed them too, or
+ * the fold would have hidden a failing bank feed from them entirely.
+ */
+test('the folded list opens on focus as well as on hover', async ({ signedIn }) => {
+  await makeSyncFailure('connection refused');
+  await signedIn.reload();
+
+  await expect(signedIn.getByRole('tooltip')).toHaveCount(0);
+  await syncButton(signedIn).focus();
+  await expect(signedIn.getByRole('tooltip')).toContainText(
+    'Balances and transactions are not up to date',
+  );
+});
+
+/**
+ * A failing run is the loudest thing this application says, and the button says
+ * it — in colour, in words, and without a row of the page.
+ */
+test('a failing sync paints the Sync button, not a band above the page', async ({ signedIn }) => {
+  await makeSyncFailure('connection refused');
+  await signedIn.reload();
+
+  const button = syncButton(signedIn);
+
+  // Red, which is the `danger` variant's own soft fill. The colour is never the
+  // only carrier — the words are one hover away and asserted above.
+  await expect(button).toHaveClass(/border-danger-line/);
+
+  /*
+   * In the sidebar, and nothing above the page.
+   *
+   * The band pushing the budget down the screen is still the thing being ruled
+   * out; what carries the condition has simply moved from a pill at the foot of
+   * the navigation into the control directly under it.
+   */
+  const nav = await signedIn.getByRole('navigation', { name: 'Main' }).boundingBox();
+  const heading = await signedIn.getByRole('heading', { name: 'Budget' }).boundingBox();
+  const box = await button.boundingBox();
+  expect(box!.x).toBeGreaterThanOrEqual(nav!.x);
+  expect(box!.x + box!.width).toBeLessThanOrEqual(nav!.x + nav!.width);
+  // Nothing has been inserted above the title.
+  expect(heading!.y).toBeLessThan(120);
+});
+
+/**
+ * Nothing can be put away any more, at any severity.
+ *
+ * Snoozing existed because a bar was in the way — it was a snooze rather than a
+ * clear, so the interface never told a lie on the owner's behalf about a
+ * condition that still held. Neither a tag nor a fold is in the way, so there is
+ * nothing to put away and what makes one go away is fixing the thing.
+ */
+test('no notification offers a dismissal', async ({ signedIn }) => {
+  await makeSyncWarning(WARNING);
+  await makeSyncFailure('connection refused');
+  await signedIn.reload();
+
+  await syncButton(signedIn).hover();
+  await expect(signedIn.getByRole('tooltip')).toContainText('Sync failing');
+  await expect(signedIn.getByRole('button', { name: /^Dismiss:/ })).toHaveCount(0);
+});
+
+/**
+ * The reading is a control now, not the last row of a column.
+ *
+ * Balanced / To delegate / Over-delegated was the bottom tag of the alert stack.
+ * It is the top of the **control zone** — always coloured, always a link to
+ * Overview — while everything under it stays plain unless it has something to
+ * report. That is what makes the corner of the screen answer one question at a
+ * glance (ADR 064).
+ *
+ * The *ordering* between notification severities is proved in
+ * `notifications.test.ts` instead. It cannot be staged here: the API reports the
+ * worst sync condition rather than all of them, and it suppresses "not
+ * reporting" while a sync is failing outright — both right, and between them
+ * there is no way to have two severities on screen at once.
+ */
+test('the reading sits above Delegate, is coloured, and goes to Overview', async ({ signedIn }) => {
+  await makeSyncFailure('connection refused');
+  await signedIn.goto('/budget');
+
+  const nav = signedIn.getByRole('navigation', { name: 'Main' });
+  const reading = nav.getByRole('link', { name: /Balanced|To delegate|Over-delegated/ });
+  await expect(reading).toBeVisible();
+
+  // Coloured, and the only one in the zone that is: a failing sync paints Sync
+  // itself, but Delegate and Sign out stay plain.
+  await expect(reading).toHaveClass(/bg-(positive|accent|danger)-soft/);
+  await expect(nav.getByRole('button', { name: 'Delegate' })).toHaveClass(/bg-canvas/);
+  await expect(nav.getByRole('button', { name: 'Sign out' })).toHaveClass(/bg-canvas/);
+
+  // Directly above Delegate, and above Sync and Sign out under that.
+  const order = await Promise.all(
+    [
+      reading,
+      nav.getByRole('button', { name: 'Delegate' }),
+      nav.getByRole('button', { name: /Sync SimpleFIN/ }),
+      nav.getByRole('button', { name: 'Sign out' }),
+    ].map(async (control) => Math.round((await control.boundingBox())!.y)),
+  );
+  expect([...order].sort((a, b) => a - b)).toEqual(order);
+
+  // Nothing separates Sign out from the button above it any more, and the
+  // signed-in address and role are gone — both live in Settings.
+  await expect(nav.getByText('e2e-owner@example.test')).toHaveCount(0);
+  await expect(nav.getByText('Super Admin')).toHaveCount(0);
+
+  // The working is still one hover away.
+  await reading.hover();
+  await expect(signedIn.getByRole('tooltip')).toContainText('Assets');
+
+  // And it goes to Overview whatever it currently says.
+  await reading.click();
+  await expect(signedIn).toHaveURL(/\/overview/);
+});
+
+/**
+ * The backlog is a control, and there is exactly one of it.
+ *
+ * It was an `info` tag in the column above the control zone until ADR 066 — the
+ * smallest object in that corner, carrying the most actionable thing in it. It
+ * is a button above Delegate now, and blue, on the days there is a backlog.
+ *
+ * **The count assertion is the one that matters.** Moving it means folding it
+ * out of `Alerts` *and* drawing it in `Sidebar`, and forgetting the first half
+ * leaves the same reading in the corner twice — two blue links with one
+ * accessible name, which is the kind of thing that looks deliberate in a
+ * screenshot and is obvious only when somebody counts.
+ */
+test('the backlog is one control, above Delegate, and not also a tag', async ({
+  signedIn,
+  api,
+}) => {
+  const accountId = await makeAccount('Everyday Checking', 'asset', 500000n);
+  await api.post('/api/transactions', {
+    data: {
+      accountId,
+      amountCents: '-4210',
+      description: 'Whole Foods Market',
+      postedAt: '2026-08-05T00:00:00Z',
+    },
+  });
+
+  await signedIn.goto('/budget');
+
+  const nav = signedIn.getByRole('navigation', { name: 'Main' });
+  const backlog = nav.getByRole('link', { name: '1 new transaction' });
+
+  // Once. Not once in the column and once in the zone.
+  await expect(backlog).toHaveCount(1);
+  await expect(backlog).toHaveClass(/bg-accent-soft/);
+
+  // Between the reading and Delegate, which is the order the morning happens in:
+  // where the budget stands, what came in, what to do about it.
+  const order = await Promise.all(
+    [
+      nav.getByRole('link', { name: /Balanced|To delegate|Over-delegated/ }),
+      backlog,
+      nav.getByRole('button', { name: 'Delegate' }),
+    ].map(async (control) => Math.round((await control.boundingBox())!.y)),
+  );
+  expect([...order].sort((a, b) => a - b)).toEqual(order);
+
+  // The age of the oldest is the half a tag's face never had room for, and it is
+  // the half that says whether this is urgent.
+  await backlog.hover();
+  await expect(signedIn.getByRole('tooltip')).toContainText('waiting to be categorized');
+
+  // And it still opens the queue rather than the register.
+  await backlog.click();
+  await expect(signedIn).toHaveURL(/\/transactions\?uncategorized=true$/);
+});
+
+/**
+ * A quiet feed still has something to say.
+ *
+ * The button carries the bank feed's conditions when there are any (ADR 063),
+ * and there nearly never are — so for most of its life the panel was empty and
+ * the button said nothing at all. What is useful then is that it ran and what it
+ * brought back, which used to be a caption under the button reading "Synced 12m
+ * ago" to nobody in particular. It is on the hover now, where it costs no floor
+ * space.
+ *
+ * The boundaries of the wording — 59 minutes against an hour, 23 hours against a
+ * day — are proved in `sync-status.test.ts`, which can stage times this cannot.
+ */
+test('with nothing to report, Sync says when it last ran and what it found', async ({
+  signedIn,
+}) => {
+  await makeSuccessfulSync(4);
+  await signedIn.reload();
+
+  // Nothing is wrong, so the button is plain.
+  const button = signedIn.getByRole('button', { name: /Sync SimpleFIN/ });
+  await expect(button).toHaveClass(/bg-canvas/);
+
+  await expect(signedIn.getByRole('tooltip')).toHaveCount(0);
+  await button.hover();
+
+  const panel = signedIn.getByRole('tooltip');
+  await expect(panel).toContainText('Synced');
+  await expect(panel).toContainText('4 new transactions');
+});
+
+/**
+ * And says nothing about a count when the run found nothing.
+ *
+ * "0 new transactions" is a line that says nothing and would appear on every
+ * quiet day, which is most of them.
+ */
+test('a run that found nothing does not say so', async ({ signedIn }) => {
+  await makeSuccessfulSync(0);
+  await signedIn.reload();
+
+  await signedIn.getByRole('button', { name: /Sync SimpleFIN/ }).hover();
+  const panel = signedIn.getByRole('tooltip');
+  await expect(panel).toContainText('Synced');
+  await expect(panel).not.toContainText('new transaction');
+});
+
+/**
+ * A panel opens beside its control, never over the one above it.
+ *
+ * It opened upwards at first, which put Sync's panel across Delegate and the
+ * reading's across the alerts — a panel hiding a control somebody might have
+ * been reaching for. The whole page is to the right of this column and free.
+ */
+test('the folded panel opens to the right, covering nothing in the sidebar', async ({
+  signedIn,
+}) => {
+  await makeSuccessfulSync(2);
+  await signedIn.reload();
+
+  const nav = signedIn.getByRole('navigation', { name: 'Main' });
+  const sync = nav.getByRole('button', { name: /Sync SimpleFIN/ });
+  const delegate = nav.getByRole('button', { name: 'Delegate' });
+
+  const navBox = (await nav.boundingBox())!;
+  const syncBox = (await sync.boundingBox())!;
+  const delegateBox = (await delegate.boundingBox())!;
+
+  await sync.hover();
+  const panel = signedIn.getByRole('tooltip');
+  await expect(panel).toBeVisible();
+  const panelBox = (await panel.boundingBox())!;
+
+  /*
+   * It begins at the control's own right edge and runs outward, so no part of
+   * it is over a control. Measured against the button rather than against the
+   * sidebar: the panel hangs from a padded wrapper that starts exactly there,
+   * and the last few pixels of the column are the control zone's own padding.
+   */
+  expect(panelBox.x).toBeGreaterThanOrEqual(syncBox.x + syncBox.width - 1);
+  expect(panelBox.x + panelBox.width).toBeGreaterThan(navBox.x + navBox.width);
+
+  // And specifically not over Delegate, which sits directly above Sync.
+  const overlapsDelegate =
+    panelBox.y < delegateBox.y + delegateBox.height &&
+    panelBox.x < delegateBox.x + delegateBox.width;
+  expect(overlapsDelegate).toBe(false);
+
+  /*
+   * Aligned to the control's **bottom**, rather than its top.
+   *
+   * It was aligned to the top and grew downward, and this zone is pinned to the
+   * foot of the window — so a panel with a sentence in it hung past the bottom
+   * of the screen, which is where the owner found it. Growing upward is the
+   * direction with room in it.
+   */
+  expect(Math.abs(panelBox.y + panelBox.height - (syncBox.y + syncBox.height))).toBeLessThanOrEqual(
+    2,
+  );
+});
+
+/**
+ * The half the alignment above exists for, asserted as the thing rather than as
+ * a proxy for it.
+ *
+ * A panel one sentence long, on a control three from the bottom of the window,
+ * ran off the bottom of the screen with the bank's name on the cut-off line.
+ * Nothing about that is visible to a test that only checks which side of the
+ * control it is on, which is why the previous test passed throughout.
+ */
+test('a control panel stays inside the window, wherever its control sits', async ({ signedIn }) => {
+  await makeSyncWarning(WARNING);
+  await signedIn.reload();
+
+  const viewport = signedIn.viewportSize()!;
+  const nav = signedIn.getByRole('navigation', { name: 'Main' });
+
+  // Every control in the zone that has something to say, including the lowest —
+  // the one with the least room beneath it.
+  for (const control of [
+    nav.getByRole('button', { name: /Sync SimpleFIN/ }),
+    nav.getByRole('link', { name: /Balanced|To delegate|Over-delegated/ }),
+  ]) {
+    await control.hover();
+    const panel = signedIn.getByRole('tooltip');
+    await expect(panel).toBeVisible();
+
+    const box = (await panel.boundingBox())!;
+    expect(box.y, 'panel runs off the top').toBeGreaterThanOrEqual(0);
+    expect(box.y + box.height, 'panel runs off the bottom').toBeLessThanOrEqual(viewport.height);
+
+    // Away again, so the next hover is measured on its own panel.
+    await nav.getByRole('button', { name: 'Sign out' }).hover();
+  }
+});

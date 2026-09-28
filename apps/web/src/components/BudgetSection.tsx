@@ -1,0 +1,866 @@
+import {
+  formatCents,
+  groupingTint,
+  isBalanceStale,
+  isFeedBalanceStale,
+  isFeedUnseen,
+} from '@budget/shared';
+import {
+  Fragment,
+  useRef,
+  useState,
+  type DragEvent,
+  type KeyboardEvent,
+  type ReactNode,
+  type TouchEvent,
+} from 'react';
+import type { BudgetRowDto, BudgetSectionDto } from '../api/budget.js';
+import { NARROW, useMediaQuery } from '../useMediaQuery.js';
+import { Chips } from './Chip.jsx';
+import type { ChipKind } from './chips.js';
+import { MoneyCell } from './MoneyCell.jsx';
+import { Tile } from './Tile.jsx';
+import { describeMaximum } from './max-text.js';
+import { describeTarget } from './target-text.js';
+
+/**
+ * One section of the Budget page: Assets, Debts or Delegations.
+ *
+ * Borderless spreadsheet style per the design — a 2px rule across the top, then
+ * 1px row dividers, no card. Assets and Debts show balances only; the amount to
+ * delegate belongs to delegations alone.
+ */
+
+export interface BudgetSectionProps {
+  readonly title: string;
+  readonly section: BudgetSectionDto;
+  readonly showAmountToDelegate: boolean;
+  /** Only delegation balances render negatives in red. Debts never do. */
+  readonly redNegatives: boolean;
+  readonly onToggleGrouping?: (groupingId: string, collapsed: boolean) => void;
+  readonly onEditAmount?: (rowId: string, cents: bigint) => void;
+  readonly onEditBalance?: (rowId: string, cents: bigint) => void;
+  readonly onCreate?: (name: string) => void;
+  /**
+   * The per-row menu, supplied by the page. Kept as a render prop so this
+   * component stays presentational and knows nothing about delegations.
+   */
+  readonly rowMenu?: (row: BudgetRowDto) => ReactNode;
+  /**
+   * Dragging a row into a grouping, dropped on the grouping itself: it goes to
+   * the end. An enhancement, never the only route — the row menu's "Move to
+   * grouping" and "Move up"/"Move down" stay the keyboard path, because drag and
+   * drop is not one.
+   */
+  readonly onMoveToGrouping?: (rowId: string, groupingId: string | null) => void;
+  /**
+   * Dropping a row onto another row: it takes that row's place, in that row's
+   * grouping. The component works out the resulting order and hands over the
+   * whole of it, because a list is the only description of an ordering that
+   * cannot be interpreted two ways.
+   */
+  readonly onPlace?: (rowId: string, groupingId: string | null, orderedIds: string[]) => void;
+  /**
+   * Dropping a grouping header onto another: the whole order of this section's
+   * groupings, afterwards.
+   *
+   * A separate prop rather than a mode of `onPlace`, because a grouping is not a
+   * row — it holds rows, it has no balance of its own, and moving one moves
+   * everything under it.
+   */
+  readonly onReorderGroupings?: (orderedIds: string[]) => void;
+  /**
+   * Offers to close the budget's reading against this line.
+   *
+   * Supplied only by the Delegations section, and only while there is a reading
+   * to close — a button that would open a dialog with nothing to do is worse
+   * than no button. Revealed on hover like the row menu, because it is an
+   * occasional act and the row is mostly numbers.
+   */
+  readonly onAbsorb?: (row: BudgetRowDto) => void;
+  /** What the button says: which direction the money is going. */
+  readonly absorbLabel?: string;
+  /**
+   * A control hung beside a row's Remaining figure, in the same place as the
+   * absorb button but **always visible** rather than revealed on hover.
+   *
+   * The absorb button is an offer; this is a standing state — a check the bank
+   * appears to have cashed. A state nobody can see until they happen to hover
+   * the right row is one nobody acts on, and the banner at the top of the page
+   * would be pointing at something invisible.
+   */
+  readonly rowAffordance?: (row: BudgetRowDto) => ReactNode;
+  /**
+   * A pace bar for this row, drawn between the name and the figures.
+   *
+   * Supplied only by the Overview band, which is this same table with the
+   * cycle's spending against each line. The Budget page passes nothing and gets
+   * the table it has always had — one component either way, because two
+   * renderings of one table is how two screens come to disagree about a budget.
+   *
+   * **A fixed column, never a share.** The tick is a time marker and has to read
+   * as one straight vertical down the page (ADR 054); a column that flexed with
+   * the longest name would put it somewhere different on every row.
+   */
+  readonly pace?: (row: BudgetRowDto) => ReactNode;
+  /**
+   * The row tint for a line drawn outside a grouping.
+   *
+   * A grouped row takes its grouping's colour from the grouping it is rendered
+   * under. A row in `ungrouped` has no grouping to ask — which is ordinarily
+   * correct, because on the Budget page an ungrouped line genuinely has no
+   * colour. The Overview band hands its watched lines over flat, so it supplies
+   * the colour each one came from: the tint is how somebody finds a line in a
+   * column, and losing the heading must not lose that too.
+   */
+  readonly tintFor?: (row: BudgetRowDto) => string | null;
+}
+
+function parseCents(value: string | null): bigint | null {
+  return value === null ? null : BigInt(value);
+}
+
+/**
+ * Which marks a budget row carries.
+ *
+ * Ordered by what it *is* before what is *wrong with it*: a holding is a
+ * holding whether or not its price is stale, and reading `btc s` in that order
+ * matches how somebody would say it out loud.
+ */
+/**
+ * The sentence carried on a row's amount to delegate.
+ *
+ * Both readings that judge this figure, joined — a line can have a target it is
+ * behind on *and* a ceiling holding the money back, and hearing only one of
+ * those would leave the other as an unexplained difference.
+ */
+function amountNote(row: BudgetRowDto): string | null {
+  const sentences = [describeTarget(row), describeMaximum(row)].filter(
+    (sentence): sentence is string => sentence !== null,
+  );
+  return sentences.length === 0 ? null : sentences.join(' ');
+}
+
+function chipsFor(row: BudgetRowDto): ChipKind[] {
+  const kinds: ChipKind[] = [];
+
+  if (row.managedAs === 'bitcoin') kinds.push('bitcoin');
+  if (row.managedAs === 'property') kinds.push('property');
+  // A managed row's balance is not one anybody keeps by hand, whatever `source`
+  // happens to say about how the account was created.
+  if (row.source === 'manual' && row.managedAs === 'none') kinds.push('manual');
+  if (row.isUtility) kinds.push('utility');
+  // That a target exists, not whether it is being met — that reading lives on
+  // the amount to delegate, which is the figure somebody would change.
+  if (row.target !== null) kinds.push('target');
+  // And the same for a maximum: that there is a ceiling, not whether it is in
+  // the way this payday. One mark, so it reads the same on the Budget page and
+  // in the band at the top of Overview — both draw this table (§11a).
+  if (row.max !== null) kinds.push('maximum');
+  if (row.notes !== null && row.notes.trim() !== '') kinds.push('note');
+  // Two ways a balance stops being current, one mark. A manual one nobody has
+  // confirmed lately, and a synced one whose feed is answering with an old
+  // snapshot — the second was invisible until the feed's own date was kept.
+  if (
+    isBalanceStale(
+      row.balanceAsOf === null ? null : new Date(row.balanceAsOf),
+      row.stalenessIntervalDays,
+    ) ||
+    isFeedBalanceStale(row.feedBalanceAsOf === null ? null : new Date(row.feedBalanceAsOf)) ||
+    // Third way, and the one no date on the row can show: the feed has stopped
+    // listing this account at all. Without it a row the `not reporting` pill
+    // names by name would carry no mark of its own.
+    isFeedUnseen(row.feedLastSeenAt === null ? null : new Date(row.feedLastSeenAt))
+  ) {
+    kinds.push('stale');
+  }
+  // Part bank, part household: the figure includes charges typed in while the
+  // feed was behind. After `stale`, because an account is usually both and
+  // "old, and adjusted" is the order somebody would say it in.
+  // Parsed rather than compared as text. The first cut tested `!== '0'`, which
+  // is also true of `undefined` — so the day the field was added to the row type
+  // but not yet to the response, every row on the page grew the chip.
+  if ((parseCents(row.standbyCents ?? null) ?? 0n) !== 0n) kinds.push('standby');
+  if (row.needsReview) kinds.push('review');
+
+  return kinds;
+}
+
+export function BudgetSection({
+  title,
+  section,
+  showAmountToDelegate,
+  redNegatives,
+  onToggleGrouping,
+  onEditAmount,
+  onEditBalance,
+  onCreate,
+  rowMenu,
+  onMoveToGrouping,
+  onPlace,
+  onReorderGroupings,
+  onAbsorb,
+  absorbLabel,
+  rowAffordance,
+  pace,
+  tintFor,
+}: BudgetSectionProps): ReactNode {
+  const [newName, setNewName] = useState('');
+
+  /**
+   * On a phone there is not room for a name and two money columns, so one money
+   * column shows at a time and swiping horizontally switches between them.
+   *
+   * Swipe is never the only route — the same rule the row menu follows for
+   * drag-and-drop. The buttons below do the same job, and are what a screen
+   * reader or a keyboard reaches.
+   */
+  const narrow = useMediaQuery(NARROW);
+  const [mobileColumn, setMobileColumn] = useState<'remaining' | 'toDelegate'>('remaining');
+  const splitColumns = narrow && showAmountToDelegate;
+
+  /*
+   * No pace on a narrow screen. The row is already choosing between its two
+   * money columns there, and a bar between the name and the one figure that
+   * survived is the third thing competing for 390px.
+   */
+  const showPace = pace !== undefined && !narrow;
+  const showRemaining = !splitColumns || mobileColumn === 'remaining';
+  const showToDelegate = showAmountToDelegate && (!splitColumns || mobileColumn === 'toDelegate');
+
+  const touchStart = useRef<{ x: number; y: number } | null>(null);
+
+  function onTouchStart(event: TouchEvent<HTMLTableElement>): void {
+    const touch = event.touches[0];
+    if (touch) touchStart.current = { x: touch.clientX, y: touch.clientY };
+  }
+
+  function onTouchEnd(event: TouchEvent<HTMLTableElement>): void {
+    const start = touchStart.current;
+    const touch = event.changedTouches[0];
+    touchStart.current = null;
+    if (!start || !touch || !splitColumns) return;
+
+    const dx = touch.clientX - start.x;
+    const dy = touch.clientY - start.y;
+    // Horizontal intent only: a diagonal drag during a vertical scroll must not
+    // change the column out from under someone's thumb.
+    if (Math.abs(dx) < 48 || Math.abs(dx) <= Math.abs(dy)) return;
+
+    setMobileColumn(dx < 0 ? 'toDelegate' : 'remaining');
+  }
+  // Which grouping the pointer is currently over, so the target is obvious
+  // before the drop rather than after it.
+  const [dropTarget, setDropTarget] = useState<string | null | undefined>(undefined);
+
+  // Which row the pointer is over, so the insertion point is visible before the
+  // drop rather than discovered after it.
+  /**
+   * Which row the pointer is over and **which side of it**.
+   *
+   * The side is the whole of the fix for a list whose last place could not be
+   * reached. Dropping onto a row always inserted before it, so there was no
+   * gesture that meant "after this one" — and the bottom of every list, and of
+   * every grouping, was unreachable by dragging. The pointer's half of the row
+   * decides, which is the convention every list like this uses.
+   */
+  const [rowTarget, setRowTarget] = useState<{ id: string; after: boolean } | null>(null);
+
+  /**
+   * What is currently being dragged, kept here rather than read off the event.
+   *
+   * `dataTransfer.getData` is empty during `dragover` in every browser — the
+   * payload is only readable on drop — so a handler that has to *decide* while
+   * the pointer is moving cannot ask it. Both drags start in this component, so
+   * the answer is simply remembered.
+   *
+   * It is what lets a heading dragged over another grouping's rows mean "after
+   * that grouping". Without it, the only target for a heading was another
+   * heading, and the bottom of a long section was a strip of pixels one row
+   * tall.
+   */
+  const [dragging, setDragging] = useState<{ kind: 'row' | 'grouping'; id: string } | null>(null);
+
+  const draggable = onMoveToGrouping !== undefined;
+  const reorderable = onReorderGroupings !== undefined;
+
+  /**
+   * What is being dragged, said in the payload itself.
+   *
+   * A row travels as its bare id and a grouping as `grouping:<id>`, because the
+   * two are dropped on the same targets and mean entirely different things
+   * there. Reading the prefix is how a drop knows whether it is being handed a
+   * line or a heading — `dataTransfer` types would be tidier and are not
+   * readable during `dragover`, which is where the decision has to be made.
+   */
+  const GROUPING = 'grouping:';
+
+  function onDragStart(event: DragEvent, rowId: string): void {
+    event.dataTransfer.setData('text/plain', rowId);
+    event.dataTransfer.effectAllowed = 'move';
+    setDragging({ kind: 'row', id: rowId });
+  }
+
+  function onDragEnd(): void {
+    setDragging(null);
+    setRowTarget(null);
+    setDropTarget(undefined);
+  }
+
+  /**
+   * Which half of the row the pointer is in.
+   *
+   * `currentTarget`, not `target`: the pointer is over a cell or a span inside
+   * the row, and their rectangles are not the row's.
+   */
+  function belowMiddle(event: DragEvent): boolean {
+    const box = event.currentTarget.getBoundingClientRect();
+    return event.clientY > box.top + box.height / 2;
+  }
+
+  function onGroupingDragStart(event: DragEvent, groupingId: string): void {
+    event.dataTransfer.setData('text/plain', `${GROUPING}${groupingId}`);
+    event.dataTransfer.effectAllowed = 'move';
+    setDragging({ kind: 'grouping', id: groupingId });
+  }
+
+  /**
+   * Puts a heading after another, named by any row belonging to it.
+   *
+   * Dragging a heading over the rows underneath a grouping means "past this
+   * grouping", which is how the end of a section is reached: the last heading's
+   * own row is one row tall and sits above everything it holds.
+   */
+  function placeGroupingAfter(movingId: string, groupingId: string): void {
+    const order = section.groupings
+      .filter((grouping) => grouping.systemKey === null)
+      .map((grouping) => grouping.id);
+    const without = order.filter((id) => id !== movingId);
+    const at = without.indexOf(groupingId);
+    without.splice(at === -1 ? without.length : at + 1, 0, movingId);
+    onReorderGroupings?.(without);
+  }
+
+  /**
+   * Drops a grouping onto another: it takes that one's place.
+   *
+   * Removed first and then inserted, so moving a grouping down lands where the
+   * pointer is rather than one short of it — the same off-by-one the row drop
+   * above avoids the same way.
+   */
+  function onDropOnGrouping(event: DragEvent, targetId: string, after: boolean): boolean {
+    const payload = event.dataTransfer.getData('text/plain');
+    if (!payload.startsWith(GROUPING)) return false;
+
+    event.preventDefault();
+    event.stopPropagation();
+    setDropTarget(undefined);
+
+    const movingId = payload.slice(GROUPING.length);
+    if (movingId === targetId) return true;
+
+    // The application's own groupings are not moved, and are not counted in the
+    // order sent: an outstanding-checks heading sorts last by rule.
+    const order = section.groupings
+      .filter((grouping) => grouping.systemKey === null)
+      .map((grouping) => grouping.id);
+    const without = order.filter((id) => id !== movingId);
+    const at = without.indexOf(targetId);
+    const index = at === -1 ? without.length : at + (after ? 1 : 0);
+    without.splice(index, 0, movingId);
+
+    onReorderGroupings?.(without);
+    return true;
+  }
+
+  /** Every row of the grouping the target sits in, in the order shown. */
+  function membersOf(groupingId: string | null): BudgetRowDto[] {
+    return groupingId === null
+      ? [...section.ungrouped]
+      : [...(section.groupings.find((grouping) => grouping.id === groupingId)?.rows ?? [])];
+  }
+
+  /**
+   * Drops a row onto another row: it takes that row's place.
+   *
+   * The dragged row is removed first and then inserted, so moving a row down
+   * inside its own grouping lands where the pointer is rather than one short of
+   * it — which is the classic off-by-one in every list like this.
+   */
+  function onDropOnRow(event: DragEvent, target: BudgetRowDto, after: boolean): void {
+    event.preventDefault();
+    event.stopPropagation();
+    setRowTarget(null);
+    setDropTarget(undefined);
+
+    const rowId = event.dataTransfer.getData('text/plain');
+    // A grouping dropped on a row is not a request to file a heading under a
+    // line. Nothing sensible to do, so nothing is done.
+    if (rowId === '' || rowId.startsWith(GROUPING) || rowId === target.id) return;
+
+    const destination = target.groupingId;
+    const members = membersOf(destination).filter((row) => row.id !== rowId);
+    const at = members.findIndex((row) => row.id === target.id);
+    // `+ 1` for the lower half of the row, which is what makes the end of a
+    // list reachable: before this there was no gesture that meant "last".
+    const index = at === -1 ? members.length : at + (after ? 1 : 0);
+    members.splice(index, 0, { ...target, id: rowId });
+
+    onPlace?.(
+      rowId,
+      destination,
+      members.map((row) => row.id),
+    );
+  }
+
+  function onDrop(event: DragEvent, groupingId: string | null, after = false): void {
+    // A grouping dropped on a grouping is a reorder, and is handled there.
+    if (groupingId !== null && onDropOnGrouping(event, groupingId, after)) return;
+
+    event.preventDefault();
+    setDropTarget(undefined);
+    const rowId = event.dataTransfer.getData('text/plain');
+    if (rowId !== '' && !rowId.startsWith(GROUPING)) onMoveToGrouping?.(rowId, groupingId);
+  }
+
+  function onNewKeyDown(event: KeyboardEvent<HTMLInputElement>): void {
+    if (event.key !== 'Enter') return;
+    event.preventDefault();
+
+    const name = newName.trim();
+    if (name === '') return;
+
+    // Cleared immediately so the next name can be typed without waiting for the
+    // round trip. Typing sixty of these is the go-live path.
+    setNewName('');
+    onCreate?.(name);
+  }
+
+  function renderRow(row: BudgetRowDto, inGrouping: boolean, tint?: string): ReactNode {
+    return (
+      // `group` so the row's menu button can appear on hover of the row rather
+      // than only on hover of the button itself.
+      <tr
+        key={row.id}
+        className="group border-b border-line last:border-0"
+        draggable={draggable}
+        onDragStart={(event) => onDragStart(event, row.id)}
+        onDragEnd={onDragEnd}
+        onDragOver={(event) => {
+          if (!draggable) return;
+          // Without preventDefault the drop never fires at all.
+          event.preventDefault();
+          event.dataTransfer.dropEffect = 'move';
+
+          // A heading over these rows means "after the grouping they belong
+          // to", so the row itself is not the thing being marked.
+          if (dragging?.kind === 'grouping') {
+            setRowTarget(row.groupingId === null ? null : { id: row.groupingId, after: true });
+            return;
+          }
+          setRowTarget({ id: row.id, after: belowMiddle(event) });
+        }}
+        onDragLeave={() => setRowTarget((current) => (current?.id === row.id ? null : current))}
+        onDrop={(event) => {
+          if (dragging?.kind === 'grouping' && row.groupingId !== null) {
+            event.preventDefault();
+            event.stopPropagation();
+            const moving = dragging.id;
+            onDragEnd();
+            placeGroupingAfter(moving, row.groupingId);
+            return;
+          }
+          onDropOnRow(event, row, belowMiddle(event));
+        }}
+        style={{
+          ...(tint ? { background: tint } : {}),
+          // The line marks the edge it will land on, so "after the last one" is
+          // something the page shows before the drop rather than after it.
+          ...(rowTarget?.id === row.id
+            ? {
+                boxShadow: rowTarget.after
+                  ? 'inset 0 -2px 0 0 var(--color-accent)'
+                  : 'inset 0 2px 0 0 var(--color-accent)',
+              }
+            : {}),
+        }}
+      >
+        <td className={`row-cell pr-3 ${inGrouping ? 'pl-8' : 'pl-3'}`}>
+          {/*
+            A flex line rather than inline content, so the name gives way and the
+            chip never does. Inline, a narrow screen wrapped the chip onto a line
+            of its own and doubled the row's height — on the Budget page that
+            turned a column of figures read together into a ragged list.
+          */}
+          <div className="flex min-w-0 items-center gap-2">
+            <span className="truncate text-ink">{row.name}</span>
+
+            {/*
+              Marks, never words. Nearly everything on this page comes from the
+              feed, so labelling *those* said nothing while taking a row's width;
+              what is worth knowing at a glance is the opposite — which balances
+              somebody keeps true by hand, which are guesses, and which are not
+              bank balances at all. Every mark carries its meaning for a screen
+              reader and on hover; see components/chips.ts.
+            */}
+            <Chips kinds={chipsFor(row)} />
+          </div>
+        </td>
+
+        {showPace && <td className="w-56 row-cell pr-2">{pace?.(row)}</td>}
+
+        {showRemaining && (
+          // `relative`, with the button below hung off the left of the cell: it
+          // belongs beside the figure it is about, and that figure lives in a
+          // 160px column with no width to share. Out of flow it sits where it
+          // reads, over space the name column is not using, and only while the
+          // row is hovered.
+          <td className="relative w-40 row-cell">
+            {onAbsorb && row.kind !== 'check' && (
+              <button
+                type="button"
+                onClick={() => onAbsorb(row)}
+                className="row-menu-trigger pointer-only absolute top-1/2 right-full mr-2 -translate-y-1/2 rounded border border-line bg-canvas px-1.5 py-0.5 text-label font-semibold whitespace-nowrap text-muted hover:bg-surface"
+              >
+                {absorbLabel}
+              </button>
+            )}
+
+            {/* The same slot, and never both: the absorb button is not offered
+                on a check, which is the only row this returns anything for. */}
+            {rowAffordance && (
+              <span className="absolute top-1/2 right-full mr-2 -translate-y-1/2">
+                {rowAffordance(row)}
+              </span>
+            )}
+
+            <MoneyCell
+              valueCents={parseCents(row.balanceCents)}
+              editable={onEditBalance !== undefined}
+              redWhenNegative={redNegatives}
+              emphasis={showAmountToDelegate ? 'hero' : 'normal'}
+              label={`${row.name} balance`}
+              onCommit={(cents) => onEditBalance?.(row.id, cents)}
+            />
+          </td>
+        )}
+
+        {showToDelegate && (
+          // No right padding, so the figure lands in the same column as the
+          // balance on the Assets and Debts tables. Those cells have none, so
+          // the 12px here was the whole of the misalignment.
+          <td className="w-36 row-cell">
+            {/*
+              A target and a maximum both mark this figure rather than adding
+              one of their own.
+
+              The amount to delegate is the number that decides whether the
+              target is reached and the number a maximum acts on, so when any of
+              them disagree it is the number to change — and the sentence saying
+              so belongs on it, not beside the name. The chips by the name say
+              only that a target and a ceiling exist; this says what they are
+              doing to the next press.
+
+              Both sentences when both apply, in that order: what the line is
+              for, then what stops it. Yellow stays the target's alone — a line
+              held at its maximum is this working, not a thing to fix, and §9
+              keeps that colour for a thing to do.
+            */}
+            <MoneyCell
+              valueCents={parseCents(row.amountToDelegateCents)}
+              editable={onEditAmount !== undefined}
+              emphasis="quiet"
+              label={`${row.name} amount to delegate`}
+              warn={row.target?.status === 'behind'}
+              {...(amountNote(row) === null ? {} : { description: amountNote(row)! })}
+              onCommit={(cents) => onEditAmount?.(row.id, cents)}
+            />
+          </td>
+        )}
+
+        {rowMenu && <td className="hold-to-open-cell row-cell">{rowMenu(row)}</td>}
+      </tr>
+    );
+  }
+
+  const columnCount =
+    1 + (showPace ? 1 : 0) + (showRemaining ? 1 : 0) + (showToDelegate ? 1 : 0) + (rowMenu ? 1 : 0);
+
+  return (
+    /*
+     * A tile, like every other box in this application (ADR 061).
+     *
+     * design.md §5 called this a borderless spreadsheet with no card box, and
+     * that was written when the Budget page was the only page — the contrast it
+     * was reaching for was against nothing. Beside a dashboard of tiles it read
+     * as the one screen that had not been designed. The table itself is
+     * unchanged: the 2px rule across the top is still the separator, the
+     * dividers are still hairlines, and the section's total is still the first
+     * row of its own table so that each figure lands in the column it sums.
+     *
+     * **No tile title**, deliberately. The heading is inside the table, in the
+     * cell above the name column, and a tile heading repeating "Delegations" a
+     * few pixels above it would be the same word twice — the drift this whole
+     * pass exists to delete.
+     */
+    <Tile>
+      <table className="w-full" onTouchStart={onTouchStart} onTouchEnd={onTouchEnd}>
+        {/*
+          The section's total is a row of this table rather than a heading above
+          it, so each figure lands in the same column as the figures it totals.
+          Laid out any other way the two have to be kept in step by hand, and one
+          change to a column width silently pulls them apart.
+
+          A "Total" row at the bottom is what this replaces: it repeated the
+          section's name in the left column and put the figure furthest from the
+          thing it totalled.
+        */}
+        <thead>
+          <tr className="border-b-2 border-ink">
+            <td className="pb-1 pl-3">
+              <h2 className="text-section font-bold text-ink">{title}</h2>
+            </td>
+            {showPace && <td className="w-56 pb-1" />}
+            {showRemaining && (
+              <td className="w-40 pb-1">
+                <span className="money block pr-3 pl-2 text-section font-bold text-ink">
+                  {formatCents(parseCents(section.totalBalanceCents) ?? 0n)}
+                </span>
+              </td>
+            )}
+            {showToDelegate && (
+              <td className="w-36 pb-1">
+                <span className="money block pr-3 pl-2 text-section font-bold text-faint">
+                  {section.totalAmountToDelegateCents === null
+                    ? '—'
+                    : formatCents(parseCents(section.totalAmountToDelegateCents) ?? 0n)}
+                </span>
+              </td>
+            )}
+            {rowMenu && <td className="hold-to-open-cell pb-1" />}
+          </tr>
+
+          {splitColumns && (
+            <tr>
+              <td colSpan={columnCount} className="pt-2 pb-1">
+                <div
+                  role="radiogroup"
+                  aria-label="Which amount to show"
+                  className="flex gap-1 rounded-lg bg-surface-2 p-0.5"
+                >
+                  {(
+                    [
+                      ['remaining', 'Remaining'],
+                      ['toDelegate', 'To delegate'],
+                    ] as const
+                  ).map(([value, label]) => (
+                    <button
+                      key={value}
+                      type="button"
+                      role="radio"
+                      aria-checked={mobileColumn === value}
+                      onClick={() => setMobileColumn(value)}
+                      className={`flex-1 rounded-md px-3 py-1.5 text-quiet font-semibold ${
+                        mobileColumn === value ? 'bg-canvas text-ink shadow-sm' : 'text-muted'
+                      }`}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              </td>
+            </tr>
+          )}
+
+          {/* Assets and debts have one money column, under a heading that already
+              says what it is. Delegations has two, which do need naming. */}
+          <tr
+            className={`text-label uppercase tracking-label text-muted ${
+              showAmountToDelegate ? '' : 'sr-only'
+            }`}
+          >
+            <th className="row-cell pl-3 text-left font-normal">Name</th>
+            {showPace && <th className="row-cell text-left font-normal">Pace</th>}
+            {showRemaining && (
+              <th className="row-cell pr-2 text-right font-normal">
+                {showAmountToDelegate ? 'Remaining' : 'Balance'}
+              </th>
+            )}
+            {showToDelegate && (
+              <th className="row-cell pr-2 text-right font-normal text-faint">To delegate</th>
+            )}
+            {rowMenu && <th className="hold-to-open-cell row-cell" />}
+          </tr>
+        </thead>
+
+        <tbody>
+          {section.groupings.map((grouping) => (
+            // The Fragment is the array element, so the key belongs on it rather
+            // than on the row inside.
+            <Fragment key={grouping.id}>
+              <tr
+                className={`border-b border-line bg-surface ${
+                  // The outline says "into this grouping", which is only what a
+                  // row means. A heading means "beside it", and says so with a
+                  // line on the edge it will land on.
+                  dropTarget === grouping.id && dragging?.kind !== 'grouping'
+                    ? 'outline-2 outline-accent'
+                    : ''
+                }`}
+                style={{
+                  background: groupingTint(grouping.color, 'header') ?? '',
+                  ...(rowTarget?.id === grouping.id
+                    ? {
+                        boxShadow: rowTarget.after
+                          ? 'inset 0 -2px 0 0 var(--color-accent)'
+                          : 'inset 0 2px 0 0 var(--color-accent)',
+                      }
+                    : {}),
+                }}
+                // A heading is dragged to reorder the headings. The
+                // application's own are not: an outstanding-checks grouping
+                // sorts last by rule rather than by where anybody put it.
+                draggable={reorderable && grouping.systemKey === null}
+                onDragStart={(event) => onGroupingDragStart(event, grouping.id)}
+                onDragEnd={onDragEnd}
+                onDragOver={(event) => {
+                  if (!draggable) return;
+                  event.preventDefault();
+                  setDropTarget(grouping.id);
+                  setRowTarget({ id: grouping.id, after: belowMiddle(event) });
+                }}
+                onDragLeave={() => {
+                  setDropTarget(undefined);
+                  setRowTarget((current) => (current?.id === grouping.id ? null : current));
+                }}
+                onDrop={(event) => onDrop(event, grouping.id, belowMiddle(event))}
+              >
+                <td className="row-cell pl-3">
+                  <button
+                    type="button"
+                    onClick={() => onToggleGrouping?.(grouping.id, !grouping.collapsed)}
+                    aria-expanded={!grouping.collapsed}
+                    className="group/toggle -ml-1 flex items-center gap-1 rounded font-semibold text-ink"
+                  >
+                    {/*
+                      Drawn rather than typed, and sized to look like the target
+                      it is: ▸ at body size was a mark beside the name rather
+                      than a control. The box around it is the affordance — it
+                      takes a background on hover, so the whole row reads as
+                      something to press.
+
+                      The colour dot that sat between this and the name is gone.
+                      The row's own tint already says which grouping this is, and
+                      saying it twice cost the width without adding the meaning.
+                    */}
+                    <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded text-muted group-hover/toggle:bg-surface-2 group-hover/toggle:text-ink">
+                      <svg
+                        viewBox="0 0 20 20"
+                        className="h-[18px] w-[18px]"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        aria-hidden
+                      >
+                        <path d={grouping.collapsed ? 'M8 5l5 5-5 5' : 'M5 8l5 5 5-5'} />
+                      </svg>
+                    </span>
+                    {grouping.name}
+                  </button>
+                </td>
+
+                {/* No pace on a grouping: the bar reads one line against its own
+                    cycle, and a grouping's lines carry different amounts and
+                    different carry-in. Summing them draws a bar that is true of
+                    nothing. */}
+                {showPace && <td className="row-cell" />}
+
+                {/* Amounts appear on the grouping row only when collapsed. Shown
+                    while expanded they would double every figure below them. */}
+                {showRemaining && (
+                  <td className="row-cell">
+                    {grouping.collapsed && (
+                      <MoneyCell
+                        valueCents={parseCents(grouping.balanceCents)}
+                        redWhenNegative={redNegatives}
+                        emphasis={showAmountToDelegate ? 'hero' : 'normal'}
+                        label={`${grouping.name} total`}
+                      />
+                    )}
+                  </td>
+                )}
+
+                {showToDelegate && (
+                  <td className="row-cell">
+                    {grouping.collapsed && (
+                      <MoneyCell
+                        valueCents={parseCents(grouping.amountToDelegateCents)}
+                        emphasis="quiet"
+                        label={`${grouping.name} amount to delegate`}
+                      />
+                    )}
+                  </td>
+                )}
+
+                {rowMenu && <td className="hold-to-open-cell row-cell" />}
+              </tr>
+
+              {!grouping.collapsed &&
+                grouping.rows.map((row) =>
+                  renderRow(row, true, groupingTint(grouping.color, 'row')),
+                )}
+            </Fragment>
+          ))}
+
+          {/*
+            An ungrouped row takes its own grouping's colour, when it has one.
+
+            On the Budget page it has none and nothing changes. The Overview band
+            showing only the watched lines is the case this exists for: it hands
+            every chosen line over as ungrouped, because eight lines cut into six
+            headed sections spends more of the width on headings than on figures
+            — and the tint is how somebody finds a line in a column, so it has to
+            survive losing the heading.
+          */}
+          {section.ungrouped.map((row) =>
+            renderRow(row, false, groupingTint(tintFor?.(row) ?? null, 'row')),
+          )}
+
+          {/* A landing strip for dragging a row back out of every grouping.
+              Shown only while something is being dragged. */}
+          {draggable && dropTarget !== undefined && (
+            <tr
+              onDragOver={(event) => {
+                event.preventDefault();
+                setDropTarget(null);
+              }}
+              onDrop={(event) => onDrop(event, null)}
+              className={`border-b border-line ${dropTarget === null ? 'bg-accent-soft' : ''}`}
+            >
+              <td className="row-cell pl-3 text-quiet text-muted" colSpan={columnCount}>
+                Drop here to remove from every grouping
+              </td>
+            </tr>
+          )}
+
+          {onCreate && (
+            <tr className="border-b border-line">
+              <td className="row-cell pl-3" colSpan={columnCount}>
+                <input
+                  value={newName}
+                  onChange={(event) => setNewName(event.target.value)}
+                  onKeyDown={onNewKeyDown}
+                  placeholder="+ Add a line, then press Enter"
+                  aria-label={`Add to ${title}`}
+                  className="w-full bg-transparent text-base text-ink placeholder:text-faint focus:outline-none"
+                />
+              </td>
+            </tr>
+          )}
+        </tbody>
+      </table>
+    </Tile>
+  );
+}

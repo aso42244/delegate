@@ -1,0 +1,47 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+build/
+*.tsbuildinfo
+
+# Environment — never commit real values. Only .env.example is tracked.
+.env
+.env.*
+!.env.example
+
+# Test / tooling artefacts
+coverage/
+.vitest/
+*.timestamp-*.mjs
+playwright-report/
+test-results/
+
+# Local database dumps and backups. Never commit real financial data.
+backups/
+*.dump
+*.sql.gz
+
+# Editor / OS
+.DS_Store
+.idea/
+.vscode/*
+!.vscode/extensions.json
+*.swp
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+
+# Emitted declarations from the web build
+dist-types/
+
+# Self-signed TLS material. The private key must never be committed.
+tls/
+
+# Deploy tarballs. `git archive` writes these into the working tree on the way
+# to the NAS; they are a copy of the repo, so committing one doubles it.
+delegate-*.tar.gz
+delegate-src.tar.gz

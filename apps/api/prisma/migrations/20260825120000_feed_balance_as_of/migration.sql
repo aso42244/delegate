@@ -1,0 +1,22 @@
+-- How old the feed's own snapshot of a balance is.
+--
+-- `balance_as_of` answers two questions with one column. For a manual account it
+-- means "when the owner last confirmed this". For a synced one it means the
+-- feed's `balance-date` when the feed sends one, and the time of our request
+-- when it does not — and afterwards those are indistinguishable. "The bridge
+-- says this is current" and "the bridge said nothing and we filled it in" look
+-- exactly alike, so neither can be trusted.
+--
+-- That is not hypothetical. A card's ten most recent charges sat marked pending
+-- for days while the bridge reported the connection healthy; the balance and the
+-- pending set were consistent with each other and both were behind, so nothing
+-- in the application could say so.
+--
+-- This column records only what the feed actually said. Null means unknown, and
+-- unknown must never read as fresh.
+--
+-- Nullable, and null for every existing row: the feed's date for a balance
+-- already stored cannot be recovered, and inventing one would recreate the very
+-- ambiguity this ends. Rows fill in on the next sync.
+ALTER TABLE "accounts"
+  ADD COLUMN "feed_balance_as_of" TIMESTAMP(3);

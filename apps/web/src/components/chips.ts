@@ -1,0 +1,100 @@
+/**
+ * The chip vocabulary.
+ *
+ * Every mark that sits beside a row's name is one letter — two where one would
+ * collide, and `btc`, which is a word everybody already reads as one. A chip is
+ * a classification, not a sentence: at eleven pixels a word costs a row's width
+ * and says no more than its initial does once the initial is known.
+ *
+ * Two rules make that safe, and both are enforced rather than promised.
+ *
+ * **One letter, one meaning, across the whole application** — not per page. A
+ * `p` that means pending in the register and property on the budget is a
+ * vocabulary nobody can learn. `chips.test.ts` fails if two entries share a
+ * mark.
+ *
+ * **The word is always there.** Every chip renders its letter for the eye and
+ * its full meaning for a screen reader, with the same text as a `title` for
+ * anyone who hovers. A letter with no expansion is a private joke.
+ */
+
+export type ChipTone = 'quiet' | 'warning';
+
+export interface ChipSpec {
+  /** What is shown. One character, or two where one would collide. */
+  readonly mark: string;
+  /** What it means, read aloud and shown on hover. Not a repeat of the mark. */
+  readonly meaning: string;
+  readonly tone: ChipTone;
+}
+
+export const CHIPS = {
+  // ── Transactions ──────────────────────────────────────────────────────────
+  /** Yellow: a pending row has already moved its envelope while the account
+      balance has not caught up, which is a thing to notice rather than a thing
+      to know. */
+  pending: { mark: 'p', meaning: 'Pending — the bank has not settled it yet', tone: 'warning' },
+  income: { mark: 'i', meaning: 'Income — allocates to nothing', tone: 'quiet' },
+  transfer: { mark: 't', meaning: 'Transfer between your own accounts', tone: 'quiet' },
+  check: { mark: 'c', meaning: 'Settled an outstanding check', tone: 'quiet' },
+  split: { mark: 'sp', meaning: 'Split across more than one delegation', tone: 'quiet' },
+
+  // ── Accounts, on the budget and in Settings ───────────────────────────────
+  manual: { mark: 'm', meaning: 'Kept by hand', tone: 'quiet' },
+  /** Quiet, not yellow: this is a fact about how fresh a figure is, not
+      something anybody can act on. Yellow is kept for a thing to do. */
+  stale: { mark: 's', meaning: 'Balance may not be current', tone: 'quiet' },
+  /**
+   * Yellow, unlike `stale` beside it, and the difference is the whole point.
+   * Stale says a figure is old, which is nobody's fault and nothing to do.
+   * This says the figure on the row is **part bank and part household** — it
+   * includes charges typed in while the feed was behind — and the thing to do
+   * is archive those rows once the feed delivers them. A balance quietly
+   * carrying both with nothing to say so is a number somebody trusts and
+   * should not.
+   */
+  standby: { mark: 'a', meaning: 'Adjusted by transactions entered by hand', tone: 'warning' },
+  review: { mark: 'r', meaning: 'Discovered by a sync — its type is a guess', tone: 'warning' },
+  /** The only three-letter mark, because it is already read as a word. The
+      figure on these rows is a quantity times a price and moves on its own once
+      a day with no transaction behind it — ADR 021. Nothing else said so. */
+  bitcoin: { mark: 'btc', meaning: 'Bitcoin holding — quantity × price', tone: 'quiet' },
+  /** `h` for house rather than `p`, which is spent on pending. */
+  property: { mark: 'h', meaning: 'Property — a valuation, not a balance', tone: 'quiet' },
+
+  // ── Delegations ───────────────────────────────────────────────────────────
+  utility: { mark: 'u', meaning: 'Utility — tracked on the Utilities page', tone: 'quiet' },
+  note: { mark: 'n', meaning: 'Has a note', tone: 'quiet' },
+  /**
+   * `tg`, because `t` is spent on transfer — two letters where one would
+   * collide, which the vocabulary already allows for `sp`.
+   *
+   * Quiet, and there is deliberately no second mark for a line that will not
+   * make its target. A chip is a classification, and "has a target" is the
+   * classification; whether the line is on course is a **reading**, and it
+   * belongs on the figure that is wrong — the amount to delegate turns warning
+   * and carries the sentence. A yellow letter beside the name would say
+   * something is off without saying which number to change.
+   */
+  target: { mark: 'tg', meaning: 'Saving towards a target', tone: 'quiet' },
+  /**
+   * `mx`, because `m` is spent on a manual account and both kinds of row sit on
+   * the Budget page together.
+   *
+   * Quiet, and quiet is the argument. A maximum is a **classification** — this
+   * line stops at a ceiling — and classification is all a chip ever carries. It
+   * is also the one thing about a maximum that is true whether or not the
+   * ceiling is in the way this payday, which is what makes it safe to read at a
+   * glance on a row somebody is only passing over. What a maximum is doing to
+   * the next press changes every time the line is spent, so it lives on the
+   * amount to delegate — the figure it is about — exactly as a target's verdict
+   * does, and for the reason ADR 047 gives: a mark beside the name would say
+   * something is happening without saying to which number.
+   *
+   * And it is not yellow. Yellow is for a thing to do, and a full envelope is
+   * the feature working.
+   */
+  maximum: { mark: 'mx', meaning: 'Has a maximum — Delegate stops at it', tone: 'quiet' },
+} as const satisfies Record<string, ChipSpec>;
+
+export type ChipKind = keyof typeof CHIPS;

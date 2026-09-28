@@ -1,0 +1,824 @@
+import type { AccountType } from '@prisma/client';
+import type { Db } from '../db/client.js';
+import type { FeedAccount, FeedTransaction } from '../simplefin/protocol.js';
+import type { SimpleFinClient } from '../simplefin/client.js';
+import { fetchAccountsInWindows } from '../simplefin/backfill.js';
+import { ConflictError } from './errors.js';
+import { proposeCheckMatches } from './checks.js';
+import { applyRules } from './rules.js';
+import { markEventsReversed } from './ledger.js';
+import {
+  carryPendingCategorizationToPosted,
+  findPostedMatchesForPending,
+  reversePendingTransaction,
+} from './pending.js';
+
+/**
+ * A SimpleFIN sync run.
+ *
+ * Two properties matter more than anything else here:
+ *
+ *   * **Idempotent.** Re-running must never duplicate a transaction. Every row
+ *     is keyed on SimpleFIN's transaction id plus the account, which is a unique
+ *     index, so a repeated run updates in place.
+ *   * **Exact on pending.** A pending transaction already moved the owner's
+ *     envelopes. When it settles the spend must stay counted exactly once, and
+ *     when it evaporates it must be backed out completely. Both are delegated to
+ *     `pending.ts`, which owns that lifecycle.
+ */
+
+/**
+ * Overlap re-requested on top of whatever the evidence asks for.
+ *
+ * On a healthy account the evidence is today, so this is the whole window and
+ * the behaviour is what it has always been: seven days, enough for a
+ * transaction that posts late.
+ */
+const INCREMENTAL_OVERLAP_DAYS = 7;
+
+/**
+ * The furthest back an ordinary sync will reach on its own.
+ *
+ * The bridge caps a request at 90 days and says so only in `errlist` (ADR 009),
+ * so asking for more is asking to be silently truncated. An account that has
+ * been dark longer than this needs a person to look at it, not an hourly job
+ * quietly requesting a quarter of a year for ever.
+ */
+const MAX_LOOKBACK_DAYS = 90;
+
+/** A run still `running` after this long is assumed dead — the process was killed mid-sync. */
+const STALE_RUN_MINUTES = 30;
+
+const MS_PER_DAY = 24 * 60 * 60 * 1000;
+
+/** Just enough of pino for the domain to log without depending on the HTTP layer. */
+export interface SyncLogger {
+  info(details: Record<string, unknown>, message: string): void;
+  warn(details: Record<string, unknown>, message: string): void;
+  error(details: Record<string, unknown>, message: string): void;
+}
+
+const SILENT_LOGGER: SyncLogger = {
+  info: () => undefined,
+  warn: () => undefined,
+  error: () => undefined,
+};
+
+export interface RunSyncOptions {
+  readonly client: SimpleFinClient;
+  readonly backfillMonths?: number;
+  readonly now?: Date;
+  readonly logger?: SyncLogger;
+  /** Attributed on any delegation event this run causes, e.g. reversing a vanished pending row. */
+  readonly actorId?: string | null;
+}
+
+export interface SyncRunSummary {
+  readonly syncRunId: string;
+  readonly status: 'succeeded' | 'failed';
+  readonly accountsTouched: number;
+  readonly accountsDiscovered: number;
+  readonly transactionsAdded: number;
+  readonly transactionsUpdated: number;
+  readonly transactionsReversed: number;
+  /** How many of the newly imported rows a rule categorized automatically. */
+  readonly transactionsCategorized: number;
+  readonly errors: readonly string[];
+}
+
+/**
+ * Guesses whether a discovered account is an asset or a debt.
+ *
+ * SimpleFIN carries no account type, so this reads the name first and the sign
+ * of the balance second. It is a guess by construction, which is why every
+ * discovered account is flagged `needsReview` for the owner to confirm.
+ */
+export function guessAccountType(name: string, balanceCents: bigint): AccountType {
+  if (
+    /\b(credit|card|visa|mastercard|amex|discover|loan|mortgage|heloc|line of credit)\b/i.test(name)
+  ) {
+    return 'debt';
+  }
+  return balanceCents < 0n ? 'debt' : 'asset';
+}
+
+/**
+ * Debt balances are stored as positive magnitudes so the identity can subtract
+ * them; asset balances keep their sign, because an overdrawn current account is
+ * genuinely negative.
+ */
+function storedBalance(type: AccountType, feedBalanceCents: bigint): bigint {
+  return type === 'debt'
+    ? feedBalanceCents < 0n
+      ? -feedBalanceCents
+      : feedBalanceCents
+    : feedBalanceCents;
+}
+
+function subtractMonths(date: Date, months: number): Date {
+  const result = new Date(date);
+  result.setMonth(result.getMonth() - months);
+  return result;
+}
+
+/**
+ * Refuses to start when another run is already in flight.
+ *
+ * The hourly job and the manual sync button can otherwise overlap, and two runs
+ * reconciling pending transactions at once would each see the other's
+ * half-finished work. A `running` row older than the stale threshold is treated
+ * as a dead process and failed, so a killed container cannot block sync forever.
+ */
+async function claimRunSlot(db: Db, now: Date, correlationId: string): Promise<string> {
+  const staleBefore = new Date(now.getTime() - STALE_RUN_MINUTES * 60 * 1000);
+
+  await db.syncRun.updateMany({
+    where: { status: 'running', startedAt: { lt: staleBefore } },
+    data: {
+      status: 'failed',
+      finishedAt: now,
+      error: `Abandoned: still running after ${STALE_RUN_MINUTES} minutes, so the process was presumed killed.`,
+    },
+  });
+
+  if (await db.syncRun.findFirst({ where: { status: 'running' }, select: { id: true } })) {
+    throw new ConflictError('sync_already_running', 'A sync is already in progress.');
+  }
+
+  const run = await db.syncRun.create({
+    data: { status: 'running', startedAt: now, correlationId },
+    select: { id: true },
+  });
+  return run.id;
+}
+
+export interface SyncWindow {
+  readonly startDate: Date;
+  /** `backfill` when nothing is known yet, `evidence` when an account set it. */
+  readonly reason: 'backfill' | 'evidence';
+  /** The name of the account that reached furthest back, for the log line. */
+  readonly drivenBy?: string;
+}
+
+/**
+ * How far back this run asks, worked out from what is on disk.
+ *
+ * The window used to be measured from the last **successful run**, and that was
+ * wrong in a way that only appears during an outage. A run is recorded as
+ * `succeeded` when the bridge answers, even when it answers with an institution
+ * in `errlist` and no rows for it — which is correct, because five working
+ * connections should not be reported as a failure. But it meant `last_success`
+ * advanced every hour while an institution was dark, so the window stayed at
+ * seven days no matter how long the outage ran. On the day the connection came
+ * back, a ten-day gap was asked about for eight days and the rest was never
+ * requested again. The bridge still held those transactions; nothing ever asked.
+ *
+ * So the question is asked of the evidence instead: **for each account, when did
+ * we last hear anything from the feed about it?** That is the newest transaction
+ * the feed has given us, or the balance date the feed stamped on the account —
+ * whichever is later. The window reaches back to the oldest of those answers
+ * across every synced account, plus the ordinary overlap.
+ *
+ * The balance date is in there for the dormant account. A savings account with
+ * no activity for three months has no recent transaction and is perfectly
+ * healthy, and judging it on transactions alone would hold the window open at
+ * the maximum for ever. `feed_balance_as_of` is what the feed said about its own
+ * freshness (ADR 032) and answers exactly this: a healthy dormant account still
+ * gets a fresh balance date, a broken one does not.
+ *
+ * Bounded at both ends. The floor is the seven-day overlap, so a household where
+ * everything is working asks precisely what it asked before. The ceiling is 90
+ * days, because that is where the bridge silently truncates (ADR 009) — past
+ * that a person needs to intervene, and an hourly job should not be quietly
+ * requesting a quarter of a year for ever.
+ */
+export async function resolveWindowStart(
+  db: Db,
+  now: Date,
+  backfillMonths: number,
+): Promise<SyncWindow> {
+  const accounts = await db.account.findMany({
+    where: { archivedAt: null, source: 'simplefin' },
+    select: {
+      id: true,
+      name: true,
+      feedBalanceAsOf: true,
+      transactions: {
+        // Feed rows only. A row typed in by hand is evidence about the
+        // household, not about whether the connection is delivering — counting
+        // it would let manual entry during an outage narrow the very window
+        // that has to be wide to recover from it.
+        where: { archivedAt: null, source: 'simplefin' },
+        orderBy: { postedAt: 'desc' },
+        take: 1,
+        select: { postedAt: true },
+      },
+    },
+  });
+
+  /*
+   * No synced accounts at all, so there is no evidence to read and the run
+   * history is all there is.
+   *
+   * A first run backfills. A later one asks for the overlap and nothing more:
+   * with no accounts there is nothing to be behind on, and a household whose
+   * bridge is returning an empty set must not re-request twelve months every
+   * hour — that is eight windowed requests against a bridge that has already
+   * said it has nothing. An account that appears later has no transactions of
+   * its own, so the rule below backfills for it individually.
+   */
+  if (accounts.length === 0) {
+    const lastSuccess = await db.syncRun.findFirst({
+      where: { status: 'succeeded' },
+      orderBy: { startedAt: 'desc' },
+      select: { startedAt: true },
+    });
+    return lastSuccess
+      ? {
+          startDate: new Date(
+            lastSuccess.startedAt.getTime() - INCREMENTAL_OVERLAP_DAYS * MS_PER_DAY,
+          ),
+          reason: 'evidence',
+        }
+      : { startDate: subtractMonths(now, backfillMonths), reason: 'backfill' };
+  }
+
+  const floor = new Date(now.getTime() - INCREMENTAL_OVERLAP_DAYS * MS_PER_DAY);
+  const ceiling = new Date(now.getTime() - MAX_LOOKBACK_DAYS * MS_PER_DAY);
+
+  let startDate = floor;
+  let drivenBy: string | undefined;
+
+  for (const account of accounts) {
+    const newestTransaction = account.transactions[0]?.postedAt;
+    const lastHeard = latest(newestTransaction, account.feedBalanceAsOf);
+
+    // An account we have never heard anything about is one the feed has not
+    // delivered for yet — a discovery whose history has not arrived. Reaching
+    // back the full backfill for it is what the first run would have done.
+    const reach = lastHeard
+      ? new Date(lastHeard.getTime() - INCREMENTAL_OVERLAP_DAYS * MS_PER_DAY)
+      : subtractMonths(now, backfillMonths);
+
+    const bounded = reach < ceiling ? ceiling : reach;
+    if (bounded < startDate) {
+      startDate = bounded;
+      drivenBy = account.name;
+    }
+  }
+
+  return { startDate, reason: 'evidence', ...(drivenBy ? { drivenBy } : {}) };
+}
+
+function latest(...dates: readonly (Date | null | undefined)[]): Date | undefined {
+  let best: Date | undefined;
+  for (const date of dates) {
+    if (date && (!best || date > best)) best = date;
+  }
+  return best;
+}
+
+export async function runSync(db: Db, options: RunSyncOptions): Promise<SyncRunSummary> {
+  const now = options.now ?? new Date();
+  const logger = options.logger ?? SILENT_LOGGER;
+  const backfillMonths = options.backfillMonths ?? 12;
+  const correlationId = `sync-${now.getTime().toString(36)}`;
+
+  const syncRunId = await claimRunSlot(db, now, correlationId);
+
+  const window = await resolveWindowStart(db, now, backfillMonths);
+  const incrementalStart = window.startDate;
+
+  // The window must reach back far enough to cover every pending row we still
+  // hold. Absence from the feed is how we detect that a pending transaction
+  // vanished, and that inference is only valid if we actually asked about it —
+  // a hold older than the overlap (hotel and rental deposits routinely run 7–10
+  // days) would otherwise never be reconciled at all.
+  const oldestPending = await db.transaction.findFirst({
+    where: { pending: true, archivedAt: null, source: 'simplefin' },
+    orderBy: { postedAt: 'asc' },
+    select: { postedAt: true },
+  });
+  const pendingStart = oldestPending
+    ? new Date(oldestPending.postedAt.getTime() - MS_PER_DAY)
+    : undefined;
+
+  const startDate =
+    pendingStart && pendingStart < incrementalStart ? pendingStart : incrementalStart;
+
+  logger.info(
+    {
+      correlationId,
+      syncRunId,
+      startDate,
+      backfill: window.reason === 'backfill',
+      // Which account set the window, and how far back it reached. A run that
+      // suddenly asks for six weeks should say which account asked for it.
+      windowReason: window.reason,
+      windowDays: Math.round((now.getTime() - startDate.getTime()) / MS_PER_DAY),
+      ...(window.drivenBy ? { windowDrivenBy: window.drivenBy } : {}),
+    },
+    'sync started',
+  );
+
+  const errors: string[] = [];
+  let accountsTouched = 0;
+  let accountsDiscovered = 0;
+  let transactionsAdded = 0;
+  let transactionsUpdated = 0;
+  let transactionsReversed = 0;
+  let transactionsCategorized = 0;
+  // Collected across accounts so rules run once at the end rather than per
+  // account, which keeps first-match-wins evaluation over one consistent set.
+  const importedTransactionIds: string[] = [];
+
+  try {
+    // Windowed, because the bridge silently caps a long range rather than
+    // failing — see simplefin/backfill.ts.
+    const feed = await fetchAccountsInWindows(options.client, {
+      startDate,
+      endDate: now,
+      includePending: true,
+    });
+    errors.push(...feed.errors);
+
+    /*
+     * Every external id in this run's feed, gathered before anything is
+     * written, so `upsertAccount` can tell a re-linked account from a new one.
+     */
+    const feedExternalIds = new Set(feed.accounts.map((account) => account.externalId));
+
+    for (const feedAccount of feed.accounts) {
+      // USD only, by hard constraint. Importing a foreign-currency account would
+      // silently corrupt the identity, so it is refused loudly instead.
+      if (feedAccount.currency && feedAccount.currency.toUpperCase() !== 'USD') {
+        errors.push(
+          `Skipped "${feedAccount.name}": this budget is USD only and that account reports ${feedAccount.currency}.`,
+        );
+        continue;
+      }
+
+      /*
+       * One account's problem is one account's problem.
+       *
+       * This used to let anything thrown here escape and fail the whole run, so
+       * a single institution in a bad state stopped the other five from
+       * updating at all — the household lost every balance because one
+       * connection had been reconnected at the bridge. Reported and skipped
+       * now, which is how a foreign-currency account has always been handled
+       * two lines above.
+       */
+      try {
+        await ingestAccount(feedAccount);
+      } catch (error) {
+        const reason = error instanceof Error ? error.message : String(error);
+        errors.push(`Could not sync "${feedAccount.name}": ${reason}`);
+        logger.error(
+          { correlationId, name: feedAccount.name, err: error },
+          'account skipped after an error; the rest of the run continues',
+        );
+      }
+    }
+
+    async function ingestAccount(feedAccount: FeedAccount): Promise<void> {
+      const { accountId, discovered } = await upsertAccount(
+        db,
+        feedAccount,
+        now,
+        feedExternalIds,
+        logger,
+        correlationId,
+      );
+      accountsTouched += 1;
+      if (discovered) {
+        accountsDiscovered += 1;
+        logger.info({ correlationId, accountId, name: feedAccount.name }, 'account discovered');
+      }
+
+      const counts = await ingestTransactions(
+        db,
+        accountId,
+        feedAccount.transactions,
+        now,
+        logger,
+        correlationId,
+      );
+      transactionsAdded += counts.added;
+      transactionsUpdated += counts.updated;
+      importedTransactionIds.push(...counts.importedIds);
+
+      const reconciled = await reconcilePending(db, {
+        accountId,
+        seenExternalIds: new Set(feedAccount.transactions.map((t) => t.externalId)),
+        windowStart: startDate,
+        now,
+        actorId: options.actorId ?? null,
+        logger,
+        correlationId,
+      });
+      transactionsUpdated += reconciled.settled;
+      transactionsReversed += reconciled.reversed;
+    }
+
+    // Rules run after every account is ingested and reconciled, so evaluation
+    // sees one settled set of rows. Restricted to what this run imported: a rule
+    // added since the last sync must be applied deliberately through
+    // "apply to existing", not as a side effect of an unrelated sync.
+    if (importedTransactionIds.length > 0) {
+      const applied = await applyRules(db, {
+        transactionIds: importedTransactionIds,
+        actorId: options.actorId ?? null,
+      });
+      transactionsCategorized = applied.categorized;
+
+      if (applied.categorized > 0) {
+        logger.info(
+          { correlationId, categorized: applied.categorized, examined: applied.examined },
+          'auto-categorization applied',
+        );
+      }
+    }
+
+    /**
+     * Checks are looked at after the rules, and against everything uncategorized
+     * rather than only this run's imports — a check written last month clears
+     * whenever the bank gets round to it.
+     *
+     * A sync no longer settles them. It proposes, and a person confirms; the
+     * purple banner is how the proposal reaches him. Settling moves money
+     * between envelopes and archives a line, and doing that unattended at 3am
+     * left a log entry as its only trace. See ADR 030.
+     *
+     * Logged here all the same, because "the bank cashed check 1062 during this
+     * run" is the sort of thing worth being able to find afterwards.
+     */
+    const proposed = await proposeCheckMatches(db);
+    if (proposed.length > 0) {
+      logger.info(
+        { correlationId, checks: proposed.map((proposal) => proposal.checkNumber) },
+        'outstanding checks appear to have cleared, awaiting confirmation',
+      );
+    }
+
+    await db.syncRun.update({
+      where: { id: syncRunId },
+      data: {
+        status: 'succeeded',
+        finishedAt: new Date(),
+        accountsTouched,
+        transactionsAdded,
+        transactionsUpdated,
+        transactionsReversed,
+        // Non-fatal feed errors are recorded on a successful run so the banner
+        // can still surface them. They are never swallowed.
+        error: errors.length > 0 ? errors.join('\n') : null,
+      },
+    });
+
+    logger.info(
+      {
+        correlationId,
+        syncRunId,
+        accountsTouched,
+        transactionsAdded,
+        transactionsUpdated,
+        transactionsReversed,
+      },
+      'sync finished',
+    );
+
+    return {
+      syncRunId,
+      status: 'succeeded',
+      accountsTouched,
+      accountsDiscovered,
+      transactionsAdded,
+      transactionsUpdated,
+      transactionsReversed,
+      transactionsCategorized,
+      errors,
+    };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+
+    await db.syncRun.update({
+      where: { id: syncRunId },
+      data: {
+        status: 'failed',
+        finishedAt: new Date(),
+        accountsTouched,
+        transactionsAdded,
+        transactionsUpdated,
+        transactionsReversed,
+        error: [message, ...errors].join('\n'),
+      },
+    });
+
+    // Surfaced as a persistent in-app banner, never logs alone.
+    logger.error({ correlationId, syncRunId, err: error }, 'sync failed');
+    throw error;
+  }
+}
+
+async function upsertAccount(
+  db: Db,
+  feedAccount: FeedAccount,
+  now: Date,
+  /**
+   * Every external id this run's feed mentioned.
+   *
+   * Used to tell a genuinely new account from one that has been re-linked:
+   * only an account the feed no longer knows about can have been replaced.
+   */
+  feedExternalIds: ReadonlySet<string>,
+  logger: SyncLogger,
+  correlationId: string,
+): Promise<{ accountId: string; discovered: boolean }> {
+  const existing = await db.account.findUnique({
+    where: {
+      account_source_external_id: { source: 'simplefin', externalId: feedAccount.externalId },
+    },
+    select: { id: true, type: true },
+  });
+
+  if (existing) {
+    // The type is never re-guessed. The owner may have overridden it, and a sync
+    // silently flipping an account between asset and debt would move the identity.
+    //
+    // Two dates, deliberately. `balanceAsOf` takes the feed's date when there is
+    // one and falls back to now when there is not, which makes those two cases
+    // indistinguishable afterwards. `feedBalanceAsOf` records only what the feed
+    // actually said, so null means unknown rather than current — the difference
+    // between a bridge that reports a fresh snapshot and one that reports
+    // nothing about freshness at all.
+    await db.account.update({
+      where: { id: existing.id },
+      data: {
+        balanceCents: storedBalance(existing.type, feedAccount.balanceCents),
+        balanceAsOf: feedAccount.balanceAsOf ?? now,
+        feedBalanceAsOf: feedAccount.balanceAsOf ?? null,
+        // Three dates, and this is the one that survives a silent feed: it is
+        // stamped because the feed named the account, whatever it did or did not
+        // say about freshness. Absence from a later run is then a fact rather
+        // than an inference.
+        feedLastSeenAt: now,
+      },
+    });
+    return { accountId: existing.id, discovered: false };
+  }
+
+  // The institution name carries the signal as often as the account name does:
+  // a real feed returns institution "Alliance Credit Card" with account name
+  // "Simon Tam (1234)", and guessing from the account name alone reads a
+  // credit card as an asset — which then adds to the identity instead of
+  // subtracting from it.
+  const displayName = feedAccount.institution
+    ? `${feedAccount.institution} ${feedAccount.name}`.trim()
+    : feedAccount.name;
+
+  /*
+   * Adopt the account this one replaced, rather than duplicating it.
+   *
+   * Deleting an institution at the bridge and adding it back gives every one of
+   * its accounts a **new external id**. Delegate matches on that id, so the
+   * accounts arrive looking new — and creating them fails on the partial unique
+   * index over `lower(name)`, because the originals are still there under
+   * exactly the same name. The run then died, taking every other institution's
+   * data with it, and it stayed dead: the collision recurs every hour forever.
+   *
+   * The signal that this is a re-link rather than a genuinely new account is
+   * that the old row's external id is one **this feed no longer mentions**. An
+   * institution that is merely erroring still lists its accounts, so a live id
+   * is never mistaken for a dead one.
+   *
+   * Adopting keeps the register, the type the owner may have corrected, the
+   * nickname, the grouping and the in-budget flag. Creating a second row would
+   * split the history in two and quietly drop the account out of the identity
+   * until somebody noticed.
+   */
+  const replaced = await db.account.findFirst({
+    where: {
+      archivedAt: null,
+      source: 'simplefin',
+      name: { equals: displayName, mode: 'insensitive' },
+      externalId: { notIn: [...feedExternalIds] },
+    },
+    select: { id: true, type: true, externalId: true },
+  });
+
+  if (replaced) {
+    await db.account.update({
+      where: { id: replaced.id },
+      data: {
+        externalId: feedAccount.externalId,
+        balanceCents: storedBalance(replaced.type, feedAccount.balanceCents),
+        balanceAsOf: feedAccount.balanceAsOf ?? now,
+        feedBalanceAsOf: feedAccount.balanceAsOf ?? null,
+        feedLastSeenAt: now,
+      },
+    });
+
+    logger.warn(
+      {
+        correlationId,
+        accountId: replaced.id,
+        name: displayName,
+        from: replaced.externalId,
+        to: feedAccount.externalId,
+      },
+      're-linked account adopted; the institution was reconnected at the bridge',
+    );
+
+    return { accountId: replaced.id, discovered: false };
+  }
+
+  const type = guessAccountType(displayName, feedAccount.balanceCents);
+  const created = await db.account.create({
+    data: {
+      name: displayName,
+      type,
+      source: 'simplefin',
+      externalId: feedAccount.externalId,
+      balanceCents: storedBalance(type, feedAccount.balanceCents),
+      balanceAsOf: feedAccount.balanceAsOf ?? now,
+      feedBalanceAsOf: feedAccount.balanceAsOf ?? null,
+      feedLastSeenAt: now,
+      // Defaults per §7; `needsReview` prompts the owner to confirm the guess.
+      inBudget: true,
+      inNetWorth: true,
+      needsReview: true,
+    },
+    select: { id: true },
+  });
+
+  return { accountId: created.id, discovered: true };
+}
+
+async function ingestTransactions(
+  db: Db,
+  accountId: string,
+  feedTransactions: readonly FeedTransaction[],
+  now: Date,
+  logger: SyncLogger,
+  correlationId: string,
+): Promise<{ added: number; updated: number; importedIds: string[] }> {
+  let added = 0;
+  let updated = 0;
+  const importedIds: string[] = [];
+
+  for (const feedTransaction of feedTransactions) {
+    const existing = await db.transaction.findUnique({
+      where: {
+        transaction_account_external_id: { accountId, externalId: feedTransaction.externalId },
+      },
+      select: {
+        id: true,
+        amountCents: true,
+        pending: true,
+        postedAt: true,
+        description: true,
+        archivedAt: true,
+        _count: { select: { allocations: true } },
+      },
+    });
+
+    if (!existing) {
+      const created = await db.transaction.create({
+        data: {
+          accountId,
+          externalId: feedTransaction.externalId,
+          source: 'simplefin',
+          amountCents: feedTransaction.amountCents,
+          postedAt: feedTransaction.occurredAt,
+          description: feedTransaction.description,
+          descriptionRaw: feedTransaction.description,
+          pending: feedTransaction.pending,
+        },
+        select: { id: true },
+      });
+      added += 1;
+      importedIds.push(created.id);
+      continue;
+    }
+
+    const amountChanged = existing.amountCents !== feedTransaction.amountCents;
+
+    // A pending charge that settles at a different amount — a restaurant tip is
+    // the everyday case — would leave allocations that no longer sum to the
+    // transaction. Back the categorization out and let it resurface as
+    // uncategorized rather than hold a total that cannot be right.
+    if (amountChanged && existing._count.allocations > 0) {
+      await markEventsReversed(db, { transactionId: existing.id }, now);
+      await db.transactionAllocation.deleteMany({ where: { transactionId: existing.id } });
+      logger.warn(
+        {
+          correlationId,
+          transactionId: existing.id,
+          was: existing.amountCents.toString(),
+          now: feedTransaction.amountCents.toString(),
+        },
+        'amount changed after categorization; categorization reversed',
+      );
+    }
+
+    const unchanged =
+      !amountChanged &&
+      existing.pending === feedTransaction.pending &&
+      existing.description === feedTransaction.description &&
+      existing.postedAt.getTime() === feedTransaction.occurredAt.getTime();
+
+    if (unchanged) continue;
+
+    await db.transaction.update({
+      where: { id: existing.id },
+      data: {
+        amountCents: feedTransaction.amountCents,
+        postedAt: feedTransaction.occurredAt,
+        description: feedTransaction.description,
+        descriptionRaw: feedTransaction.description,
+        pending: feedTransaction.pending,
+      },
+    });
+    updated += 1;
+  }
+
+  return { added, updated, importedIds };
+}
+
+interface ReconcilePendingOptions {
+  readonly accountId: string;
+  readonly seenExternalIds: ReadonlySet<string>;
+  readonly windowStart: Date;
+  readonly now: Date;
+  readonly actorId: string | null;
+  readonly logger: SyncLogger;
+  readonly correlationId: string;
+}
+
+/**
+ * Resolves pending rows the feed stopped reporting.
+ *
+ * Only rows inside the requested window are considered. A pending transaction
+ * older than the window is absent because we did not ask for it, not because it
+ * vanished, and reversing those would wrongly credit envelopes.
+ *
+ * A pending row that reappears under a new id — which is what most banks do on
+ * settlement — is matched on account, exact amount and date proximity, and its
+ * categorization is carried across. One that matches nothing never happened, and
+ * is reversed.
+ */
+async function reconcilePending(
+  db: Db,
+  options: ReconcilePendingOptions,
+): Promise<{ settled: number; reversed: number }> {
+  const disappeared = await db.transaction.findMany({
+    where: {
+      accountId: options.accountId,
+      pending: true,
+      archivedAt: null,
+      source: 'simplefin',
+      postedAt: { gte: options.windowStart },
+      externalId: { notIn: [...options.seenExternalIds] },
+    },
+    select: { id: true },
+  });
+  if (disappeared.length === 0) return { settled: 0, reversed: 0 };
+
+  const disappearedIds = disappeared.map((row) => row.id);
+  const matches = await findPostedMatchesForPending(db, { pendingTransactionIds: disappearedIds });
+  const matchedIds = new Set(matches.map((match) => match.pendingTransactionId));
+
+  for (const match of matches) {
+    await carryPendingCategorizationToPosted(
+      db,
+      match.pendingTransactionId,
+      match.postedTransactionId,
+      {
+        actorId: options.actorId,
+        now: options.now,
+      },
+    );
+    options.logger.info(
+      {
+        correlationId: options.correlationId,
+        pendingTransactionId: match.pendingTransactionId,
+        postedTransactionId: match.postedTransactionId,
+        dayGap: match.dayGap,
+      },
+      'pending transaction settled',
+    );
+  }
+
+  let reversed = 0;
+  for (const id of disappearedIds) {
+    if (matchedIds.has(id)) continue;
+    await reversePendingTransaction(db, id, { now: options.now });
+    reversed += 1;
+    options.logger.info(
+      { correlationId: options.correlationId, transactionId: id },
+      'pending transaction vanished; effect reversed',
+    );
+  }
+
+  return { settled: matches.length, reversed };
+}

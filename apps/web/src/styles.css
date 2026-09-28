@@ -1,0 +1,516 @@
+@import 'tailwindcss';
+
+/**
+ * Design tokens, straight from docs/design.md.
+ *
+ * Every colour and size the interface uses is named here rather than written as
+ * a literal in a component. When the design changes — and it will, once real
+ * data is on screen — it changes in one place.
+ */
+@theme {
+  --color-ink: #2c2c2b;
+  --color-muted: #7d7a75;
+  /* Deliberately faint: the To Delegate column is the quiet one. */
+  --color-faint: #b4b1ab;
+  --color-canvas: #ffffff;
+  --color-surface: #f9f8f7;
+  --color-surface-2: #f0efed;
+  --color-line: #e6e5e3;
+
+  /*
+   * Chart furniture: axis ticks, gridline labels, a legend's small print.
+   *
+   * A third text tone was proposed at #a9a6a0 and refused — it measures about
+   * 2.4:1 on canvas, under both the 4.5 AA needs for text and the 3 WCAG asks
+   * of non-text boundaries. This is that idea darkened until it clears 3:1, and
+   * it is **only** for marks the chart could be read without. Anything a person
+   * has to read stays `--color-muted`; the three-tier look comes from weight,
+   * case and size instead.
+   */
+  --color-axis: #8f8c86;
+
+  --color-accent: #2783de;
+  --color-accent-soft: #e5f2fc;
+  /* Text and icons sitting on the accent fill. Its own token because the accent
+     lightens in dark mode, where white on it would fall under 3:1. */
+  --color-on-accent: #ffffff;
+  /* The edge of a soft accent fill. Warning, danger and confirm each had one of
+     these; accent and positive did not, because nothing had yet drawn a soft
+     blue or green *control* — the budget's reading became the first (ADR 064). */
+  --color-accent-line: #b3d7f4;
+
+  --color-positive: #46a171;
+  --color-positive-soft: #e8f1ec;
+  --color-positive-line: #b9d9c7;
+
+  /*
+   * Purple: something worked out but not acted on, waiting for a person to say
+   * yes. Blue, yellow and red were taken by "here is a fact", "this needs
+   * attention" and "this is wrong", and a proposal is none of those.
+   *
+   * #6b3fa0 on #f4ecfb is 6.41:1, which sits with danger (6.53) rather than
+   * scraping the 4.5 floor. The dot reuses the grouping purple, so the hue is
+   * one the palette already owns.
+   */
+  --color-confirm: #6b3fa0;
+  --color-confirm-soft: #f4ecfb;
+  --color-confirm-line: #d8c2ec;
+  --color-confirm-dot: #8b63b8;
+
+  --color-warning: #8a6a14;
+  --color-warning-soft: #fff4d6;
+  --color-warning-line: #efdfaf;
+  --color-warning-dot: #d5803b;
+
+  --color-danger: #93332b;
+  --color-danger-soft: #fce9e7;
+  --color-danger-line: #f2c4bf;
+  --color-danger-dot: #e56458;
+
+  /* Negative amounts, and only those, in the tables. */
+  --color-negative: #e56458;
+
+  /* Grouping palette. The owner picks one per grouping; children inherit it. */
+  --color-group-green: #46a171;
+  --color-group-blue: #2783de;
+  --color-group-orange: #d5803b;
+  --color-group-purple: #8b63b8;
+  --color-group-grey: #7d7a75;
+
+  /* The ordered multi-series chart palette from design.md. Used only where a
+     chart genuinely has several series and none of them carries a grouping
+     colour of its own — a single series is the accent, and §11's "must not be
+     in your face" holds by there being one line on most tiles. */
+  --color-series-1: #5e9fe8;
+  --color-series-2: #eac26b;
+  --color-series-3: #72bc8f;
+  --color-series-4: #bf8eda;
+  --color-series-5: #de9255;
+  --color-series-6: #df84a8;
+  --color-series-7: #4fb9c9;
+  --color-series-8: #e97366;
+
+  --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+
+  /*
+   * The letter-spacing on an 11px uppercase column header.
+   *
+   * A token rather than a number written into nineteen `<th>` elements, because
+   * one theme needs it to be zero: a monospace face is already wide, and the
+   * spacing turns a header into a row of gaps rather than a word.
+   */
+  --tracking-label: 0.05em;
+
+  /*
+   * 10px, the dashboard's uppercase micro label.
+   *
+   * Below `--text-label`, and it earns the extra step because it is only ever
+   * used for two or three tracked, uppercase, 600-weight words above a figure —
+   * a shape the eye reads as a label before it reads it as text. It is never
+   * used for anything somebody has to read as a sentence.
+   */
+  --text-micro: 0.625rem;
+
+  --text-label: 0.6875rem; /* 11px column headers */
+  --text-quiet: 0.8125rem; /* 13px de-emphasised data and menu items */
+  --text-base: 0.875rem; /* 14px body and table rows */
+  --text-hero: 0.9375rem; /* 15px the Remaining column */
+  --text-section: 1rem; /* 16px section titles */
+  --text-page: 1.5rem; /* 24px page titles */
+  /*
+   * 24px, the same size as a page title and a different role.
+   *
+   * A figure tile exists to show one number, and that number is the content of
+   * the tile the way a title is the content of a header — so it takes the top of
+   * the scale rather than a size invented for it. Deliberately **not** larger
+   * than the page title: a dashboard where every tile shouts louder than the
+   * page it sits on has no hierarchy left to spend.
+   *
+   * It is a second token rather than a reuse of `--text-page` because
+   * `ui-system.test.ts` holds `text-page` to the page header alone, and that
+   * rule is worth keeping — one component decides how far below the title a page
+   * starts. Two names for one value, each saying where it belongs.
+   */
+  --text-figure: 1.5rem; /* 24px a tile's single figure */
+
+  /*
+   * The expanded sidebar is as wide as its longest label needs and no wider.
+   *
+   * It was a flat 232px from design.md §4, which is about 60px more than
+   * "Transactions" — the longest thing in it — actually takes, and every one of
+   * those pixels came off the page beside it. `w-fit` on the nav lets the links
+   * set the width; this caps what anything *else* in there can claim, because a
+   * long app name or an email address would otherwise size the column instead.
+   */
+  /*
+   * The expanded sidebar's floor, and the cap on what may set its width.
+   *
+   * `w-fit` alone made it as narrow as "Transactions" plus its chrome — about
+   * 145px — which is correct arithmetic and reads as cramped beside a page. 180
+   * is a floor rather than a fixed width, so a longer destination name still
+   * widens it; it is well short of the 232px this started at, which was the
+   * width that prompted the original complaint.
+   */
+  --spacing-sidebar: 180px;
+  --spacing-sidebar-cap: 156px;
+  --spacing-rail: 64px;
+}
+
+/**
+ * Table row height, as one variable rather than padding written into every
+ * table.
+ *
+ * 32px is the default, with 40px and 28px in Settings. The design values
+ * density "never at the cost of legibility", and the honest way to hold both is
+ * that the type size does not change with this setting — only the space around
+ * it does, so every option is denser without being smaller. Which of them reads
+ * best depends on the screen and the eyes in front of it, so the person reading
+ * decides.
+ */
+/**
+ * A container that scrolls sideways without saying so.
+ *
+ * Used where the alternative is clipping — a segmented control wider than a
+ * phone. The bar itself would be taller than the thing it is scrolling.
+ */
+.no-scrollbar {
+  scrollbar-width: none;
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+/**
+ * Dark.
+ *
+ * The same palette rotated, not a different one: the warm neutral greys of the
+ * light theme have warm dark counterparts, so the application reads as itself
+ * with the lights off rather than as a second design.
+ *
+ * Every accent is lifted until it clears 4.5:1 on the dark canvas — the light
+ * values are tuned for white and sit at 2–3:1 here, which is the usual way a
+ * dark mode ends up unreadable. `--color-on-accent` darkens for the same reason
+ * in reverse: the accent fill is now light enough that white text on it would
+ * not clear 3:1.
+ *
+ * One rule, keyed on an attribute the theme module stamps. "System" is resolved
+ * in JavaScript to an explicit value rather than left to a second
+ * `prefers-color-scheme` block here, because two copies of a palette drift — and
+ * a media query cannot be added to a selector list to avoid that.
+ */
+:root[data-theme='dark'] {
+  /* Tells the browser to draw checkboxes, selects, date pickers and scrollbars
+     dark. Without it those are white rectangles in an otherwise dark page. */
+  color-scheme: dark;
+
+  --color-ink: #eceae6;
+  --color-muted: #a29e97;
+  --color-faint: #6f6b64;
+  --color-canvas: #1c1b1a;
+  --color-surface: #141312;
+  --color-surface-2: #262523;
+  --color-line: #34322f;
+  /* Chart furniture on the dark ground; clears 3:1 the same way. */
+  --color-axis: #7e7a74;
+
+  --color-accent: #62aef2;
+  --color-accent-soft: #16283a;
+  --color-on-accent: #0e1922;
+  --color-accent-line: #2a4a68;
+
+  --color-positive: #6cc292;
+  --color-positive-soft: #16261d;
+  --color-positive-line: #2a4632;
+
+  --color-confirm: #bb92e2;
+  --color-confirm-soft: #221a2e;
+  --color-confirm-line: #3d2f52;
+  --color-confirm-dot: #a87fd4;
+
+  --color-warning: #e0b64c;
+  --color-warning-soft: #2b2411;
+  --color-warning-line: #4a3d1c;
+  --color-warning-dot: #d5803b;
+
+  --color-danger: #f18d83;
+  --color-danger-soft: #2e1917;
+  --color-danger-line: #4d2a26;
+  --color-danger-dot: #e56458;
+
+  --color-negative: #f18d83;
+
+  /* Grouping colours lift too: these are row tints and chip text, and the light
+     values disappear against the dark canvas. */
+  --color-group-green: #6cc292;
+  --color-group-blue: #62aef2;
+  --color-group-orange: #e0954f;
+  --color-group-purple: #a87fd4;
+  --color-group-grey: #a29e97;
+
+  /* Lifted for the same reason the grouping colours are: the light values are
+     chosen against white and several of them disappear on this canvas. */
+  --color-series-1: #7fb4ee;
+  --color-series-2: #efd08b;
+  --color-series-3: #8fcba6;
+  --color-series-4: #cfa5e4;
+  --color-series-5: #e7a874;
+  --color-series-6: #e79bba;
+  --color-series-7: #6fc9d6;
+  --color-series-8: #ef8f84;
+}
+
+/**
+ * Before JavaScript has stamped anything.
+ *
+ * Only the page ground, and only when no choice has been recorded yet — enough
+ * that a dark-preferring device does not flash a white screen on first paint.
+ * The moment the theme module runs, the attribute exists and the rule above
+ * takes over.
+ */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) {
+    color-scheme: dark;
+    background: #141312;
+  }
+}
+
+:root,
+:root[data-density='compact'] {
+  --row-height: 32px;
+}
+
+:root[data-density='comfortable'] {
+  --row-height: 40px;
+}
+
+:root[data-density='dense'] {
+  --row-height: 28px;
+}
+
+/**
+ * Applied to every `td` and `th` in a data table. Height rather than padding,
+ * so the two settings differ by exactly the number they are named for however
+ * tall the content inside happens to be.
+ */
+.row-cell {
+  height: var(--row-height);
+  padding-top: 0;
+  padding-bottom: 0;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  background: var(--color-surface);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  font-size: var(--text-base);
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+/**
+ * Every currency figure. Tabular numerals are what let a column of amounts line
+ * up optically; without them the decimal points wander.
+ */
+/**
+ * A money input is sized by the figure it holds, not by the cell it sits in.
+ *
+ * `w-full` made it as wide as the column, which on a delegation row is most of
+ * the screen — a box the width of a sentence for eight characters of number.
+ *
+ * Fixed rather than growing with the content, which is the convention for a
+ * column of editable figures and the reason is jitter: a box that resizes on
+ * every keystroke moves the caret and the rows beside it while somebody is
+ * typing. `11ch` is `$999,999.99`, and with `tabular-nums` a `ch` is exactly a
+ * digit — so this is the widest ordinary household figure and no wider.
+ *
+ * `margin-left: auto` keeps it against the right edge of the cell, where the
+ * number it replaces was already sitting, so tapping one does not move it.
+ */
+.money-input {
+  width: 11ch;
+  max-width: 100%;
+}
+
+.money {
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  /* A figure is one thing. A squeezed column was breaking "+$3,527.63" after
+     the sign and putting the amount on a second line, which reads as two
+     numbers rather than one. */
+  white-space: nowrap;
+}
+
+/**
+ * A control that reads as a link.
+ *
+ * The way out of a tile, the way into a filtered list — a press that navigates
+ * rather than changes anything. It is often a `<button>` because it opens a
+ * dialog rather than following an href, and a button is what that is; this makes
+ * the two look identical, which is the point.
+ *
+ * **It was used before it was defined.** Half a dozen places wrote
+ * `className="linkish"` against no rule at all and rendered as plain ink, beside
+ * others that spelled the accent out by hand — so two controls doing the same
+ * job on the same screen were different colours. One definition, and everything
+ * that reads as a link points at it.
+ */
+.linkish {
+  color: var(--color-accent);
+  font-size: var(--text-quiet);
+  font-weight: 600;
+  text-align: left;
+}
+
+.linkish:hover {
+  text-decoration: underline;
+}
+
+/**
+ * The `⋯` trigger on a row menu.
+ *
+ * Hidden until the row is hovered or something in it has focus, so a table of
+ * sixty rows is not sixty pieces of chrome. Three escapes from that, because a
+ * control that exists only under a mouse pointer is a control some people never
+ * get:
+ *
+ * - keyboard focus, on the button or anywhere in the row;
+ * - the menu being open;
+ * - touch and hold anywhere on the row, which is the route on a phone, where
+ *   there is no hover to reveal anything with.
+ */
+.row-menu-trigger {
+  opacity: 0;
+}
+
+.group:hover .row-menu-trigger,
+.group:focus-within .row-menu-trigger,
+.row-menu-trigger:focus,
+.row-menu-trigger:focus-visible,
+.row-menu-trigger[aria-expanded='true'] {
+  opacity: 1;
+}
+
+/**
+ * On a touchscreen, always.
+ *
+ * The rule above reveals these on hover, and a phone cannot hover — so every one
+ * of them was simply an invisible control there. Touch-and-hold was wired on the
+ * Budget and Transactions rows and nowhere else, which left a grouping's Archive
+ * and a rule's reorder arrows unreachable by any means at all.
+ *
+ * `(hover: none)` rather than a width: a touchscreen laptop is wide and still
+ * cannot hover, and a narrow window on a desktop can.
+ */
+/** The `⋯` column. Its width lives here so the touch rule below can take it. */
+.hold-to-open-cell {
+  width: 2.5rem;
+  padding-right: 0.75rem;
+}
+
+/**
+ * Touch and hold instead of a `⋯`.
+ *
+ * `RowMenuShell` wires a long press on the row itself, so on a touchscreen the
+ * trigger is a second way into a menu that is already reachable — and it was
+ * costing a 40px column on a 390px screen, on every table that has one.
+ *
+ * **Visually hidden, not `display: none`.** A long press is not something
+ * VoiceOver can perform, so removing the button from the accessibility tree
+ * would strand the menu for anyone using it. It keeps its place in the tree and
+ * loses only its pixels; the cell around it collapses separately.
+ *
+ * Only the shell's own trigger. Settings → Groupings and Settings → Rules paint
+ * the same class on an Archive button and a pair of reorder arrows that have no
+ * long press behind them, and hiding those would leave them unreachable by any
+ * means at all — which is the state this whole rule was written to fix once
+ * before.
+ */
+@media (hover: none) {
+  .hold-to-open {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  .hold-to-open-cell {
+    width: 0;
+    max-width: 0;
+    padding: 0;
+  }
+}
+
+@media (hover: none) {
+  .row-menu-trigger {
+    opacity: 1;
+  }
+}
+
+/**
+ * A comfortable target for a finger.
+ *
+ * 44px is the figure both platforms publish, and the buttons here are 28px
+ * because that is what the owner asked for. Applied only where there is no hover, so
+ * the dense tables a mouse works well in are not loosened for everyone.
+ *
+ * The control keeps its size; the *target* grows around it. A 20px-tall switch
+ * that is 20px to hit is the problem, not a 20px-tall switch.
+ */
+/**
+ * Hung out of flow beside a figure, and therefore only for a pointer.
+ *
+ * The absorb button sits in the gutter left of the Remaining column, over space
+ * the name column is not using — which is true at 1200px and false at 390px,
+ * where it lands on top of the delegation's name. Revealing it on touch (as the
+ * rule above now does for row menus) put it permanently over the thing it
+ * covers. On a touchscreen the same action lives in the row menu instead, which
+ * is reachable and has room for the words.
+ */
+@media (hover: none) {
+  .pointer-only {
+    display: none;
+  }
+}
+
+@media (hover: none) {
+  .touch-target {
+    position: relative;
+  }
+
+  .touch-target::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: max(100%, 44px);
+    height: max(100%, 44px);
+    transform: translate(-50%, -50%);
+  }
+}
+
+/* Visible keyboard focus everywhere, in the accent colour. */
+:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* No animation is required to understand the interface. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

@@ -1,0 +1,568 @@
+import type { FastifyInstance } from 'fastify';
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { buildApp } from '../src/app.js';
+import { loadConfig } from '../src/config.js';
+import { prisma } from '../src/db/client.js';
+import { recordSpotPrice } from '../src/domain/bitcoin.js';
+import { buildNotifications } from '../src/domain/notifications.js';
+import {
+  makeAccount,
+  makeDelegation,
+  makeTransaction,
+  markTwoFactorEnrolled,
+  resetDatabase,
+} from './helpers.js';
+import { sessionCookie } from './http.js';
+import { categorizeTransaction } from '../src/domain/allocations.js';
+import { mkdtemp, writeFile, utimes } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
+/**
+ * The banners the application raises about itself.
+ *
+ * Each of these is a condition the owner would otherwise discover only by
+ * noticing a number was wrong. The test that matters most is the negative one:
+ * a condition that has resolved must stop being reported, because these are
+ * computed rather than stored and nothing ever "clears" them.
+ */
+
+let app: FastifyInstance;
+let cookie: string;
+
+const OWNER = { username: 'owner', password: 'correct-horse-battery' };
+const NOW = new Date('2026-08-09T12:00:00Z');
+
+/** The household's zone: it decides whether the Bitcoin price is today's. */
+const ZONE = 'America/Chicago';
+
+beforeAll(async () => {
+  app = await buildApp(
+    loadConfig({
+      ...process.env,
+      NODE_ENV: 'test',
+      LOG_LEVEL: 'fatal',
+      SESSION_SECRET: 'test-session-secret-at-least-32-characters-long',
+      SESSION_COOKIE_SECURE: 'false',
+      // These suites sign in on every test from one address. The limit itself
+      // is proved in auth.test.ts, which builds an app with a low one.
+      AUTH_RATE_LIMIT_MAX: '100000',
+    }),
+  );
+  await app.ready();
+});
+
+afterAll(async () => {
+  await app.close();
+});
+
+beforeEach(async () => {
+  await resetDatabase();
+  const response = await app.inject({ method: 'POST', url: '/api/auth/setup', payload: OWNER });
+  cookie = sessionCookie(response.headers);
+  await markTwoFactorEnrolled();
+});
+
+const kinds = async (now = NOW): Promise<string[]> =>
+  (await buildNotifications(prisma, ZONE, now)).map((notification) => notification.kind);
+
+describe('a quiet system', () => {
+  it('raises nothing at all', async () => {
+    await makeAccount({ name: 'Everyday', type: 'asset', balanceCents: 100n });
+    expect(await kinds()).toEqual([]);
+  });
+});
+
+describe('a failing sync', () => {
+  it('is reported, because a failure must be visible outside the logs', async () => {
+    await prisma.syncRun.create({
+      data: {
+        status: 'failed',
+        startedAt: new Date('2026-08-07T03:00:00Z'),
+        finishedAt: new Date('2026-08-07T03:00:05Z'),
+        error: 'the bridge refused',
+        correlationId: 'test-run-1',
+      },
+    });
+
+    const notifications = await buildNotifications(prisma, ZONE, NOW);
+    expect(notifications[0]?.kind).toBe('sync_failing');
+    expect(notifications[0]?.severity).toBe('danger');
+    // How long it has been broken is the part that decides whether to act.
+    expect(notifications[0]?.message).toContain('2 days ago');
+  });
+
+  it('stops being reported once a later run succeeds', async () => {
+    await prisma.syncRun.create({
+      data: {
+        status: 'failed',
+        startedAt: new Date('2026-08-07T03:00:00Z'),
+        correlationId: 'test-run-1',
+      },
+    });
+    await prisma.syncRun.create({
+      data: {
+        status: 'succeeded',
+        startedAt: new Date('2026-08-08T03:00:00Z'),
+        correlationId: 'test-run-2',
+      },
+    });
+
+    expect(await kinds()).not.toContain('sync_failing');
+  });
+});
+
+describe('a sync that succeeded but complained', () => {
+  it('reports the institution the feed named', async () => {
+    // The real shape of an expired bank login: SimpleFIN reports the problem
+    // per-institution and the run still succeeds, because everything else
+    // synced. Before this, the account quietly stopped updating while the whole
+    // interface looked healthy.
+    await prisma.syncRun.create({
+      data: {
+        status: 'succeeded',
+        startedAt: new Date('2026-08-09T09:00:00Z'),
+        finishedAt: new Date('2026-08-09T09:00:05Z'),
+        error: 'Connection to Firefly Bank may need attention. Auth required',
+        correlationId: 'test-run-1',
+      },
+    });
+
+    const notifications = await buildNotifications(prisma, ZONE, NOW);
+    expect(notifications[0]?.kind).toBe('sync_warning');
+    expect(notifications[0]?.severity).toBe('warning');
+    // The feed's own words: it names the bank, and paraphrasing would lose that.
+    expect(notifications[0]?.message).toBe(
+      'Connection to Firefly Bank may need attention. Auth required',
+    );
+  });
+
+  it('joins several institutions into one banner', async () => {
+    await prisma.syncRun.create({
+      data: {
+        status: 'succeeded',
+        startedAt: new Date('2026-08-09T09:00:00Z'),
+        error: 'Firefly Bank: auth required\nPersephone Savings: temporarily unavailable',
+        correlationId: 'test-run-1',
+      },
+    });
+
+    expect((await buildNotifications(prisma, ZONE, NOW))[0]?.message).toBe(
+      'Firefly Bank: auth required · Persephone Savings: temporarily unavailable',
+    );
+  });
+
+  it('says nothing about a clean run', async () => {
+    await prisma.syncRun.create({
+      data: {
+        status: 'succeeded',
+        startedAt: new Date('2026-08-09T09:00:00Z'),
+        correlationId: 'test-run-1',
+      },
+    });
+
+    expect(await kinds()).not.toContain('sync_warning');
+  });
+
+  it('is superseded by an outright failure rather than shown beside it', async () => {
+    // A later failed run is the more serious reading of the same connection.
+    await prisma.syncRun.create({
+      data: {
+        status: 'succeeded',
+        startedAt: new Date('2026-08-08T03:00:00Z'),
+        error: 'Firefly Bank: auth required',
+        correlationId: 'test-run-1',
+      },
+    });
+    await prisma.syncRun.create({
+      data: {
+        status: 'failed',
+        startedAt: new Date('2026-08-09T03:00:00Z'),
+        error: 'the bridge refused',
+        correlationId: 'test-run-2',
+      },
+    });
+
+    const reported = await kinds();
+    expect(reported).toContain('sync_failing');
+    expect(reported).not.toContain('sync_warning');
+  });
+});
+
+describe('stale balances', () => {
+  it('names the accounts nobody has confirmed lately', async () => {
+    await makeAccount({
+      name: 'Physical Cash',
+      type: 'asset',
+      balanceCents: 20000n,
+      stalenessIntervalDays: 30,
+      balanceAsOf: new Date('2026-06-01T00:00:00Z'),
+    });
+
+    const notifications = await buildNotifications(prisma, ZONE, NOW);
+    expect(notifications[0]?.kind).toBe('stale_balances');
+    expect(notifications[0]?.message).toContain('Physical Cash');
+  });
+
+  /** A null interval means "never goes stale" — cash you check weekly, say. */
+  it('says nothing about an account with no staleness interval', async () => {
+    await makeAccount({
+      name: 'Physical Cash',
+      type: 'asset',
+      balanceCents: 20000n,
+      stalenessIntervalDays: null,
+      balanceAsOf: new Date('2020-01-01T00:00:00Z'),
+    });
+
+    expect(await kinds()).toEqual([]);
+  });
+
+  it('summarizes rather than listing every one', async () => {
+    for (const name of ['Cash', 'Wallet', 'House', 'Boat', 'Vault']) {
+      await makeAccount({
+        name,
+        type: 'asset',
+        balanceCents: 1n,
+        stalenessIntervalDays: 30,
+        balanceAsOf: new Date('2026-06-01T00:00:00Z'),
+      });
+    }
+
+    const notifications = await buildNotifications(prisma, ZONE, NOW);
+    expect(notifications[0]?.message).toContain('2 more');
+  });
+});
+
+describe('the uncategorized backlog', () => {
+  it('is informational rather than a fault, and reports its age', async () => {
+    const account = await makeAccount({ name: 'Everyday', type: 'asset', balanceCents: 500000n });
+    await makeTransaction({
+      accountId: account.id,
+      amountCents: -4210n,
+      postedAt: new Date('2026-07-30T00:00:00Z'),
+    });
+
+    const notifications = await buildNotifications(prisma, ZONE, NOW);
+    const backlog = notifications.find((n) => n.kind === 'uncategorized_backlog');
+    expect(backlog?.severity).toBe('info');
+    expect(backlog?.message).toContain('10 days ago');
+  });
+
+  it('disappears once everything is categorized', async () => {
+    const account = await makeAccount({ name: 'Everyday', type: 'asset', balanceCents: 500000n });
+    const grocery = await makeDelegation({ name: 'Grocery' });
+    const transaction = await makeTransaction({ accountId: account.id, amountCents: -4210n });
+    await categorizeTransaction(prisma, transaction.id, grocery.id);
+
+    expect(await kinds()).not.toContain('uncategorized_backlog');
+  });
+
+  /** Income and confirmed transfers allocate to nothing; they are not a backlog. */
+  it('ignores transactions that are not spending', async () => {
+    const account = await makeAccount({ name: 'Everyday', type: 'asset', balanceCents: 500000n });
+    await makeTransaction({ accountId: account.id, amountCents: 489000n, kind: 'income' });
+
+    expect(await kinds()).not.toContain('uncategorized_backlog');
+  });
+});
+
+describe('a stale Bitcoin price', () => {
+  it('is flagged, since holdings are still valued at it', async () => {
+    await recordSpotPrice(
+      prisma,
+      { priceCents: 10_000_000n, source: 'coingecko', timeZone: ZONE },
+      new Date('2026-08-07T12:00:00Z'),
+    );
+
+    const notifications = await buildNotifications(prisma, ZONE, NOW);
+    const stale = notifications.find((n) => n.kind === 'bitcoin_price_stale');
+    expect(stale?.severity).toBe('warning');
+    expect(stale?.message).toContain('2 days ago');
+  });
+
+  it('says nothing when the price is today', async () => {
+    await recordSpotPrice(
+      prisma,
+      { priceCents: 10_000_000n, source: 'coingecko', timeZone: ZONE },
+      NOW,
+    );
+    expect(await kinds()).not.toContain('bitcoin_price_stale');
+  });
+});
+
+describe('accounts a sync discovered', () => {
+  it('are flagged, because their type is a guess', async () => {
+    const account = await makeAccount({ name: 'Discovered', type: 'asset', balanceCents: 1n });
+    await prisma.account.update({ where: { id: account.id }, data: { needsReview: true } });
+
+    expect(await kinds()).toContain('accounts_need_review');
+  });
+});
+
+/**
+ * The backup, which is the only condition here that can cost the household its
+ * data rather than its accuracy.
+ *
+ * These exist because the real deployment's nightly dump failed with a
+ * permission error every night from go-live, was logged at error level each
+ * time, and nothing anywhere read the log. The lesson is in the shape of the
+ * check: it asks whether a dump has landed, not whether the last attempt threw.
+ */
+describe('the backup', () => {
+  async function backupDir(): Promise<string> {
+    return mkdtemp(join(tmpdir(), 'delegate-backups-'));
+  }
+
+  /**
+   * Ages the deployment past one backup cycle.
+   *
+   * The check stays quiet on an install too young for a dump to have been due,
+   * so every test that expects it to speak has to get past that first — which
+   * is the clearest possible statement of the rule.
+   */
+  async function deploymentIsOldEnough(): Promise<void> {
+    await prisma.user.updateMany({
+      data: { createdAt: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) },
+    });
+  }
+
+  /** A dump and its checksum, aged by however many hours. */
+  async function writeDump(directory: string, hoursOld: number): Promise<void> {
+    const name = join(directory, `delegate-2026${String(hoursOld).padStart(4, '0')}-000000.dump`);
+    await writeFile(name, 'x'.repeat(2048));
+    await writeFile(`${name}.sha256`, 'deadbeef');
+    const when = new Date(Date.now() - hoursOld * 60 * 60 * 1000);
+    await utimes(name, when, when);
+  }
+
+  it('says so, in the strongest terms, when none has ever completed', async () => {
+    await deploymentIsOldEnough();
+    const directory = await backupDir();
+    const notifications = await buildNotifications(prisma, ZONE, new Date(), {
+      backupDir: directory,
+    });
+
+    const backup = notifications.find((one) => one.kind === 'backup_failing');
+    expect(backup?.severity).toBe('danger');
+    expect(backup?.message).toContain('exists in one place');
+  });
+
+  it('is quiet when a recent dump is there', async () => {
+    const directory = await backupDir();
+    await writeDump(directory, 3);
+
+    const notifications = await buildNotifications(prisma, ZONE, new Date(), {
+      backupDir: directory,
+    });
+    expect(notifications.find((one) => one.kind === 'backup_failing')).toBeUndefined();
+  });
+
+  it('raises once two nightly runs have been missed', async () => {
+    await deploymentIsOldEnough();
+    const directory = await backupDir();
+    await writeDump(directory, 60);
+
+    const notifications = await buildNotifications(prisma, ZONE, new Date(), {
+      backupDir: directory,
+    });
+    expect(notifications.find((one) => one.kind === 'backup_failing')?.message).toContain(
+      '2 days old',
+    );
+  });
+
+  /*
+   * The failure that actually happened, in miniature.
+   *
+   * `backup.sh` writes to a `.partial` name and renames the dump and its
+   * checksum together, so a dump with no sidecar is the wreckage of a run that
+   * died partway. Counting it would report a backup on the strength of the file
+   * that proves there isn't one.
+   */
+  it('does not count a dump whose checksum never landed', async () => {
+    await deploymentIsOldEnough();
+    const directory = await backupDir();
+    await writeFile(join(directory, 'delegate-20260824-000000.dump'), 'x'.repeat(2048));
+
+    const notifications = await buildNotifications(prisma, ZONE, new Date(), {
+      backupDir: directory,
+    });
+    expect(notifications.find((one) => one.kind === 'backup_failing')).toBeDefined();
+  });
+
+  /*
+   * A deployment younger than one backup cycle is not failing, it is new. A
+   * banner that is wrong on day one is one nobody trusts on day ninety.
+   */
+  it('stays quiet on an install too young for a dump to have been due', async () => {
+    const directory = await backupDir();
+    const notifications = await buildNotifications(prisma, ZONE, new Date(), {
+      backupDir: directory,
+    });
+    expect(notifications.find((one) => one.kind === 'backup_failing')).toBeUndefined();
+  });
+
+  it('does not run at all when no directory is configured', async () => {
+    const notifications = await buildNotifications(prisma, ZONE, new Date());
+    expect(notifications.find((one) => one.kind === 'backup_failing')).toBeUndefined();
+  });
+});
+
+describe('an overdue bill', () => {
+  /** Three monthly charges ending well before NOW, so the next one is late. */
+  async function lateWaterBill(): Promise<void> {
+    const account = await makeAccount({
+      name: 'Everyday Checking',
+      type: 'asset',
+      balanceCents: 500000n,
+    });
+    // Expected 3 August against a NOW of the 9th: six days late, which is past
+    // the grace and nowhere near the point where a bill has plainly stopped.
+    for (const day of ['2026-05-05', '2026-06-04', '2026-07-04']) {
+      await makeTransaction({
+        accountId: account.id,
+        amountCents: -11800n,
+        description: 'CITY WATER UTILITY',
+        postedAt: new Date(`${day}T15:00:00Z`),
+      });
+    }
+  }
+
+  it('is reported, and leads to the page that lists it', async () => {
+    await lateWaterBill();
+
+    const notifications = await buildNotifications(prisma, ZONE, NOW);
+    const overdue = notifications.find((entry) => entry.kind === 'recurring_bill_overdue');
+
+    expect(overdue?.pill).toBe('1 bill overdue');
+    expect(overdue?.actionPath).toBe('/bills');
+    // The count is the pill's whole detail; which bill and how late is the
+    // sentence behind it.
+    expect(overdue?.message).toContain('CITY WATER UTILITY');
+  });
+
+  it('is silent when the household has turned it off', async () => {
+    await lateWaterBill();
+    await prisma.budgetSettings.update({
+      where: { id: 1 },
+      data: { recurringAlertsEnabled: false },
+    });
+
+    const notifications = await buildNotifications(prisma, ZONE, NOW);
+
+    expect(notifications.some((entry) => entry.kind === 'recurring_bill_overdue')).toBe(false);
+  });
+});
+
+describe('the route', () => {
+  it('requires a session', async () => {
+    const response = await app.inject({ method: 'GET', url: '/api/notifications' });
+    expect(response.statusCode).toBe(401);
+  });
+
+  it('carries the action so a banner can lead somewhere', async () => {
+    await prisma.syncRun.create({
+      data: { status: 'failed', startedAt: new Date(), correlationId: 'test-run-3' },
+    });
+
+    const response = await app.inject({
+      method: 'GET',
+      url: '/api/notifications',
+      headers: { cookie },
+    });
+    const body = response.json<{ notifications: { actionPath: string }[] }>();
+
+    expect(body.notifications[0]?.actionPath).toBe('/settings/sync');
+  });
+});
+
+/**
+ * Whether the nightly snapshot ran.
+ *
+ * The endpoint that answers this was written because of the backup failure —
+ * "check for the evidence a job leaves, not the absence of an error" — and was
+ * then called by nothing at all, which is that same failure happening to the
+ * fix for it. What goes wrong quietly is Insights: it gains a day a night and
+ * there is no backfill, so a job that stopped in March draws a chart that
+ * simply ends.
+ */
+describe('the nightly snapshot', () => {
+  const NOW = new Date('2026-08-08T12:00:00Z');
+  const DAY = 24 * 60 * 60 * 1000;
+
+  /**
+   * A deployment old enough that a missing snapshot is a fault, not newness.
+   *
+   * The suite's `beforeEach` already runs first-run setup, so the owner exists;
+   * this ages that account, which is what stands in for a deployment date.
+   */
+  async function settledDeployment(): Promise<void> {
+    await prisma.user.updateMany({ data: { createdAt: new Date(NOW.getTime() - 30 * DAY) } });
+  }
+
+  async function snapshotOn(daysAgo: number): Promise<void> {
+    const date = new Date(NOW.getTime() - daysAgo * DAY);
+    await prisma.aggregateSnapshot.create({
+      data: {
+        snapshotDate: new Date(
+          Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()),
+        ),
+        provenance: 'observed',
+        netWorthAssetsCents: 0n,
+        netWorthDebtsCents: 0n,
+        netWorthCents: 0n,
+        budgetAssetsCents: 0n,
+        budgetDebtsCents: 0n,
+        totalDelegationsCents: 0n,
+        pendingCategorizedCents: 0n,
+        identityValueCents: 0n,
+      },
+    });
+  }
+
+  function pillOf(list: Awaited<ReturnType<typeof buildNotifications>>): string | undefined {
+    return list.find((entry) => entry.kind === 'snapshot_stale')?.pill;
+  }
+
+  it('says nothing while last night was recorded', async () => {
+    await settledDeployment();
+    // A run is always for the previous day, so yesterday is what "current"
+    // looks like — not today.
+    await snapshotOn(1);
+
+    expect(pillOf(await buildNotifications(prisma, 'UTC', NOW))).toBeUndefined();
+  });
+
+  it('raises a pill once nothing has been recorded for days', async () => {
+    await settledDeployment();
+    await snapshotOn(9);
+
+    const entry = (await buildNotifications(prisma, 'UTC', NOW)).find(
+      (n) => n.kind === 'snapshot_stale',
+    );
+    expect(entry?.pill).toBe('Insights stalled');
+    expect(entry?.message).toContain('no backfill');
+  });
+
+  it('says so when no night has ever been recorded', async () => {
+    await settledDeployment();
+
+    const entry = (await buildNotifications(prisma, 'UTC', NOW)).find(
+      (n) => n.kind === 'snapshot_stale',
+    );
+    expect(entry?.message).toContain('No nightly snapshot has ever been recorded');
+  });
+
+  /**
+   * The guard the backup card taught. A fresh install has no snapshots at all
+   * and `snapshotStatus` correctly reports stale — raising on the first evening
+   * would be a warning that is wrong on day one, which is not trusted on day
+   * ninety.
+   */
+  it('is silent on a deployment too new to have recorded anything', async () => {
+    await prisma.user.updateMany({
+      data: { createdAt: new Date(NOW.getTime() - 6 * 60 * 60 * 1000) },
+    });
+
+    expect(pillOf(await buildNotifications(prisma, 'UTC', NOW))).toBeUndefined();
+  });
+});

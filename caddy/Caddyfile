@@ -1,0 +1,28 @@
+# Automatic HTTPS for a Delegate deployment that has a domain name.
+#
+# Only used when the `https` profile is on. Without it Delegate publishes its own
+# port and speaks plain http, which is correct on a LAN and behind a tunnel
+# (ADR 017) and is what every existing deployment does.
+#
+# `{$DELEGATE_DOMAIN}` is substituted by Caddy at start-up from the environment.
+# Naming a real domain here is what triggers a Let's Encrypt certificate: Caddy
+# requests one on first start, renews it on its own, and redirects http to https.
+# That is the whole of the configuration — there is no certificate path to set
+# and nothing to renew by hand.
+{$DELEGATE_DOMAIN} {
+	# The application, by service name on the compose network. It publishes no
+	# port of its own when this profile is on, so this is the only way in.
+	reverse_proxy app:3000
+
+	# Caddy sets X-Forwarded-For itself. The application only believes it when
+	# TRUST_PROXY says to — see ADR 018, and the boot warning that fires when a
+	# forwarded header arrives and nothing is configured to trust it. Without
+	# that, every request looks like it came from this container and the sign-in
+	# rate limit becomes one shared bucket for the whole internet.
+	header {
+		# The application sets its own security headers; these are the two that
+		# only make sense once TLS is real, and Caddy is where TLS is real.
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		-Server
+	}
+}

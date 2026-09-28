@@ -1,0 +1,391 @@
+import {
+  maximumProgress,
+  sumCents,
+  targetProgress,
+  type Cents,
+  type GroupingSection,
+  type IdentityResult,
+  type MaximumProgress,
+  type TargetProgress,
+} from '@budget/shared';
+import type { Db } from '../db/client.js';
+import { localDayKey } from './calendar.js';
+import { balanceWithStandby, standbyAdjustments } from './standby.js';
+import { computeBudgetIdentity } from './identity.js';
+import { getBudgetSettings } from './settings.js';
+
+/**
+ * The Budget page read model.
+ *
+ * One query set builds the whole page — three sections, their groupings, and the
+ * identity across the bottom. It is assembled server-side so the UI never has to
+ * derive a total itself: a number computed in two places is a number that will
+ * eventually disagree with itself.
+ *
+ * Ordering is alphabetical everywhere, which is the only order this system has.
+ */
+
+export interface BudgetRow {
+  /** Where this line sits among its neighbours. Accounts have none. */
+  readonly position: number;
+  readonly id: string;
+  readonly name: string;
+  readonly balanceCents: Cents;
+  /** Null for assets and debts, and for ad-hoc delegations. Null is not zero. */
+  readonly amountToDelegateCents: Cents | null;
+  readonly groupingId: string | null;
+  readonly isUtility: boolean;
+  readonly notes: string | null;
+  /** Assets and debts only. */
+  readonly source: string | null;
+  /** Assets and debts only; null for a delegation, which is neither. */
+  readonly type: 'asset' | 'debt' | null;
+  /**
+   * Which Settings tab owns this row's lifecycle — ADR 021.
+   *
+   * On the page it is the difference between a bank balance and a figure that
+   * moves on its own: a holding is a quantity times a price, revalued daily with
+   * no transaction behind it, and a property is a dated valuation. Both read as
+   * ordinary balances without something saying otherwise.
+   */
+  readonly managedAs: 'none' | 'bitcoin' | 'property';
+  readonly inBudget: boolean;
+  readonly inNetWorth: boolean;
+  readonly needsReview: boolean;
+  /** The institution's balance already carries its pending charges — ADR 074. */
+  readonly balanceIncludesPending: boolean;
+  readonly balanceAsOf: Date | null;
+  /** The date the feed put on this balance; null for a manual account. */
+  readonly feedBalanceAsOf: Date | null;
+  /** When the feed last listed this account at all. Null means not asked yet. */
+  readonly feedLastSeenAt: Date | null;
+  readonly stalenessIntervalDays: number | null;
+  /**
+   * How much of `balanceCents` is hand-entered activity the feed has not
+   * reported — see `domain/standby.ts`. Zero on almost every row, and on all of
+   * them when nothing is in standby.
+   *
+   * Carried so the row can say the figure is part institution and part
+   * household. A balance quietly holding both, with nothing on the row to say
+   * so, is the sort of number somebody trusts and should not.
+   */
+  readonly standbyCents: Cents;
+  /** `check` rows are outstanding checks — see domain/checks.ts. */
+  readonly kind: 'envelope' | 'check';
+  /** Checks only: the number that identifies one among several outstanding. */
+  readonly checkNumber: string | null;
+  readonly checkMemo: string | null;
+  readonly checkIssuedAt: Date | null;
+  /**
+   * What this line is saving towards, and whether it will make it.
+   *
+   * Derived here rather than on the page, because the answer is a comparison
+   * against the pay cadence and the household's today — two facts the interface
+   * would otherwise need its own copy of. Null where there is no target, which
+   * is most rows.
+   */
+  readonly target: TargetProgress | null;
+  /**
+   * The ceiling this line stops at when Delegate is pressed, and what that does
+   * to the next press. Null where there is no maximum, which is most rows.
+   *
+   * Derived here for the same reason the target's reading is: the answer is a
+   * comparison the page would otherwise need its own copy of, and the run reads
+   * the identical function — so the figure on the row is the figure the ledger
+   * will record.
+   */
+  readonly max: MaximumProgress | null;
+}
+
+export interface BudgetGrouping {
+  readonly id: string;
+  readonly name: string;
+  /** Where it sits among the other groupings of its section. */
+  readonly position: number;
+  readonly color: string | null;
+  readonly collapsed: boolean;
+  /** Set on groupings the application owns, currently only outstanding checks. */
+  readonly systemKey: string | null;
+  /** Summed from children, so a collapsed row can show totals without a second query. */
+  readonly balanceCents: Cents;
+  readonly amountToDelegateCents: Cents | null;
+  readonly rows: readonly BudgetRow[];
+}
+
+export interface BudgetSection {
+  readonly section: GroupingSection;
+  readonly groupings: readonly BudgetGrouping[];
+  /** Rows with no grouping, shown after the groupings. */
+  readonly ungrouped: readonly BudgetRow[];
+  readonly totalBalanceCents: Cents;
+  readonly totalAmountToDelegateCents: Cents | null;
+}
+
+export interface BudgetView {
+  readonly assets: BudgetSection;
+  readonly debts: BudgetSection;
+  readonly delegations: BudgetSection;
+  readonly identity: IdentityResult;
+  /** Start of the current cycle: the most recent Delegate press. Null before the first. */
+  readonly cycleStartedAt: Date | null;
+}
+
+/**
+ * Rows and groupings sit where they were put; ties break on name.
+ *
+ * Everything untouched carries position 0, so an ordering that has never been
+ * changed falls through to the alphabetical comparison and reads exactly as it
+ * always did. A row leaves the alphabet only once somebody moves it.
+ */
+const byPosition = (
+  a: { position: number; name: string },
+  b: { position: number; name: string },
+): number => (a.position === b.position ? byName(a, b) : a.position - b.position);
+
+const byName = (a: { name: string }, b: { name: string }): number =>
+  a.name.localeCompare(b.name, 'en', { sensitivity: 'base' });
+
+/**
+ * Sums amounts to delegate across rows.
+ *
+ * Returns null when every row is ad-hoc, so a grouping of ad-hoc lines shows an
+ * em-dash rather than `$0` — null means "adds nothing at Delegate time", which
+ * reads differently from a deliberate zero.
+ */
+function sumAmountToDelegate(rows: readonly BudgetRow[]): Cents | null {
+  const present = rows
+    .map((row) => row.amountToDelegateCents)
+    .filter((value): value is Cents => value !== null);
+  return present.length === 0 ? null : sumCents(present);
+}
+
+function groupRows(
+  section: GroupingSection,
+  groupings: readonly {
+    id: string;
+    name: string;
+    color: string | null;
+    collapsed: boolean;
+    section: GroupingSection;
+    systemKey: string | null;
+    position: number;
+  }[],
+  rows: readonly BudgetRow[],
+): BudgetSection {
+  const sectionGroupings = groupings.filter((grouping) => grouping.section === section);
+
+  const built = sectionGroupings
+    .map((grouping): BudgetGrouping => {
+      const children = rows.filter((row) => row.groupingId === grouping.id).sort(byPosition);
+      return {
+        id: grouping.id,
+        name: grouping.name,
+        position: grouping.position,
+        color: grouping.color,
+        collapsed: grouping.collapsed,
+        systemKey: grouping.systemKey,
+        balanceCents: sumCents(children.map((child) => child.balanceCents)),
+        amountToDelegateCents: sumAmountToDelegate(children),
+        rows: children,
+      };
+    })
+    // Alphabetical, except that the groupings the application owns sit at the
+    // bottom. Outstanding checks are a holding pen rather than part of the plan,
+    // and sorting them into the middle of it by name would read as if they were.
+    .filter((grouping) => grouping.systemKey === null || grouping.rows.length > 0)
+    .sort((a, b) => {
+      // The application's own groupings sort last however anything else is
+      // ordered: outstanding checks are where the budget puts money that has
+      // left in paper form, not a heading anybody filed anything under.
+      if ((a.systemKey === null) !== (b.systemKey === null)) return a.systemKey === null ? -1 : 1;
+      return byPosition(a, b);
+    });
+
+  const ungrouped = rows.filter((row) => row.groupingId === null).sort(byPosition);
+
+  return {
+    section,
+    groupings: built,
+    ungrouped,
+    totalBalanceCents: sumCents(rows.map((row) => row.balanceCents)),
+    totalAmountToDelegateCents: sumAmountToDelegate(rows),
+  };
+}
+
+/**
+ * `timeZone` decides which day "today" is, and the cadence how many paychecks
+ * are left before a target's date — both come from the household's settings, and
+ * the zone's environment fallback is the route's to resolve.
+ */
+export async function buildBudgetView(
+  db: Db,
+  options: { readonly timeZone: string; readonly now?: Date },
+): Promise<BudgetView> {
+  const [settings, accounts, delegations, groupings, identity, standby, latestRun] =
+    await Promise.all([
+      getBudgetSettings(db),
+      db.account.findMany({
+        // Off-budget accounts belong to net worth, not to this page.
+        where: { archivedAt: null, inBudget: true },
+        select: {
+          id: true,
+          name: true,
+          nickname: true,
+          type: true,
+          source: true,
+          balanceCents: true,
+          groupingId: true,
+          needsReview: true,
+          balanceIncludesPending: true,
+          balanceAsOf: true,
+          feedBalanceAsOf: true,
+          feedLastSeenAt: true,
+          stalenessIntervalDays: true,
+          position: true,
+          inBudget: true,
+          inNetWorth: true,
+          managedAs: true,
+        },
+      }),
+      db.delegation.findMany({
+        where: { archivedAt: null },
+        select: {
+          id: true,
+          name: true,
+          balanceCents: true,
+          amountToDelegateCents: true,
+          groupingId: true,
+          position: true,
+          isUtility: true,
+          notes: true,
+          kind: true,
+          checkNumber: true,
+          checkMemo: true,
+          checkIssuedAt: true,
+          targetCents: true,
+          targetDate: true,
+          targetIntervalMonths: true,
+          maxBalanceCents: true,
+        },
+      }),
+      db.grouping.findMany({
+        where: { archivedAt: null },
+        select: {
+          id: true,
+          name: true,
+          color: true,
+          collapsed: true,
+          section: true,
+          systemKey: true,
+          position: true,
+        },
+      }),
+      computeBudgetIdentity(db),
+      standbyAdjustments(db),
+      db.delegateRun.findFirst({
+        where: { undoneAt: null },
+        orderBy: { createdAt: 'desc' },
+        select: { createdAt: true },
+      }),
+    ]);
+
+  const accountRow = (account: (typeof accounts)[number]): BudgetRow => ({
+    id: account.id,
+    // The nickname exists precisely for this page. The real name stays on
+    // Settings → Accounts, where identifying the account is the point.
+    name: account.nickname ?? account.name,
+    // The institution's figure plus whatever was typed in while its feed was
+    // behind. Identical to the stored column whenever nothing is in standby,
+    // which is the ordinary case.
+    balanceCents: balanceWithStandby(
+      account.type,
+      account.balanceCents,
+      standby.get(account.id) ?? 0n,
+    ),
+    standbyCents: standby.get(account.id) ?? 0n,
+    // Assets and debts have no amount to delegate; the column is empty for them.
+    amountToDelegateCents: null,
+    groupingId: account.groupingId,
+    position: account.position,
+    isUtility: false,
+    notes: null,
+    source: account.source,
+    type: account.type,
+    managedAs: account.managedAs,
+    inBudget: account.inBudget,
+    inNetWorth: account.inNetWorth,
+    needsReview: account.needsReview,
+    balanceIncludesPending: account.balanceIncludesPending,
+    balanceAsOf: account.balanceAsOf,
+    feedBalanceAsOf: account.feedBalanceAsOf,
+    feedLastSeenAt: account.feedLastSeenAt,
+    stalenessIntervalDays: account.stalenessIntervalDays,
+    kind: 'envelope',
+    checkNumber: null,
+    checkMemo: null,
+    checkIssuedAt: null,
+    // An account is not saving towards anything; a target is a delegation's.
+    target: null,
+    // Nor is an account delegated into, so there is nothing to cap.
+    max: null,
+  });
+
+  const today = localDayKey(options.now ?? new Date(), options.timeZone);
+
+  const delegationRows: BudgetRow[] = delegations.map((delegation) => ({
+    id: delegation.id,
+    name: delegation.name,
+    balanceCents: delegation.balanceCents,
+    amountToDelegateCents: delegation.amountToDelegateCents,
+    groupingId: delegation.groupingId,
+    position: delegation.position,
+    isUtility: delegation.isUtility,
+    notes: delegation.notes,
+    // A delegation is not an account and has no feed to be behind.
+    standbyCents: 0n,
+    source: null,
+    type: null,
+    // Delegations are not accounts; these are an account's business.
+    managedAs: 'none',
+    inBudget: false,
+    inNetWorth: false,
+    needsReview: false,
+    balanceIncludesPending: false,
+    balanceAsOf: null,
+    feedBalanceAsOf: null,
+    feedLastSeenAt: null,
+    stalenessIntervalDays: null,
+    kind: delegation.kind,
+    checkNumber: delegation.checkNumber,
+    checkMemo: delegation.checkMemo,
+    checkIssuedAt: delegation.checkIssuedAt,
+    /*
+     * `today` is a date key and so is `targetDate`, so the comparison between
+     * them is plain calendar arithmetic with no zone in it. The zone was spent
+     * one line up, turning an instant into the household's day — ADR 037 keeps
+     * those two ideas apart by name for exactly this reason.
+     */
+    target: targetProgress(delegation, settings.payCadence, today),
+    /*
+     * No zone and no cadence in this one: what a press moves depends only on
+     * what the line holds, what it is set to receive and where its ceiling is.
+     */
+    max: maximumProgress(delegation),
+  }));
+
+  return {
+    assets: groupRows(
+      'assets',
+      groupings,
+      accounts.filter((account) => account.type === 'asset').map(accountRow),
+    ),
+    debts: groupRows(
+      'debts',
+      groupings,
+      accounts.filter((account) => account.type === 'debt').map(accountRow),
+    ),
+    delegations: groupRows('delegations', groupings, delegationRows),
+    identity,
+    cycleStartedAt: latestRun?.createdAt ?? null,
+  };
+}
