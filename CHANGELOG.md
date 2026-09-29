@@ -6,6 +6,10 @@ phase (`v0.1.0-phase1`, and so on).
 
 ## [Unreleased]
 
+Nothing yet.
+
+## [0.82.0] — 2026-09-29
+
 ### Added
 
 - **Screenshots in the README**, of the real application drawing an invented
