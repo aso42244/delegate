@@ -27,7 +27,7 @@ running container.
 
 ## Audit
 
-CI runs two checks on every push:
+`npm run verify` runs two checks:
 
 - `npm audit --omit=dev --audit-level=high` — **fails the build**. A high or
   critical advisory in something that ships is a reason to stop.
@@ -66,7 +66,7 @@ changelog read first. The ones that need care:
   container's platform, or the image build starts compiling.
 
 After any dependency change, rebuild and re-run the container health check that
-CI performs, because a runtime failure in a native module does not show up in a
+`npm run verify` performs, because a runtime failure in a native module does not show up in a
 type check.
 
 ## Adding one

@@ -319,7 +319,7 @@ and the image is published on version tags. The NAS is one deployment
 of many rather than the deployment, and it keeps working — it adopts the secrets
 already in its `.env`.
 
-318 unit, 735 integration and 217 end-to-end tests. There is no CI: GitHub stores the code and nothing else
+395 unit, 921 integration and 291 end-to-end tests, as of v0.81.0. There is no CI: GitHub stores the code and nothing else
 ([ADR 022](decisions/022-the-checks-run-here-not-on-github.md)), and every gate
 runs locally through `npm run verify`.
 
@@ -1584,9 +1584,9 @@ one of them will recur somewhere else.
 npm run verify            # everything, in the order CI used to run it
 npm run verify:quick      # the same, minus the container image build
 
-npm run test              # 318 unit
-npm run test:integration  # 735 integration
-npm run test:e2e          # 217 end-to-end, needs a build first
+npm run test              # 395 unit
+npm run test:integration  # 921 integration
+npm run test:e2e          # 291 end-to-end, needs a build first
 ```
 
 `npm run verify` is the gate. It runs migrations, typecheck, lint, formatting,

@@ -6,7 +6,16 @@ phase (`v0.1.0-phase1`, and so on).
 
 ## [Unreleased]
 
-Nothing yet.
+### Changed
+
+- **The repository starts a fresh history.** Personal data that had reached test
+  fixtures and documentation — names, real bank and merchant strings, amounts and
+  details of one deployment — was replaced with invented placeholders, and the
+  history that carried it was left behind. Pull request numbers cited in older
+  entries below refer to that earlier history.
+- **The README describes the application as it is**, rather than the first phase
+  of building it, and `docs/open-questions.md` holds only questions that are still
+  open. The Phase 5 prompt is gone with the phase.
 
 ## [0.81.0] — 2026-09-25
 

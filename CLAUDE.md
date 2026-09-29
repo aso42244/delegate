@@ -40,7 +40,7 @@ build failure rather than a preference:
   hand-rolled page header, an undeclared field width, a bare `<details>`, or a
   create button named anything but `New <noun>`. If a rule genuinely does not
   fit, change the spec and the test deliberately — do not work around them.
-- **The asset class term is banned; the asset is Bitcoin.** CI enforces it.
+- **The asset class term is banned; the asset is Bitcoin.** The gate enforces it.
   Narrowed by ADR 010: `node:crypto` and cryptography generally are fine.
 - **USD only.**
 

@@ -201,7 +201,7 @@ is stored, and reversal sets `reversed_at` rather than deleting anything.
 `delegations.balance_cents` is a **cache**, written inside the same database
 transaction as the event insert. The events are the truth. `recompute-balances`
 rebuilds every cache from events and exits non-zero if it had to change anything;
-CI runs it with `--check`, and an integration test asserts the two agree after a
+`npm run verify` runs it with `--check`, and an integration test asserts the two agree after a
 long mixed sequence of operations.
 
 ### Event types
