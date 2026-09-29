@@ -20,7 +20,7 @@ Without it the first three terms are out of step by the amount of the charge. Se
 ADR 020. An account whose institution already counts its pending charges in the
 balance it reports is marked as such and left out of this term — ADR 074.
 
-That difference is displayed as a chip beside the Budget page title — `Balanced`,
+That difference is displayed as a chip in the sidebar, above Delegate — `Balanced`,
 `To delegate $1,000.00`, `Over delegated $212.00`. It is not enforced by
 double-entry bookkeeping and it is not always zero. It is a reading.
 
@@ -564,7 +564,7 @@ shape are worth stating here because they are easy to undo by accident:
 - **Two scopes, because the app has two.** Net worth includes the house and the
   mortgage; the identity is precisely the reading that excludes them. Both pairs
   of totals are stored, and `identity_value_cents` is the **four-term** figure —
-  the pending term included, so it matches the chip on the Budget page.
+  the pending term included, so it matches the chip in the sidebar.
 
 History starts at the first run after deploy. There is deliberately no backfill.
 

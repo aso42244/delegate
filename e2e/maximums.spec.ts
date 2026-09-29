@@ -26,7 +26,7 @@ async function landedPaycheck(api: APIRequestContext): Promise<void> {
 
 test('a maximum caps the press and leaves the rest to delegate', async ({ signedIn, api }) => {
   await landedPaycheck(api);
-  await signedIn.goto('/budget');
+  await signedIn.goto('/overview?lines=all');
 
   await signedIn.getByRole('button', { name: 'Options for Car repairs' }).click();
   await signedIn.getByRole('menuitem', { name: 'Set a maximum' }).click();
@@ -78,7 +78,7 @@ test('a line already at its maximum receives nothing', async ({ signedIn, api })
   await api.post(`/api/delegations/${id}/adjust`, { data: { deltaCents: '40000' } });
   await api.patch(`/api/delegations/${id}`, { data: { maxBalanceCents: '40000' } });
 
-  await signedIn.goto('/budget');
+  await signedIn.goto('/overview?lines=all');
 
   await signedIn.getByRole('button', { name: 'Options for Car repairs' }).click();
   await signedIn.getByRole('menuitem', { name: /Edit the maximum/ }).click();
@@ -98,7 +98,7 @@ test('a line already at its maximum receives nothing', async ({ signedIn, api })
 
 test('a maximum is removed from the same dialog', async ({ signedIn, api }) => {
   await landedPaycheck(api);
-  await signedIn.goto('/budget');
+  await signedIn.goto('/overview?lines=all');
 
   await signedIn.getByRole('button', { name: 'Options for Car repairs' }).click();
   await signedIn.getByRole('menuitem', { name: 'Set a maximum' }).click();

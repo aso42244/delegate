@@ -1,8 +1,6 @@
 import {
   canManageUsers,
   canModifyUser,
-  DEFAULT_LANDING_PAGE,
-  type LandingPage,
   type UserRole,
 } from '@budget/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -135,19 +133,6 @@ export function YourAccount(): ReactNode {
     },
   });
 
-  const landing = useMutation({
-    mutationFn: (next: LandingPage) => authApi.setLandingPage(next),
-    onSuccess: async () => {
-      setProblem(null);
-      setSaved(true);
-      await refresh();
-    },
-    onError: (error: unknown) => {
-      setSaved(false);
-      setProblem(messageOf(error));
-    },
-  });
-
   return (
     <SettingsCard
       span="third"
@@ -170,28 +155,6 @@ export function YourAccount(): ReactNode {
           placeholder={user?.username ?? ''}
           hint="Empty uses your username."
         />
-
-        {/*
-          Where you land, beside what you are called — both are yours to set
-          whatever role you hold, and neither is a credential.
-
-          Per person and not per household: the two people reading this budget
-          read it for different reasons, one for a daily glance and one to work
-          on it, so a single household setting would make one of them wrong
-          every day. It saves on change, like the cadence on Settings → Budget,
-          because a select with a Save button beside it is a control people
-          leave unsaved.
-        */}
-        <SelectField
-          width="md"
-          label="Start on"
-          value={user?.landingPage ?? DEFAULT_LANDING_PAGE}
-          onChange={(next) => landing.mutate(next as LandingPage)}
-          hint="Where Delegate opens for you."
-        >
-          <option value="overview">Overview</option>
-          <option value="budget">Budget</option>
-        </SelectField>
 
         <p className="text-quiet text-muted">
           Signed in as <span className="text-ink">{user?.username}</span> ·{' '}

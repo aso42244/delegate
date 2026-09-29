@@ -152,7 +152,7 @@ test('no notification offers a dismissal', async ({ signedIn }) => {
  */
 test('the reading sits above Delegate, is coloured, and goes to Overview', async ({ signedIn }) => {
   await makeSyncFailure('connection refused');
-  await signedIn.goto('/budget');
+  await signedIn.goto('/overview?lines=all');
 
   const nav = signedIn.getByRole('navigation', { name: 'Main' });
   const reading = nav.getByRole('link', { name: /Balanced|To delegate|Over-delegated/ });
@@ -216,7 +216,7 @@ test('the backlog is one control, above Delegate, and not also a tag', async ({
     },
   });
 
-  await signedIn.goto('/budget');
+  await signedIn.goto('/overview?lines=all');
 
   const nav = signedIn.getByRole('navigation', { name: 'Main' });
   const backlog = nav.getByRole('link', { name: '1 new transaction' });

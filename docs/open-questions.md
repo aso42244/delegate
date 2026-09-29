@@ -8,10 +8,6 @@ by it, and the maintainer's to decide. An answered question becomes an ADR in
 
 ## The product
 
-- **Does the Budget page come back to the sidebar?** It was hidden for a trial by
-  [ADR 067](decisions/067-the-budget-page-is-hidden-for-a-trial.md), with Overview
-  given what it needed to stand in, and a review date of 2026-09-29. The page and
-  its route still exist.
 - **Do the six sub-AA colour pairs in the Light palette stay?** `design.md` §2 is a
   settled specification and `theme-contrast.test.ts` records the six pairs at
   their current values, so they cannot get worse without the gate failing. Whether

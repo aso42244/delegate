@@ -1615,7 +1615,7 @@ test('a waiting charge is categorized from the Overview tile', async ({ signedIn
    * balance of -$42.10 on that line — a figure that was not there a moment ago
    * and could only have come from the envelope ledger.
    */
-  await signedIn.goto('/budget');
+  await signedIn.goto('/overview?lines=all');
   await expect(signedIn.getByRole('row', { name: /Grocery/ })).toContainText('-$42.10');
 });
 

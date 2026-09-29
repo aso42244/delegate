@@ -6,6 +6,19 @@ phase (`v0.1.0-phase1`, and so on).
 
 ## [Unreleased]
 
+### Removed
+
+- **The Budget page** ([ADR 067](docs/decisions/067-the-budget-page-is-hidden-for-a-trial.md),
+  concluded). Its trial out of the navigation ended with Overview judged enough:
+  the band draws the same delegation and account tables, with every row menu and
+  editable figure. `/budget` now opens Overview. The **Stacked / Two columns**
+  choice on Settings → Display went with it, and so did **Start on** in
+  Settings → Users — with one page left to land on it was a choice of one, and a
+  stored choice of Budget lands on Overview.
+- **The demo at `/demo`** ([ADR 058](docs/decisions/058-the-demo-is-a-route.md),
+  superseded). It drew one page with its controls hidden, which showed less of
+  the application than a screenshot does.
+
 ### Changed
 
 - **The repository starts a fresh history.** Personal data that had reached test

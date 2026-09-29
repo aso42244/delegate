@@ -1023,6 +1023,11 @@ person's phone.
 
 ## The Budget page has two arrangements
 
+> **Removed 2026-09-29, with the page.** The Budget page was deleted when
+> [ADR 067](decisions/067-the-budget-page-is-hidden-for-a-trial.md)'s trial
+> ended, and this choice arranged nothing else. Kept as the record of why it
+> existed.
+
 **Stacked** — Assets, Debts, then Delegations, each the full width — is what this
 page has always done and stays the default. It reads in the order the identity is
 written, and on a phone it is the only thing that fits.
@@ -1382,7 +1387,8 @@ to the screen carrying both.
 `/` was the Budget page's own address, which is exactly why a landing preference
 could not have worked before: a preference can only ever redirect _away_ from a
 root that is already something. Budget has `/budget` now and `/` resolves to
-whichever page this person chose.
+whichever page this person chose. _(Since 2026-09-29 Overview is the only page
+left to land on; see ADR 067.)_
 
 Two choices, not every page: a landing page answers a whole question, and
 Overview and Budget are the two that do. Landing somebody on Rules is a setting

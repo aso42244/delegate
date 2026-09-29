@@ -87,8 +87,6 @@ significant decision, and why, is in [docs/decisions/](docs/decisions/).
   layout that works on a phone.
 - A read-only API behind per-person tokens, for another program to read the
   budget.
-- A demo at `/demo`, drawing invented numbers, for showing the application
-  without showing anybody's money.
 
 **Not planned:** passkeys
 ([ADR 016](docs/decisions/016-passkeys-are-out-of-scope.md)), more than one

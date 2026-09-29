@@ -1,6 +1,5 @@
 import { useQuery, type UseQueryResult } from '@tanstack/react-query';
 import { api } from '../api/client.js';
-import { useIsDemo } from '../useDemo.js';
 import type { PillTone } from './AlertTag.jsx';
 
 /**
@@ -118,19 +117,11 @@ export const BACKLOG_KIND = 'uncategorized_backlog';
 export function useNotifications(): UseQueryResult<{
   readonly notifications: readonly NotificationDto[];
 }> {
-  const demo = useIsDemo();
-
   return useQuery({
     queryKey: ['notifications'],
     queryFn: () => api.get<{ notifications: readonly NotificationDto[] }>('/api/notifications'),
     // Re-checked periodically: a sync failing at 3am should be on screen by
     // breakfast without the page being reloaded.
     refetchInterval: 5 * 60 * 1000,
-    /*
-     * Never in the demo. These are facts about the owner's own machine — a bank
-     * feed that needs a fresh login, an account of his that has stopped
-     * reporting — and a demo is a household, not his infrastructure.
-     */
-    enabled: !demo,
   });
 }

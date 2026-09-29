@@ -367,7 +367,7 @@ test('a collapsed grouping folds at once and is still folded after a reload', as
 }) => {
   await makeDelegation(api, 'Grocery');
   await api.post('/api/groupings', { data: { name: 'Essentials', section: 'delegations' } });
-  await signedIn.goto('/budget');
+  await signedIn.goto('/overview?lines=all');
 
   await signedIn.getByRole('button', { name: 'Options for Grocery' }).click();
   await signedIn.getByRole('menuitem', { name: 'Move to grouping' }).click();
@@ -433,7 +433,7 @@ test('Transfer lists delegations grouped as the page groups them', async ({ sign
   await api.patch(`/api/delegations/${grocery}`, { data: { groupingId: essentials } });
   await api.patch(`/api/delegations/${dining}`, { data: { groupingId: fun } });
 
-  await signedIn.goto('/budget');
+  await signedIn.goto('/overview?lines=all');
   await openNew(signedIn, 'Transfer');
 
   const from = signedIn
@@ -574,7 +574,7 @@ test('the reading states itself, and shows its working on demand', async ({ sign
   await makeAccount('Firefly Checking', 'asset', 100_000n);
   await makeDelegation(api, 'Grocery', '40000');
 
-  await signedIn.goto('/budget');
+  await signedIn.goto('/overview?lines=all');
 
   /*
    * The words are a `role="status"` live region inside the link, because they
@@ -641,7 +641,7 @@ test('every pill keeps its detail inside the viewport', async ({ signedIn, api }
   await makeDelegation(api, 'Grocery', '40000');
 
   await signedIn.setViewportSize({ width: 1280, height: 800 });
-  await signedIn.goto('/budget');
+  await signedIn.goto('/overview?lines=all');
 
   /*
    * In the sidebar, which is where these live above `sm`. They are links and the
@@ -700,7 +700,7 @@ test('nothing on a phone hides its words behind a hover', async ({ signedIn }) =
   );
 
   await signedIn.setViewportSize({ width: 390, height: 844 });
-  await signedIn.goto('/budget');
+  await signedIn.goto('/overview?lines=all');
 
   // The alert is on screen, and it is a dot rather than a pill with a tooltip.
   const dot = signedIn.getByRole('button', { name: /^\d+ alerts?$/ });

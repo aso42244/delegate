@@ -14,6 +14,25 @@ const prisma = new PrismaClient({
   datasources: { db: { url: process.env['TEST_DATABASE_URL'] ?? '' } },
 });
 
+/**
+ * Where the whole budget is: Overview, its band showing every line.
+ *
+ * The Budget page was deleted when ADR 067's trial ended; the band draws the
+ * same `DelegationsTable` and `AccountsTable` it did.
+ */
+export const BUDGET = '/overview?lines=all';
+
+/**
+ * The band's other tab: assets and debts, every one of them.
+ *
+ * "With balance" is the band's default, which hides an account at zero — and a
+ * spec usually creates its accounts at zero.
+ */
+export async function showAccounts(page: Page): Promise<void> {
+  await page.getByRole('radio', { name: 'Accounts & Debts' }).click();
+  await page.getByRole('radio', { name: 'All', exact: true }).click();
+}
+
 export const OWNER = { username: 'e2e-owner@example.test', password: 'end-to-end-passphrase' };
 
 /** Order matters: children before parents, because these are real foreign keys. */
@@ -197,15 +216,14 @@ export const test = base.extend<BudgetFixtures>({
     }
 
     /*
-     * The fixture's contract is "signed in, on the budget page".
-     *
-     * It used to be `/`, which was the Budget page's own address — so every
-     * spec that opens with an assertion about the budget was relying on that
-     * coincidence. The root is a redirect now, to whichever page this person
-     * lands on, so the destination is named here instead. A spec that is about
-     * *landing* navigates to `/` itself.
+     * The fixture's contract is "signed in, looking at the whole budget":
+     * Overview, with its band showing every line rather than the chosen few.
+     * The band draws the same two tables the Budget page did before ADR 067's
+     * trial ended in its deletion, so a spec about a row menu or an editable
+     * figure starts where those are. A spec that is about *landing* navigates to
+     * `/` itself.
      */
-    await page.goto('/budget');
+    await page.goto(BUDGET);
     await use(page);
   },
 

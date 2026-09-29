@@ -23,7 +23,7 @@ test.describe('on a phone', () => {
   test.use({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
 
   test('navigation is a tab bar, and the sidebar is gone', async ({ signedIn: page }) => {
-    await page.goto('/budget');
+    await page.goto('/overview?lines=all');
 
     const tabs = page.getByRole('navigation', { name: 'Pages' });
     await expect(tabs).toBeVisible();
@@ -201,7 +201,7 @@ test.describe('on a phone', () => {
     await expect(page.getByRole('dialog')).toHaveCount(0);
     await expect(chip).toHaveText('Grocery');
 
-    await page.goto('/budget');
+    await page.goto('/overview?lines=all');
     await expect(page.getByRole('button', { name: 'Grocery balance' })).toContainText('-$42.10');
   });
 
@@ -310,7 +310,7 @@ test.describe('on a phone', () => {
    */
   test('controls that hide on hover are reachable', async ({ signedIn: page, api }) => {
     await makeDelegation(api, 'Grocery');
-    await page.goto('/budget');
+    await page.goto('/overview?lines=all');
 
     await expect(page.getByRole('button', { name: 'Options for Grocery' })).toBeVisible();
   });
@@ -348,7 +348,6 @@ test.describe('at 390px, on every screen', () => {
   const ROUTES = [
     // The root, which resolves to whichever page this person lands on.
     '/',
-    '/budget',
     '/transactions',
     '/recurring?view=cost',
     '/settings/sync',
@@ -401,7 +400,7 @@ test.describe('at 390px, on every screen', () => {
     api,
   }) => {
     await makeDelegation(api, 'Groceries', '80000');
-    await page.goto('/budget');
+    await page.goto('/overview?lines=all');
 
     const trigger = page.getByRole('button', { name: 'Options for Groceries' });
 
@@ -534,7 +533,7 @@ test.describe('at 390px, on every screen', () => {
  */
 test('the sidebar is only as wide as the longest thing in it', async ({ signedIn: page }) => {
   await page.setViewportSize({ width: 1280, height: 800 });
-  await page.goto('/budget');
+  await page.goto('/overview?lines=all');
 
   const sidebar = page.getByRole('navigation', { name: 'Main' });
   const box = await sidebar.boundingBox();
