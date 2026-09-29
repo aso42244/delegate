@@ -31,6 +31,21 @@ See [docs/architecture.md](docs/architecture.md) for the domain model,
 > onion service, or nothing at all. See
 > [docs/remote-access.md](docs/remote-access.md) and ADRs 017, 024, 026 and 027.
 
+## A look at it
+
+Every name and figure below is invented: the real application, drawing a sample
+household.
+
+![Overview: the budget with a pace bar per line, and spending and allocation tiles](docs/screenshots/overview.png)
+
+| Transactions                                                                          | Recurring                                                                                        |
+| ------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| ![The register, every charge filed to an envelope](docs/screenshots/transactions.png) | ![Bills worked out from the register, and utilities over a year](docs/screenshots/recurring.png) |
+
+| Dark                                                                | Phone                                                              |
+| ------------------------------------------------------------------- | ------------------------------------------------------------------ |
+| ![Overview in the dark palette](docs/screenshots/overview-dark.png) | ![Overview at 390px, with the tab bar](docs/screenshots/phone.png) |
+
 ## Status
 
 In daily use by one household since August 2026, and developed in the open since.

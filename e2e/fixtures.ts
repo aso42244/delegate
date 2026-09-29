@@ -511,8 +511,8 @@ export async function makeHousehold(api: APIRequestContext): Promise<void> {
   /** Name, grouping, amount to delegate, balance it should end on, utility. */
   const lines: readonly [string, string, bigint, bigint, boolean][] = [
     ['Rent', '1 - Bills', 725_00n, 1_450_00n, false],
-    ['Electricity', '1 - Bills', 45_00n, 38_20n, true],
-    ['Internet', '1 - Bills', 35_00n, 35_00n, true],
+    ['Electricity', '1 - Bills', 25_00n, 38_20n, true],
+    ['Internet', '1 - Bills', 17_00n, 35_00n, true],
     ['Phone', '1 - Bills', 25_00n, 22_00n, false],
     ['Groceries', '2 - Food', 250_00n, 184_35n, false],
     ['Dining Out', '2 - Food', 60_00n, 21_90n, false],
@@ -604,11 +604,17 @@ export async function makeHousehold(api: APIRequestContext): Promise<void> {
       },
     });
   }
+  // A year of utilities, which is what their averages are taken over; four
+  // months of everything else.
+  for (let month = 0; month < 12; month += 1) {
+    const at = 9 + month * 30;
+    const season = [74_00n, 68_00n, 55_00n, 41_00n, 38_00n, 52_00n];
+    await charge(checking, 'Electricity', season[month % 6]!, 'PRAIRIE POWER & LIGHT', at);
+    await charge(checking, 'Internet', 35_00n, 'BLUEPEAK INTERNET', at + 3);
+  }
   for (let month = 0; month < 4; month += 1) {
     const at = 3 + month * 30;
     await charge(checking, 'Rent', 1_450_00n, 'OAK RIDGE APARTMENTS RENT', at);
-    await charge(checking, 'Electricity', wobble(52_00n, month), 'PRAIRIE POWER & LIGHT', at + 6);
-    await charge(checking, 'Internet', 35_00n, 'BLUEPEAK INTERNET', at + 9);
     await charge(card, 'Phone', 45_00n, 'SIGNAL MOBILE', at + 12);
     await charge(card, 'Car Insurance', 60_00n, 'BADGER MUTUAL PREMIUM', at + 15);
   }
@@ -659,7 +665,7 @@ export async function makeHousehold(api: APIRequestContext): Promise<void> {
         delegationId: delegationIds.get(name)!,
         eventType: 'adjust',
         deltaCents: opening,
-        occurredAt: daysAgo(130),
+        occurredAt: daysAgo(400),
       },
     });
     await prisma.delegation.update({
