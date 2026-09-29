@@ -1,7 +1,7 @@
-import { expect, makeAccount, test } from './fixtures.js';
+import { expect, makeAccount, showAccounts, test } from './fixtures.js';
 
 /**
- * Settings → Accounts, and the asset and debt row menu on the Budget page.
+ * Settings → Accounts, and the asset and debt row menu on Overview's band.
  *
  * The two booleans carry the weight here. `in_budget` decides whether an account
  * is part of the identity at all, and `in_net_worth` decides whether it shows on
@@ -10,11 +10,11 @@ import { expect, makeAccount, test } from './fixtures.js';
  *
  * Settings is one line per account in two tables, Assets and Debts. Both
  * switches stay on the row; the type, the nickname and Archive are reached
- * through the same `⋯` menu the Budget page uses, which is why several of these
+ * through the same `⋯` menu the band uses, which is why several of these
  * open it first.
  */
 
-test('a manual account is added and appears on the Budget page', async ({ signedIn }) => {
+test('a manual account is added and appears on the budget', async ({ signedIn }) => {
   await signedIn.goto('/settings/accounts');
   await signedIn.getByRole('button', { name: 'New account' }).click();
 
@@ -30,7 +30,8 @@ test('a manual account is added and appears on the Budget page', async ({ signed
   await expect(signedIn.getByText('Physical Cash', { exact: true })).toBeVisible();
   await expect(signedIn.getByTitle('Kept by hand')).toBeVisible();
 
-  await signedIn.goto('/budget');
+  await signedIn.goto('/overview?lines=all');
+  await showAccounts(signedIn);
   await expect(signedIn.getByRole('button', { name: 'Physical Cash balance' })).toContainText(
     '$200.00',
   );
@@ -39,7 +40,8 @@ test('a manual account is added and appears on the Budget page', async ({ signed
 test('taking an account out of the budget removes it from the identity', async ({ signedIn }) => {
   await makeAccount('The house', 'asset', 45_000_000n);
 
-  await signedIn.goto('/budget');
+  await signedIn.goto('/overview?lines=all');
+  await showAccounts(signedIn);
   await expect(signedIn.getByRole('status')).toContainText('To delegate $450,000.00');
 
   await signedIn.goto('/settings/accounts');
@@ -49,7 +51,8 @@ test('taking an account out of the budget removes it from the identity', async (
 
   // Out of the budget, still in net worth: the separation that keeps a house
   // and its mortgage from drowning the envelope maths.
-  await signedIn.goto('/budget');
+  await signedIn.goto('/overview?lines=all');
+  await showAccounts(signedIn);
   await expect(signedIn.getByRole('status')).toContainText('Balanced');
   await expect(signedIn.getByRole('button', { name: 'The house balance' })).toHaveCount(0);
 
@@ -70,7 +73,8 @@ test('a manual balance is editable from Settings and restamps the account', asyn
   await signedIn.getByLabel('Balance for Physical Cash').fill('175.50');
   await signedIn.getByLabel('Balance for Physical Cash').press('Enter');
 
-  await signedIn.goto('/budget');
+  await signedIn.goto('/overview?lines=all');
+  await showAccounts(signedIn);
   await expect(signedIn.getByRole('button', { name: 'Physical Cash balance' })).toContainText(
     '$175.50',
   );
@@ -119,7 +123,8 @@ test('the row menu on an asset offers the same settings as the Settings page', a
   signedIn,
 }) => {
   await makeAccount('Physical Cash', 'asset', 20000n);
-  await signedIn.goto('/budget');
+  await signedIn.goto('/overview?lines=all');
+  await showAccounts(signedIn);
 
   await signedIn.getByRole('button', { name: 'Options for Physical Cash' }).click();
   await expect(signedIn.getByRole('menu', { name: 'Options for Physical Cash' })).toBeVisible();
@@ -133,7 +138,8 @@ test('the row menu on an asset offers the same settings as the Settings page', a
 
 test('the row menu sets a manual balance', async ({ signedIn }) => {
   await makeAccount('Physical Cash', 'asset', 20000n);
-  await signedIn.goto('/budget');
+  await signedIn.goto('/overview?lines=all');
+  await showAccounts(signedIn);
 
   await signedIn.getByRole('button', { name: 'Options for Physical Cash' }).click();
   await signedIn.getByRole('menuitem', { name: 'Set balance' }).click();
@@ -153,7 +159,8 @@ test('the row menu sets a manual balance', async ({ signedIn }) => {
 test('a SimpleFIN account is not offered a balance to set', async ({ signedIn }) => {
   await makeAccount('Everyday Checking', 'asset', 500000n, 'simplefin');
 
-  await signedIn.goto('/budget');
+  await signedIn.goto('/overview?lines=all');
+  await showAccounts(signedIn);
   await signedIn.getByRole('button', { name: 'Options for Everyday Checking' }).click();
 
   /*
@@ -201,14 +208,16 @@ test('an account type can be corrected from Settings', async ({ signedIn }) => {
   await expect(debts.getByText('Mystery Account', { exact: true })).toBeVisible();
 
   // And on the budget, where the identity follows it.
-  await signedIn.goto('/budget');
+  await signedIn.goto('/overview?lines=all');
+  await showAccounts(signedIn);
   await expect(signedIn.getByRole('status')).toContainText('Over delegated $400.00');
 });
 
 test('an account type can be corrected from the row menu', async ({ signedIn }) => {
   await makeAccount('Mystery Account', 'asset', 40000n);
 
-  await signedIn.goto('/budget');
+  await signedIn.goto('/overview?lines=all');
+  await showAccounts(signedIn);
   await signedIn.getByRole('button', { name: 'Options for Mystery Account' }).click();
   await signedIn.getByLabel('Type of Mystery Account').selectOption('debt');
 

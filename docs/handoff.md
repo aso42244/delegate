@@ -224,7 +224,7 @@ envelope at once while the account balance is the institution's _settled_ one, s
 without it the first three are out of step by the amount of the charge and the
 page offers money that has already been spent. [ADR 020](decisions/020-pending-transactions-in-the-identity.md).
 
-That reading sits at the top of the Budget page. It is **not** enforced by
+That reading sits in the sidebar, above Delegate. It is **not** enforced by
 double-entry bookkeeping — it is a health indicator, and a positive number is the
 "available to delegate" figure on payday rather than a fault.
 

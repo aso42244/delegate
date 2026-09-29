@@ -1,4 +1,4 @@
-import { expect, makeAccount, makeDelegation, openNew, test } from './fixtures.js';
+import { expect, makeAccount, makeDelegation, openNew, showAccounts, test } from './fixtures.js';
 
 /**
  * Entering a transaction by hand, and splitting one across envelopes.
@@ -27,7 +27,8 @@ test('a manual transaction moves the account balance', async ({ signedIn }) => {
   await expect(signedIn.getByText('Farmers market')).toBeVisible();
 
   // Money out by default: $200.00 − $42.10.
-  await signedIn.goto('/budget');
+  await signedIn.goto('/overview?lines=all');
+  await showAccounts(signedIn);
   await expect(signedIn.getByRole('button', { name: 'Physical Cash balance' })).toContainText(
     '$157.90',
   );
@@ -46,7 +47,8 @@ test('money in raises the balance instead of lowering it', async ({ signedIn }) 
   await signedIn.getByRole('button', { name: 'Save' }).click();
 
   await expect(signedIn.getByRole('dialog')).toHaveCount(0);
-  await signedIn.goto('/budget');
+  await signedIn.goto('/overview?lines=all');
+  await showAccounts(signedIn);
   await expect(signedIn.getByRole('button', { name: 'Physical Cash balance' })).toContainText(
     '$275.00',
   );
@@ -70,7 +72,7 @@ test('a delegation chosen while entering is applied to the new row', async ({ si
   await signedIn.getByRole('button', { name: 'Save' }).click();
 
   await expect(signedIn.getByRole('dialog')).toHaveCount(0);
-  await signedIn.goto('/budget');
+  await signedIn.goto('/overview?lines=all');
   await expect(signedIn.getByRole('button', { name: 'Grocery balance' })).toContainText('-$42.10');
 });
 
@@ -123,7 +125,7 @@ test('a split must add up before it can be saved', async ({ signedIn, api }) => 
   await save.click();
 
   await expect(signedIn.getByRole('dialog')).toHaveCount(0);
-  await signedIn.goto('/budget');
+  await signedIn.goto('/overview?lines=all');
   await expect(signedIn.getByRole('button', { name: 'Grocery balance' })).toContainText('-$60.00');
   await expect(signedIn.getByRole('button', { name: 'Household balance' })).toContainText(
     '-$40.00',
@@ -170,7 +172,7 @@ test('splitting evenly hands the odd cent to the first line', async ({ signedIn,
   await signedIn.getByRole('button', { name: 'Save split' }).click();
 
   await expect(signedIn.getByRole('dialog')).toHaveCount(0);
-  await signedIn.goto('/budget');
+  await signedIn.goto('/overview?lines=all');
   await expect(signedIn.getByRole('button', { name: 'Grocery balance' })).toContainText('-$33.34');
   await expect(signedIn.getByRole('button', { name: 'Fuel balance' })).toContainText('-$33.33');
 });
@@ -192,14 +194,15 @@ test('splitting evenly hands the odd cent to the first line', async ({ signedIn,
  * `getByLabel('Amount')` matches those too — which is the same collision this
  * suite has been bitten by before.
  */
-test('a transaction can be entered from the Budget page, which then updates', async ({
+test('a transaction can be entered from the budget, which then updates', async ({
   signedIn,
   api,
 }) => {
   await makeAccount('Physical Cash', 'asset', 20000n);
   await makeDelegation(api, 'Grocery');
 
-  await signedIn.goto('/budget');
+  await signedIn.goto('/overview?lines=all');
+  await showAccounts(signedIn);
   await expect(signedIn.getByRole('button', { name: 'Physical Cash balance' })).toContainText(
     '$200.00',
   );
@@ -226,11 +229,14 @@ test('a transaction can be entered from the Budget page, which then updates', as
  * the Transactions page excludes them, and the one reached from the Budget page
  * has to as well, or the two routes to the same dialog disagree.
  */
-test('the Budget page picker does not offer outstanding checks', async ({ signedIn, api }) => {
+test('the picker reached from the budget does not offer outstanding checks', async ({
+  signedIn,
+  api,
+}) => {
   await makeAccount('Everyday Checking', 'asset', 500000n);
   await makeDelegation(api, 'Grocery', '40000');
 
-  await signedIn.goto('/budget');
+  await signedIn.goto('/overview?lines=all');
   await openNew(signedIn, 'Check');
 
   const checkDialog = signedIn.getByRole('dialog');

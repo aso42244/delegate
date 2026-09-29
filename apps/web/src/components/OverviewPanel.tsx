@@ -6,7 +6,6 @@ import { AccountsTable } from './AccountsTable.jsx';
 import { DelegationsTable } from './DelegationsTable.jsx';
 import { PaceBar, paceSummary } from './PaceBar.jsx';
 import { Tile } from './Tile.jsx';
-import { useIsDemo } from '../useDemo.js';
 
 /**
  * The budget, across the top of Overview.
@@ -188,7 +187,6 @@ function DelegationsBand({
   readonly scope: PanelScope;
   readonly onChoose: () => void;
 }): ReactNode {
-  const demo = useIsDemo();
   const tick = data?.payCycle?.progressBasisPoints ?? null;
 
   /*
@@ -219,7 +217,7 @@ function DelegationsBand({
     return (
       <div className="flex flex-col gap-4">
         <EmptyState>No delegations chosen yet.</EmptyState>
-        {!demo && <ChooseLink onChoose={onChoose} />}
+        <ChooseLink onChoose={onChoose} />
       </div>
     );
   }
@@ -259,9 +257,8 @@ function DelegationsBand({
         pace={pace}
         {...(scope === 'selected' ? { only: chosen } : {})}
       />
-      {/* Choosing writes the layout, which a read-only demo refuses. What it
-          opens with is what it watches. */}
-      {!demo && scope === 'selected' && <ChooseLink onChoose={onChoose} />}
+      {/* What it opens with is what it watches. */}
+      {scope === 'selected' && <ChooseLink onChoose={onChoose} />}
     </div>
   );
 }

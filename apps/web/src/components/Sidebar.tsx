@@ -18,8 +18,6 @@ import {
   useNotifications,
   type NotificationDto,
 } from './notifications.js';
-import { useIsDemo } from '../useDemo.js';
-import { pathFor } from '../demo/is-demo.js';
 
 /**
  * The left sidebar: 232px, collapsible to a 64px icon rail.
@@ -154,21 +152,9 @@ export type PageIcon =
 
 export const PAGES = [
   /*
-   * Overview first, and — since ADR 067 — the only one of the two.
-   *
-   * It was Overview then Budget: a quick review, then the full inspection. The
-   * owner's reading after a fortnight of ADR 065's dashboard is that the two had
-   * become duplicative, so **Budget is hidden from the navigation for a trial
-   * rather than deleted**. Nothing else about it changed: `/budget` is still
-   * routed, still rendered by `MainBudget`, and still where a landing
-   * preference of `budget` sends somebody.
-   *
-   * Putting it back is this line, and nothing else:
-   *
-   *   { to: '/budget', label: 'Budget', icon: 'budget', end: false },
-   *
-   * Both navigations read this list — the sidebar and `TabBar` — so one line
-   * decides both, which is why it is the only edit the trial needed.
+   * Overview first. It carries the budget: the Budget page it replaced was
+   * hidden for a trial by ADR 067 and deleted when the trial ended, because
+   * Overview's band draws the same two tables.
    */
   { to: '/overview', label: 'Overview', icon: 'insights', end: false },
   { to: '/transactions', label: 'Transactions', icon: 'transactions', end: false },
@@ -190,23 +176,6 @@ export const PAGES = [
   { to: '/recurring', label: 'Recurring', icon: 'bills', end: false },
   { to: '/settings', label: 'Settings', icon: 'settings', end: false },
 ] as const satisfies readonly { to: string; label: string; icon: PageIcon; end: boolean }[];
-
-/**
- * The pages the demo has data for.
- *
- * Only these: a link to a page whose figures are not invented is a link to an
- * empty screen, which looks like a fault rather than a boundary.
- */
-/*
- * What a demo navigates to.
- *
- * `/budget` stays named here although `PAGES` no longer carries it, because this
- * is a filter over that list: an entry naming a page that is not in it simply
- * matches nothing. Keeping it means putting Budget back is one line up there
- * rather than two in two places — and it records that the demo's exclusion of
- * Budget is the trial's doing rather than a decision about the demo.
- */
-const DEMO_PAGES = new Set(['/overview', '/budget']);
 
 function useCollapsed(): [boolean, (value: boolean) => void] {
   const [collapsed, setCollapsed] = useState(() => {
@@ -556,27 +525,6 @@ function SignOutControl({ collapsed }: { readonly collapsed: boolean }): ReactNo
 }
 
 export function Sidebar({ appName }: { appName: string }): ReactNode {
-  /*
-   * A demo has no Settings and no sync.
-   *
-   * Settings is where the bank-feed credential and the household's accounts
-   * live, and neither is worth showing to a room. Sync is a write, which the
-   * server refuses anyway — this is about not offering it.
-   */
-  /*
-   * On the demo, the navigation stays on the demo.
-   *
-   * Every link is rewritten under `/demo`, because the first press of "Budget"
-   * otherwise lands somebody in their own money halfway through showing
-   * somebody else's. Settings goes entirely: it is where the bank-feed
-   * credential lives and there is nothing there worth showing to a room.
-   */
-  const demo = useIsDemo();
-  const pages = (demo ? PAGES.filter((page) => DEMO_PAGES.has(page.to)) : PAGES).map((page) => ({
-    ...page,
-    to: pathFor(page.to, demo),
-  }));
-
   const [collapsed, setCollapsed] = useCollapsed();
 
   // The budget's own reading, which is the top of the control zone below.
@@ -635,7 +583,7 @@ export function Sidebar({ appName }: { appName: string }): ReactNode {
       </div>
 
       <ul className="flex flex-1 flex-col px-2">
-        {pages.map((page) => (
+        {PAGES.map((page) => (
           <li key={page.to}>
             <NavLink
               to={page.to}
@@ -692,15 +640,13 @@ export function Sidebar({ appName }: { appName: string }): ReactNode {
         {budget.data && <BalanceButton view={budget.data} collapsed={collapsed} />}
 
         {/* Only when the queue is not empty, so it does not compete with the
-            reading on a morning with nothing waiting. A demo never has one:
-            `useNotifications` does not run there. */}
+            reading on a morning with nothing waiting. */}
         <BacklogControl collapsed={collapsed} />
 
         <DelegateControl collapsed={collapsed} />
 
-        {/* The bank feed, and everything it has to say about itself. A demo has
-            no feed to sync — invented data does not come from anywhere. */}
-        {!demo && <SyncControl collapsed={collapsed} />}
+        {/* The bank feed, and everything it has to say about itself. */}
+        <SyncControl collapsed={collapsed} />
 
         <SignOutControl collapsed={collapsed} />
       </div>

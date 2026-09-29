@@ -8,6 +8,7 @@ import {
   makeSucceededSyncRun,
   makeSyncWarning,
   openNew,
+  showAccounts,
   test,
 } from './fixtures.js';
 
@@ -20,7 +21,8 @@ import {
  */
 
 test('signing in reaches the budget', async ({ signedIn }) => {
-  await expect(signedIn.getByRole('heading', { name: 'Budget', exact: true })).toBeVisible();
+  await expect(signedIn.getByRole('heading', { name: 'Overview', exact: true })).toBeVisible();
+  await expect(signedIn.getByRole('region', { name: 'Budget' })).toBeVisible();
   await expect(signedIn.getByRole('navigation', { name: 'Main' })).toBeVisible();
 });
 
@@ -67,18 +69,19 @@ test('a section total sits in the column it totals', async ({ signedIn, api }) =
       .getByRole('table')
       .filter({ has: signedIn.getByRole('heading', { name: heading, exact: true }) });
 
-  // Assets: one money column, so one total to place.
-  await aligned(
-    sectionOf('Assets').locator('thead .money'),
-    signedIn.getByRole('button', { name: 'Everyday Checking balance' }),
-  );
-
   // Delegations: two, including the quieter one on the right.
   const delegationTotals = sectionOf('Delegations').locator('thead .money');
   await aligned(delegationTotals.nth(0), signedIn.getByRole('button', { name: 'Grocery balance' }));
   await aligned(
     delegationTotals.nth(1),
     signedIn.getByRole('button', { name: 'Grocery amount to delegate' }),
+  );
+
+  // Assets, on the band's other tab: one money column, so one total to place.
+  await showAccounts(signedIn);
+  await aligned(
+    sectionOf('Assets').locator('thead .money'),
+    signedIn.getByRole('button', { name: 'Everyday Checking balance' }),
   );
 });
 
@@ -337,6 +340,7 @@ test('a negative delegation balance is the only red in the table', async ({ sign
   await expect(negative).toHaveClass(/text-negative/);
 
   // Debts are liabilities but are never rendered red.
+  await showAccounts(signedIn);
   await expect(signedIn.getByRole('button', { name: 'Card balance' })).not.toHaveClass(
     /text-negative/,
   );
@@ -367,7 +371,7 @@ test('a collapsed grouping folds at once and is still folded after a reload', as
 }) => {
   await makeDelegation(api, 'Grocery');
   await api.post('/api/groupings', { data: { name: 'Essentials', section: 'delegations' } });
-  await signedIn.goto('/budget');
+  await signedIn.goto('/overview?lines=all');
 
   await signedIn.getByRole('button', { name: 'Options for Grocery' }).click();
   await signedIn.getByRole('menuitem', { name: 'Move to grouping' }).click();
@@ -433,7 +437,7 @@ test('Transfer lists delegations grouped as the page groups them', async ({ sign
   await api.patch(`/api/delegations/${grocery}`, { data: { groupingId: essentials } });
   await api.patch(`/api/delegations/${dining}`, { data: { groupingId: fun } });
 
-  await signedIn.goto('/budget');
+  await signedIn.goto('/overview?lines=all');
   await openNew(signedIn, 'Transfer');
 
   const from = signedIn
@@ -574,7 +578,7 @@ test('the reading states itself, and shows its working on demand', async ({ sign
   await makeAccount('Firefly Checking', 'asset', 100_000n);
   await makeDelegation(api, 'Grocery', '40000');
 
-  await signedIn.goto('/budget');
+  await signedIn.goto('/overview?lines=all');
 
   /*
    * The words are a `role="status"` live region inside the link, because they
@@ -641,7 +645,7 @@ test('every pill keeps its detail inside the viewport', async ({ signedIn, api }
   await makeDelegation(api, 'Grocery', '40000');
 
   await signedIn.setViewportSize({ width: 1280, height: 800 });
-  await signedIn.goto('/budget');
+  await signedIn.goto('/overview?lines=all');
 
   /*
    * In the sidebar, which is where these live above `sm`. They are links and the
@@ -700,7 +704,7 @@ test('nothing on a phone hides its words behind a hover', async ({ signedIn }) =
   );
 
   await signedIn.setViewportSize({ width: 390, height: 844 });
-  await signedIn.goto('/budget');
+  await signedIn.goto('/overview?lines=all');
 
   // The alert is on screen, and it is a dot rather than a pill with a tooltip.
   const dot = signedIn.getByRole('button', { name: /^\d+ alerts?$/ });

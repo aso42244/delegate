@@ -9,7 +9,7 @@ import { expect, makeAccount, makeDelegation, openNew, test } from './fixtures.j
  */
 
 test('is on every page, and always leftmost', async ({ signedIn }) => {
-  for (const path of ['/overview', '/budget', '/transactions', '/recurring', '/settings/rules']) {
+  for (const path of ['/overview', '/transactions', '/recurring', '/settings/rules']) {
     await signedIn.goto(path);
     await expect(signedIn.getByRole('button', { name: 'New …' })).toBeVisible();
   }
@@ -44,7 +44,7 @@ test('makes a delegation from a page that is not Budget', async ({ signedIn }) =
 
   // Ungrouped at the end, which is where the inline control on Budget always
   // put one.
-  await signedIn.goto('/budget');
+  await signedIn.goto('/overview?lines=all');
   await expect(signedIn.getByRole('button', { name: 'Options for Vet' })).toBeVisible();
 });
 
@@ -73,7 +73,7 @@ test('no page carries a create button of its own', async ({ signedIn, api }) => 
    * exist on two screens. The menu is the route; a page-local button beside it
    * would be the second.
    */
-  for (const path of ['/budget', '/transactions', '/settings/rules', '/settings/groupings']) {
+  for (const path of ['/overview', '/transactions', '/settings/rules', '/settings/groupings']) {
     await signedIn.goto(path);
     await expect(
       signedIn.getByRole('button', { name: /^New (transaction|check|grouping|rule)$/ }),
@@ -83,7 +83,7 @@ test('no page carries a create button of its own', async ({ signedIn, api }) => 
   // What a page keeps is what is not creating a thing. Delegate is no longer one
   // of them: it is an act on the household and it lives in the sidebar, above
   // Sync, on every screen rather than on the one page it used to belong to.
-  await signedIn.goto('/budget');
+  await signedIn.goto('/overview?lines=all');
   await expect(signedIn.getByRole('button', { name: 'Delegate', exact: true })).toBeVisible();
   await signedIn.goto('/transactions');
   await expect(signedIn.getByRole('button', { name: 'Delegate', exact: true })).toBeVisible();

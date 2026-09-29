@@ -1,5 +1,6 @@
 import { test as base, type APIRequestContext, type Page } from '@playwright/test';
 import { generate as generateOtp } from 'otplib';
+import { randomUUID } from 'node:crypto';
 import { PrismaClient } from '@prisma/client';
 
 /**
@@ -13,6 +14,25 @@ import { PrismaClient } from '@prisma/client';
 const prisma = new PrismaClient({
   datasources: { db: { url: process.env['TEST_DATABASE_URL'] ?? '' } },
 });
+
+/**
+ * Where the whole budget is: Overview, its band showing every line.
+ *
+ * The Budget page was deleted when ADR 067's trial ended; the band draws the
+ * same `DelegationsTable` and `AccountsTable` it did.
+ */
+export const BUDGET = '/overview?lines=all';
+
+/**
+ * The band's other tab: assets and debts, every one of them.
+ *
+ * "With balance" is the band's default, which hides an account at zero — and a
+ * spec usually creates its accounts at zero.
+ */
+export async function showAccounts(page: Page): Promise<void> {
+  await page.getByRole('radio', { name: 'Accounts & Debts' }).click();
+  await page.getByRole('radio', { name: 'All', exact: true }).click();
+}
 
 export const OWNER = { username: 'e2e-owner@example.test', password: 'end-to-end-passphrase' };
 
@@ -197,15 +217,14 @@ export const test = base.extend<BudgetFixtures>({
     }
 
     /*
-     * The fixture's contract is "signed in, on the budget page".
-     *
-     * It used to be `/`, which was the Budget page's own address — so every
-     * spec that opens with an assertion about the budget was relying on that
-     * coincidence. The root is a redirect now, to whichever page this person
-     * lands on, so the destination is named here instead. A spec that is about
-     * *landing* navigates to `/` itself.
+     * The fixture's contract is "signed in, looking at the whole budget":
+     * Overview, with its band showing every line rather than the chosen few.
+     * The band draws the same two tables the Budget page did before ADR 067's
+     * trial ended in its deletion, so a spec about a row menu or an editable
+     * figure starts where those are. A spec that is about *landing* navigates to
+     * `/` itself.
      */
-    await page.goto('/budget');
+    await page.goto(BUDGET);
     await use(page);
   },
 
@@ -444,5 +463,216 @@ export async function makeSucceededSyncRun(): Promise<void> {
   const now = new Date();
   await prisma.syncRun.create({
     data: { status: 'succeeded', startedAt: now, finishedAt: now, correlationId: 'e2e' },
+  });
+}
+
+/**
+ * A whole invented household: groupings with colours, ten envelopes, four
+ * accounts, a pay cycle, and four months of paychecks and categorized spending.
+ *
+ * For the specs that need a page with something to draw — a cashflow, a tile of
+ * percentages, a bill that recurs — and for the README's screenshots, which are
+ * of the real application drawing this. Every name and figure here is made up.
+ *
+ * Written through the ledger rather than around it: every envelope balance is
+ * the sum of its events, so the cached-balance check still holds afterwards.
+ */
+export async function makeHousehold(api: APIRequestContext): Promise<void> {
+  const DAY = 24 * 60 * 60 * 1000;
+  const now = Date.now();
+  const daysAgo = (days: number, hour = 15): Date => {
+    const date = new Date(now - days * DAY);
+    date.setUTCHours(hour, 0, 0, 0);
+    return date;
+  };
+
+  // Payday every two weeks, the next one five days out.
+  const nextPayday = new Date(now + 5 * DAY).toISOString().slice(0, 10);
+  const settings = await api.patch('/api/settings', {
+    data: { payCadence: 'biweekly', nextPaydayOn: nextPayday },
+  });
+  if (!settings.ok()) throw new Error(`settings answered ${settings.status()}`);
+
+  const groupings = [
+    { name: '1 - Bills', color: '#2783DE' },
+    { name: '2 - Food', color: '#46A171' },
+    { name: '3 - Home', color: '#D5803B' },
+    { name: '4 - Fun', color: '#8B63B8' },
+  ];
+  const groupingIds = new Map<string, string>();
+  for (const [position, grouping] of groupings.entries()) {
+    const created = await prisma.grouping.create({
+      data: { ...grouping, section: 'delegations', position },
+      select: { id: true },
+    });
+    groupingIds.set(grouping.name, created.id);
+  }
+
+  /** Name, grouping, amount to delegate, balance it should end on, utility. */
+  const lines: readonly [string, string, bigint, bigint, boolean][] = [
+    ['Rent', '1 - Bills', 725_00n, 1_450_00n, false],
+    ['Electricity', '1 - Bills', 45_00n, 38_20n, true],
+    ['Internet', '1 - Bills', 35_00n, 35_00n, true],
+    ['Phone', '1 - Bills', 25_00n, 22_00n, false],
+    ['Groceries', '2 - Food', 250_00n, 184_35n, false],
+    ['Dining Out', '2 - Food', 60_00n, 21_90n, false],
+    ['Home Maintenance', '3 - Home', 50_00n, 412_00n, false],
+    ['Car Insurance', '3 - Home', 60_00n, 318_00n, false],
+    ['Gifts', '4 - Fun', 25_00n, 96_50n, false],
+    ['Vacation', '4 - Fun', 150_00n, 1_275_00n, false],
+  ];
+  const delegationIds = new Map<string, string>();
+  for (const [position, [name, grouping, amount, , isUtility]] of lines.entries()) {
+    const created = await prisma.delegation.create({
+      data: {
+        name,
+        groupingId: groupingIds.get(grouping) ?? null,
+        amountToDelegateCents: amount,
+        isUtility,
+        position,
+      },
+      select: { id: true },
+    });
+    delegationIds.set(name, created.id);
+  }
+  await prisma.delegation.update({
+    where: { id: delegationIds.get('Vacation')! },
+    data: {
+      targetCents: 3_000_00n,
+      targetDate: new Date(Date.UTC(new Date(now).getUTCFullYear() + 1, 5, 30)),
+    },
+  });
+
+  const checking = await makeAccount('Everyday Checking', 'asset', 0n, 'simplefin', new Date());
+  const card = await makeAccount('Rewards Card', 'debt', 482_17n, 'simplefin', new Date());
+  const cash = await makeAccount('Cash', 'asset', 60_00n);
+  await makeAccount('High-Yield Savings', 'asset', 8_250_00n, 'simplefin', new Date(), {
+    inBudget: false,
+  });
+
+  /** A settled, categorized charge, and the envelope movement that goes with it. */
+  const spent = new Map<string, bigint>();
+  let sequence = 0;
+  const charge = async (
+    accountId: string,
+    line: string,
+    cents: bigint,
+    description: string,
+    days: number,
+  ): Promise<void> => {
+    const delegationId = delegationIds.get(line)!;
+    const amountCents = -cents;
+    sequence += 1;
+    const transaction = await prisma.transaction.create({
+      data: {
+        accountId,
+        postedAt: daysAgo(days),
+        amountCents,
+        descriptionRaw: description,
+        description,
+        source: accountId === cash ? 'manual' : 'simplefin',
+        ...(accountId === cash ? {} : { externalId: `household-${sequence}` }),
+        allocations: { create: { delegationId, amountCents } },
+      },
+      select: { id: true },
+    });
+    await prisma.delegationEvent.create({
+      data: {
+        delegationId,
+        transactionId: transaction.id,
+        eventType: 'categorize',
+        deltaCents: amountCents,
+        occurredAt: daysAgo(days),
+      },
+    });
+    spent.set(line, (spent.get(line) ?? 0n) + cents);
+  };
+
+  // Four months of it. Amounts wander a little, the way real ones do.
+  const wobble = (base: bigint, i: number): bigint => base + BigInt(((i * 37) % 11) - 5) * 100n;
+  for (let i = 0; i < 9; i += 1) {
+    await prisma.transaction.create({
+      data: {
+        accountId: checking,
+        postedAt: daysAgo(9 + i * 14, 12),
+        amountCents: 2_450_00n,
+        descriptionRaw: 'ACH Deposit ACME CORP PAYROLL',
+        description: 'ACH Deposit ACME CORP PAYROLL',
+        kind: 'income',
+        source: 'simplefin',
+        externalId: `household-pay-${i}`,
+      },
+    });
+  }
+  for (let month = 0; month < 4; month += 1) {
+    const at = 3 + month * 30;
+    await charge(checking, 'Rent', 1_450_00n, 'OAK RIDGE APARTMENTS RENT', at);
+    await charge(checking, 'Electricity', wobble(52_00n, month), 'PRAIRIE POWER & LIGHT', at + 6);
+    await charge(checking, 'Internet', 35_00n, 'BLUEPEAK INTERNET', at + 9);
+    await charge(card, 'Phone', 45_00n, 'SIGNAL MOBILE', at + 12);
+    await charge(card, 'Car Insurance', 60_00n, 'BADGER MUTUAL PREMIUM', at + 15);
+  }
+  for (let week = 0; week < 17; week += 1) {
+    const store = week % 3 === 0 ? 'WHOLEFDS MKT #10234' : 'KROGER #123 SPRINGFIELD';
+    await charge(card, 'Groceries', wobble(118_00n, week), store, 2 + week * 7);
+    if (week % 2 === 0) {
+      await charge(card, 'Dining Out', wobble(34_00n, week), 'THE BLUE SPOON CAFE', 4 + week * 7);
+    }
+  }
+  await charge(cash, 'Gifts', 40_00n, 'MANUAL - Birthday card and gift', 20);
+  await charge(card, 'Home Maintenance', 138_00n, 'HARDWARE HAUS #221', 33);
+
+  /*
+   * The last payday's Delegate press. A cycle starts at a press rather than at a
+   * date, so without one every cycle-shaped tile says no cycle has been run.
+   */
+  const batchId = randomUUID();
+  const run = await prisma.delegateRun.create({
+    data: {
+      batchId,
+      totalCents: lines.reduce((sum, [, , amount]) => sum + amount, 0n),
+      lineCount: lines.length,
+      createdAt: daysAgo(9, 13),
+    },
+    select: { id: true },
+  });
+  for (const [name, , amount] of lines) {
+    await prisma.delegationEvent.create({
+      data: {
+        delegationId: delegationIds.get(name)!,
+        eventType: 'delegate',
+        deltaCents: amount,
+        batchId,
+        delegateRunId: run.id,
+        occurredAt: daysAgo(9, 13),
+      },
+    });
+  }
+
+  // Every line opens on whatever makes it end where it should: the opening
+  // balance is an adjustment, the rest is the press and the spending above.
+  let delegated = 0n;
+  for (const [name, , amount, balance] of lines) {
+    const opening = balance + (spent.get(name) ?? 0n) - amount;
+    await prisma.delegationEvent.create({
+      data: {
+        delegationId: delegationIds.get(name)!,
+        eventType: 'adjust',
+        deltaCents: opening,
+        occurredAt: daysAgo(130),
+      },
+    });
+    await prisma.delegation.update({
+      where: { id: delegationIds.get(name)! },
+      data: { balanceCents: balance },
+    });
+    delegated += balance;
+  }
+
+  // Checking holds what the envelopes do, less what cash holds, plus what the
+  // card owes, plus a paycheck's leftover not yet delegated.
+  await prisma.account.update({
+    where: { id: checking },
+    data: { balanceCents: delegated - 60_00n + 482_17n + 212_40n },
   });
 }

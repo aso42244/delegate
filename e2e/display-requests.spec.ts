@@ -1,4 +1,4 @@
-import { expect, test, makeAccount, makeDelegation } from './fixtures.js';
+import { expect, test, makeAccount, makeDelegation, showAccounts } from './fixtures.js';
 
 /**
  * The five display changes, each asserted through the screen that was wrong.
@@ -62,7 +62,8 @@ test('an account nickname replaces the long name on the budget', async ({
 
   // The budget shows the short one; Settings keeps the full one, because that is
   // where identifying the account is the point.
-  await page.goto('/budget');
+  await page.goto('/overview?lines=all');
+  await showAccounts(page);
   await expect(page.getByText('Cortex Visa')).toBeVisible();
   await expect(page.getByText('Citibank Cortex VISA', { exact: false })).toBeHidden();
 

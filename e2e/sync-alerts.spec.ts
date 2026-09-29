@@ -109,7 +109,7 @@ test('a failing sync paints the Sync button, not a band above the page', async (
    * the navigation into the control directly under it.
    */
   const nav = await signedIn.getByRole('navigation', { name: 'Main' }).boundingBox();
-  const heading = await signedIn.getByRole('heading', { name: 'Budget' }).boundingBox();
+  const heading = await signedIn.getByRole('heading', { name: 'Overview' }).boundingBox();
   const box = await button.boundingBox();
   expect(box!.x).toBeGreaterThanOrEqual(nav!.x);
   expect(box!.x + box!.width).toBeLessThanOrEqual(nav!.x + nav!.width);
@@ -152,7 +152,7 @@ test('no notification offers a dismissal', async ({ signedIn }) => {
  */
 test('the reading sits above Delegate, is coloured, and goes to Overview', async ({ signedIn }) => {
   await makeSyncFailure('connection refused');
-  await signedIn.goto('/budget');
+  await signedIn.goto('/overview?lines=all');
 
   const nav = signedIn.getByRole('navigation', { name: 'Main' });
   const reading = nav.getByRole('link', { name: /Balanced|To delegate|Over-delegated/ });
@@ -216,7 +216,7 @@ test('the backlog is one control, above Delegate, and not also a tag', async ({
     },
   });
 
-  await signedIn.goto('/budget');
+  await signedIn.goto('/overview?lines=all');
 
   const nav = signedIn.getByRole('navigation', { name: 'Main' });
   const backlog = nav.getByRole('link', { name: '1 new transaction' });

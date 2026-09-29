@@ -1,6 +1,6 @@
 # 058 — The demo is a route, not a deployment
 
-**Status:** accepted
+**Status:** superseded 2026-09-29 — removed (see **Removed** below)
 **Date:** 2026-09-09
 
 ## Context
@@ -74,3 +74,12 @@ that opens with the button greyed out has to be explained rather than shown.
   deliberately:** if this demo ever needs to be public, a route in the real
   application is not the way to do it, and this ADR should be superseded rather
   than stretched.
+
+## Removed — 2026-09-29
+
+The demo drew only Overview, and hid every control that writes — so it showed
+one page of the application with its sidebar nearly empty, which is a poor
+picture of the thing it was demonstrating. The README's screenshots do that job
+now: the real application, current, drawing invented data. `apps/web/src/demo`,
+`useDemo`, the `/demo` routes and `demo.spec.ts` are gone, with the stale
+`db:seed:demo` script whose file had already left with the second instance.

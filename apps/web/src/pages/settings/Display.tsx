@@ -1,5 +1,4 @@
 import type { ReactNode } from 'react';
-import { useBudgetLayout, type BudgetLayout } from '../../budget-layout.js';
 import { useDensity, type Density } from '../../display.js';
 import { useTheme, type ThemeChoice } from '../../theme.js';
 import { useSettingsTabs } from '../../settings-tabs.js';
@@ -23,11 +22,6 @@ const DENSITIES: readonly { value: Density; label: string; detail: string }[] = 
   { value: 'comfortable', label: 'Comfortable', detail: '40px rows' },
   { value: 'compact', label: 'Compact', detail: '32px rows' },
   { value: 'dense', label: 'Dense', detail: '28px rows' },
-];
-
-const LAYOUTS: readonly { value: BudgetLayout; label: string; detail: string }[] = [
-  { value: 'stacked', label: 'Stacked', detail: 'Assets, Debts, then Delegations' },
-  { value: 'columns', label: 'Two columns', detail: 'Delegations beside the accounts' },
 ];
 
 /**
@@ -87,7 +81,6 @@ const SETTINGS_TABS = [
 export function DisplaySection(): ReactNode {
   const [density, setDensity] = useDensity();
   const [theme, setTheme] = useTheme();
-  const [budgetLayout, setBudgetLayout] = useBudgetLayout();
   const [settingsTabs, setSettingsTabs] = useSettingsTabs();
 
   return (
@@ -98,33 +91,9 @@ export function DisplaySection(): ReactNode {
       <SettingsCard
         span="third"
         title="Theme"
-        description="Six palettes, or whatever this device asks for."
+        description="Light, dark, or whatever this device asks for."
       >
         <Choice name="theme" legend="Theme" value={theme} options={THEMES} onChange={setTheme} />
-      </SettingsCard>
-
-      <SettingsCard
-        span="third"
-        title="Budget layout"
-        description="Where the three sections sit on the Budget page."
-      >
-        <Choice
-          name="budgetLayout"
-          legend="Budget layout"
-          value={budgetLayout}
-          options={LAYOUTS}
-          onChange={setBudgetLayout}
-        />
-
-        {/*
-          The one choice here whose effect depends on the screen rather than only
-          on taste, so it is worth a line: below a wide window there is no room
-          for two columns and the page falls back to one — keeping this
-          arrangement's own order, envelopes first.
-        */}
-        <p className="mt-4 text-quiet text-muted">
-          Two columns need a wide window. Narrower than that, both stack.
-        </p>
       </SettingsCard>
 
       <SettingsCard

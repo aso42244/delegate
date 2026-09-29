@@ -26,13 +26,13 @@ test('a target is set, and changes nothing about what gets delegated', async ({
   api,
 }) => {
   await makeDelegation(api, 'Car Insurance', '10000');
-  await signedIn.goto('/budget');
+  await signedIn.goto('/overview?lines=all');
 
   await signedIn.getByRole('button', { name: 'Options for Car Insurance' }).click();
   await signedIn.getByRole('menuitem', { name: 'Set a target' }).click();
 
   await signedIn.getByLabel('Target amount').fill('2200.00');
-  await signedIn.getByLabel('By').fill(nextYear());
+  await signedIn.getByRole('dialog').getByLabel('By').fill(nextYear());
 
   // The reading, live, before anything is saved — and the comparison stated in
   // both directions, so neither figure has to be remembered.
@@ -58,13 +58,13 @@ test('the amount to delegate is marked when it will not make the date', async ({
   api,
 }) => {
   await makeDelegation(api, 'Car Insurance', '10000');
-  await signedIn.goto('/budget');
+  await signedIn.goto('/overview?lines=all');
 
   await signedIn.getByRole('button', { name: 'Options for Car Insurance' }).click();
   await signedIn.getByRole('menuitem', { name: 'Set a target' }).click();
   // $5,000 over a year is roughly $192 a paycheck, which $100 does not reach.
   await signedIn.getByLabel('Target amount').fill('5000.00');
-  await signedIn.getByLabel('By').fill(nextYear());
+  await signedIn.getByRole('dialog').getByLabel('By').fill(nextYear());
   await signedIn.getByRole('button', { name: 'Save', exact: true }).click();
   await expect(signedIn.getByRole('dialog')).toHaveCount(0);
 
@@ -83,14 +83,14 @@ test('the amount to delegate is marked when it will not make the date', async ({
 
 test('the needed amount can be taken, in one deliberate press', async ({ signedIn, api }) => {
   await makeDelegation(api, 'Car Insurance', '10000');
-  await signedIn.goto('/budget');
+  await signedIn.goto('/overview?lines=all');
 
   await signedIn.getByRole('button', { name: 'Options for Car Insurance' }).click();
   await signedIn.getByRole('menuitem', { name: 'Set a target' }).click();
   await signedIn.getByLabel('Target amount').fill('2600.00');
   // Twenty-six fortnights: $100 a paycheck exactly, which makes the assertion
   // about the figure rather than about the arithmetic.
-  await signedIn.getByLabel('By').fill(nextYear());
+  await signedIn.getByRole('dialog').getByLabel('By').fill(nextYear());
 
   await signedIn.getByRole('switch', { name: /Also set the amount to delegate/ }).click();
   await signedIn.getByRole('button', { name: 'Save', exact: true }).click();
@@ -112,7 +112,7 @@ test('the needed amount can be taken, in one deliberate press', async ({ signedI
  */
 test('a target can repeat, and works towards the next one', async ({ signedIn, api }) => {
   await makeDelegation(api, 'Home Insurance', '10000');
-  await signedIn.goto('/budget');
+  await signedIn.goto('/overview?lines=all');
 
   await signedIn.getByRole('button', { name: 'Options for Home Insurance' }).click();
   await signedIn.getByRole('menuitem', { name: 'Set a target' }).click();
@@ -120,7 +120,7 @@ test('a target can repeat, and works towards the next one', async ({ signedIn, a
   await signedIn.getByLabel('Target amount').fill('2200.00');
   // An occurrence in the past, deliberately: the date is an anchor for the
   // series rather than a deadline, and the reading has to move past it.
-  await signedIn.getByLabel('By').fill('2020-04-30');
+  await signedIn.getByRole('dialog').getByLabel('By').fill('2020-04-30');
   await signedIn.getByLabel('Repeats').selectOption({ label: 'Every 6 months' });
 
   // The end of the month is kept: the last day of April recurs on the last day
@@ -140,12 +140,12 @@ test('the calculated amount can be taken, or changed on the way past', async ({
   api,
 }) => {
   await makeDelegation(api, 'Home Insurance', '10000');
-  await signedIn.goto('/budget');
+  await signedIn.goto('/overview?lines=all');
 
   await signedIn.getByRole('button', { name: 'Options for Home Insurance' }).click();
   await signedIn.getByRole('menuitem', { name: 'Set a target' }).click();
   await signedIn.getByLabel('Target amount').fill('2600.00');
-  await signedIn.getByLabel('By').fill(nextYear());
+  await signedIn.getByRole('dialog').getByLabel('By').fill(nextYear());
 
   await signedIn.getByRole('switch', { name: 'Also set the amount to delegate' }).click();
 
@@ -166,7 +166,7 @@ test('the calculated amount can be taken, or changed on the way past', async ({
 
 test('a target is removed from the same dialog', async ({ signedIn, api }) => {
   await makeDelegation(api, 'Car Insurance', '10000');
-  await signedIn.goto('/budget');
+  await signedIn.goto('/overview?lines=all');
 
   await signedIn.getByRole('button', { name: 'Options for Car Insurance' }).click();
   await signedIn.getByRole('menuitem', { name: 'Set a target' }).click();

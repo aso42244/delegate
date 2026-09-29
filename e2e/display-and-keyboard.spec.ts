@@ -15,7 +15,7 @@ test.describe('row density', () => {
     api,
   }) => {
     await makeDelegation(api, 'Grocery', '40000');
-    await page.goto('/budget');
+    await page.goto('/overview?lines=all');
 
     const cell = page.locator('td.row-cell').first();
     const height = (): Promise<number> =>
@@ -34,7 +34,7 @@ test.describe('row density', () => {
       await page.goto('/settings/display');
       await page.getByLabel(label).check();
 
-      await page.goto('/budget');
+      await page.goto('/overview?lines=all');
       expect(Math.round(await height()), label).toBe(expected);
 
       // Only the spacing changes. A "denser" setting that also shrank the type
@@ -61,7 +61,7 @@ test.describe('the budget on a phone', () => {
 
   test('shows one amount at a time, switched by the control', async ({ signedIn: page, api }) => {
     await makeDelegation(api, 'Grocery', '40000');
-    await page.goto('/budget');
+    await page.goto('/overview?lines=all');
 
     // Remaining first: it is the number the budget is read for.
     await expect(page.getByRole('columnheader', { name: 'Remaining' })).toBeVisible();
@@ -75,7 +75,7 @@ test.describe('the budget on a phone', () => {
 
   test('swiping across the table switches the amount', async ({ signedIn: page, api }) => {
     await makeDelegation(api, 'Grocery', '40000');
-    await page.goto('/budget');
+    await page.goto('/overview?lines=all');
 
     await expect(page.getByRole('columnheader', { name: 'Remaining' })).toBeVisible();
 
@@ -84,7 +84,7 @@ test.describe('the budget on a phone', () => {
     await page.evaluate(() => {
       // The column switcher is a row of the table it switches, so the table is
       // the ancestor rather than a sibling.
-      const group = document.querySelector('[role="radiogroup"]');
+      const group = document.querySelector('table [role="radiogroup"]');
       const table = group?.closest('table');
       if (!table) throw new Error('no split-column table');
       const touch = (x: number): Touch =>
@@ -103,7 +103,7 @@ test.describe('the budget on a phone', () => {
     await page.evaluate(() => {
       // The column switcher is a row of the table it switches, so the table is
       // the ancestor rather than a sibling.
-      const group = document.querySelector('[role="radiogroup"]');
+      const group = document.querySelector('table [role="radiogroup"]');
       const table = group?.closest('table');
       if (!table) throw new Error('no split-column table');
       const touch = (x: number): Touch =>
@@ -120,7 +120,7 @@ test.describe('the budget on a phone', () => {
 
   test('a vertical scroll does not change the amount', async ({ signedIn: page, api }) => {
     await makeDelegation(api, 'Grocery', '40000');
-    await page.goto('/budget');
+    await page.goto('/overview?lines=all');
     await expect(page.getByRole('columnheader', { name: 'Remaining' })).toBeVisible();
 
     // Diagonal, but mostly vertical: someone scrolling with their thumb must not
@@ -128,7 +128,7 @@ test.describe('the budget on a phone', () => {
     await page.evaluate(() => {
       // The column switcher is a row of the table it switches, so the table is
       // the ancestor rather than a sibling.
-      const group = document.querySelector('[role="radiogroup"]');
+      const group = document.querySelector('table [role="radiogroup"]');
       const table = group?.closest('table');
       if (!table) throw new Error('no split-column table');
       const at = (x: number, y: number): Touch =>
@@ -146,7 +146,7 @@ test.describe('the budget on a phone', () => {
   test('both amounts show side by side once there is room', async ({ signedIn: page, api }) => {
     await makeDelegation(api, 'Grocery', '40000');
     await page.setViewportSize({ width: 1280, height: 800 });
-    await page.goto('/budget');
+    await page.goto('/overview?lines=all');
 
     await expect(page.getByRole('columnheader', { name: 'Remaining' })).toBeVisible();
     await expect(page.getByRole('columnheader', { name: 'To delegate' })).toBeVisible();

@@ -93,7 +93,7 @@ test('the backlog pill clears as soon as the queue does', async ({ signedIn, api
   const sorted = await makeTransaction(api, accountId, '-1500', 'Corner Shop');
   await api.post(`/api/transactions/${sorted}/categorize`, { data: { delegationId: grocery } });
 
-  await signedIn.goto('/budget');
+  await signedIn.goto('/overview?lines=all');
   const pill = signedIn.getByRole('link', { name: '1 new transaction' });
   await expect(pill).toBeVisible();
 
@@ -165,7 +165,7 @@ test('a categorized transaction moves its delegation', async ({ signedIn, api })
   // timeout.
   await expect(signedIn.getByText('Whole Foods Market')).toBeHidden();
 
-  await signedIn.goto('/budget');
+  await signedIn.goto('/overview?lines=all');
   await expect(signedIn.getByRole('button', { name: 'Grocery balance' })).toContainText('-$42.10');
 });
 
@@ -222,7 +222,7 @@ test('bulk categorize assigns a whole selection at once', async ({ signedIn, api
   await expect(signedIn.getByText('Shop one')).toBeHidden();
   await expect(signedIn.getByText('Shop two')).toBeHidden();
 
-  await signedIn.goto('/budget');
+  await signedIn.goto('/overview?lines=all');
   await expect(signedIn.getByRole('button', { name: 'Grocery balance' })).toContainText('-$30.00');
 });
 
@@ -266,7 +266,7 @@ test('a duplicate is archived, and the money it moved comes back', async ({ sign
   });
 
   // It moved an envelope, which archiving has to put back.
-  await signedIn.goto('/budget');
+  await signedIn.goto('/overview?lines=all');
   await expect(signedIn.getByRole('button', { name: 'Grocery balance' })).toContainText('-$42.10');
 
   await signedIn.goto('/transactions');
@@ -277,7 +277,7 @@ test('a duplicate is archived, and the money it moved comes back', async ({ sign
   await expect(signedIn.getByText('Whole Foods Market')).toHaveCount(0);
 
   // … and the envelope is whole again.
-  await signedIn.goto('/budget');
+  await signedIn.goto('/overview?lines=all');
   await expect(signedIn.getByRole('button', { name: 'Grocery balance' })).toContainText('$0.00');
 });
 
@@ -402,7 +402,7 @@ test('a merchant filed twice is suggested on the third', async ({ signedIn, api 
   // Assert the write landed before doing anything else: the row leaving the
   // queue is the signal, and navigating before it does makes this test lie.
   await expect(signedIn.getByRole('button', { name: /Categorize as Grocery/ })).toHaveCount(0);
-  await signedIn.goto('/budget');
+  await signedIn.goto('/overview?lines=all');
   await expect(signedIn.getByRole('button', { name: 'Grocery balance' })).toContainText('-$117.20');
 });
 

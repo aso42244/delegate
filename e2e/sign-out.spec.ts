@@ -25,7 +25,7 @@ test('sign out ends the session and returns to the login screen', async ({ signe
   await expect(page.getByLabel('Username')).toBeVisible();
 
   // And the budget is genuinely out of reach, not merely off-screen.
-  await page.goto('/budget');
+  await page.goto('/overview?lines=all');
   await expect(page.getByLabel('Username')).toBeVisible();
 });
 
@@ -38,7 +38,7 @@ test('sign out ends the session and returns to the login screen', async ({ signe
  * other control in that zone asks, and this one did not.
  */
 test('signing out asks first, and cancelling stays put', async ({ signedIn: page }) => {
-  await page.goto('/budget');
+  await page.goto('/overview?lines=all');
   await page
     .getByRole('navigation', { name: 'Main' })
     .getByRole('button', { name: 'Sign out' })
@@ -50,6 +50,6 @@ test('signing out asks first, and cancelling stays put', async ({ signedIn: page
 
   await expect(page.getByRole('dialog')).toHaveCount(0);
   // Still signed in, still on the page it was opened from.
-  await expect(page).toHaveURL(/\/budget$/);
-  await expect(page.getByRole('heading', { name: 'Budget' })).toBeVisible();
+  await expect(page).toHaveURL(/\/overview\?lines=all$/);
+  await expect(page.getByRole('heading', { name: 'Overview' })).toBeVisible();
 });

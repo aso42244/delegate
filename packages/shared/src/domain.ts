@@ -47,6 +47,12 @@ export type UserRole = (typeof USER_ROLES)[number];
  * same as having chosen the default — it is what lets the default move later
  * without overriding a decision somebody made.
  */
+/**
+ * Where somebody lands. Overview is the only page left to land on: the Budget
+ * page was deleted when ADR 067's trial ended, and `budget` survives only because
+ * it is a value in the database's own enum and somebody may have chosen it.
+ * Anybody who did lands on Overview.
+ */
 export const LANDING_PAGES = ['overview', 'budget'] as const;
 export type LandingPage = (typeof LANDING_PAGES)[number];
 
@@ -56,7 +62,7 @@ export const DEFAULT_LANDING_PAGE: LandingPage = 'overview';
 /** The address of each, so the router and the setting cannot drift apart. */
 export const LANDING_PATH: Record<LandingPage, string> = {
   overview: '/overview',
-  budget: '/budget',
+  budget: '/overview',
 };
 
 export const SYNC_RUN_STATUSES = ['running', 'succeeded', 'failed'] as const;

@@ -78,7 +78,7 @@ test('never changes the amount to delegate', async ({ signedIn, api }) => {
   await signedIn.goto('/utilities');
   await expect(signedIn.getByText('Water').first()).toBeVisible();
 
-  await signedIn.goto('/budget');
+  await signedIn.goto('/overview?lines=all');
   await expect(signedIn.getByRole('button', { name: 'Water amount to delegate' })).toContainText(
     '$20.00',
   );
@@ -248,7 +248,7 @@ test('the amount to delegate is left alone when the cadence changes', async ({ s
 
   // Still $60.00 a press. Changing how often you are paid does not decide how
   // much goes into an envelope — that stays the household's call.
-  await signedIn.goto('/budget');
+  await signedIn.goto('/overview?lines=all');
   await expect(signedIn.getByRole('button', { name: 'Water amount to delegate' })).toContainText(
     '$60.00',
   );

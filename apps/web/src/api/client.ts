@@ -1,5 +1,3 @@
-import { isDemoPath } from '../demo/is-demo.js';
-import { demoResponse } from '../demo/responses.js';
 /**
  * The API client.
  *
@@ -33,30 +31,6 @@ export class ApiError extends Error {
 }
 
 async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
-  /*
-   * The demo answers here, and only here.
-   *
-   * `/demo/overview` is the same page as `/overview` — the same components, the
-   * same queries, the same session. What differs is where the numbers come
-   * from, and this is the one place in the application that fetches anything, so
-   * it is the one place that has to know.
-   *
-   * A write is refused rather than pretended: the controls that would make one
-   * are not drawn on a demo page, so anything reaching here is a mistake worth
-   * seeing rather than swallowing.
-   *
-   * `undefined` from the fixture means "the demo has nothing to say about this"
-   * — the session, the application's own name — and those fall through to the
-   * server, because the demo is invented *money*, not an invented account.
-   */
-  if (isDemoPath()) {
-    if (method !== 'GET') {
-      throw new ApiError(403, 'demo_read_only', 'The demo cannot be changed.');
-    }
-    const invented = demoResponse(path);
-    if (invented !== undefined) return invented as T;
-  }
-
   const response = await fetch(path, {
     method,
     // The session cookie is HttpOnly, so it must be sent explicitly.

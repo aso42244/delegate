@@ -1,6 +1,6 @@
 # 067 — The Budget page is hidden from the navigation, for a trial
 
-**Status:** accepted, provisional — review on or after 2026-09-29
+**Status:** concluded 2026-09-29 — the page is deleted (see **Outcome** below)
 **Amended by:** [068](068-one-accounts-table-on-both-screens.md), which gives Overview the three things listed below
 **Date:** 2026-09-15
 
@@ -112,3 +112,20 @@ endpoints stay whichever way the trial ends.
 belongs to this page alone — and the answer to that is to drop it with the page
 rather than to rebuild it on a dashboard whose arrangement is already the
 household's to drag.
+
+## Outcome — 2026-09-29
+
+**Deleted.** Reviewed on the date set above: Overview was enough, and nothing was
+missed in the fortnight. `MainBudget`, `budget-layout.ts` and the Stacked / Two
+columns card on Settings → Display are gone, as this ADR said they would be.
+
+- **`/budget` redirects to Overview**, so a bookmark still lands.
+- **The landing preference goes too.** With one page left to land on it was a
+  choice of one, so "Start on" leaves Settings → Users. The `landing_page`
+  column and its `budget` value stay — the value is in the database's own enum,
+  and somebody may have chosen it — and `LANDING_PATH` sends that choice to
+  Overview.
+- **The end-to-end suite moved to the band.** Its signed-in fixture opens
+  `/overview?lines=all`, which draws the same `DelegationsTable` and
+  `AccountsTable`; the specs that worked on accounts press the band's
+  Accounts & Debts tab.

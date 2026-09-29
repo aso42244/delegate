@@ -9,7 +9,6 @@ import { NARROW, useMediaQuery } from './useMediaQuery.js';
 import { Sidebar } from './components/Sidebar.jsx';
 import { ChangePassword } from './pages/ChangePassword.jsx';
 import { SetUpTwoFactor } from './pages/SetUpTwoFactor.jsx';
-import { MainBudget } from './pages/MainBudget.jsx';
 import { AccountsSection } from './pages/settings/Accounts.jsx';
 import { ArchivedSection } from './pages/settings/Archived.jsx';
 import { Rules } from './pages/Rules.jsx';
@@ -170,12 +169,12 @@ export function App(): ReactNode {
 
             It was the Budget page's own address, which is exactly why a
             per-person landing page could not work: a preference can only ever
-            redirect *away* from a root that is already something. Budget has its
-            own address now and the root resolves to whichever page this person
-            chose.
+            redirect *away* from a root that is already something.
           */}
           <Route index element={<LandingRedirect />} />
-          <Route path="budget" element={<MainBudget />} />
+          {/* The Budget page was deleted when ADR 067's trial ended; Overview's
+              band draws the same two tables. The address still lands. */}
+          <Route path="budget" element={<Navigate to="/overview" replace />} />
           <Route path="transactions" element={<Transactions />} />
           <Route path="recurring" element={<Recurring />} />
           {/* Both old entries land on the page carrying both halves. A bookmark
@@ -190,20 +189,6 @@ export function App(): ReactNode {
           <Route path="insights" element={<Navigate to="/overview" replace />} />
           <Route path="overview" element={<Overview />} />
 
-          {/*
-            The demo: the same pages, drawing invented numbers.
-            
-            Not a separate build and not a separate deployment — a route. It is
-            behind the same sign-in as everything else because it *is* everything
-            else, and the only thing that differs is where the figures come from:
-            see `demo/responses.ts`, which answers the one fetch this application
-            makes.
-          */}
-          <Route path="demo">
-            <Route index element={<Navigate to="/demo/overview" replace />} />
-            <Route path="overview" element={<Overview />} />
-            <Route path="budget" element={<MainBudget />} />
-          </Route>
           <Route path="settings" element={<SettingsLayout />}>
             <Route index element={<SettingsLanding />} />
             <Route path="sync" element={<SyncSection />} />

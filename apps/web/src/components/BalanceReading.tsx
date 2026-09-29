@@ -5,8 +5,6 @@ import type { BudgetViewDto } from '../api/budget.js';
 import { type PillTone } from './AlertTag.jsx';
 import { ControlPopover } from './ControlPopover.jsx';
 import { buttonFace, Modal, type ButtonVariant } from './ui.jsx';
-import { useIsDemo } from '../useDemo.js';
-import { pathFor } from '../demo/is-demo.js';
 
 /**
  * The bottom-line reading: Balanced, To delegate, Over-delegated.
@@ -203,13 +201,12 @@ export function BalanceButton({
   readonly collapsed?: boolean;
 }): ReactNode {
   const workingId = useId();
-  const demo = useIsDemo();
   const { tone, message, working } = read(view);
 
   return (
     <div className="group relative">
       <Link
-        to={pathFor('/overview', demo)}
+        to="/overview"
         /*
          * Named explicitly, because `role="status"` below does not support name
          * from content — so the words inside do not reach the link, and without
