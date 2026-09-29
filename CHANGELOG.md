@@ -6,6 +6,12 @@ phase (`v0.1.0-phase1`, and so on).
 
 ## [Unreleased]
 
+### Added
+
+- **Screenshots in the README**, of the real application drawing an invented
+  household. `e2e/screenshots.spec.ts` retakes them on request
+  (`SCREENSHOTS=1`), from the same `makeHousehold` the end-to-end suite uses.
+
 ### Removed
 
 - **The Budget page** ([ADR 067](docs/decisions/067-the-budget-page-is-hidden-for-a-trial.md),
