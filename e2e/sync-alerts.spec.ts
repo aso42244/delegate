@@ -109,7 +109,7 @@ test('a failing sync paints the Sync button, not a band above the page', async (
    * the navigation into the control directly under it.
    */
   const nav = await signedIn.getByRole('navigation', { name: 'Main' }).boundingBox();
-  const heading = await signedIn.getByRole('heading', { name: 'Budget' }).boundingBox();
+  const heading = await signedIn.getByRole('heading', { name: 'Overview' }).boundingBox();
   const box = await button.boundingBox();
   expect(box!.x).toBeGreaterThanOrEqual(nav!.x);
   expect(box!.x + box!.width).toBeLessThanOrEqual(nav!.x + nav!.width);

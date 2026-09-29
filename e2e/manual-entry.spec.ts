@@ -1,4 +1,4 @@
-import { expect, makeAccount, makeDelegation, openNew, test } from './fixtures.js';
+import { expect, makeAccount, makeDelegation, openNew, showAccounts, test } from './fixtures.js';
 
 /**
  * Entering a transaction by hand, and splitting one across envelopes.
@@ -28,6 +28,7 @@ test('a manual transaction moves the account balance', async ({ signedIn }) => {
 
   // Money out by default: $200.00 − $42.10.
   await signedIn.goto('/overview?lines=all');
+  await showAccounts(signedIn);
   await expect(signedIn.getByRole('button', { name: 'Physical Cash balance' })).toContainText(
     '$157.90',
   );
@@ -47,6 +48,7 @@ test('money in raises the balance instead of lowering it', async ({ signedIn }) 
 
   await expect(signedIn.getByRole('dialog')).toHaveCount(0);
   await signedIn.goto('/overview?lines=all');
+  await showAccounts(signedIn);
   await expect(signedIn.getByRole('button', { name: 'Physical Cash balance' })).toContainText(
     '$275.00',
   );
@@ -192,7 +194,7 @@ test('splitting evenly hands the odd cent to the first line', async ({ signedIn,
  * `getByLabel('Amount')` matches those too — which is the same collision this
  * suite has been bitten by before.
  */
-test('a transaction can be entered from the Budget page, which then updates', async ({
+test('a transaction can be entered from the budget, which then updates', async ({
   signedIn,
   api,
 }) => {
@@ -200,6 +202,7 @@ test('a transaction can be entered from the Budget page, which then updates', as
   await makeDelegation(api, 'Grocery');
 
   await signedIn.goto('/overview?lines=all');
+  await showAccounts(signedIn);
   await expect(signedIn.getByRole('button', { name: 'Physical Cash balance' })).toContainText(
     '$200.00',
   );
@@ -226,7 +229,10 @@ test('a transaction can be entered from the Budget page, which then updates', as
  * the Transactions page excludes them, and the one reached from the Budget page
  * has to as well, or the two routes to the same dialog disagree.
  */
-test('the Budget page picker does not offer outstanding checks', async ({ signedIn, api }) => {
+test('the picker reached from the budget does not offer outstanding checks', async ({
+  signedIn,
+  api,
+}) => {
   await makeAccount('Everyday Checking', 'asset', 500000n);
   await makeDelegation(api, 'Grocery', '40000');
 

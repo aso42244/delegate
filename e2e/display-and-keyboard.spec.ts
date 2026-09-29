@@ -84,7 +84,7 @@ test.describe('the budget on a phone', () => {
     await page.evaluate(() => {
       // The column switcher is a row of the table it switches, so the table is
       // the ancestor rather than a sibling.
-      const group = document.querySelector('[role="radiogroup"]');
+      const group = document.querySelector('table [role="radiogroup"]');
       const table = group?.closest('table');
       if (!table) throw new Error('no split-column table');
       const touch = (x: number): Touch =>
@@ -103,7 +103,7 @@ test.describe('the budget on a phone', () => {
     await page.evaluate(() => {
       // The column switcher is a row of the table it switches, so the table is
       // the ancestor rather than a sibling.
-      const group = document.querySelector('[role="radiogroup"]');
+      const group = document.querySelector('table [role="radiogroup"]');
       const table = group?.closest('table');
       if (!table) throw new Error('no split-column table');
       const touch = (x: number): Touch =>
@@ -128,7 +128,7 @@ test.describe('the budget on a phone', () => {
     await page.evaluate(() => {
       // The column switcher is a row of the table it switches, so the table is
       // the ancestor rather than a sibling.
-      const group = document.querySelector('[role="radiogroup"]');
+      const group = document.querySelector('table [role="radiogroup"]');
       const table = group?.closest('table');
       if (!table) throw new Error('no split-column table');
       const at = (x: number, y: number): Touch =>

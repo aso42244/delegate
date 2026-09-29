@@ -215,7 +215,7 @@ test('cards that are small enough share a row', async ({ signedIn }) => {
   await signedIn.goto('/settings/display');
 
   const theme = await signedIn
-    .getByText('Six palettes, or whatever this device asks for.')
+    .getByText('Light, dark, or whatever this device asks for.')
     .boundingBox();
   const rows = await signedIn
     .getByText('Spacing only — the text stays the same size.')

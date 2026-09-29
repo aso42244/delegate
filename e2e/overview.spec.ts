@@ -2,6 +2,7 @@ import {
   expect,
   makeAccount,
   makeDelegation,
+  makeHousehold,
   makeIncome,
   makePendingSpend,
   test,
@@ -1384,13 +1385,14 @@ test('the arrange controls are hidden until asked for', async ({ signedIn }) => 
  * scale is fitted to the columns now, furniture included.
  *
  * So this asserts the property rather than any of the three fixes: the drawing
- * is inside the tile, and as wide as it, however the row is dragged. On the demo
- * route because it has a flow to draw, and because a pointer drag previews live
- * without needing the layout saved.
+ * is inside the tile, and as wide as it, however the row is dragged. On an
+ * invented household because it has a flow to draw; a pointer drag previews
+ * live without needing the layout saved.
  */
-test('the cashflow chart fits its tile at every height', async ({ signedIn }) => {
+test('the cashflow chart fits its tile at every height', async ({ signedIn, api }) => {
+  await makeHousehold(api);
   await signedIn.setViewportSize({ width: 1680, height: 1000 });
-  await signedIn.goto('/demo/overview');
+  await signedIn.goto('/overview');
 
   const svg = signedIn.locator('svg[role="img"]').first();
   await expect(svg).toBeVisible();
@@ -1455,9 +1457,11 @@ test('the cashflow chart fits its tile at every height', async ({ signedIn }) =>
  */
 test('the percentages and the figures in a tile each share one right edge', async ({
   signedIn,
+  api,
 }) => {
+  await makeHousehold(api);
   await signedIn.setViewportSize({ width: 1680, height: 1000 });
-  await signedIn.goto('/demo/overview');
+  await signedIn.goto('/overview');
   await expect(signedIn.getByRole('heading', { name: 'Allocation', level: 2 })).toBeVisible();
 
   const edges = await signedIn.evaluate(() => {
@@ -1486,7 +1490,7 @@ test('the percentages and the figures in a tile each share one right edge', asyn
     return { shares, figures };
   });
 
-  // The demo draws several of these, and a run that found none would otherwise
+  // The household draws several of these, and a run that found none would otherwise
   // pass by having nothing to check.
   expect(Object.keys(edges.shares).length).toBeGreaterThanOrEqual(2);
   for (const [tile, rights] of Object.entries(edges.shares)) {

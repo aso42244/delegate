@@ -1,5 +1,5 @@
 import type { Page } from '@playwright/test';
-import { expect, makeAccount, makeDelegation, openNew, test } from './fixtures.js';
+import { expect, makeAccount, makeDelegation, openNew, showAccounts, test } from './fixtures.js';
 
 /** Creates a grouping through the dialog the page now opens. */
 async function makeGrouping(page: Page, name: string): Promise<void> {
@@ -198,6 +198,7 @@ test('dragging an account reorders the Assets section', async ({ signedIn }) => 
   await makeAccount('Checking', 'asset', 480000n);
 
   await signedIn.goto('/overview?lines=all');
+  await showAccounts(signedIn);
   await expect(signedIn.getByRole('button', { name: 'Checking balance' })).toBeVisible();
 
   // Alphabetical until something is moved: Checking, then Savings.
@@ -214,6 +215,7 @@ test('the account row menu is the route that works without a mouse', async ({ si
   await makeAccount('Checking', 'asset', 480000n);
 
   await signedIn.goto('/overview?lines=all');
+  await showAccounts(signedIn);
   await signedIn.getByRole('button', { name: 'Options for Savings' }).click();
   await signedIn.getByRole('menuitem', { name: 'Move up' }).click();
 
@@ -260,6 +262,7 @@ test('a row can be dropped at the end of a list', async ({ signedIn }) => {
   await makeAccount('Savings', 'asset', 900000n);
 
   await signedIn.goto('/overview?lines=all');
+  await showAccounts(signedIn);
   const assets = signedIn.getByRole('table').filter({ hasText: 'Assets' });
   await expect(assets.getByRole('row').filter({ hasText: 'Cash' })).toBeVisible();
 
