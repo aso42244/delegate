@@ -177,7 +177,6 @@ export const PAGES = [
   { to: '/settings', label: 'Settings', icon: 'settings', end: false },
 ] as const satisfies readonly { to: string; label: string; icon: PageIcon; end: boolean }[];
 
-
 function useCollapsed(): [boolean, (value: boolean) => void] {
   const [collapsed, setCollapsed] = useState(() => {
     if (typeof window === 'undefined') return false;

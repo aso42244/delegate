@@ -1,8 +1,4 @@
-import {
-  canManageUsers,
-  canModifyUser,
-  type UserRole,
-} from '@budget/shared';
+import { canManageUsers, canModifyUser, type UserRole } from '@budget/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState, type FormEvent, type ReactNode } from 'react';
 import { api, ApiError, authApi } from '../../api/client.js';
