@@ -675,6 +675,34 @@ export async function makeHousehold(api: APIRequestContext): Promise<void> {
     delegated += balance;
   }
 
+  /*
+   * Sixty nights of history, for the tiles that draw a line through time. The
+   * nightly job writes these; here they are a gentle climb with a wobble, ending
+   * near what the accounts above hold today. Invented, like everything else.
+   */
+  for (let night = 60; night >= 1; night -= 1) {
+    const date = new Date(now - night * DAY);
+    const drift = BigInt(60 - night) * 26_00n + BigInt(((night * 53) % 17) - 8) * 45_00n;
+    const assets = 11_200_00n + drift;
+    const debts = 520_00n - BigInt(night % 9) * 12_00n;
+    await prisma.aggregateSnapshot.create({
+      data: {
+        snapshotDate: new Date(
+          Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()),
+        ),
+        netWorthAssetsCents: assets,
+        netWorthDebtsCents: debts,
+        netWorthCents: assets - debts,
+        budgetAssetsCents: assets - 8_250_00n,
+        budgetDebtsCents: debts,
+        totalDelegationsCents: assets - 8_250_00n - debts,
+        pendingCategorizedCents: 0n,
+        identityValueCents: 0n,
+        provenance: 'observed',
+      },
+    });
+  }
+
   // Checking holds what the envelopes do, less what cash holds, plus what the
   // card owes, plus a paycheck's leftover not yet delegated.
   await prisma.account.update({
