@@ -493,8 +493,18 @@ exact and draw normally. A bucket takes the weakest provenance in it, because a
 line through a week is no better than its worst day.
 
 **That it ends on now.** Snapshots are labelled for the previous day, so every
-chart appends a hollow marker for current state on a dashed final segment. It is
-kept visually apart from the stored points because it is not one.
+chart ends on today's figure, drawn as the line's last point and named **Today**
+on the axis. It was a hollow marker on a dashed final segment, set apart because
+it was not a stored point; in use it read as a fault rather than as the present,
+and was removed at the maintainer's request on 2026-10-01.
+
+**What it is measuring.** Two quiet axes, in `text-micro`-sized `--color-muted`:
+round figures up the left with a hairline at each — `$12.5k`, `$12k`, `$11.5k`,
+with a decimal only where the ticks need one to differ — and the first, middle
+and last dates along the bottom. Enough to say what range and what period, and
+no more. **The chart fills its tile**, measured rather than set: charts scale to
+the room (`ui-system.md`), and a line in a row its neighbour made tall should not
+sit in the top third of it.
 
 **That it has nothing yet.** History starts at the first night. Every tile has a
 one-sentence empty state — `No history yet — the first night records one.` — and

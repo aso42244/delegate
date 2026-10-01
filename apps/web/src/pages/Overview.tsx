@@ -136,6 +136,20 @@ const TILE_COPY: Record<string, { readonly title: string; readonly description?:
   uncategorized_backlog: { title: 'Waiting to be categorized' },
 };
 
+/** The tiles drawn by `TimeSeriesChart`, which fill whatever height the row has. */
+const TIME_SERIES_TILES = new Set([
+  'net_worth_over_time',
+  'assets_vs_debts',
+  'identity_drift',
+  'net_worth_composition',
+  'bitcoin_value_over_time',
+  'home_equity_over_time',
+  'debt_trajectory',
+  'thirty_day_momentum',
+  'account_balance_history',
+  'delegation_balance_history',
+]);
+
 /** History starts at the first night and gains one a night — there is no backfill. */
 const NO_HISTORY = 'No history yet — the first night records one.';
 
@@ -256,7 +270,9 @@ function TileShell({
       {...(copy.description === undefined ? {} : { description: copy.description })}
       // A fixed height turns the body into the thing that scrolls, so a tile
       // dragged shorter than its content stays a tile rather than a clipped one.
-      filled={sized}
+      // A line through time always fills it: charts scale to the room, so one
+      // in a row a neighbour made tall should not sit in the top third of it.
+      filled={sized || TIME_SERIES_TILES.has(tile.key)}
       {...(sized ? { style: { height } } : {})}
       draggable={draggable}
       onPointerDown={(event: React.PointerEvent) => {
@@ -961,7 +977,7 @@ function TrajectoryTile({
   }
 
   return (
-    <div className="flex flex-col gap-2">
+    <div className="flex min-h-0 flex-1 flex-col gap-2">
       <TimeSeriesChart
         points={toPoints(trajectory.points, ['debtsCents'])}
         series={[{ key: 'debtsCents', name: 'Debts' }]}
@@ -1332,7 +1348,7 @@ function BalanceHistoryTile({
   }
 
   return (
-    <div className="flex flex-col gap-3">
+    <div className="flex min-h-0 flex-1 flex-col gap-3">
       {!preview && (
         <SelectField
           label={label}

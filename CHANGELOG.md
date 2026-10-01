@@ -6,7 +6,14 @@ phase (`v0.1.0-phase1`, and so on).
 
 ## [Unreleased]
 
-Nothing yet.
+### Changed
+
+- **Charts through time fill their tile and say what they measure.** Net worth,
+  assets against debts, drift and the other seven lines through history draw to
+  the full height of the tile rather than a fixed 128px, with small axes: round
+  figures up the left (`$12.5k`, `$12k`, `$11.5k`) and the first, middle and last
+  dates along the bottom. Today's figure is the line's last point, labelled
+  Today, instead of a hollow marker on a dashed segment.
 
 ## [0.82.0] — 2026-09-29
 
