@@ -6,6 +6,10 @@ phase (`v0.1.0-phase1`, and so on).
 
 ## [Unreleased]
 
+Nothing yet.
+
+## [0.83.0] — 2026-10-01
+
 ### Changed
 
 - **Charts through time fill their tile and say what they measure.** Net worth,
@@ -14,6 +18,12 @@ phase (`v0.1.0-phase1`, and so on).
   figures up the left (`$12.5k`, `$12k`, `$11.5k`) and the first, middle and last
   dates along the bottom. Today's figure is the line's last point, labelled
   Today, instead of a hollow marker on a dashed segment.
+
+### Security
+
+- **Dependency advisories fixed**: fastify 5.12.5, undici 7.30.0 and
+  brace-expansion 5.0.12, each a patch or minor release inside the existing
+  range.
 
 ## [0.82.0] — 2026-09-29
 
