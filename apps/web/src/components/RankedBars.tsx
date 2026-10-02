@@ -14,7 +14,7 @@ import type { ReactNode } from 'react';
  * Inline SVG is not used here and would be the wrong tool. A ranked bar is a row
  * of text and a filled box; HTML already lays that out, wraps it, truncates it
  * and hands it to a screen reader correctly, and an SVG version would have to
- * reimplement all four. `SnapshotChart` is SVG because a line through time is
+ * reimplement all four. `TimeSeriesChart` is SVG because a line through time is
  * not expressible in boxes — this is.
  *
  * Two rules the whole family follows.
