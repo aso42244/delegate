@@ -6,7 +6,10 @@ phase (`v0.1.0-phase1`, and so on).
 
 ## [Unreleased]
 
-Nothing yet.
+### Removed
+
+- **`SnapshotChart`**, a chart component nothing drew any more. `TimeSeriesChart`
+  replaced it, and it still described the hollow "today" marker v0.83.0 removed.
 
 ## [0.83.0] — 2026-10-01
 
