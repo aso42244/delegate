@@ -4,7 +4,7 @@
  *   SUM(in-budget assets)
  *     − SUM(in-budget debts)
  *     − SUM(delegation balances)
- *     + SUM(categorized pending transactions)
+ *     + SUM(pending transactions)
  *
  * This is a point-in-time calculation and a health indicator, not an invariant
  * enforced by double-entry bookkeeping. A positive result is money that has
@@ -35,7 +35,7 @@ export interface IdentityInput {
   readonly debtsCents: Cents;
   readonly delegationsCents: Cents;
   /**
-   * Signed sum of categorized pending transactions: negative for a spend, which
+   * Signed sum of pending transactions, read as posted: negative for a spend, which
    * is the ordinary case. Defaults to zero so every existing caller is unchanged.
    */
   readonly pendingCents?: Cents;

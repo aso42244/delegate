@@ -89,3 +89,10 @@ already net of a pending ACH debit, and the budget read over-delegated by exactl
 $200.00. The per-account route is what was built — an account can be marked as
 one whose balance includes its pending charges, and it is then left out of the
 fourth term. [ADR 074](074-a-bank-can-count-its-own-pending.md).
+
+## Amendment — 2026-10-03
+
+"Categorized only" is gone. A pending paycheck is never categorized, so it was
+counted nowhere and a payday Delegate read as over-delegated by the whole
+paycheck. Every pending transaction is now read as posted — see
+[ADR 075](075-a-pending-item-is-read-as-posted.md).

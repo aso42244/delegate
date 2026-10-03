@@ -780,7 +780,7 @@ describe('pending transactions', () => {
     await expectCacheMatchesLedger();
   });
 
-  it('are counted only once categorized, and only on in-budget accounts', async () => {
+  it('are read as posted whether categorized or not, and only on in-budget accounts', async () => {
     const card = await makeAccount({ name: 'Card', type: 'debt', balanceCents: 0n });
     const offBudget = await makeAccount({
       name: 'Brokerage',
@@ -791,11 +791,15 @@ describe('pending transactions', () => {
     });
     const grocery = await makeDelegation({ name: 'Grocery' });
 
-    // Uncategorized: neither side has moved, so there is nothing to correct.
-    // Adjusting for it would turn a reconciliation into a forecast.
+    /*
+     * Uncategorized: read as though it had posted (ADR 075), so it reads exactly
+     * as an uncategorized posted charge does — over-delegated by its amount
+     * until somebody files it. It used to be ignored until it posted, which held
+     * for a charge and hid a pending paycheck completely.
+     */
     await makeTransaction({ accountId: card.id, amountCents: -5_000n, pending: true });
-    expect((await computeBudgetIdentity(prisma)).pendingCents).toBe(0n);
-    expect(await identityDifference()).toBe(0n);
+    expect((await computeBudgetIdentity(prisma)).pendingCents).toBe(-5_000n);
+    expect(await identityDifference()).toBe(-5_000n);
 
     /*
      * Off-budget: the first two terms never counted this account, so the third
@@ -824,7 +828,54 @@ describe('pending transactions', () => {
     );
     await prisma.account.update({ where: { id: offBudget.id }, data: { inBudget: false } });
 
-    expect((await computeBudgetIdentity(prisma)).pendingCents).toBe(0n);
+    // The card's charge still counts; the off-budget one never does.
+    expect((await computeBudgetIdentity(prisma)).pendingCents).toBe(-5_000n);
+  });
+
+  it('count a pending paycheck, which no categorization ever touches', async () => {
+    /*
+     * Reported from real data. A paycheck went pending on a checking account
+     * whose institution reports a settled balance, Delegate was pressed on
+     * payday, and the reading went over-delegated by the whole paycheck: income
+     * is never categorized, so under ADR 020 it was counted nowhere until the
+     * feed posted it.
+     */
+    const checking = await makeAccount({
+      name: 'Checking',
+      type: 'asset',
+      balanceCents: 1_000_00n,
+    });
+    const rent = await makeDelegation({ name: 'Rent' });
+    await adjustDelegationByDelta(prisma, {
+      delegationId: rent.id,
+      deltaCents: 1_000_00n,
+      actorId,
+    });
+    expect(await identityDifference()).toBe(0n);
+
+    await prisma.transaction.create({
+      data: {
+        accountId: checking.id,
+        postedAt: new Date(),
+        amountCents: 1_476_06n,
+        descriptionRaw: 'ACH Deposit PAYROLL',
+        description: 'ACH Deposit PAYROLL',
+        kind: 'income',
+        pending: true,
+        source: 'simplefin',
+        externalId: 'payroll-pending-1',
+      },
+    });
+    // Delegate pressed against it: the paycheck handed out in full.
+    await adjustDelegationByDelta(prisma, {
+      delegationId: rent.id,
+      deltaCents: 1_476_06n,
+      actorId,
+    });
+
+    expect((await computeBudgetIdentity(prisma)).pendingCents).toBe(1_476_06n);
+    expect(await identityDifference()).toBe(0n);
+    await expectCacheMatchesLedger();
   });
 
   it('refuses to categorize an off-budget row in the first place', async () => {

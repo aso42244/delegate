@@ -426,8 +426,8 @@ export function AccountRowMenu({
             </div>
 
             {/* A synced account only. Most institutions report a settled
-                balance and the identity adds categorized pending charges back
-                to it (ADR 020); one that folds them into its balance would have
+                balance and the identity reads pending items as posted on top of
+                it (ADR 075); one that folds them into its balance would have
                 them counted twice. A manual account has no pending charges. */}
             {row.source !== 'manual' && row.balanceIncludesPending !== undefined && (
               <div className={ITEM_CLASS}>

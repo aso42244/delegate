@@ -13,11 +13,10 @@ recomputed on every view:
 SUM(in-budget assets) − SUM(in-budget debts) − SUM(delegation balances)
 ```
 
-A fourth term corrects for pending transactions that have been categorized: the
-envelope moves the moment one is categorized, while the account balance is the
-institution's settled balance and will not include it for another day or three.
-Without it the first three terms are out of step by the amount of the charge. See
-ADR 020. An account whose institution already counts its pending charges in the
+A fourth term reads pending transactions as though they had posted: a pending
+charge or paycheck is missing from the institution's settled balance for a day or
+three, while the household already treats it as having happened. See ADR 020 and
+ADR 075. An account whose institution already counts its pending charges in the
 balance it reports is marked as such and left out of this term — ADR 074.
 
 That difference is displayed as a chip in the sidebar, above Delegate — `Balanced`,
