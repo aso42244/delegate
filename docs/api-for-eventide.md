@@ -202,7 +202,8 @@ readings a glance needs.
     "since": "2026-09-12T00:00:00.000Z",
     "cycleMissing": false,
     "entries": [{ "key": "9b2e…", "name": "3 - Food", "color": "#46A171", "spendCents": "61204" }]
-  }
+  },
+  "spending": [{ "id": "5d7a…", "spentCents": "48210" }]
 }
 ```
 
@@ -224,6 +225,9 @@ readings a glance needs.
 | `spendingByGrouping.since`           | instant \| null                             | Where the window starts: the cycle start.                                                         |
 | `spendingByGrouping.cycleMissing`    | boolean                                     | True when no cycle has run yet, in which case `entries` is empty rather than everything.          |
 | `spendingByGrouping.entries[]`       | list                                        | Spend per grouping this cycle, largest first. `key` is the grouping id, or `ungrouped`.           |
+| `spending[]`                         | list                                        | One entry per active delegation, in the Budget page's order, for its pace bar.                    |
+| `spending[].id`                      | string                                      | The delegation's id, as in `/api/read/budget`'s `delegations[].id`.                               |
+| `spending[].spentCents`              | cents                                       | Spent from the line since the payday (the last press without one). A magnitude, never negative.   |
 
 ## What this is not
 
