@@ -6,6 +6,10 @@ phase (`v0.1.0-phase1`, and so on).
 
 ## [Unreleased]
 
+Nothing yet.
+
+## [0.84.0] — 2026-10-03
+
 ### Changed
 
 - **Every pending item is read as posted.** The budget used to count a pending
