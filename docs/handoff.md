@@ -216,7 +216,7 @@ point-in-time calculation:
 SUM(in-budget assets)
   − SUM(in-budget debts)
   − SUM(delegation balances)
-  + SUM(categorized pending transactions) ≈ $0
+  + SUM(pending transactions) ≈ $0
 ```
 
 The fourth term is not decoration. Categorizing a pending charge empties its

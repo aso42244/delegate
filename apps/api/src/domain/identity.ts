@@ -7,7 +7,7 @@ import type { Db } from '../db/client.js';
  *   SUM(in-budget assets)
  *     − SUM(in-budget debts)
  *     − SUM(delegation balances)
- *     + SUM(categorized pending transactions)
+ *     + SUM(pending transactions)
  *
  * A health indicator, not an enforced invariant. Positive means money has landed
  * in an account and not yet been handed to an envelope — the "available to
@@ -40,16 +40,20 @@ export async function computeBudgetIdentity(db: Db): Promise<IdentityResult> {
     db.delegation.aggregate({ _sum: { balanceCents: true } }),
     db.budgetSettings.findUnique({ where: { id: 1 }, select: { identityToleranceCents: true } }),
     /*
-     * Categorized pending transactions, which the account balances do not yet
-     * carry. The stored balance is the institution's settled `balance`, never
-     * `available-balance`, so a pending charge is missing from it — while
-     * categorizing has already taken the money out of its envelope.
+     * Pending transactions, which the account balances do not yet carry, read
+     * as though they have already posted (ADR 075). The stored balance is the
+     * institution's settled `balance`, never `available-balance`, so a pending
+     * charge or a pending paycheck is missing from it.
      *
-     * `allocations: { some: {} }` is the whole condition. An *un*categorized
-     * pending row has moved neither side and is already consistent; adjusting
-     * for it would turn a reconciliation into a forecast. Allocations are
-     * required to sum to the transaction amount, so summing `amountCents` here
-     * is summing exactly what the delegations moved by.
+     * **Every pending row, categorized or not.** It was categorized rows only
+     * (ADR 020), on the grounds that an uncategorized one had moved neither side.
+     * That held for a charge and failed for a paycheck: income is never
+     * categorized, so a pending paycheck was counted nowhere, and a Delegate
+     * pressed on payday read as over-delegated by the whole paycheck until the
+     * feed caught up. Now a pending row is a posted row as far as the reading
+     * goes — a categorized charge nets out against its envelope, an
+     * uncategorized one reads exactly as an uncategorized posted charge does,
+     * and a paycheck is money that has arrived.
      *
      * Manual rows apply their own balance effect on creation and are always
      * created settled, so there is no manual row to exclude — but the filter is
@@ -66,7 +70,6 @@ export async function computeBudgetIdentity(db: Db): Promise<IdentityResult> {
       where: {
         pending: true,
         archivedAt: null,
-        allocations: { some: {} },
         account: { inBudget: true, archivedAt: null, balanceIncludesPending: false },
       },
       _sum: { amountCents: true },

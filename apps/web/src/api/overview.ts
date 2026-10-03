@@ -359,10 +359,13 @@ export interface OverviewDataDto {
   /** Null when no payday anchor is set — then no tick is drawn at all. */
   readonly payCycle?: PayCycleDto | null;
   readonly cashflow?: CashflowDto;
-  /** The cashflow tile's own period, which is not the page's. */
-  readonly cashflowWindow?: string;
-  /** One aggregate series feeding three tiles — see the domain's comment. */
-  readonly aggregate?: AggregateDto;
+  /**
+   * Every windowed tile's period: the one it was set to, or its default.
+   * ADR 076. A tile absent from here has no period to pick.
+   */
+  readonly windows?: Readonly<Record<string, string>>;
+  /** One aggregate series per tile, computed once per distinct period. */
+  readonly aggregates?: Readonly<Record<string, AggregateDto>>;
   readonly change_per_cycle?: readonly CycleChangeDto[];
   readonly thirty_day_momentum?: { readonly points: readonly SeriesPointDto[] };
   readonly delegations_negative?: readonly NegativeLineDto[];
@@ -372,10 +375,9 @@ export interface OverviewDataDto {
     readonly cycleMissing: boolean;
     readonly entries: readonly BurnRateDto[];
   };
-  readonly composition?: CompositionSeriesDto;
+  readonly compositions?: Readonly<Record<string, CompositionSeriesDto>>;
   readonly home_equity_over_time?: EquityDto;
   readonly debt_trajectory?: TrajectoryDto;
-  readonly window: string;
   readonly spending_by_grouping?: OverviewSpendingDto;
   readonly spending_by_delegation?: OverviewSpendingDto;
   readonly asset_debt_composition?: CompositionDto;
@@ -395,7 +397,7 @@ export type LayoutSaveResult =
 export const overviewApi = {
   layout: () => api.get<OverviewLayoutDto>('/api/overview/layout'),
 
-  data: (window: string) => api.get<OverviewDataDto>(`/api/overview?window=${window}`),
+  data: () => api.get<OverviewDataDto>('/api/overview'),
 
   /**
    * Every tile's data, for the picker.
@@ -404,7 +406,7 @@ export const overviewApi = {
    * a tile would look like needs that tile's figures, and by definition they do
    * not have it yet. Fetched only while Arrange is open.
    */
-  preview: (window: string) => api.get<OverviewDataDto>(`/api/overview/preview?window=${window}`),
+  preview: () => api.get<OverviewDataDto>('/api/overview/preview'),
 
   /** The whole arrangement, never a partial one — see the route's comment. */
   saveLayout: (tiles: readonly OverviewTileDto[]) =>

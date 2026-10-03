@@ -10,7 +10,7 @@ budget is one subtraction, recomputed on every view:
 SUM(in-budget assets)
   − SUM(in-budget debts)
   − SUM(delegation balances)
-  + SUM(categorized pending transactions)
+  + SUM(pending transactions)
 ```
 
 A positive reading is money that has landed and not been distributed yet — the

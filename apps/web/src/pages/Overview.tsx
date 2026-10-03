@@ -52,10 +52,10 @@ import { Alert, Button, Modal, SelectField, Toggle } from '../components/ui.jsx'
  *
  * Three things are settled here and everything later sits on them.
  *
- * **The period is in the URL.** Insights kept its window in component state, so
- * it reset to thirty days every time somebody left the page — including when
- * they left by pressing one of its own tiles. Here it survives navigation, the
- * back button and a reload, and a particular view can be linked to.
+ * **Each tile keeps its own period.** A page-wide period put a this-cycle
+ * question and a year-so-far question on one control, and whichever was chosen
+ * made the other wrong. The period is stored on the tile, so it is remembered
+ * per person and follows them to every device. ADR 076.
  *
  * **One arrangement, adapted.** A tile states a width for the desktop grid and
  * is always full width on a phone, so rearranging on a phone rearranges the
@@ -69,19 +69,12 @@ import { Alert, Button, Modal, SelectField, Toggle } from '../components/ui.jsx'
  */
 
 /**
- * The cashflow chart's own options, defaulting to year-to-date.
+ * The periods every windowed tile's own picker offers. ADR 076.
  *
  * No "All". On a household with years of imported history it drew a chart whose
- * scale nothing else on the page shares, and the question this tile answers —
- * where is the money going — is not one anybody asks of all time at once.
+ * scale nothing else on the page shares, and none of these tiles answers a
+ * question anybody asks of all time at once.
  */
-const CASHFLOW_WINDOWS = [
-  { value: '30d', label: '30D' },
-  { value: '90d', label: '90D' },
-  { value: 'ytd', label: 'YTD' },
-  { value: '1yr', label: '1Y' },
-] as const;
-
 const WINDOWS = [
   { value: 'cycle', label: 'Cycle' },
   { value: '30d', label: '30D' },
@@ -860,7 +853,7 @@ function AggregateTile({
   aggregate,
   tileKey,
 }: {
-  readonly aggregate: NonNullable<OverviewDataDto['aggregate']>;
+  readonly aggregate: NonNullable<OverviewDataDto['aggregates']>[string];
   readonly tileKey: string;
 }): ReactNode {
   const spec =
@@ -913,7 +906,7 @@ function CompositionSeriesTile({
   composition,
   tileKey,
 }: {
-  readonly composition: NonNullable<OverviewDataDto['composition']>;
+  readonly composition: NonNullable<OverviewDataDto['compositions']>[string];
   readonly tileKey: string;
 }): ReactNode {
   const bitcoinOnly = tileKey === 'bitcoin_value_over_time';
@@ -1218,10 +1211,9 @@ function DelegationsTile({
 /**
  * The cashflow chart, and its own period control.
  *
- * Its window is separate from the page's on purpose: this answers "where did it
- * go", read as a retrospective, while everything around it answers "where do I
- * stand". Year-to-date by default, because a fortnight of cashflow is mostly one
- * paycheck and one rent payment.
+ * Its period is its own, as every windowed tile's is (ADR 076); ninety days by
+ * default, because a fortnight of cashflow is mostly one paycheck and one rent
+ * payment.
  *
  * The control sits in the tile's header rather than above the chart, which is
  * where a tile's own control is looked for — and it no longer carries a sentence
@@ -1785,11 +1777,13 @@ function TileBody({
     case 'net_worth_over_time':
     case 'assets_vs_debts':
     case 'identity_drift':
-      return data.aggregate ? <AggregateTile aggregate={data.aggregate} tileKey={tileKey} /> : null;
+      return data.aggregates?.[tileKey] ? (
+        <AggregateTile aggregate={data.aggregates[tileKey]} tileKey={tileKey} />
+      ) : null;
     case 'net_worth_composition':
     case 'bitcoin_value_over_time':
-      return data.composition ? (
-        <CompositionSeriesTile composition={data.composition} tileKey={tileKey} />
+      return data.compositions?.[tileKey] ? (
+        <CompositionSeriesTile composition={data.compositions[tileKey]} tileKey={tileKey} />
       ) : null;
     case 'home_equity_over_time':
       return data.home_equity_over_time ? <EquityTile equity={data.home_equity_over_time} /> : null;
@@ -1910,17 +1904,14 @@ export function Overview(): ReactNode {
   const queryClient = useQueryClient();
   const [params, setParams] = useSearchParams();
 
-  const raw = params.get('window') ?? 'cycle';
-  const window: WindowValue = isWindow(raw) ? raw : 'cycle';
-
   const layout = useQuery({
     queryKey: ['overview', 'layout'],
     queryFn: () => overviewApi.layout(),
   });
 
   const data = useQuery({
-    queryKey: ['overview', 'data', window],
-    queryFn: () => overviewApi.data(window),
+    queryKey: ['overview', 'data'],
+    queryFn: () => overviewApi.data(),
   });
 
   const narrow = useMediaQuery(NARROW);
@@ -2014,8 +2005,8 @@ export function Overview(): ReactNode {
 
   /** Every tile's figures, fetched only while the picker is open. */
   const preview = useQuery({
-    queryKey: ['overview', 'preview', window],
-    queryFn: () => overviewApi.preview(window),
+    queryKey: ['overview', 'preview'],
+    queryFn: () => overviewApi.preview(),
     enabled: arranging,
   });
 
@@ -2127,12 +2118,6 @@ export function Overview(): ReactNode {
       }
     },
   });
-
-  function setWindow(next: WindowValue): void {
-    const updated = new URLSearchParams(params);
-    updated.set('window', next);
-    setParams(updated, { replace: true });
-  }
 
   function setArranging(next: boolean): void {
     const updated = new URLSearchParams(params);
@@ -2364,19 +2349,20 @@ export function Overview(): ReactNode {
   /**
    * A tile's own control, drawn in its header.
    *
-   * Two have one: the cashflow chart's period, which the page's own control does
-   * not set, and the allocation donut's reading. Both belong to the tile rather
-   * than to the page, and a control in the tile's corner is how that is said.
+   * Every tile drawn over a period has its own picker for it, and the
+   * allocation donut has its reading. Both belong to the tile rather than to the
+   * page, and a control in the tile's corner is how that is said.
    */
   function controlsFor(key: string): ReactNode {
-    if (key === 'cashflow') {
+    const window = windowOf(key);
+    if (window !== undefined) {
       return (
         <SegmentedControl
           size="sm"
-          label="Cashflow period"
-          value={data.data?.cashflowWindow ?? 'ytd'}
-          options={CASHFLOW_WINDOWS}
-          onChange={setCashflowWindow}
+          label={`${TILE_COPY[key]?.title ?? key} period`}
+          value={window}
+          options={WINDOWS}
+          onChange={(next) => setTileWindow(key, next)}
         />
       );
     }
@@ -2444,20 +2430,45 @@ export function Overview(): ReactNode {
     return Array.isArray(ids) ? ids.filter((id): id is string => typeof id === 'string') : [];
   }
 
-  /** The cashflow tile's own period, stored on the tile rather than in the URL. */
-  function setCashflowWindow(next: string): void {
+  /** One field of a tile's configuration changed, the rest of it kept. */
+  function setConfig(key: string, field: string, value: string): void {
     save.mutate(
-      tiles.map((tile) => (tile.key === 'cashflow' ? { ...tile, config: { window: next } } : tile)),
+      tiles.map((tile) => {
+        if (tile.key !== key) return tile;
+        const config =
+          tile.config !== null && typeof tile.config === 'object'
+            ? (tile.config as Record<string, unknown>)
+            : {};
+        return { ...tile, config: { ...config, [field]: value } };
+      }),
     );
     // The refetch is in the mutation's `onSuccess`, which compares
     // configurations as well as keys — see the comment there.
   }
 
+  /**
+   * A tile's period, or undefined for a tile that has none.
+   *
+   * Its own stored choice first, read from the layout, so the picker moves the
+   * moment it is pressed rather than when the figures behind it arrive; then the
+   * server's answer, which carries the default for a tile never set.
+   */
+  function windowOf(key: string): WindowValue | undefined {
+    const served = data.data?.windows?.[key];
+    if (served === undefined) return undefined;
+    const stored = pickedId(key, 'window');
+    if (stored !== undefined && isWindow(stored)) return stored;
+    return isWindow(served) ? served : undefined;
+  }
+
+  /** A tile's own period, stored on the tile and so on every device. ADR 076. */
+  function setTileWindow(key: string, next: WindowValue): void {
+    setConfig(key, 'window', next);
+  }
+
   /** Which account or delegation a balance-history tile charts. */
   function setPicked(key: string, field: string, id: string): void {
-    save.mutate(
-      tiles.map((tile) => (tile.key === key ? { ...tile, config: { [field]: id } } : tile)),
-    );
+    setConfig(key, field, id);
   }
 
   /** The donut's reading, stored on its tile. */
@@ -2541,27 +2552,6 @@ export function Overview(): ReactNode {
         title="Overview"
         actions={
           <>
-            {/*
-              The period picker is a laptop's control.
-
-              Every tile is hidden below `sm` and the band above them is
-              cycle-shaped whatever this says, so on a phone it changed the
-              figures on no visible thing — a control that costs a third of the
-              header and moves nothing. Gone, and what it frees puts New… and
-              Delegate on the title's own line, which is the screen this
-              household reads most (ADR 065).
-
-              The URL still carries `window`, so a link into a period opens in
-              it and a laptop picks up where the phone left off.
-            */}
-            {!narrow && (
-              <SegmentedControl
-                label="Time window"
-                value={window}
-                options={WINDOWS}
-                onChange={setWindow}
-              />
-            )}
             {/* A laptop's control: see `arranging` above. */}
             {!narrow && (
               <Button

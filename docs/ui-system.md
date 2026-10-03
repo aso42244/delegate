@@ -277,13 +277,13 @@ columns.
 **A phone gets the band and nothing else.** The tiles are hidden below `sm` —
 still arranged, still stored, still there on a laptop.
 
-**And no Arrange button, and no period picker.** Every tile is full width below
-`sm` and the band above them is pinned, so the only thing left to arrange there
-is the order of one column — and every tile the period would change is hidden,
-while the band is cycle-shaped whatever it says. Both were controls costing a row
-of the screen whose whole point is the band underneath, and moving nothing
-visible. `window` stays in the URL, so a link into a period still opens in it;
-`arranging` is read from the URL _and_ from the width, so a window dragged narrow
+**And no Arrange button.** Every tile is full width below `sm` and the band above
+them is pinned, so the only thing left to arrange there is the order of one
+column — a control costing a row of the screen whose whole point is the band
+underneath, and moving nothing visible. There is no page-wide period anywhere:
+each tile drawn over a period carries its own `sm` segmented control in its
+header — Cycle, 30D, 90D, YTD — stored on the tile
+([ADR 076](decisions/076-each-tile-keeps-its-own-period.md)). `arranging` is read from the URL _and_ from the width, so a window dragged narrow
 while Arrange is open cannot strand somebody in a mode whose "Done" has gone.
 
 **What that frees is the header itself.** The title, New… and Delegate sit on one

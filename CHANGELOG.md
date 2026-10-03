@@ -6,6 +6,18 @@ phase (`v0.1.0-phase1`, and so on).
 
 ## [Unreleased]
 
+### Changed
+
+- **Every pending item is read as posted.** The budget used to count a pending
+  item only once it was categorized, so a pending paycheck — which nothing ever
+  categorizes — read as over-delegated by its whole amount until it posted. Every
+  pending item on an in-budget account now counts, unless the account's balance
+  already includes pending. ADR 075.
+- **Each Overview tile keeps its own period.** The page-wide time picker is gone;
+  every tile drawn over a period has a small Cycle / 30D / 90D / YTD picker in its
+  header, remembered on the server so it is the same on every device. The two
+  spending tiles start on the cycle and the rest on ninety days. ADR 076.
+
 ### Removed
 
 - **`SnapshotChart`**, a chart component nothing drew any more. `TimeSeriesChart`

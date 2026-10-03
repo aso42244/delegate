@@ -101,11 +101,13 @@ interface DataBody {
     readonly cycleMissing: boolean;
     readonly entries: readonly { readonly name: string; readonly changeCents: string }[];
   };
-  readonly aggregate?: { readonly days: number; readonly points: readonly unknown[] };
-  readonly composition?: { readonly days: number };
+  readonly aggregates?: Readonly<
+    Record<string, { readonly days: number; readonly points: readonly unknown[] }>
+  >;
+  readonly compositions?: Readonly<Record<string, { readonly days: number }>>;
   readonly home_equity_over_time?: { readonly name: string | null };
   readonly debt_trajectory?: { readonly hasEnoughHistory: boolean };
-  readonly cashflowWindow?: string;
+  readonly windows?: Readonly<Record<string, string>>;
   readonly panel?: readonly {
     readonly name: string;
     readonly groupingName: string | null;
@@ -168,6 +170,14 @@ async function get(url: string): Promise<LightMyRequestResponse> {
 /** Each tile on a row of its own unless the test says otherwise. */
 function rowed(keys: readonly string[]): { key: string; row: number; position: number }[] {
   return keys.map((key, row) => ({ key, row, position: 0 }));
+}
+
+/** The same, each tile set to one period of its own. */
+function windowed(
+  keys: readonly string[],
+  window: string,
+): { key: string; row: number; position: number; config: { window: string } }[] {
+  return keys.map((key, row) => ({ key, row, position: 0, config: { window } }));
 }
 
 async function putLayout(tiles: unknown): Promise<LightMyRequestResponse> {
@@ -437,7 +447,7 @@ describe('the data', () => {
 
     await putLayout(rowed(['uncategorized_backlog']));
 
-    const body = (await get('/api/overview?window=all')).json<DataBody>();
+    const body = (await get('/api/overview')).json<DataBody>();
     expect(body.uncategorized_backlog).toBeDefined();
     // The whole point of this endpoint. A page holding one tile must not pay for
     // the other, and an absent key is how the client can tell "not asked for"
@@ -467,22 +477,59 @@ describe('the data', () => {
     expect(body.spending_by_grouping).toBeUndefined();
   });
 
-  it("defaults to the cycle, which is the budget's own unit of time", async () => {
+  it('starts a cycle question on the cycle and every other on ninety days', async () => {
+    // ADR 076: the period is the tile's, and a tile never set has its default.
     const body = (await get('/api/overview')).json<DataBody>();
-    expect(body.window).toBe('cycle');
+    expect(body.windows?.['spending_by_grouping']).toBe('cycle');
+    expect(body.windows?.['spending_by_delegation']).toBe('cycle');
+    expect(body.windows?.['cashflow']).toBe('90d');
+    expect(body.windows?.['net_worth_over_time']).toBe('90d');
+    expect(body.windows?.['delegation_burn_rate']).toBe('90d');
+    // A tile with no period has no entry, so the page draws it no picker.
+    expect(body.windows?.['uncategorized_backlog']).toBeUndefined();
   });
 
-  it('reads the window from the query string', async () => {
-    const body = (await get('/api/overview?window=ytd')).json<DataBody>();
-    expect(body.window).toBe('ytd');
+  it("reads each tile's period from its own configuration, not the query string", async () => {
+    await putLayout([
+      { key: 'spending_by_grouping', row: 0, position: 0, config: { window: 'ytd' } },
+      { key: 'cashflow', row: 1, position: 0, config: { window: '30d' } },
+    ]);
+    const body = (await get('/api/overview?window=all')).json<DataBody>();
+    expect(body.windows?.['spending_by_grouping']).toBe('ytd');
+    expect(body.windows?.['cashflow']).toBe('30d');
+  });
+
+  it('keeps a period the picker no longer offers, and reads it as the default', async () => {
+    // A cashflow tile saved on `1yr` before the picker narrowed to four. The
+    // save of the whole arrangement re-sends it, so it must not be refused.
+    const saved = await putLayout([
+      { key: 'cashflow', row: 0, position: 0, config: { window: '1yr' } },
+    ]);
+    expect(saved.json<SaveBody>()).toMatchObject({ ok: true });
+    expect((await get('/api/overview')).json<DataBody>().windows?.['cashflow']).toBe('90d');
+  });
+
+  it('keeps an account pick and a period on the same tile', async () => {
+    const account = await makeAccount({ name: 'Everyday', type: 'asset', balanceCents: 1_000n });
+    const saved = await putLayout([
+      {
+        key: 'account_balance_history',
+        row: 0,
+        position: 0,
+        config: { accountId: account.id, window: 'ytd' },
+      },
+    ]);
+    expect(saved.json<SaveBody>()).toMatchObject({ ok: true });
+    const body = (await get('/api/overview')).json<DataBody>();
+    expect(body.windows?.['account_balance_history']).toBe('ytd');
   });
 
   it('carries cents as a string, never a JSON number', async () => {
     await makeAccount({ name: 'Everyday', type: 'asset', balanceCents: 5_000_000n });
     await spend(30_000n, 'Grocery');
-    await putLayout(rowed(['spending_by_grouping']));
+    await putLayout(windowed(['spending_by_grouping'], '30d'));
 
-    const body = (await get('/api/overview?window=all')).json<DataBody>();
+    const body = (await get('/api/overview')).json<DataBody>();
     // ADR 002: integer cents, and over HTTP a string rather than a JSON
     // number — beyond 2^53 a JSON number has already lost precision by the time
     // it arrives. The decimal form is the CSV export's alone (ADR 046), because
@@ -493,7 +540,7 @@ describe('the data', () => {
 
   it('tells an unchosen tile apart from an empty one', async () => {
     await putLayout(rowed(['spending_by_grouping']));
-    const body = (await get('/api/overview?window=all')).json<DataBody>();
+    const body = (await get('/api/overview')).json<DataBody>();
 
     // Chosen, and there is nothing in it: the key is present with no entries,
     // so the page draws its empty state rather than drawing nothing.
@@ -582,7 +629,7 @@ describe("a tile's own configuration", () => {
      * docked beside them and carries its own lines, so a chart key here would
      * mean the same list was being drawn twice on one screen.
      */
-    expect(Object.keys(body).sort()).toEqual(['panel', 'panelSelected', 'payCycle', 'window']);
+    expect(Object.keys(body).sort()).toEqual(['panel', 'panelSelected', 'payCycle', 'windows']);
   });
 });
 
@@ -604,8 +651,8 @@ describe('batch A tiles', () => {
     await spendOn('Grocery', 30_000n);
     await spendOn('Fuel', 10_000n);
 
-    await putLayout(rowed(['spending_by_delegation']));
-    const body = (await get('/api/overview?window=all')).json<DataBody>();
+    await putLayout(windowed(['spending_by_delegation'], '30d'));
+    const body = (await get('/api/overview')).json<DataBody>();
 
     expect(body.spending_by_delegation?.entries.map((entry) => entry.name)).toEqual([
       'Grocery',
@@ -729,35 +776,44 @@ describe('movers', () => {
 });
 
 describe('batch B series', () => {
-  it('computes one aggregate series for the three tiles that read it', async () => {
-    await putLayout(rowed(['net_worth_over_time', 'assets_vs_debts', 'identity_drift']));
+  it('draws each of the three aggregate tiles on its own period', async () => {
+    await putLayout([
+      { key: 'net_worth_over_time', row: 0, position: 0, config: { window: 'cycle' } },
+      { key: 'assets_vs_debts', row: 1, position: 0 },
+      { key: 'identity_drift', row: 2, position: 0 },
+    ]);
 
-    const body = (await get('/api/overview?window=all')).json<DataBody>();
+    const body = (await get('/api/overview')).json<DataBody>();
 
-    /*
-     * One key, not three. Every field each of those tiles needs is on every
-     * point, so sending it three times would be three copies of a year of
-     * history to say the same thing — and computing it three times is the waste
-     * this endpoint exists to stop.
-     */
-    expect(body.aggregate).toBeDefined();
-    expect(body.composition).toBeUndefined();
+    // One series per tile, keyed by tile, so one can be on the cycle while the
+    // others stay on their ninety days. ADR 076.
+    expect(Object.keys(body.aggregates ?? {}).sort()).toEqual([
+      'assets_vs_debts',
+      'identity_drift',
+      'net_worth_over_time',
+    ]);
+    // No Delegate run, so the cycle holds nothing.
+    expect(body.aggregates?.['net_worth_over_time']?.days).toBe(0);
+    expect(body.compositions).toBeUndefined();
   });
 
-  it('computes one composition series for both tiles that read it', async () => {
+  it('computes the composition series for both tiles that read it', async () => {
     await putLayout(rowed(['net_worth_composition', 'bitcoin_value_over_time']));
 
-    const body = (await get('/api/overview?window=all')).json<DataBody>();
-    expect(body.composition).toBeDefined();
-    expect(body.aggregate).toBeUndefined();
+    const body = (await get('/api/overview')).json<DataBody>();
+    expect(Object.keys(body.compositions ?? {}).sort()).toEqual([
+      'bitcoin_value_over_time',
+      'net_worth_composition',
+    ]);
+    expect(body.aggregates).toBeUndefined();
   });
 
   it('asks for no series at all when no Batch B tile is on the page', async () => {
     await putLayout(rowed(['uncategorized_backlog']));
 
-    const body = (await get('/api/overview?window=all')).json<DataBody>();
-    expect(body.aggregate).toBeUndefined();
-    expect(body.composition).toBeUndefined();
+    const body = (await get('/api/overview')).json<DataBody>();
+    expect(body.aggregates).toBeUndefined();
+    expect(body.compositions).toBeUndefined();
     expect(body.home_equity_over_time).toBeUndefined();
     expect(body.debt_trajectory).toBeUndefined();
   });
@@ -765,19 +821,19 @@ describe('batch B series', () => {
   it('says whether a trajectory has enough history rather than sending an empty list', async () => {
     await putLayout(rowed(['debt_trajectory']));
 
-    const body = (await get('/api/overview?window=all')).json<DataBody>();
+    const body = (await get('/api/overview')).json<DataBody>();
     // "Not enough history to project" and "projected never to pay off" are
     // different answers, and an empty list cannot tell them apart.
     expect(body.debt_trajectory?.hasEnoughHistory).toBe(false);
   });
 
   it('shows nothing under Cycle when no Delegate run exists', async () => {
-    await putLayout(rowed(['net_worth_over_time']));
+    await putLayout(windowed(['net_worth_over_time'], 'cycle'));
 
     // The sibling of the `windowStart` distinction, fixed in this release: a
     // null start date cannot tell "everything stored" from "there is no cycle".
-    const body = (await get('/api/overview?window=cycle')).json<DataBody>();
-    expect(body.aggregate?.days).toBe(0);
+    const body = (await get('/api/overview')).json<DataBody>();
+    expect(body.aggregates?.['net_worth_over_time']?.days).toBe(0);
   });
 });
 
@@ -785,7 +841,7 @@ describe('batch C figures', () => {
   it('reads one set of cycle summaries for both tiles that use them', async () => {
     await putLayout(rowed(['cycle_surplus', 'income_vs_spending']));
 
-    const body = (await get('/api/overview?window=all')).json<DataBody>();
+    const body = (await get('/api/overview')).json<DataBody>();
     // One key, two tiles. Surplus is a reading of the same summaries income
     // against spending is drawn from.
     expect(body.cycles).toBeDefined();
@@ -810,7 +866,7 @@ describe('batch C figures', () => {
   it('reads the daily rows once for the three views derived from them', async () => {
     await putLayout(rowed(['debt_trajectory', 'change_per_cycle', 'thirty_day_momentum']));
 
-    const body = (await get('/api/overview?window=all')).json<DataBody>();
+    const body = (await get('/api/overview')).json<DataBody>();
     expect(body.debt_trajectory).toBeDefined();
     expect(body.change_per_cycle).toBeDefined();
     expect(body.thirty_day_momentum).toBeDefined();
@@ -819,7 +875,7 @@ describe('batch C figures', () => {
   it('asks for none of them when none is on the page', async () => {
     await putLayout(rowed(['uncategorized_backlog']));
 
-    const body = (await get('/api/overview?window=all')).json<DataBody>();
+    const body = (await get('/api/overview')).json<DataBody>();
     expect(body.cycles).toBeUndefined();
     expect(body.delegations_negative).toBeUndefined();
     expect(body.change_per_cycle).toBeUndefined();
@@ -1003,16 +1059,13 @@ describe('cashflow', () => {
     expect(empty.totalInCents).toBe(0n);
   });
 
-  it('carries its own window, defaulting to year-to-date', async () => {
+  it('carries its own window, defaulting to ninety days', async () => {
     await putLayout(rowed(['cashflow']));
-    expect((await get('/api/overview')).json<DataBody>().cashflowWindow).toBe('ytd');
+    expect((await get('/api/overview')).json<DataBody>().windows?.['cashflow']).toBe('90d');
 
     await putLayout([{ key: 'cashflow', row: 0, position: 0, config: { window: '30d' } }]);
-    const body = (await get('/api/overview?window=cycle')).json<DataBody>();
-
-    // The page is on `cycle` and the chart is on `30d`. That is the point of it.
-    expect(body.window).toBe('cycle');
-    expect(body.cashflowWindow).toBe('30d');
+    const body = (await get('/api/overview')).json<DataBody>();
+    expect(body.windows?.['cashflow']).toBe('30d');
   });
 
   it('refuses a window it does not recognise', async () => {

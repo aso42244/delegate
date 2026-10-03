@@ -233,8 +233,8 @@ async function buildAggregate(
      */
     db.delegation.aggregate({ _sum: { balanceCents: true } }),
     /*
-     * The fourth term: categorized pending charges the account balances do not
-     * carry yet. Same condition as `computeBudgetIdentity`, so the stored
+     * The fourth term: pending transactions the account balances do not carry
+     * yet, read as posted (ADR 075). Same condition as `computeBudgetIdentity`, so the stored
      * identity is the same figure the Budget page shows — including leaving
      * out an account whose balance already carries its pending charges.
      */
@@ -242,7 +242,6 @@ async function buildAggregate(
       where: {
         pending: true,
         archivedAt: null,
-        allocations: { some: {} },
         account: { inBudget: true, archivedAt: null, balanceIncludesPending: false },
       },
       _sum: { amountCents: true },

@@ -185,12 +185,22 @@ test('a tile can be given a row of its own again', async ({ signedIn }) => {
   await expect(tile).toHaveClass(/lg:col-span-12/);
 });
 
-test('the period is in the URL and survives leaving the page', async ({ signedIn }) => {
+test('a tile keeps its own period, and it survives leaving the page', async ({ signedIn }) => {
   await signedIn.goto('/overview');
   await addBothTiles(signedIn);
+  await signedIn.getByRole('button', { name: 'Done' }).click();
 
-  await signedIn.getByRole('radio', { name: 'YTD' }).click();
-  await expect(signedIn).toHaveURL(/window=ytd/);
+  const tile = signedIn
+    .getByRole('heading', { name: 'Spending by grouping', level: 2 })
+    .locator('../..');
+
+  // No page-wide period any more: each windowed tile carries its own. ADR 076.
+  await expect(signedIn.getByRole('radiogroup', { name: 'Time window' })).toHaveCount(0);
+
+  // A this-cycle question, so it starts on the cycle.
+  await expect(tile.getByRole('radio', { name: 'Cycle' })).toHaveAttribute('aria-checked', 'true');
+  await tile.getByRole('radio', { name: 'YTD' }).click();
+  await expect(tile.getByRole('radio', { name: 'YTD' })).toHaveAttribute('aria-checked', 'true');
 
   // Away and back the way somebody actually leaves. Insights reset to thirty
   // days on exactly this journey. `exact` because the backlog pill's accessible
@@ -198,13 +208,14 @@ test('the period is in the URL and survives leaving the page', async ({ signedIn
   // substring — the trap the sidebar locator was fixed for once already.
   await signedIn.getByRole('link', { name: 'Transactions', exact: true }).click();
   await expect(signedIn.getByRole('heading', { name: 'Transactions' })).toBeVisible();
-
   await signedIn.goBack();
-  await expect(signedIn).toHaveURL(/window=ytd/);
-  await expect(signedIn.getByRole('radio', { name: 'YTD' })).toHaveAttribute(
-    'aria-checked',
-    'true',
-  );
+  await expect(tile.getByRole('radio', { name: 'YTD' })).toHaveAttribute('aria-checked', 'true');
+
+  // Stored on the tile rather than in the URL or the browser, so a bare
+  // address on a fresh load — another device — opens on it too.
+  await signedIn.goto('/overview');
+  await expect(tile.getByRole('radio', { name: 'YTD' })).toHaveAttribute('aria-checked', 'true');
+  expect(signedIn.url()).not.toContain('window=');
 });
 
 test('a tile shows its empty state when there is nothing in it', async ({ signedIn }) => {
@@ -536,7 +547,7 @@ test('the panel is always there', async ({ signedIn }) => {
   await expect(signedIn.getByRole('button', { name: /collapse the budget panel/i })).toHaveCount(0);
 });
 
-test('the cashflow chart carries its own period, separate from the page', async ({ signedIn }) => {
+test('the cashflow chart carries its own period and remembers it', async ({ signedIn }) => {
   await signedIn.goto('/overview');
   await openArrange(signedIn);
   await signedIn.getByRole('button', { name: 'Add Cashflow' }).click();
@@ -545,25 +556,12 @@ test('the cashflow chart carries its own period, separate from the page', async 
 
   const tile = signedIn.getByRole('heading', { name: 'Cashflow', level: 2 }).locator('../..');
 
-  /*
-   * The page's control and the chart's are two different controls, and the
-   * chart's defaults to year-to-date — a fortnight of cashflow is mostly one
-   * paycheck and one rent payment.
-   */
-  await expect(tile.getByRole('radio', { name: 'YTD' })).toHaveAttribute('aria-checked', 'true');
-  await expect(signedIn.getByRole('radio', { name: 'Cycle' })).toHaveAttribute(
-    'aria-checked',
-    'true',
-  );
+  // Ninety days by default: a fortnight of cashflow is mostly one paycheck and
+  // one rent payment. ADR 076.
+  await expect(tile.getByRole('radio', { name: '90D' })).toHaveAttribute('aria-checked', 'true');
 
   await tile.getByRole('radio', { name: '30D' }).click();
   await expect(tile.getByRole('radio', { name: '30D' })).toHaveAttribute('aria-checked', 'true');
-
-  // The page's period is untouched by the chart's.
-  await expect(signedIn.getByRole('radio', { name: 'Cycle' })).toHaveAttribute(
-    'aria-checked',
-    'true',
-  );
 
   await signedIn.reload();
   await expect(
@@ -577,12 +575,13 @@ test('the cashflow chart carries its own period, separate from the page', async 
 test('the cashflow chart says nothing came in rather than drawing an empty flow', async ({
   signedIn,
 }) => {
-  await signedIn.goto('/overview?window=ytd');
+  await signedIn.goto('/overview');
   await openArrange(signedIn);
   await signedIn.getByRole('button', { name: 'Add Cashflow' }).click();
   await signedIn.getByRole('button', { name: 'Done' }).click();
 
   const tile = signedIn.getByRole('heading', { name: 'Cashflow', level: 2 }).locator('../..');
+  await tile.getByRole('radio', { name: 'YTD' }).click();
   await expect(tile.getByText('Nothing came in yet.')).toBeVisible();
 });
 

@@ -25,9 +25,12 @@ import {
   buildPanel,
   isFigureKey,
   isOverviewTile,
+  isTileWindow,
   OVERVIEW_TILES,
+  TILE_WINDOW_DEFAULTS,
   type OverviewData,
   type OverviewTileKey,
+  type TileWindow,
 } from '../domain/overview.js';
 import { payCycleAt } from '../domain/pay-cycle.js';
 import { findRecurringBills, type RecurringBill } from '../domain/recurring.js';
@@ -49,18 +52,23 @@ import { AUTHENTICATED } from '../plugins/auth.js';
  * source of truth for what gets computed, which is the whole point of the
  * endpoint: it exists so that a page of two tiles does not pay for twenty-one.
  *
- * **The period lives in the query string**, so it survives navigation and can be
- * linked to. Insights kept its window in component state, which meant it reset
- * to 30 days every time somebody left the page and came back — including when
- * they left it by pressing one of its own tiles.
+ * **Each tile carries its own period**, in its own configuration, so it is
+ * remembered per person and follows them to every device they sign in on. A
+ * page-wide period put a year-to-date question and a this-cycle question on one
+ * control, and whichever was chosen made the other tile wrong. ADR 076.
  */
 
-const dataQuerySchema = z.object({
-  // The same vocabulary the spending windows already use. `cycle` is the
-  // default because a cycle is Delegate's own unit of time: one Delegate press
-  // to the next, which is the period every figure on the budget is read against.
-  window: z.enum(SPENDING_WINDOWS).default('cycle'),
-});
+/**
+ * A tile's period, as its configuration holds it.
+ *
+ * Any spending window is accepted rather than only the four the picker offers:
+ * a layout save re-sends every tile's stored configuration, and a cashflow tile
+ * saved on `1yr` before the picker narrowed must not make every later save of
+ * the arrangement fail. The read falls back from anything the picker does not
+ * offer, so an old value shows the default rather than a fifth choice.
+ */
+const tileWindow = z.enum(SPENDING_WINDOWS).optional();
+const WINDOW_ONLY = z.object({ window: tileWindow });
 
 /**
  * The configuration each tile understands.
@@ -69,19 +77,14 @@ const dataQuerySchema = z.object({
  * the column from becoming a place things are put and never read.
  */
 const TILE_CONFIG: Partial<Record<string, z.ZodType>> = {
-  /**
-   * The cashflow chart's own period.
-   *
-   * It answers "where did it go" and is read as a retrospective, at a different
-   * cadence from the figures around it — so it carries its own control rather
-   * than following the page's.
-   */
-  cashflow: z.object({
-    window: z.enum(SPENDING_WINDOWS),
-  }),
+  /** Every tile drawn over a period holds which one. ADR 076. */
+  ...Object.fromEntries(Object.keys(TILE_WINDOW_DEFAULTS).map((key) => [key, WINDOW_ONLY])),
 
-  /** Which account the balance-history tile charts. */
-  account_balance_history: z.object({ accountId: z.string().uuid() }),
+  /** Which account the balance-history tile charts, and over what period. */
+  account_balance_history: z.object({
+    accountId: z.string().uuid().optional(),
+    window: tileWindow,
+  }),
 
   /** Which delegation the balance-history tile charts. */
   delegation_balance_history: z.object({ delegationId: z.string().uuid() }),
@@ -474,7 +477,6 @@ export const overviewRoutes: FastifyPluginCallback = (fastify, _options, done) =
   /** The data behind this person's tiles, and nothing else. */
   fastify.get('/api/overview', async (request) => {
     const userId = request.currentUser!.id;
-    const { window } = dataQuerySchema.parse(request.query ?? {});
 
     const storedTiles = await prisma.overviewTile.findMany({
       where: { userId },
@@ -506,16 +508,10 @@ export const overviewRoutes: FastifyPluginCallback = (fastify, _options, done) =
      */
     const timeZone = await householdTimezone(prisma, request.server.config.SCHEDULE_TIMEZONE);
 
-    /*
-     * The cashflow tile's own window, read from its configuration. Defaults to
-     * year-to-date, which is the period that makes a flow chart worth drawing —
-     * a fortnight of it is mostly one paycheck and one rent payment.
-     */
-    const cashflowWindow = readCashflowWindow(
-      stored.find((tile) => tile.widgetKey === 'cashflow')?.config,
-    );
+    // Each tile's own period, from its configuration or its default. ADR 076.
+    const windows = readWindows(stored);
 
-    const data = await buildOverview(prisma, { tiles, window, timeZone, cashflowWindow });
+    const data = await buildOverview(prisma, { tiles, window: '90d', windows, timeZone });
 
     /*
      * Where the household sits between paydays.
@@ -600,7 +596,7 @@ export const overviewRoutes: FastifyPluginCallback = (fastify, _options, done) =
           ? findRecurringBills(prisma, timeZone)
           : undefined,
         keys.has('account_balance_history') && accountId
-          ? accountSeries(prisma, accountId, window)
+          ? accountSeries(prisma, accountId, windows.account_balance_history ?? '90d')
           : undefined,
         keys.has('delegation_balance_history') && delegationId
           ? delegationSeries(prisma, delegationId, cycle?.start ?? null)
@@ -624,7 +620,7 @@ export const overviewRoutes: FastifyPluginCallback = (fastify, _options, done) =
     });
 
     return {
-      window,
+      windows,
       ...(figuresTile
         ? {
             figures: figures.map((figure) => ({
@@ -788,10 +784,6 @@ export const overviewRoutes: FastifyPluginCallback = (fastify, _options, done) =
               // whole way to the stylesheet.
               progressBasisPoints: Math.round(cycle.progress * 10_000),
             },
-      // Only when that tile is on the page. The rest of this payload follows the
-      // rule that an absent key means "not asked for"; a period belonging to a
-      // tile nobody has would be the one field that did not.
-      ...(data.cashflow ? { cashflowWindow } : {}),
       ...serializeOverview(data),
     };
   });
@@ -811,10 +803,16 @@ export const overviewRoutes: FastifyPluginCallback = (fastify, _options, done) =
    * an ordinary page load.
    */
   fastify.get('/api/overview/preview', async (request) => {
-    const { window } = dataQuerySchema.parse(request.query ?? {});
     const timeZone = await householdTimezone(prisma, request.server.config.SCHEDULE_TIMEZONE);
-    const data = await buildOverview(prisma, { tiles: OVERVIEW_TILES, window, timeZone });
-    return { window, ...serializeOverview(data) };
+    // Each tile previewed on its default period, which is the one it would
+    // arrive on once added.
+    const data = await buildOverview(prisma, {
+      tiles: OVERVIEW_TILES,
+      window: '90d',
+      windows: TILE_WINDOW_DEFAULTS,
+      timeZone,
+    });
+    return { windows: TILE_WINDOW_DEFAULTS, ...serializeOverview(data) };
   });
 
   done();
@@ -860,14 +858,6 @@ function point(entry: {
   };
 }
 
-/**
- * The cashflow tile's stored window, or the default.
- *
- * Anything unrecognised falls back rather than throwing: a configuration written
- * by a newer version must not stop the whole page rendering, and this is a
- * period rather than a figure — the worst a wrong one does is show a different
- * span of the same true numbers.
- */
 /**
  * Re-flows a stored layout so no row holds more than the cap.
  *
@@ -944,50 +934,76 @@ function readDelegationIds(config: unknown): readonly string[] {
   return Array.isArray(ids) ? ids.filter((id): id is string => typeof id === 'string') : [];
 }
 
-function readCashflowWindow(config: unknown): (typeof SPENDING_WINDOWS)[number] {
-  if (config === null || typeof config !== 'object') return 'ytd';
-  const window = (config as { window?: unknown }).window;
-  return typeof window === 'string' && (SPENDING_WINDOWS as readonly string[]).includes(window)
-    ? (window as (typeof SPENDING_WINDOWS)[number])
-    : 'ytd';
+/**
+ * Every windowed tile's period: its stored one, or its default.
+ *
+ * Anything the picker does not offer falls back rather than throwing: a
+ * configuration written by another version must not stop the whole page
+ * rendering, and this is a period rather than a figure — the worst a wrong one
+ * does is show a different span of the same true numbers.
+ */
+function readWindows(
+  stored: readonly { widgetKey: string; config: unknown }[],
+): Partial<Record<OverviewTileKey, TileWindow>> {
+  const windows: Partial<Record<OverviewTileKey, TileWindow>> = { ...TILE_WINDOW_DEFAULTS };
+  for (const tile of stored) {
+    if (!(tile.widgetKey in TILE_WINDOW_DEFAULTS) || !isOverviewTile(tile.widgetKey)) continue;
+    const config = tile.config;
+    const window =
+      config !== null && typeof config === 'object'
+        ? (config as { window?: unknown }).window
+        : undefined;
+    if (isTileWindow(window)) windows[tile.widgetKey] = window;
+  }
+  return windows;
 }
 
 function serializeOverview(data: OverviewData): Record<string, unknown> {
   return {
-    ...(data.aggregate
+    ...(data.aggregates
       ? {
-          aggregate: {
-            bucket: data.aggregate.bucket,
-            days: data.aggregate.days,
-            earliest: dateOut(data.aggregate.earliest),
-            points: data.aggregate.points.map(point),
-            // Snapshots are labelled for the previous day, so without this
-            // every chart ends a day behind and reads as stale rather than
-            // current. The client draws it distinctly.
-            live:
-              data.aggregate.live === null
-                ? null
-                : Object.fromEntries(
-                    Object.entries(data.aggregate.live).map(([name, amount]) => [
-                      name,
-                      centsOut(amount),
-                    ]),
-                  ),
-          },
+          aggregates: Object.fromEntries(
+            Object.entries(data.aggregates).map(([key, aggregate]) => [
+              key,
+              {
+                bucket: aggregate.bucket,
+                days: aggregate.days,
+                earliest: dateOut(aggregate.earliest),
+                points: aggregate.points.map(point),
+                // Snapshots are labelled for the previous day, so without this
+                // every chart ends a day behind and reads as stale rather than
+                // current. The client draws it distinctly.
+                live:
+                  aggregate.live === null
+                    ? null
+                    : Object.fromEntries(
+                        Object.entries(aggregate.live).map(([name, amount]) => [
+                          name,
+                          centsOut(amount),
+                        ]),
+                      ),
+              },
+            ]),
+          ),
         }
       : {}),
-    ...(data.composition
+    ...(data.compositions
       ? {
-          composition: {
-            days: data.composition.days,
-            points: data.composition.points.map((entry) => ({
-              date: dateOut(entry.date),
-              provenance: entry.provenance,
-              bitcoinCents: centsOut(entry.bitcoinCents),
-              otherAssetsCents: centsOut(entry.otherAssetsCents),
-              debtsCents: centsOut(entry.debtsCents),
-            })),
-          },
+          compositions: Object.fromEntries(
+            Object.entries(data.compositions).map(([key, composition]) => [
+              key,
+              {
+                days: composition.days,
+                points: composition.points.map((entry) => ({
+                  date: dateOut(entry.date),
+                  provenance: entry.provenance,
+                  bitcoinCents: centsOut(entry.bitcoinCents),
+                  otherAssetsCents: centsOut(entry.otherAssetsCents),
+                  debtsCents: centsOut(entry.debtsCents),
+                })),
+              },
+            ]),
+          ),
         }
       : {}),
     ...(data.home_equity_over_time
