@@ -59,7 +59,9 @@ encrypted with the deployment's data key and no test can write one.
 **The period picker is gone from a phone.** Every tile it changes is hidden below
 `sm`, and the band is cycle-shaped whatever it says, so it was a control costing
 a third of the header and moving nothing visible. `window` stays in the URL, so a
-link into a period still opens in it.
+link into a period still opens in it. _Superseded by
+[ADR 076](076-each-tile-keeps-its-own-period.md): there is no page-wide period on
+any width now, and nothing reads `window` from the URL._
 
 **The reading on a phone is a circle of colour and nothing else**, beside the
 alert dot it matches: the two marks in that corner are "where the budget stands"

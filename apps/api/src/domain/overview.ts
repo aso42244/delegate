@@ -103,9 +103,7 @@ export const OVERVIEW_TILES = [
   'delegations',
 
   /*
-   * Where the money came from and where it went, as one picture. Its window is
-   * its own — see `cashflowWindow` — because it is read as a retrospective at a
-   * different cadence from the rest of the page.
+   * Where the money came from and where it went, as one picture.
    */
   'cashflow',
 
@@ -137,6 +135,45 @@ export const OVERVIEW_TILES = [
 ] as const;
 
 export type OverviewTileKey = (typeof OVERVIEW_TILES)[number];
+
+/**
+ * The periods a tile's own picker offers. ADR 076.
+ *
+ * Four, because four fit a picker small enough to sit in a tile's header, and
+ * these four are the ones read: this cycle, the last month, the last quarter,
+ * the year so far.
+ */
+export const TILE_WINDOWS = ['cycle', '30d', '90d', 'ytd'] as const;
+export type TileWindow = (typeof TILE_WINDOWS)[number];
+
+export function isTileWindow(value: unknown): value is TileWindow {
+  return typeof value === 'string' && (TILE_WINDOWS as readonly string[]).includes(value);
+}
+
+/**
+ * The tiles drawn over a period, and the period each starts on until somebody
+ * picks another. ADR 076.
+ *
+ * Ninety days unless the tile is plainly a cycle question: what this cycle's
+ * spending went on is read against the budget, and the budget is a cycle.
+ */
+export const TILE_WINDOW_DEFAULTS: Readonly<Partial<Record<OverviewTileKey, TileWindow>>> = {
+  spending_by_grouping: 'cycle',
+  spending_by_delegation: 'cycle',
+  delegation_movers: '90d',
+  delegation_burn_rate: '90d',
+  cashflow: '90d',
+  net_worth_over_time: '90d',
+  assets_vs_debts: '90d',
+  identity_drift: '90d',
+  net_worth_composition: '90d',
+  bitcoin_value_over_time: '90d',
+  home_equity_over_time: '90d',
+  debt_trajectory: '90d',
+  change_per_cycle: '90d',
+  thirty_day_momentum: '90d',
+  account_balance_history: '90d',
+};
 
 export function isOverviewTile(value: string): value is OverviewTileKey {
   return (OVERVIEW_TILES as readonly string[]).includes(value);
@@ -358,8 +395,23 @@ export async function buildBurnRates(
 /** Which tiles read which shared series. One computation serves all of them. */
 const AGGREGATE_TILES = ['net_worth_over_time', 'assets_vs_debts', 'identity_drift'] as const;
 const COMPOSITION_TILES = ['net_worth_composition', 'bitcoin_value_over_time'] as const;
-/** Three derived views over one set of daily rows, so the rows are read once. */
-const DAILY_TILES = ['debt_trajectory', 'change_per_cycle', 'thirty_day_momentum'] as const;
+type AggregateTileKey = (typeof AGGREGATE_TILES)[number];
+type CompositionTileKey = (typeof COMPOSITION_TILES)[number];
+
+/** One load per distinct period, however many tiles ask for it. */
+function perRange<T>(
+  load: (range: SnapshotRange) => Promise<T>,
+): (range: SnapshotRange) => Promise<T> {
+  const cache = new Map<SnapshotRange, Promise<T>>();
+  return (range) => {
+    let pending = cache.get(range);
+    if (pending === undefined) {
+      pending = load(range);
+      cache.set(range, pending);
+    }
+    return pending;
+  };
+}
 /*
  * Movers and burn rate read the same delegation balances, and each fetches them
  * for itself rather than sharing one read.
@@ -540,12 +592,11 @@ export interface OverviewData {
    *
    * Net worth over time, assets against debts and identity drift are the same
    * stored rows read differently — every field each of them needs is on every
-   * point. Sending it three times under three keys would be three copies of a
-   * year of history to say the same thing, and computing it three times would
-   * be the waste this endpoint exists to stop.
+   * point. Computed once per distinct period and keyed by tile, so three tiles
+   * on one period cost one read — and each can still be on a period of its own.
    */
-  readonly aggregate?: Series;
-  readonly composition?: OverviewComposition;
+  readonly aggregates?: Partial<Record<AggregateTileKey, Series>>;
+  readonly compositions?: Partial<Record<CompositionTileKey, OverviewComposition>>;
   readonly home_equity_over_time?: {
     readonly name: string | null;
     readonly points: readonly {
@@ -600,16 +651,17 @@ export async function buildOverview(
   db: Db,
   options: {
     readonly tiles: readonly OverviewTileKey[];
+    /** The period of every tile not named in `windows`. */
     readonly window: SpendingWindow;
-    readonly timeZone: string;
     /**
-     * The cashflow tile's own window, which is not the page's.
+     * Each tile's own period, read from its configuration. ADR 076.
      *
-     * It answers "where did it go", read as a retrospective at a different
-     * cadence from the figures around it — so it carries its own control and
-     * defaults to year-to-date. The page's period governs everything else.
+     * The snapshot range vocabulary is the same list as the spending windows,
+     * so one period drives either kind of tile and nothing is mapped between
+     * them — TypeScript agrees, which is why this needs no cast.
      */
-    readonly cashflowWindow?: SpendingWindow;
+    readonly windows?: Readonly<Partial<Record<OverviewTileKey, SpendingWindow>>>;
+    readonly timeZone: string;
   },
   now: Date = new Date(),
 ): Promise<OverviewData> {
@@ -617,14 +669,27 @@ export async function buildOverview(
   // (user, widget) — but this is called with a list, and a list that arrived
   // from anywhere else must not cost the same query twice.
   const wanted = new Set<OverviewTileKey>(options.tiles);
+  const windowOf = (key: OverviewTileKey): SpendingWindow =>
+    options.windows?.[key] ?? options.window;
+  const { timeZone } = options;
 
-  // The snapshot range vocabulary is the same list as the spending windows, so
-  // one selector drives every tile and nothing has to be mapped between them —
-  // TypeScript agrees, which is why this needs no cast.
-  const range: SnapshotRange = options.window;
-  const wantsAggregate = AGGREGATE_TILES.some((key) => wanted.has(key));
-  const wantsComposition = COMPOSITION_TILES.some((key) => wanted.has(key));
-  const wantsDaily = DAILY_TILES.some((key) => wanted.has(key));
+  // Shared series, read once per period rather than once per tile.
+  const aggregateFor = perRange((range) => aggregateSeries(db, range, now));
+  const compositionFor = perRange((range) => compositionSeries(db, range, now));
+  const dailyFor = perRange((range) => dailyAggregateRows(db, range, now));
+
+  async function perTile<K extends OverviewTileKey, T>(
+    keys: readonly K[],
+    load: (range: SnapshotRange) => Promise<T>,
+  ): Promise<Partial<Record<K, T>> | undefined> {
+    const present = keys.filter((key) => wanted.has(key));
+    if (present.length === 0) return undefined;
+    const loaded = await Promise.all(present.map((key) => load(windowOf(key))));
+    return Object.fromEntries(present.map((key, index) => [key, loaded[index]])) as Partial<
+      Record<K, T>
+    >;
+  }
+
   const wantsCycles = CYCLE_TILES.some((key) => wanted.has(key));
 
   const [
@@ -634,10 +699,12 @@ export async function buildOverview(
     utilities,
     movers,
     backlog,
-    aggregate,
-    composition,
+    aggregates,
+    compositions,
     equity,
-    daily,
+    trajectory,
+    changes,
+    momentumPoints,
     negative,
     cycles,
     burnRates,
@@ -646,14 +713,14 @@ export async function buildOverview(
     wanted.has('spending_by_grouping')
       ? buildSpending(
           db,
-          { by: 'grouping', window: options.window, timeZone: options.timeZone },
+          { by: 'grouping', window: windowOf('spending_by_grouping'), timeZone },
           now,
         )
       : undefined,
     wanted.has('spending_by_delegation')
       ? buildSpending(
           db,
-          { by: 'delegation', window: options.window, timeZone: options.timeZone },
+          { by: 'delegation', window: windowOf('spending_by_delegation'), timeZone },
           now,
         )
       : undefined,
@@ -666,27 +733,45 @@ export async function buildOverview(
     wanted.has('utilities_vs_delegated') ||
     wanted.has('utilities_trend') ||
     wanted.has('utilities_adjust')
-      ? buildUtilities(db, options.timeZone, now)
+      ? buildUtilities(db, timeZone, now)
       : undefined,
     wanted.has('delegation_movers')
-      ? buildMovers(db, { window: options.window, timeZone: options.timeZone }, now)
+      ? buildMovers(db, { window: windowOf('delegation_movers'), timeZone }, now)
       : undefined,
     wanted.has('uncategorized_backlog') ? buildBacklog(db) : undefined,
-    wantsAggregate ? aggregateSeries(db, range, now) : undefined,
-    wantsComposition ? compositionSeries(db, range, now) : undefined,
-    wanted.has('home_equity_over_time') ? equitySeries(db, range, now) : undefined,
-    wantsDaily ? dailyAggregateRows(db, range, now) : undefined,
+    perTile(AGGREGATE_TILES, aggregateFor),
+    perTile(COMPOSITION_TILES, async (range) => {
+      const composition = await compositionFor(range);
+      return { points: composition.points, days: composition.days };
+    }),
+    wanted.has('home_equity_over_time')
+      ? equitySeries(db, windowOf('home_equity_over_time'), now)
+      : undefined,
+    // The trajectory is derived from the daily rows rather than stored, and it
+    // needs the bucket its history is drawn at so the projection lines up with
+    // the history behind it.
+    wanted.has('debt_trajectory')
+      ? dailyFor(windowOf('debt_trajectory')).then((daily) =>
+          debtTrajectory(daily, bucketFor(daily.length)),
+        )
+      : undefined,
+    wanted.has('change_per_cycle')
+      ? dailyFor(windowOf('change_per_cycle')).then((daily) => changePerCycle(db, daily))
+      : undefined,
+    // Computed on the daily rows before bucketing: a rolling window over weekly
+    // averages is a different and much blunter thing.
+    wanted.has('thirty_day_momentum')
+      ? dailyFor(windowOf('thirty_day_momentum')).then((daily) =>
+          downsample(momentum(daily), bucketFor(daily.length)),
+        )
+      : undefined,
     wanted.has('delegations_negative') ? buildNegativeDelegations(db) : undefined,
     wantsCycles ? buildCycles(db) : undefined,
     wanted.has('delegation_burn_rate')
-      ? buildBurnRates(db, { window: options.window, timeZone: options.timeZone }, now)
+      ? buildBurnRates(db, { window: windowOf('delegation_burn_rate'), timeZone }, now)
       : undefined,
     wanted.has('cashflow')
-      ? buildCashflow(
-          db,
-          { window: options.cashflowWindow ?? 'ytd', timeZone: options.timeZone },
-          now,
-        )
+      ? buildCashflow(db, { window: windowOf('cashflow'), timeZone }, now)
       : undefined,
   ]);
 
@@ -694,25 +779,12 @@ export async function buildOverview(
     ...(byGrouping ? { spending_by_grouping: byGrouping } : {}),
     ...(byDelegation ? { spending_by_delegation: byDelegation } : {}),
     ...(accountComposition ? { asset_debt_composition: accountComposition } : {}),
-    ...(aggregate ? { aggregate } : {}),
-    ...(composition ? { composition: { points: composition.points, days: composition.days } } : {}),
+    ...(aggregates ? { aggregates } : {}),
+    ...(compositions ? { compositions } : {}),
     ...(equity ? { home_equity_over_time: equity } : {}),
-    // The trajectory is derived from the daily rows rather than stored, and it
-    // needs the bucket the rest of the page is drawn at so the projection lines
-    // up with the history behind it.
-    ...(daily && wanted.has('debt_trajectory')
-      ? { debt_trajectory: debtTrajectory(daily, bucketFor(daily.length)) }
-      : {}),
-    ...(daily && wanted.has('change_per_cycle')
-      ? { change_per_cycle: await changePerCycle(db, daily) }
-      : {}),
-    ...(daily && wanted.has('thirty_day_momentum')
-      ? {
-          // Computed on the daily rows before bucketing: a rolling window over
-          // weekly averages is a different and much blunter thing.
-          thirty_day_momentum: downsample(momentum(daily), bucketFor(daily.length)),
-        }
-      : {}),
+    ...(trajectory ? { debt_trajectory: trajectory } : {}),
+    ...(changes ? { change_per_cycle: changes } : {}),
+    ...(momentumPoints ? { thirty_day_momentum: momentumPoints } : {}),
     ...(negative ? { delegations_negative: negative } : {}),
     ...(cycles ? { cycles } : {}),
     ...(burnRates ? { delegation_burn_rate: burnRates } : {}),
