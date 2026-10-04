@@ -135,6 +135,11 @@ export interface RecurringBill {
   /** The grouping colour of where it is filed, so it matches the rest of the page. */
   readonly color: string | null;
   readonly accountName: string | null;
+  /**
+   * Every settled charge it was built from, newest first, as magnitudes — hand
+   * links included. What a month in review reads to say which bills moved.
+   */
+  readonly charges: readonly { readonly postedAt: Date; readonly amountCents: Cents }[];
 }
 
 /** The middle value. Even counts take the lower of the two, which needs no averaging. */
@@ -441,6 +446,9 @@ export async function findRecurringBills(
       delegationName: filedName,
       color: filedColor,
       accountName: newest.account.nickname ?? newest.account.name,
+      charges: [...group]
+        .sort((a, b) => b.postedAt.getTime() - a.postedAt.getTime())
+        .map((charge) => ({ postedAt: charge.postedAt, amountCents: -charge.amountCents })),
     });
   }
 

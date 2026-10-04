@@ -44,6 +44,7 @@ const listQuerySchema = z.object({
   kind: z.enum(TRANSACTION_KINDS).optional(),
   sign: z.enum(['in', 'out']).optional(),
   source: z.enum(['simplefin', 'manual']).optional(),
+  inBudget: booleanQuery.optional(),
   dateFrom: z.coerce.date().optional(),
   dateTo: z.coerce.date().optional(),
   /** Exclusive, for a range whose end is the next one's start. */

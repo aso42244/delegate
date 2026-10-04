@@ -68,6 +68,7 @@ export interface TransactionFilters {
   readonly kind?: string | undefined;
   readonly sign?: 'in' | 'out' | undefined;
   readonly source?: 'simplefin' | 'manual' | undefined;
+  readonly inBudget?: boolean | undefined;
   /** Instants, as the server sent them. `dateBefore` is exclusive. */
   readonly dateFrom?: string | undefined;
   readonly dateBefore?: string | undefined;

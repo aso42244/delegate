@@ -6,7 +6,14 @@ phase (`v0.1.0-phase1`, and so on).
 
 ## [Unreleased]
 
-Nothing yet.
+### Added
+
+- **Month in review.** A new page beside Overview that reads a finished month
+  back from the ledger: what came in, what went out and what was left over;
+  each line against what it was given; the bills that cost more or less than
+  usual, were new, or did not come; and what net worth did. Nothing is stored,
+  so a charge categorized late lands in its month the next time you look, and
+  every sum opens the transactions behind it. ADR 078.
 
 ## [0.87.0] — 2026-10-04
 
