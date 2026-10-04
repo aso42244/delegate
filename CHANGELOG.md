@@ -6,6 +6,10 @@ phase (`v0.1.0-phase1`, and so on).
 
 ## [Unreleased]
 
+Nothing yet.
+
+## [0.87.0] — 2026-10-04
+
 ### Added
 
 - **Every figure opens its rows.** Spending by grouping and by delegation, the
