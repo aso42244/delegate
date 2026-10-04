@@ -180,7 +180,7 @@ describe('a month in review', () => {
 
   it('reads net worth from the snapshots at both edges of the month', async () => {
     const wallet = await makeAccount({ name: 'Cold storage', type: 'asset', balanceCents: 0n });
-    const aggregate = (date: string, assets: bigint, debts: bigint) =>
+    const aggregate = (date: string, assets: bigint, debts: bigint): Promise<unknown> =>
       prisma.aggregateSnapshot.create({
         data: {
           snapshotDate: new Date(`${date}T00:00:00.000Z`),
@@ -195,7 +195,7 @@ describe('a month in review', () => {
           identityValueCents: 0n,
         },
       });
-    const holding = (date: string, cents: bigint) =>
+    const holding = (date: string, cents: bigint): Promise<unknown> =>
       prisma.accountSnapshot.create({
         data: {
           snapshotDate: new Date(`${date}T00:00:00.000Z`),
