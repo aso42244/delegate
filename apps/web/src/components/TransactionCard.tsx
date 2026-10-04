@@ -1,4 +1,5 @@
 import { formatCents } from '@budget/shared';
+import { MerchantText } from './MerchantNameDialog.jsx';
 import type { ReactNode } from 'react';
 import type { TransactionDto } from '../api/transactions.js';
 import { Chips } from './Chip.jsx';
@@ -43,9 +44,10 @@ export function TransactionCard({
   return (
     <li className="border-b border-line py-2.5 last:border-0">
       <div className="flex items-baseline gap-2">
-        <span className="truncate text-ink" title={transaction.description}>
-          {transaction.description}
-        </span>
+        <MerchantText
+          description={transaction.description}
+          merchantName={transaction.merchantName}
+        />
         <Chips kinds={chips} />
         <span className="flex-1" />
         {/* A split row under a line or grouping filter shows its share (ADR 077). */}

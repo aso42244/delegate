@@ -140,8 +140,15 @@ export function BacklogQueue(): ReactNode {
                 it is 256px wherever there is room for 256px, and it gives way in
                 step with the payee where there is not.
               */}
-              <span className="min-w-0 flex-1 truncate text-base text-ink">
-                {transaction.description}
+              <span
+                className="min-w-0 flex-1 truncate text-base text-ink"
+                title={
+                  transaction.merchantName === null
+                    ? transaction.description
+                    : `${transaction.merchantName} · ${transaction.description}`
+                }
+              >
+                {transaction.merchantName ?? transaction.description}
               </span>
 
               <span

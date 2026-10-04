@@ -6,7 +6,13 @@ phase (`v0.1.0-phase1`, and so on).
 
 ## [Unreleased]
 
-Nothing yet.
+### Added
+
+- **Name a merchant once, see it everywhere.** "Name this merchant" in any
+  transaction's menu gives a merchant a name of your own — `AMAZON
+MKTPL*RT4G93` reads as "Amazon" — on every charge from it, past and future,
+  with the bank's text kept beside it. It is the same name a bill's Rename sets
+  on Recurring, and searching for it finds the charges. ADR 079.
 
 ## [0.88.0] — 2026-10-04
 

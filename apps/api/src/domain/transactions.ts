@@ -29,6 +29,13 @@ export interface TransactionQuery {
   /** Only rows on accounts the budget sums — what a month's figures count. */
   readonly inBudget?: boolean | undefined;
   /**
+   * More text the search also matches against the bank's description: the
+   * feed's words for every merchant whose own name matched the search (ADR 079).
+   * A merchant named "Grandma's pharmacy" is found by that name, though the
+   * bank calls it something else.
+   */
+  readonly searchFeedNames?: readonly string[] | undefined;
+  /**
    * Strictly before this instant. The end of a range that is itself the start
    * of the next — a cycle ends where the next press begins — so `dateTo`'s
    * inclusive bound would count a row on the boundary twice.
@@ -127,6 +134,10 @@ export function buildTransactionWhere(query: TransactionQuery): Prisma.Transacti
           },
         },
       ];
+
+      for (const feedName of query.searchFeedNames ?? []) {
+        conditions.push({ descriptionRaw: { contains: feedName, mode: 'insensitive' } });
+      }
 
       // A bare number is searched as an amount too, in cents. Typing "42.10"
       // should find $42.10 whether it was money in or money out.

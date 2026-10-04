@@ -38,9 +38,12 @@ export function TransactionRowMenu({
   onSplit,
   onMatchCheck,
   onCreateRule,
+  onName,
   onProblem,
 }: {
   readonly transaction: TransactionDto;
+  /** Names the merchant this charge came from, for every charge from it. */
+  readonly onName: () => void;
   readonly onSplit: () => void;
   readonly onMatchCheck: () => void;
   /** Offered only on a row already filed under exactly one delegation. */
@@ -138,6 +141,26 @@ export function TransactionRowMenu({
               <div className="my-1 border-t border-line" />
             </>
           )}
+
+          {/* Every kind: income and transfers come from somewhere worth naming too. */}
+          <button
+            type="button"
+            role="menuitem"
+            className={`${ITEM_CLASS} flex-col items-start gap-0`}
+            onClick={() => {
+              onName();
+              controls.close();
+            }}
+          >
+            <span>
+              {transaction.merchantName === null ? 'Name this merchant' : 'Rename this merchant'}
+            </span>
+            <span className="text-label text-muted">
+              Shown on every charge from it. What the bank sent stays underneath.
+            </span>
+          </button>
+
+          <div className="my-1 border-t border-line" />
 
           {KIND_ITEMS.filter((item) => item.kind !== transaction.kind).map((item) => (
             <button

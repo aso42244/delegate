@@ -26,6 +26,10 @@ export interface TransactionDto {
   readonly shareCents: string | null;
   readonly description: string;
   readonly descriptionRaw: string;
+  /** Which merchant this is (ADR 079). */
+  readonly merchantKey: string;
+  /** The household's name for it, or null for the bank's. */
+  readonly merchantName: string | null;
   readonly pending: boolean;
   readonly kind: 'normal' | 'income' | 'transfer';
   readonly archivedAt: string | null;

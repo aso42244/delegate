@@ -524,9 +524,13 @@ function DayDialog({
               */}
               <span
                 className="min-w-0 flex-[2] truncate text-quiet text-ink"
-                title={row.description}
+                title={
+                  row.merchantName === null
+                    ? row.description
+                    : `${row.merchantName} · ${row.description}`
+                }
               >
-                {row.description}
+                {row.merchantName ?? row.description}
               </span>
               <span className="hidden min-w-0 flex-1 truncate text-micro text-muted sm:block">
                 {row.account.name}
