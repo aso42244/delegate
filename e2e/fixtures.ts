@@ -298,7 +298,11 @@ export async function makeAccount(
    * accounts the identity sums, and ADR 050 made that a wall — a property is net
    * worth rather than money the budget can allocate.
    */
-  options: { readonly inBudget?: boolean } = {},
+  options: {
+    readonly inBudget?: boolean;
+    /** When the balance was last confirmed. Now, unless a case needs it older. */
+    readonly balanceAsOf?: Date;
+  } = {},
 ): Promise<string> {
   const account = await prisma.account.create({
     data: {
@@ -309,7 +313,7 @@ export async function makeAccount(
       balanceCents,
       inBudget: options.inBudget ?? true,
       inNetWorth: true,
-      balanceAsOf: new Date(),
+      balanceAsOf: options.balanceAsOf ?? new Date(),
       feedBalanceAsOf,
     },
     select: { id: true },

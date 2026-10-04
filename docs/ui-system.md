@@ -754,6 +754,16 @@ entry so they cannot.
 and `onlyWithBalance`. A surface that needs a third kind of difference needs a
 prop, not a copy.
 
+**An account says how old its balance is**, in a column of its own just left of
+the figure: a `sm` quiet `Tag` reading `8h ago` or `2d ago`, the same coarse
+wording the sync reading uses (`agoLabel`), with the exact time on hover. A fixed
+80px column, so the ages read down one line and the figures beside them do not
+move. `AccountsTable` turns it on with `showUpdated`; a delegation's balance is
+the ledger's own sum and is never out of date, so that table has nothing to say
+there. Not drawn below the breakpoint, where a row holds a name and one figure.
+Whether a balance is _too_ old stays the `stale` chip's job beside the name — the
+column reports, it does not judge.
+
 **A filter that hides rows never narrows what is written.** The band can hide
 accounts sitting at zero, and `BudgetSection` builds its orderings from the
 section it was handed — so the order goes back through `restoreHidden` first,
