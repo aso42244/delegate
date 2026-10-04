@@ -42,6 +42,9 @@ test('the sidebar leads with Overview, and Budget is not in it', async ({ signed
    * list" passes just as happily when it is last.
    */
   const nav = signedIn.getByRole('navigation');
+  // `allInnerTexts` does not wait, so read the list only once it is drawn —
+  // read on arrival it can be empty, and an empty list has no first entry.
+  await expect(nav.getByRole('link', { name: 'Overview' })).toBeVisible();
   const labels = await nav.getByRole('link').allInnerTexts();
   const trimmed = labels.map((label) => label.trim()).filter((label) => label !== '');
 
