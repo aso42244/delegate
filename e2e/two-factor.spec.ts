@@ -29,6 +29,19 @@ function previousPeriod(): number {
 }
 
 /**
+ * Waits, if needed, until at least `seconds` of the current TOTP period remain.
+ *
+ * The previous period's code is accepted only while it is one period old. A run
+ * that enrols late in a period and signs in after the boundary offers a code two
+ * periods old, which the server rightly calls incorrect rather than spent — so
+ * the check for "already been used" failed on roughly one run in four.
+ */
+async function awaitPeriodRoom(page: Page, seconds: number): Promise<void> {
+  const remaining = 30 - (Math.floor(Date.now() / 1000) % 30);
+  if (remaining < seconds) await page.waitForTimeout(remaining * 1000 + 250);
+}
+
+/**
  * The setup key, from behind "Can't scan this?".
  *
  * The QR code is the offered path and the key is folded away behind a button,
@@ -82,6 +95,8 @@ async function signOut(page: Page): Promise<void> {
 }
 
 test('enrols, then requires a code on the next sign-in', async ({ signedIn: page }) => {
+  // Up to twenty seconds of waiting for a fresh period, on top of the run.
+  test.setTimeout(60_000);
   await turnItOff(page);
 
   // The password again: binding an authenticator from a session somebody else
@@ -91,6 +106,9 @@ test('enrols, then requires a code on the next sign-in', async ({ signedIn: page
 
   const secret = await revealSecret(page);
 
+  // Enrolment through the spent-code check takes about eight seconds; twenty
+  // left in the period keeps all of it inside one.
+  await awaitPeriodRoom(page, 20);
   const enrolmentCode = await generateOtp({ secret, epoch: previousPeriod() });
   await page.getByLabel('Code from the app').fill(enrolmentCode);
   await page.getByRole('button', { name: 'Confirm' }).click();

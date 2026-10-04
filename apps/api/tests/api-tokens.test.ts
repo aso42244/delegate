@@ -4,7 +4,9 @@ import { buildApp } from '../src/app.js';
 import { loadConfig } from '../src/config.js';
 import { prisma } from '../src/db/client.js';
 import { API_TOKEN_PREFIX, digestOf, issueApiToken } from '../src/domain/api-tokens.js';
+import { categorizeTransaction } from '../src/domain/allocations.js';
 import { writeCheck } from '../src/domain/checks.js';
+import { buildPanel } from '../src/domain/overview.js';
 import {
   makeAccount,
   makeDelegation,
@@ -290,6 +292,40 @@ describe('the read door', () => {
     expect(body.figures.find((figure) => figure.key === 'safe_per_day')?.valueCents).toBeNull();
     expect(body.uncategorized.count).toBe(1);
     expect(body.overspent).toEqual([]);
+  });
+
+  it("sends this cycle's spend per line, one entry for every active line", async () => {
+    const { secret } = await issue();
+    const account = await makeAccount({ name: 'Checking', type: 'asset', balanceCents: 100000n });
+    const grocery = await makeDelegation({ name: 'Grocery' });
+    const fuel = await makeDelegation({ name: 'Fuel' });
+    const transaction = await makeTransaction({
+      accountId: account.id,
+      amountCents: -4210n,
+      postedAt: new Date(),
+    });
+    await categorizeTransaction(prisma, transaction.id, grocery.id);
+
+    const response = await app.inject({
+      method: 'GET',
+      url: '/api/read/overview',
+      headers: bearer(secret),
+    });
+    expect(response.statusCode).toBe(200);
+    const { spending } = response.json<{ spending: { id: string; spentCents: string }[] }>();
+
+    // Every active line, spent or not: the selection decides what Eventide
+    // shows, never what is computed. Whole cents as a string (ADR 002).
+    expect(spending).toHaveLength(2);
+    expect(spending.find((line) => line.id === grocery.id)?.spentCents).toBe('4210');
+    expect(spending.find((line) => line.id === fuel.id)?.spentCents).toBe('0');
+    expect(spending.every((line) => typeof line.spentCents === 'string')).toBe(true);
+
+    // The same figure the Overview page's panel draws — no new arithmetic.
+    const panel = await buildPanel(prisma, { since: null, timeZone: 'UTC' });
+    expect(spending).toEqual(
+      panel.map((line) => ({ id: line.id, spentCents: line.spentCents.toString() })),
+    );
   });
 
   it('stamps when the token was last used and from where', async () => {

@@ -2,7 +2,7 @@ import type { FastifyPluginCallback, FastifyReply, FastifyRequest } from 'fastif
 import { prisma } from '../db/client.js';
 import { bearerFrom, readerFor } from '../domain/api-tokens.js';
 import { buildBudgetView, type BudgetRow, type BudgetSection } from '../domain/budget.js';
-import { buildFigures, buildOverview, FIGURE_KEYS } from '../domain/overview.js';
+import { buildFigures, buildOverview, buildPanel, FIGURE_KEYS } from '../domain/overview.js';
 import { payCycleAt } from '../domain/pay-cycle.js';
 import { getBudgetSettings, householdTimezone } from '../domain/settings.js';
 import { centsOut, dateOut, dayOut } from '../http/serialize.js';
@@ -196,7 +196,7 @@ export const readDoorRoutes: FastifyPluginCallback = (fastify, _options, done) =
     const settings = await getBudgetSettings(prisma);
     const cycle = payCycleAt(settings.nextPaydayOn, settings.payCadence, now, timeZone);
 
-    const [figures, data] = await Promise.all([
+    const [figures, data, panel] = await Promise.all([
       buildFigures(prisma, {
         keys: FIGURE_KEYS,
         timeZone,
@@ -212,6 +212,12 @@ export const readDoorRoutes: FastifyPluginCallback = (fastify, _options, done) =
         },
         now,
       ),
+      /*
+       * This cycle's spend per line, for the pace bars Eventide draws. The same
+       * call the Overview page makes for its panel, and every active line
+       * always: the selection decides what is shown, never what is computed.
+       */
+      buildPanel(prisma, { since: cycle?.start ?? null, timeZone }, now),
     ]);
 
     return {
@@ -252,6 +258,7 @@ export const readDoorRoutes: FastifyPluginCallback = (fastify, _options, done) =
           spendCents: centsOut(entry.spendCents),
         })),
       },
+      spending: panel.map((line) => ({ id: line.id, spentCents: centsOut(line.spentCents) })),
     };
   });
 

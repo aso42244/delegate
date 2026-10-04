@@ -6,7 +6,11 @@ phase (`v0.1.0-phase1`, and so on).
 
 ## [Unreleased]
 
-Nothing yet.
+### Added
+
+- **The read door sends this cycle's spend per line.** `GET /api/read/overview`
+  carries `spending`, one `{ id, spentCents }` per active delegation — the same
+  figure the Overview panel's pace bars read — so Eventide can draw them too.
 
 ## [0.84.0] — 2026-10-03
 
