@@ -6,6 +6,10 @@ phase (`v0.1.0-phase1`, and so on).
 
 ## [Unreleased]
 
+Nothing yet.
+
+## [0.89.0] — 2026-10-04
+
 ### Added
 
 - **Brokerage positions, judged against the S&P 500.** Where the bank feed
