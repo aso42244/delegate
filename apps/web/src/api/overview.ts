@@ -390,6 +390,19 @@ export interface OverviewDataDto {
   readonly utilities_vs_delegated?: UtilitiesComparisonDto;
   readonly delegation_movers?: MoversDto;
   readonly outstanding_checks?: readonly OutstandingCheckDto[];
+  /** Brokerage positions against the S&P 500 from each purchase date (ADR 080). */
+  readonly investments?: {
+    readonly benchmarkDate: string | null;
+    readonly positions: readonly {
+      readonly id: string;
+      readonly symbol: string;
+      readonly accountName: string;
+      readonly marketValueCents: string;
+      readonly shareCoverage: 'none' | 'short' | 'matched' | 'over';
+      /** Summed over the lots with a benchmark figure. Null with none. */
+      readonly versusBenchmarkCents: string | null;
+    }[];
+  };
   readonly uncategorized_backlog?: OverviewBacklogDto;
 }
 

@@ -714,3 +714,42 @@ export async function makeHousehold(api: APIRequestContext): Promise<void> {
     data: { balanceCents: delegated - 60_00n + 482_17n + 212_40n },
   });
 }
+
+/**
+ * A brokerage position as a sync would record it, and the S&P 500 closes its
+ * lots are judged against (ADR 080). Seeded directly: only a feed creates one.
+ */
+export async function makePosition(
+  accountId: string,
+  symbol: string,
+  options: {
+    readonly sharesMicros: bigint;
+    readonly marketValueCents: bigint;
+    readonly costBasisCents?: bigint | null;
+    readonly closes?: readonly { readonly date: string; readonly closeCents: bigint }[];
+  },
+): Promise<string> {
+  const position = await prisma.position.create({
+    data: {
+      accountId,
+      feedKey: symbol,
+      symbol,
+      sharesMicros: options.sharesMicros,
+      marketValueCents: options.marketValueCents,
+      feedCostBasisCents: options.costBasisCents ?? null,
+      asOf: new Date(),
+    },
+    select: { id: true },
+  });
+  for (const close of options.closes ?? []) {
+    await prisma.indexPrice.create({
+      data: {
+        symbol: 'SPY',
+        priceDate: new Date(`${close.date}T00:00:00.000Z`),
+        closeCents: close.closeCents,
+        source: 'e2e',
+      },
+    });
+  }
+  return position.id;
+}

@@ -5,6 +5,7 @@ import { prisma } from './db/client.js';
 import { ConflictError } from './domain/errors.js';
 import { runBackup } from './domain/backup.js';
 import { fetchAndRecordPrice, providerByName, revalueBitcoinHoldings } from './domain/bitcoin.js';
+import { refreshBenchmark, YahooChartProvider } from './domain/positions.js';
 import { scanAllWallets } from './domain/bitcoin-wallets.js';
 import { getBudgetSettings, resolveScheduleTimezone } from './domain/settings.js';
 import { resolveConnection } from './domain/simplefin-config.js';
@@ -157,6 +158,27 @@ function createTasks(
     'Bitcoin price fetch enabled',
   );
 
+  if (!cron.validate(config.INDEX_PRICE_CRON)) {
+    throw new Error(
+      `INDEX_PRICE_CRON is not a valid cron expression: "${config.INDEX_PRICE_CRON}"`,
+    );
+  }
+
+  tasks.push(
+    cron.schedule(
+      config.INDEX_PRICE_CRON,
+      () => {
+        void runScheduledIndexFetch(logger);
+      },
+      options,
+    ),
+  );
+
+  logger.info(
+    { cron: config.INDEX_PRICE_CRON, timezone: options.timezone },
+    'S&P 500 price fetch enabled',
+  );
+
   if (!cron.validate(config.SNAPSHOT_CRON)) {
     throw new Error(`SNAPSHOT_CRON is not a valid cron expression: "${config.SNAPSHOT_CRON}"`);
   }
@@ -247,6 +269,20 @@ async function runScheduledSnapshot(timezone: string, logger: FastifyBaseLogger)
     );
   } catch (error) {
     logger.error({ err: error, durationMs: Date.now() - startedAt }, 'nightly snapshot failed');
+  }
+}
+
+/**
+ * The benchmark's closes. Like the Bitcoin price, an unreachable source is a
+ * quiet log line: the closes already stored stand, and the page says how old
+ * the newest one is.
+ */
+async function runScheduledIndexFetch(logger: FastifyBaseLogger): Promise<void> {
+  try {
+    const { stored } = await refreshBenchmark(prisma, new YahooChartProvider());
+    logger.info({ stored }, 'S&P 500 closes recorded');
+  } catch (error) {
+    logger.warn({ err: error }, 'S&P 500 price fetch failed; keeping the closes already stored');
   }
 }
 

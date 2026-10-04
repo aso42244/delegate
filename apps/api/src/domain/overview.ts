@@ -80,6 +80,9 @@ export const OVERVIEW_TILES = [
   'home_equity_over_time',
   'debt_trajectory',
 
+  /* Brokerage positions against the S&P 500 from each purchase date (ADR 080). */
+  'investments',
+
   // Batch C: the small ones. Mostly a single figure and the sentence that says
   // what to do about it — the tiles that make this a daily read rather than a
   // weekly one, since a chart answers "what happened" and a number answers

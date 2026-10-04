@@ -170,6 +170,13 @@ const environmentSchema = z
      * morning, so the job is never skipped for the night.
      */
     SNAPSHOT_CRON: z.string().default('10 3 * * *'),
+
+    /**
+     * The S&P 500's closes, which brokerage lots are judged against (ADR 080).
+     * Weekday evenings, well after the New York close wherever the household
+     * is in the Americas, and off the hour for the same reason as the others.
+     */
+    INDEX_PRICE_CRON: z.string().default('25 19 * * 1-5'),
     BITCOIN_PRICE_PRIMARY: z.enum(['coingecko', 'coinbase']).default('coingecko'),
     BITCOIN_PRICE_FALLBACK: z.enum(['coingecko', 'coinbase']).default('coinbase'),
 

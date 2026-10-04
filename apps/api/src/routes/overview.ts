@@ -37,9 +37,10 @@ import { payCycleAt } from '../domain/pay-cycle.js';
 import { startOfLocalDay } from '../domain/calendar.js';
 import { findRecurringBills, type RecurringBill } from '../domain/recurring.js';
 import { listOutstandingChecks } from '../domain/checks.js';
+import { buildInvestments } from '../domain/investments.js';
 import { accountSeries } from '../domain/snapshot-series.js';
 import { getBudgetSettings, householdTimezone } from '../domain/settings.js';
-import { centsOut, dateOut } from '../http/serialize.js';
+import { centsOut, dateOut, dayOut } from '../http/serialize.js';
 import { AUTHENTICATED } from '../plugins/auth.js';
 
 /**
@@ -614,6 +615,9 @@ export const overviewRoutes: FastifyPluginCallback = (fastify, _options, done) =
         wantsPickable ? pickableSeries(prisma) : undefined,
       ]);
 
+    // Positions against the S&P 500 (ADR 080). Its own read, and only when asked.
+    const investments = keys.has('investments') ? await buildInvestments(prisma) : undefined;
+
     /*
      * Every line, always.
      *
@@ -662,6 +666,32 @@ export const overviewRoutes: FastifyPluginCallback = (fastify, _options, done) =
               spentCents: centsOut(point.spentCents),
               observed: point.observed,
             })),
+          }
+        : {}),
+      ...(investments
+        ? {
+            investments: {
+              benchmarkDate: dayOut(investments.benchmark.latestDate),
+              positions: investments.positions.map((position) => {
+                // The lots that have a benchmark figure, summed: what the tile
+                // can honestly compare. Shares bought on no recorded date have
+                // no "from that day" to compare from.
+                const compared = position.lots.filter((lot) => lot.versusBenchmarkCents !== null);
+                return {
+                  id: position.id,
+                  symbol: position.symbol,
+                  accountName: position.accountName,
+                  marketValueCents: centsOut(position.marketValueCents),
+                  shareCoverage: position.shareCoverage,
+                  versusBenchmarkCents:
+                    compared.length === 0
+                      ? null
+                      : centsOut(
+                          compared.reduce((sum, lot) => sum + (lot.versusBenchmarkCents ?? 0n), 0n),
+                        ),
+                };
+              }),
+            },
           }
         : {}),
       ...(checks

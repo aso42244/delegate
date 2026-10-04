@@ -84,6 +84,8 @@ interface FixtureAccount {
   /** `null` omits `balance-date` entirely, which some bridges do. */
   readonly balanceDate?: number | null;
   readonly transactions?: readonly FixtureTransaction[];
+  /** A brokerage's positions, passed through as the bridge would send them. */
+  readonly holdings?: readonly unknown[];
 }
 
 /** Builds a v2-shaped payload (`errlist` + `connections`). */
@@ -121,6 +123,7 @@ export function accountSet(
           ? {}
           : { transacted_at: transaction.transacted_at }),
       })),
+      ...(account.holdings === undefined ? {} : { holdings: account.holdings }),
     })),
   };
 }
