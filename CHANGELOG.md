@@ -8,6 +8,14 @@ phase (`v0.1.0-phase1`, and so on).
 
 ### Added
 
+- **Brokerage positions, judged against the S&P 500.** Where the bank feed
+  reports a brokerage account's holdings, each position's shares, value and
+  cost basis are kept. Record when each was bought in Settings → Holdings, and
+  every purchase is compared with the same money put into the S&P 500 (SPY,
+  dividends included) on that day; the lots are held to the feed's shares and
+  cost basis to the cent. An Overview tile, Investments against the S&P 500,
+  shows the result. ADR 080.
+
 - **Name a merchant once, see it everywhere.** "Name this merchant" in any
   transaction's menu gives a merchant a name of your own — `AMAZON
 MKTPL*RT4G93` reads as "Amazon" — on every charge from it, past and future,

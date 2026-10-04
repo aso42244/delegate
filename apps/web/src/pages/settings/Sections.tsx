@@ -5,6 +5,7 @@ import { DelegationsSection } from './Delegations.jsx';
 import { GroupingsSection } from './Groupings.jsx';
 import { HiddenBillsSection } from './HiddenBills.jsx';
 import { PropertiesSection } from './Properties.jsx';
+import { InvestmentsSection } from './Investments.jsx';
 import { ApiTokensCard } from './ApiTokens.jsx';
 import { TorSection } from './Tor.jsx';
 import { TwoFactorCard } from './TwoFactor.jsx';
@@ -54,6 +55,7 @@ export function HoldingsSection(): ReactNode {
   return (
     <>
       <BitcoinSection />
+      <InvestmentsSection />
       <PropertiesSection />
     </>
   );

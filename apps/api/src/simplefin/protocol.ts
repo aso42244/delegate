@@ -48,6 +48,12 @@ const accountSchema = z
     'balance-date': epochSecondsSchema.optional(),
     'available-balance': feedAmountSchema.optional(),
     transactions: z.array(transactionSchema).default([]),
+    /*
+     * A brokerage account's positions, where the bridge reports them. Unknown
+     * shapes per entry: each is read leniently below and one bad entry is
+     * skipped rather than failing the account (ADR 080).
+     */
+    holdings: z.array(z.unknown()).optional(),
     // v2
     conn_id: z.string().optional(),
     // v1
@@ -93,6 +99,18 @@ export interface FeedTransaction {
   readonly occurredAt: Date;
 }
 
+/** One position a brokerage reports (ADR 080). */
+export interface FeedHolding {
+  /** The feed's own id for it, where it sends one. */
+  readonly externalId: string | undefined;
+  readonly symbol: string;
+  readonly description: string | null;
+  /** Millionths of a share. */
+  readonly sharesMicros: bigint;
+  readonly marketValueCents: Cents;
+  readonly costBasisCents: Cents | null;
+}
+
 export interface FeedAccount {
   readonly externalId: string;
   readonly name: string;
@@ -101,6 +119,11 @@ export interface FeedAccount {
   readonly balanceCents: Cents;
   readonly balanceAsOf: Date | undefined;
   readonly transactions: readonly FeedTransaction[];
+  /**
+   * Undefined when the feed said nothing about holdings — which is not the same
+   * as an empty list, which says the account holds nothing now.
+   */
+  readonly holdings?: readonly FeedHolding[];
 }
 
 export interface FeedResult {
@@ -122,6 +145,60 @@ export function parseFeedAmount(raw: string): Cents {
     ? trimmed.replace(/(\.\d{2}\d*?)0+$/, '$1').replace(/\.$/, '')
     : trimmed;
   return parseMoney(withoutPaddedZeros);
+}
+
+const holdingSchema = z
+  .object({
+    id: z.string().optional(),
+    symbol: z.string().optional(),
+    description: z.string().optional(),
+    shares: z.union([z.string(), z.number()]),
+    market_value: z.union([z.string(), z.number()]),
+    cost_basis: z.union([z.string(), z.number()]).nullish(),
+    currency: z.string().optional(),
+  })
+  .passthrough();
+
+/**
+ * A decimal as a fixed-point integer with `places` digits after the point,
+ * rounded half up past them. A holding's value is derived — price times shares
+ * — and routinely runs past the cent, so it is rounded rather than refused.
+ */
+function fixedPoint(raw: string | number, places: number): bigint | null {
+  const text =
+    typeof raw === 'number' ? (Number.isFinite(raw) ? raw.toFixed(places + 2) : '') : raw.trim();
+  const match = /^(-)?(\d+)(?:\.(\d+))?$/.exec(text.replace(/,/g, ''));
+  if (!match) return null;
+  const digits = (match[3] ?? '').padEnd(places + 1, '0');
+  const kept = BigInt((match[2] ?? '0') + digits.slice(0, places));
+  const rounded = Number(digits[places] ?? '0') >= 5 ? kept + 1n : kept;
+  return match[1] === '-' ? -rounded : rounded;
+}
+
+/** One holding, or null for one that cannot be read — skipped, never fatal. */
+export function normalizeHolding(raw: unknown): FeedHolding | null {
+  const parsed = holdingSchema.safeParse(raw);
+  if (!parsed.success) return null;
+  const holding = parsed.data;
+  if (holding.currency !== undefined && holding.currency.toUpperCase() !== 'USD') return null;
+
+  const symbol = (holding.symbol ?? '').trim() || (holding.description ?? '').trim();
+  const sharesMicros = fixedPoint(holding.shares, 6);
+  const marketValueCents = fixedPoint(holding.market_value, 2);
+  if (symbol === '' || sharesMicros === null || marketValueCents === null) return null;
+  const costBasisCents =
+    holding.cost_basis === undefined || holding.cost_basis === null
+      ? null
+      : fixedPoint(holding.cost_basis, 2);
+
+  return {
+    externalId: holding.id,
+    symbol: symbol.toUpperCase(),
+    description: holding.description?.trim() || null,
+    sharesMicros,
+    marketValueCents,
+    costBasisCents,
+  };
 }
 
 function errorToString(error: string | Record<string, unknown>): string {
@@ -171,6 +248,13 @@ export function normalizeAccountSet(raw: RawAccountSet, now: Date): FeedResult {
           occurredAt: epochSeconds ? new Date(epochSeconds * 1000) : now,
         };
       }),
+      ...(account.holdings === undefined
+        ? {}
+        : {
+            holdings: account.holdings
+              .map(normalizeHolding)
+              .filter((holding): holding is FeedHolding => holding !== null),
+          }),
     };
   });
 

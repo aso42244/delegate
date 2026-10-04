@@ -1,5 +1,6 @@
 import type { AccountType } from '@prisma/client';
 import type { Db } from '../db/client.js';
+import { syncHoldings } from './positions.js';
 import type { FeedAccount, FeedTransaction } from '../simplefin/protocol.js';
 import type { SimpleFinClient } from '../simplefin/client.js';
 import { fetchAccountsInWindows } from '../simplefin/backfill.js';
@@ -418,6 +419,19 @@ export async function runSync(db: Db, options: RunSyncOptions): Promise<SyncRunS
       });
       transactionsUpdated += reconciled.settled;
       transactionsReversed += reconciled.reversed;
+
+      /*
+       * Positions, where the feed reports them (ADR 080). Never allowed to fail
+       * the sync: a brokerage's holdings are a reading beside the balance, and
+       * a malformed one must not cost the household its transactions.
+       */
+      if (feedAccount.holdings !== undefined) {
+        try {
+          await syncHoldings(db, accountId, feedAccount.holdings, now);
+        } catch (error) {
+          logger.warn({ correlationId, accountId, err: error }, 'holdings not recorded');
+        }
+      }
     }
 
     // Rules run after every account is ingested and reconciled, so evaluation

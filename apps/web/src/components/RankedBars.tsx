@@ -63,6 +63,8 @@ export interface RankedRow {
      * amount to delegate rather than beside the name.
      */
     readonly tone?: 'warning';
+    /** A difference rather than an amount, so it carries its sign: `+$120.00`. */
+    readonly signed?: boolean;
   };
   /** Replaces the formatted figure, where the row states something else. */
   readonly note?: string;
@@ -240,7 +242,12 @@ export function RankedBars({
                     row.compare.tone === 'warning' ? 'font-semibold text-warning' : 'text-muted'
                   }`}
                 >
-                  {row.compare.valueCents === null ? '—' : formatCents(row.compare.valueCents)}
+                  {row.compare.valueCents === null
+                    ? '—'
+                    : formatCents(
+                        row.compare.valueCents,
+                        row.compare.signed ? { explicitPlus: true } : undefined,
+                      )}
                   <span className="sr-only"> {row.compare.label}</span>
                 </span>
               )}

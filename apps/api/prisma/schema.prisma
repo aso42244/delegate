@@ -468,6 +468,7 @@ model Account {
    * /**
    * /**
    * /**
+   * /**
    * Where this account sits among its neighbours in the same grouping.
    * As for a delegation and for the same reason: the order the household reads
    * its accounts in is a fact about the household, and alphabetical is nobody's
@@ -573,6 +574,7 @@ model Account {
   bitcoinEvents     BitcoinHoldingEvent[]
   bitcoinWallets    BitcoinWallet[]
   snapshots         AccountSnapshot[]
+  positions         Position[]
 
   @@unique([source, externalId], name: "account_source_external_id")
   @@index([archivedAt])
@@ -653,13 +655,11 @@ model Delegation {
 
   /**
    * The most this line is allowed to hold when Delegate is pressed.
-   *
    * Nullable, and null is no maximum — which is what nearly every line is. It
    * is the other half of the sentence a target starts: a target says what the
    * line is saving towards and never writes (ADR 047), while this one does. A
    * line capped at $400, set to receive $200 and already holding $275, takes
    * $125 on the next press and leaves the $75 undelegated.
-   *
    * A cap on the **balance**, not on the amount: the amount to delegate stays
    * exactly what the household typed, and what a press actually moves is
    * whatever of it still fits. Only Delegate is capped — a transfer, a refund
@@ -1606,4 +1606,73 @@ model AggregateSnapshot {
   createdAt DateTime @default(now()) @map("created_at")
 
   @@map("aggregate_snapshots")
+}
+
+/// A brokerage position as the feed reports it (ADR 080).
+///
+/// Shares are millionths of a share, never a float; money is cents. A position
+/// the feed stops reporting is archived, never deleted, and its lots stay with it.
+model Position {
+  id        String @id @default(uuid()) @db.Uuid
+  accountId String @map("account_id") @db.Uuid
+
+  /// The feed's holding id where it sends one, else the symbol: what a
+  /// position is matched on from one sync to the next.
+  feedKey String @map("feed_key")
+
+  symbol      String
+  description String?
+
+  sharesMicros     BigInt @map("shares_micros")
+  marketValueCents BigInt @map("market_value_cents")
+
+  /// What the feed says the whole position cost. Null where it does not say.
+  feedCostBasisCents BigInt? @map("feed_cost_basis_cents")
+
+  /// When the feed last reported it.
+  asOf       DateTime  @map("as_of")
+  archivedAt DateTime? @map("archived_at")
+  createdAt  DateTime  @default(now()) @map("created_at")
+  updatedAt  DateTime  @updatedAt @map("updated_at")
+
+  account Account       @relation(fields: [accountId], references: [id])
+  lots    PositionLot[]
+
+  @@unique([accountId, feedKey])
+  @@map("positions")
+}
+
+/// One purchase within a position, entered by hand: when, how many, what it cost.
+model PositionLot {
+  id          String   @id @default(uuid()) @db.Uuid
+  positionId  String   @map("position_id") @db.Uuid
+  purchasedOn DateTime @map("purchased_on") @db.Date
+
+  sharesMicros BigInt  @map("shares_micros")
+  /// The whole purchase, fees included, in cents.
+  costCents    BigInt  @map("cost_cents")
+  note         String?
+
+  archivedAt DateTime? @map("archived_at")
+  createdAt  DateTime  @default(now()) @map("created_at")
+  updatedAt  DateTime  @updatedAt @map("updated_at")
+
+  position Position @relation(fields: [positionId], references: [id])
+
+  @@index([positionId])
+  @@map("position_lots")
+}
+
+/// The benchmark's daily dividend-adjusted closes, refetched as one span so they
+/// share one scale (ADR 080).
+model IndexPrice {
+  id         String   @id @default(uuid()) @db.Uuid
+  symbol     String
+  priceDate  DateTime @map("price_date") @db.Date
+  closeCents BigInt   @map("close_cents")
+  source     String
+  fetchedAt  DateTime @default(now()) @map("fetched_at")
+
+  @@unique([symbol, priceDate])
+  @@map("index_prices")
 }

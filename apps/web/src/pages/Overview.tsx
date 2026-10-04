@@ -127,6 +127,7 @@ const TILE_COPY: Record<string, { readonly title: string; readonly description?:
   thirty_day_momentum: { title: '30-day momentum' },
   delegation_burn_rate: { title: 'What each line burns' },
   outstanding_checks: { title: 'Outstanding checks' },
+  investments: { title: 'Investments against the S&P 500' },
   uncategorized_backlog: { title: 'Waiting to be categorized' },
 };
 
@@ -877,6 +878,54 @@ function toLive(
 ): Record<string, bigint> | null {
   if (!live) return null;
   return Object.fromEntries(fields.map((field) => [field, BigInt(live[field] ?? '0')]));
+}
+
+/**
+ * Brokerage positions, each against the S&P 500 from the days its lots were
+ * bought (ADR 080). The figure beside each value is what those purchases are
+ * worth above or below the same money in the index — the question somebody
+ * asks of their own picks.
+ */
+function InvestmentsTile({
+  investments,
+}: {
+  readonly investments: NonNullable<OverviewDataDto['investments']>;
+}): ReactNode {
+  if (investments.positions.length === 0) {
+    return <EmptyState>No positions yet. They arrive with the bank feed.</EmptyState>;
+  }
+  const rows: RankedRow[] = investments.positions.map((position) => {
+    const versus =
+      position.versusBenchmarkCents === null ? null : BigInt(position.versusBenchmarkCents);
+    return {
+      key: position.id,
+      name: position.symbol,
+      valueCents: BigInt(position.marketValueCents),
+      compare: {
+        label: 'against the S&P 500',
+        valueCents: versus,
+        signed: true,
+        ...(versus !== null && versus < 0n ? { tone: 'warning' as const } : {}),
+      },
+      title:
+        versus === null
+          ? `${position.symbol} in ${position.accountName}: record its purchases in Settings → Holdings to compare it`
+          : `${position.symbol} in ${position.accountName}: ${formatCents(versus, { explicitPlus: true })} against the same money in the S&P 500`,
+    };
+  });
+  return (
+    <div className="flex min-h-0 flex-col gap-3">
+      <RankedBars rows={rows} emptyMessage="No positions yet." />
+      <p className="text-quiet text-muted">
+        {investments.benchmarkDate === null
+          ? 'No S&P 500 prices yet.'
+          : `Beside each, its purchases against the S&P 500 from the day they were bought.`}{' '}
+        <Link to="/settings/holdings" className="linkish">
+          Purchases
+        </Link>
+      </p>
+    </div>
+  );
 }
 
 /** The three tiles that share one aggregate series, each reading its own fields. */
@@ -1887,6 +1936,8 @@ function TileBody({
       return data.aggregates?.[tileKey] ? (
         <AggregateTile aggregate={data.aggregates[tileKey]} tileKey={tileKey} />
       ) : null;
+    case 'investments':
+      return data.investments ? <InvestmentsTile investments={data.investments} /> : null;
     case 'net_worth_composition':
     case 'bitcoin_value_over_time':
       return data.compositions?.[tileKey] ? (
