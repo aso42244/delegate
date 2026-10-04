@@ -852,3 +852,65 @@ describe('drill-through (ADR 077)', () => {
     expect(before.shareCents).toBeNull();
   });
 });
+
+describe('merchant names (ADR 079)', () => {
+  it('names every charge from a merchant, keeps the bank text, and is found by the name', async () => {
+    const account = await makeAccount({ name: 'Checking', type: 'asset', balanceCents: 500000n });
+    await makeTransaction({
+      accountId: account.id,
+      amountCents: -2599n,
+      description: 'AMAZON MKTPL*RT4G93',
+    });
+    await makeTransaction({
+      accountId: account.id,
+      amountCents: -1450n,
+      description: 'AMAZON MKTPL*ZZ81Q0',
+    });
+    await makeTransaction({
+      accountId: account.id,
+      amountCents: -999n,
+      description: 'KROGER #123',
+    });
+
+    const first = await app.inject({
+      method: 'GET',
+      url: '/api/transactions',
+      headers: { cookie },
+    });
+    const amazonKey = first
+      .json<{ transactions: { description: string; merchantKey: string }[] }>()
+      .transactions.find((row) => row.description.startsWith('AMAZON'))!.merchantKey;
+
+    const named = await app.inject({
+      method: 'POST',
+      url: '/api/recurring/overrides',
+      headers: { cookie },
+      payload: { key: amazonKey, label: 'AMAZON MKTPL*RT4G93', displayName: 'Household orders' },
+    });
+    expect(named.statusCode).toBe(200);
+
+    const body = (
+      await app.inject({ method: 'GET', url: '/api/transactions', headers: { cookie } })
+    ).json<{ transactions: { description: string; merchantName: string | null }[] }>();
+    const amazon = body.transactions.filter((row) => row.description.startsWith('AMAZON'));
+    // Both charges, though their references differ: the name is the merchant's.
+    expect(amazon.map((row) => row.merchantName)).toEqual(['Household orders', 'Household orders']);
+    // And the bank's words are exactly what arrived.
+    expect(amazon.map((row) => row.description).sort()).toEqual([
+      'AMAZON MKTPL*RT4G93',
+      'AMAZON MKTPL*ZZ81Q0',
+    ]);
+    expect(
+      body.transactions.find((row) => row.description === 'KROGER #123')?.merchantName,
+    ).toBeNull();
+
+    const found = (
+      await app.inject({
+        method: 'GET',
+        url: '/api/transactions?search=household%20orders',
+        headers: { cookie },
+      })
+    ).json<{ transactions: { description: string }[] }>();
+    expect(found.transactions).toHaveLength(2);
+  });
+});

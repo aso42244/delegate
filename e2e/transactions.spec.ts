@@ -553,3 +553,29 @@ test('two different payees that cost the same are not offered as a duplicate', a
   await expect(signedIn.getByRole('row').filter({ hasText: 'ACH Payment' })).toHaveCount(2);
   await expect(signedIn.getByRole('heading', { name: /possible duplicate/ })).toHaveCount(0);
 });
+
+/**
+ * A merchant named once is named on every charge from it, and the bank's words
+ * stay on the row (ADR 079).
+ */
+test('naming a merchant names all its charges and keeps what the bank sent', async ({
+  signedIn,
+  api,
+}) => {
+  const accountId = await makeAccount('Everyday Checking', 'asset', 500000n);
+  await makeTransaction(api, accountId, '-2599', 'AMAZON MKTPL*RT4G93');
+  await makeTransaction(api, accountId, '-1450', 'AMAZON MKTPL*ZZ81Q0');
+
+  await signedIn.goto('/transactions');
+  await signedIn.getByRole('button', { name: 'Options for AMAZON MKTPL*RT4G93' }).click();
+  await signedIn.getByRole('menuitem', { name: /Name this merchant/ }).click();
+  const dialog = signedIn.getByRole('dialog', { name: 'Name AMAZON MKTPL*RT4G93' });
+  await dialog.getByLabel('Name').fill('Household orders');
+  await dialog.getByRole('button', { name: 'Save' }).click();
+  await expect(signedIn.getByRole('dialog')).toHaveCount(0);
+
+  // Both rows, though only one was named from.
+  await expect(signedIn.getByText('Household orders', { exact: true })).toHaveCount(2);
+  // And the bank's text is still there beside it.
+  await expect(signedIn.getByText('AMAZON MKTPL*ZZ81Q0', { exact: true })).toBeVisible();
+});

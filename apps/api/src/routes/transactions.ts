@@ -1,4 +1,4 @@
-import { TRANSACTION_KINDS } from '@budget/shared';
+import { merchantKey, suggestedMatchValue, TRANSACTION_KINDS } from '@budget/shared';
 import type { FastifyPluginCallback } from 'fastify';
 import { z } from 'zod';
 import { prisma } from '../db/client.js';
@@ -131,14 +131,33 @@ function shareOf(
     .reduce((sum, allocation) => sum + allocation.amountCents, 0n);
 }
 
+/**
+ * The household's own name for each merchant that has one (ADR 079).
+ *
+ * Kept on the merchant rather than the row, and applied as the register is read:
+ * the bank's description stays exactly as it arrived, and naming a merchant once
+ * names every charge from it, past and future.
+ */
+async function merchantNames(): Promise<Map<string, { name: string; label: string }>> {
+  const rows = await prisma.billOverride.findMany({
+    where: { displayName: { not: null } },
+    select: { merchantKey: true, displayName: true, label: true },
+  });
+  return new Map(
+    rows.map((row) => [row.merchantKey, { name: row.displayName ?? '', label: row.label }]),
+  );
+}
+
 function present(
   transaction: TransactionRow,
   filter: {
     readonly delegationId?: string | undefined;
     readonly groupingId?: string | undefined;
   } = {},
+  names: ReadonlyMap<string, { name: string; label: string }> = new Map(),
 ): Record<string, unknown> {
   const share = shareOf(transaction, filter);
+  const key = merchantKey(transaction.descriptionRaw || transaction.description);
   return {
     id: transaction.id,
     accountId: transaction.accountId,
@@ -148,6 +167,10 @@ function present(
     shareCents: share === null ? null : centsOut(share),
     description: transaction.description,
     descriptionRaw: transaction.descriptionRaw,
+    /** Which merchant this is, so the page can name it. */
+    merchantKey: key,
+    /** The household's name for that merchant, or null for the bank's. */
+    merchantName: names.get(key)?.name ?? null,
     pending: transaction.pending,
     kind: transaction.kind,
     archivedAt: dateOut(transaction.archivedAt),
@@ -203,10 +226,23 @@ export const transactionRoutes: FastifyPluginCallback = (fastify, _options, done
         })()
       : query;
 
-    const { transactions, total, totalCents, shareCents } = await listTransactions(prisma, bounded);
+    const names = await merchantNames();
+    // A search for a merchant's own name finds it by the bank's words for it.
+    const search = query.search?.trim().toLowerCase() ?? '';
+    const searchFeedNames =
+      search === ''
+        ? []
+        : [...names.values()]
+            .filter((entry) => entry.name.toLowerCase().includes(search))
+            .map((entry) => suggestedMatchValue(entry.label));
+
+    const { transactions, total, totalCents, shareCents } = await listTransactions(prisma, {
+      ...bounded,
+      searchFeedNames,
+    });
 
     return {
-      transactions: transactions.map((transaction) => present(transaction, query)),
+      transactions: transactions.map((transaction) => present(transaction, query, names)),
       total,
       totalCents: centsOut(totalCents),
       shareCents: shareCents === null ? null : centsOut(shareCents),

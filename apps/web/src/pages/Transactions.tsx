@@ -20,6 +20,7 @@ import { ConfirmSuggestionDialog } from '../components/ConfirmSuggestionDialog.j
 import { RuleFromTransactionDialog } from '../components/RuleFromTransactionDialog.jsx';
 import { MatchCheckDialog } from '../components/MatchCheckDialog.jsx';
 import { TransactionRowMenu } from '../components/TransactionRowMenu.jsx';
+import { MerchantNameDialog, MerchantText } from '../components/MerchantNameDialog.jsx';
 import { SplitDialog } from '../components/SplitDialog.jsx';
 import { TransactionCard } from '../components/TransactionCard.jsx';
 import { Alert, Button, Modal } from '../components/ui.jsx';
@@ -287,6 +288,8 @@ export function Transactions(): ReactNode {
   const [matching, setMatching] = useState<TransactionDto | null>(null);
   /** The row whose picker is open in a sheet. Phone only. */
   const [picking, setPicking] = useState<TransactionDto | null>(null);
+  /** The row whose merchant is being named, if any (ADR 079). */
+  const [naming, setNaming] = useState<TransactionDto | null>(null);
   /** The row a rule is being built from, if any. */
   const [ruling, setRuling] = useState<TransactionDto | null>(null);
   /** The suggestion being confirmed, with the row it is about. */
@@ -680,6 +683,7 @@ export function Transactions(): ReactNode {
                       transaction={transaction}
                       onSplit={() => setSplitting(transaction)}
                       onMatchCheck={() => setMatching(transaction)}
+                      onName={() => setNaming(transaction)}
                       onCreateRule={
                         transaction.allocations.length === 1 ? () => setRuling(transaction) : null
                       }
@@ -768,9 +772,10 @@ export function Transactions(): ReactNode {
                           {/* Only the description gives way. The badges beside it
                           are short and fixed, and shrinking those to fit a long
                           merchant name would hide the useful half. */}
-                          <span className="truncate text-ink" title={transaction.description}>
-                            {transaction.description}
-                          </span>
+                          <MerchantText
+                            description={transaction.description}
+                            merchantName={transaction.merchantName}
+                          />
 
                           {/* Marks, not words — see components/chips.ts. A pending
                           row has already moved its envelope while the account
@@ -889,6 +894,7 @@ export function Transactions(): ReactNode {
                             transaction={transaction}
                             onSplit={() => setSplitting(transaction)}
                             onMatchCheck={() => setMatching(transaction)}
+                            onName={() => setNaming(transaction)}
                             onCreateRule={
                               transaction.allocations.length === 1
                                 ? () => setRuling(transaction)
@@ -976,6 +982,15 @@ export function Transactions(): ReactNode {
             }}
           />
         </Modal>
+      )}
+
+      {naming && (
+        <MerchantNameDialog
+          merchantKey={naming.merchantKey}
+          feedName={naming.descriptionRaw || naming.description}
+          currentName={naming.merchantName}
+          onClose={() => setNaming(null)}
+        />
       )}
 
       {splitting && (

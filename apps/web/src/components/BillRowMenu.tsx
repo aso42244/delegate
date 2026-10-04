@@ -1,10 +1,10 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { useState, type FormEvent, type ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import { recurringApi, type BillDto } from '../api/recurring.js';
 import { ApiError } from '../api/client.js';
 import { BillLinkDialog } from './BillLinkDialog.jsx';
+import { MerchantNameDialog } from './MerchantNameDialog.jsx';
 import { DANGER_ITEM_CLASS, ITEM_CLASS, RowMenuShell } from './RowMenuShell.jsx';
-import { Alert, Button, Modal, TextField } from './ui.jsx';
 
 /**
  * The per-row menu on the Bills page.
@@ -28,72 +28,6 @@ import { Alert, Button, Modal, TextField } from './ui.jsx';
  * old bill overdue for ever, and only the household knows the new name is the
  * same bill.
  */
-
-function RenameDialog({
-  bill,
-  onClose,
-}: {
-  readonly bill: BillDto;
-  readonly onClose: () => void;
-}): ReactNode {
-  const queryClient = useQueryClient();
-  const [name, setName] = useState(bill.renamed ? bill.name : '');
-  const [problem, setProblem] = useState<string | null>(null);
-
-  const save = useMutation({
-    mutationFn: () =>
-      recurringApi.override({
-        key: bill.key,
-        label: bill.feedName,
-        // Empty means "use what the bank calls it", which is where every row
-        // starts. Not the same as a name that happens to be blank.
-        displayName: name.trim() === '' ? null : name.trim(),
-      }),
-    onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ['recurring'] });
-      onClose();
-    },
-    onError: (error: unknown) =>
-      setProblem(error instanceof ApiError ? error.message : 'Could not save that name.'),
-  });
-
-  function onSubmit(event: FormEvent): void {
-    event.preventDefault();
-    save.mutate();
-  }
-
-  return (
-    <Modal
-      label={`Rename ${bill.feedName}`}
-      title="Rename"
-      description="A name of your own. The bank's stays underneath it."
-      onClose={onClose}
-    >
-      <form onSubmit={onSubmit} className="flex flex-col gap-4">
-        <TextField
-          label="Name"
-          width="full"
-          value={name}
-          onChange={(event) => setName(event.target.value)}
-          placeholder={bill.feedName}
-          autoComplete="off"
-          autoFocus
-        />
-
-        {problem && <Alert>{problem}</Alert>}
-
-        <div className="flex justify-end gap-2">
-          <Button type="button" onClick={onClose}>
-            Cancel
-          </Button>
-          <Button type="submit" variant="primary" disabled={save.isPending}>
-            {save.isPending ? 'Saving…' : 'Save'}
-          </Button>
-        </div>
-      </form>
-    </Modal>
-  );
-}
 
 export function BillRowMenu({
   bill,
@@ -124,7 +58,12 @@ export function BillRowMenu({
       name={bill.name}
       overlay={
         renaming ? (
-          <RenameDialog bill={bill} onClose={() => setRenaming(false)} />
+          <MerchantNameDialog
+            merchantKey={bill.key}
+            feedName={bill.feedName}
+            currentName={bill.renamed ? bill.name : null}
+            onClose={() => setRenaming(false)}
+          />
         ) : linking ? (
           <BillLinkDialog bill={bill} onClose={() => setLinking(false)} />
         ) : null
