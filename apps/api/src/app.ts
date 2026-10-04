@@ -32,6 +32,7 @@ import { checkRoutes } from './routes/checks.js';
 import { transactionRoutes } from './routes/transactions.js';
 import { userRoutes } from './routes/users.js';
 import { utilityRoutes } from './routes/utilities.js';
+import { monthReviewRoutes } from './routes/month-review.js';
 
 /**
  * Turns `TRUST_PROXY` into what Fastify wants.
@@ -163,6 +164,7 @@ export async function buildApp(config: AppConfig = getConfig()): Promise<Fastify
   await app.register(exportRoutes);
   await app.register(backupRoutes);
   await app.register(utilityRoutes);
+  await app.register(monthReviewRoutes);
   await app.register(overviewRoutes);
   await app.register(snapshotRoutes);
   await app.register(transactionRoutes);

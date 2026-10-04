@@ -86,6 +86,13 @@ export function Icon({ name }: { readonly name: PageIcon }): ReactNode {
         <path d="M4 16.5v-5M10 16.5v-9M16 16.5v-3" />
       </>
     ),
+    // A page of a calendar: a month, read back.
+    review: (
+      <>
+        <rect x="3.5" y="4.5" width="13" height="12" rx="1.5" />
+        <path d="M3.5 8.5h13M7 3v3M13 3v3M7 12h2M11 12h2" />
+      </>
+    ),
     /*
      * The panel and the arrow: a sidebar, and which way it goes.
      *
@@ -146,6 +153,7 @@ export type PageIcon =
   | 'rules'
   | 'utilities'
   | 'insights'
+  | 'review'
   | 'settings'
   | 'collapse'
   | 'expand';
@@ -157,6 +165,12 @@ export const PAGES = [
    * Overview's band draws the same two tables.
    */
   { to: '/overview', label: 'Overview', icon: 'insights', end: false },
+  /*
+   * Beside Overview: the same money, one finished month at a time (ADR 078).
+   * `short` is the tab bar's word for it, where six destinations share 390px
+   * and "Month in review" would truncate to nothing anybody could read.
+   */
+  { to: '/review', label: 'Month in review', short: 'Month', icon: 'review', end: false },
   { to: '/transactions', label: 'Transactions', icon: 'transactions', end: false },
   /*
    * Beside Transactions rather than inside Settings.
@@ -175,7 +189,13 @@ export const PAGES = [
    */
   { to: '/recurring', label: 'Recurring', icon: 'bills', end: false },
   { to: '/settings', label: 'Settings', icon: 'settings', end: false },
-] as const satisfies readonly { to: string; label: string; icon: PageIcon; end: boolean }[];
+] as const satisfies readonly {
+  to: string;
+  label: string;
+  short?: string;
+  icon: PageIcon;
+  end: boolean;
+}[];
 
 function useCollapsed(): [boolean, (value: boolean) => void] {
   const [collapsed, setCollapsed] = useState(() => {

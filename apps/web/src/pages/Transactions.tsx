@@ -244,6 +244,7 @@ export function Transactions(): ReactNode {
     kind: oneOf(searchParams.get('kind'), ['normal', 'income'] as const),
     sign: oneOf(searchParams.get('sign'), ['in', 'out'] as const),
     source: oneOf(searchParams.get('source'), ['simplefin', 'manual'] as const),
+    inBudget: searchParams.get('inBudget') === 'true' ? true : null,
     dateFrom: instantParam(searchParams.get('dateFrom')),
     dateBefore: instantParam(searchParams.get('dateBefore')),
   };
@@ -400,6 +401,9 @@ export function Transactions(): ReactNode {
       keys: ['source'],
       label: drill.source === 'manual' ? 'Typed in' : 'From the bank',
     });
+  }
+  if (drill.inBudget !== null) {
+    drillButtons.push({ keys: ['inBudget'], label: 'Budget accounts' });
   }
   const drilled = drillButtons.length > 0 || day !== null || uncategorized;
 

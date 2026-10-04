@@ -26,6 +26,8 @@ export interface TransactionQuery {
   readonly sign?: 'in' | 'out' | undefined;
   /** What delivered it: the bank feed, or a person typing it in. */
   readonly source?: 'simplefin' | 'manual' | undefined;
+  /** Only rows on accounts the budget sums — what a month's figures count. */
+  readonly inBudget?: boolean | undefined;
   /**
    * Strictly before this instant. The end of a range that is itself the start
    * of the next — a cycle ends where the next press begins — so `dateTo`'s
@@ -55,6 +57,7 @@ export function buildTransactionWhere(query: TransactionQuery): Prisma.Transacti
   if (query.sign === 'in') where.amountCents = { gt: 0 };
   if (query.sign === 'out') where.amountCents = { lt: 0 };
   if (query.source) where.source = query.source;
+  if (query.inBudget !== undefined) where.account = { inBudget: query.inBudget };
 
   if (query.dateFrom || query.dateTo || query.dateBefore) {
     where.postedAt = {

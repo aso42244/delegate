@@ -784,6 +784,10 @@ alone, so a partial order does not fail, it just leaves the list wrong.
 
 ## 12. The sidebar
 
+**A page may carry a `short` label for the tab bar**, where six destinations
+share 390px: Month in review is `Month` there. The sidebar always shows the
+full name.
+
 **One list feeds both navigations.** `PAGES` in `components/Sidebar.tsx` is the
 sidebar's entries and the tab bar's columns, so a destination added or removed
 moves both at once — which is what made hiding one a single line

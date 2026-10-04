@@ -101,7 +101,9 @@ export function TabBar({ scroller }: { readonly scroller: HTMLElement | null }):
             }
           >
             <Icon name={page.icon} />
-            <span className="w-full truncate text-center">{page.label}</span>
+            <span className="w-full truncate text-center">
+              {'short' in page ? page.short : page.label}
+            </span>
           </NavLink>
         ))}
       </div>

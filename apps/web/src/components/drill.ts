@@ -16,6 +16,8 @@ export interface DrillFilters {
   readonly kind?: 'normal' | 'income';
   readonly sign?: 'in' | 'out';
   readonly source?: 'simplefin' | 'manual';
+  /** Only accounts the budget sums, as a month's figures count. */
+  readonly inBudget?: true;
   readonly uncategorized?: true;
   /** An instant from the server; null is "ever". */
   readonly dateFrom?: string | null;
@@ -40,6 +42,7 @@ export const DRILL_KEYS = [
   'kind',
   'sign',
   'source',
+  'inBudget',
   'uncategorized',
   'dateFrom',
   'dateBefore',

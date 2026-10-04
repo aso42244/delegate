@@ -19,6 +19,7 @@ import { SyncSection } from './pages/settings/Sync.jsx';
 import { Transactions } from './pages/Transactions.jsx';
 import { Recurring } from './pages/Recurring.jsx';
 import { Overview } from './pages/Overview.jsx';
+import { MonthReview } from './pages/MonthReview.jsx';
 
 import { SignIn } from './pages/SignIn.jsx';
 
@@ -188,6 +189,7 @@ export function App(): ReactNode {
               bookmark pointed at still exists, in better form. */}
           <Route path="insights" element={<Navigate to="/overview" replace />} />
           <Route path="overview" element={<Overview />} />
+          <Route path="review" element={<MonthReview />} />
 
           <Route path="settings" element={<SettingsLayout />}>
             <Route index element={<SettingsLanding />} />

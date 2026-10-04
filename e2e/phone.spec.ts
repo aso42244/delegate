@@ -348,6 +348,7 @@ test.describe('at 390px, on every screen', () => {
   const ROUTES = [
     // The root, which resolves to whichever page this person lands on.
     '/',
+    '/review',
     '/transactions',
     '/recurring?view=cost',
     '/settings/sync',
