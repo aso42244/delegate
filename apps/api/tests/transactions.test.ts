@@ -3,7 +3,8 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { buildApp } from '../src/app.js';
 import { loadConfig } from '../src/config.js';
 import { prisma } from '../src/db/client.js';
-import { categorizeTransaction } from '../src/domain/allocations.js';
+import { categorizeTransaction, setAllocations } from '../src/domain/allocations.js';
+import { buildSpending } from '../src/domain/insights.js';
 import {
   accountBalance,
   delegationBalance,
@@ -65,6 +66,12 @@ interface ListBody {
     allocations: { delegationId: string; amountCents: string }[];
   }[];
   total: number;
+}
+
+interface DrillBody extends ListBody {
+  transactions: (ListBody['transactions'][number] & { shareCents: string | null })[];
+  totalCents: string;
+  shareCents: string | null;
 }
 
 async function list(query = ''): Promise<ListBody> {
@@ -748,5 +755,100 @@ describe('GET /api/transactions/suggestions', () => {
         matchCount: 2,
       }),
     ]);
+  });
+});
+
+describe('drill-through (ADR 077)', () => {
+  async function drill(query: string): Promise<DrillBody> {
+    const response = await app.inject({
+      method: 'GET',
+      url: `/api/transactions${query}`,
+      headers: { cookie },
+    });
+    expect(response.statusCode).toBe(200);
+    return response.json<DrillBody>();
+  }
+
+  it("opens a grouping's bar on exactly its rows, a split row counted at its share", async () => {
+    const account = await makeAccount({ name: 'Checking', type: 'asset', balanceCents: 500000n });
+    const food = await prisma.grouping.create({
+      data: { name: '2 - Food', section: 'delegations' },
+      select: { id: true },
+    });
+    const groceries = await makeDelegation({ name: 'Groceries', groupingId: food.id });
+    const household = await makeDelegation({ name: 'Household' });
+
+    const kroger = await makeTransaction({ accountId: account.id, amountCents: -8412n });
+    await categorizeTransaction(prisma, kroger.id, groceries.id);
+    const costco = await makeTransaction({ accountId: account.id, amountCents: -10000n });
+    await setAllocations(prisma, costco.id, [
+      { delegationId: groceries.id, amountCents: -7000n },
+      { delegationId: household.id, amountCents: -3000n },
+    ]);
+    const other = await makeTransaction({ accountId: account.id, amountCents: -999n });
+    await categorizeTransaction(prisma, other.id, household.id);
+
+    const body = await drill(`?groupingId=${food.id}&kind=normal`);
+
+    // The two rows that put money in 2 - Food, and nothing else.
+    expect(body.transactions).toHaveLength(2);
+    const split = body.transactions.find((row) => row.id === costco.id);
+    expect(split?.amountCents).toBe('-10000');
+    expect(split?.shareCents).toBe('-7000');
+    // The total is the shares, which is what the bar itself added up.
+    expect(body.shareCents).toBe('-15412');
+    expect(body.totalCents).toBe('-18412');
+
+    const spending = await buildSpending(prisma, {
+      by: 'grouping',
+      window: 'all',
+      timeZone: 'UTC',
+    });
+    const bar = spending.entries.find((entry) => entry.key === food.id);
+    expect(-BigInt(body.shareCents!)).toBe(bar?.spendCents);
+  });
+
+  it('reads `none` as the delegations in no grouping', async () => {
+    const account = await makeAccount({ name: 'Checking', type: 'asset', balanceCents: 500000n });
+    const fun = await makeDelegation({ name: 'Fun' });
+    const row = await makeTransaction({ accountId: account.id, amountCents: -2500n });
+    await categorizeTransaction(prisma, row.id, fun.id);
+
+    const body = await drill('?groupingId=none');
+    expect(body.transactions.map((transaction) => transaction.id)).toEqual([row.id]);
+    expect(body.shareCents).toBe('-2500');
+  });
+
+  it('filters money in or out, by source, and before an exclusive end', async () => {
+    const account = await makeAccount({ name: 'Checking', type: 'asset', balanceCents: 500000n });
+    await makeTransaction({
+      accountId: account.id,
+      amountCents: -1000n,
+      description: 'Out',
+      postedAt: new Date('2026-09-10T12:00:00Z'),
+    });
+    await makeTransaction({
+      accountId: account.id,
+      amountCents: 2000n,
+      description: 'In',
+      postedAt: new Date('2026-09-10T12:00:00Z'),
+    });
+    await makeTransaction({
+      accountId: account.id,
+      amountCents: -3000n,
+      description: 'On the boundary',
+      postedAt: new Date('2026-09-20T00:00:00Z'),
+    });
+
+    expect((await drill('?sign=out')).totalCents).toBe('-4000');
+    expect((await drill('?sign=in')).totalCents).toBe('2000');
+    // Every row here is typed in, so the feed has none of them.
+    expect((await drill('?source=simplefin')).total).toBe(0);
+    expect((await drill('?source=manual')).total).toBe(3);
+    // A cycle ends where the next begins: a row on that instant is the next's.
+    const before = await drill('?dateBefore=2026-09-20T00:00:00.000Z');
+    expect(before.transactions.map((row) => row.description).sort()).toEqual(['In', 'Out']);
+    // No delegation or grouping filter, so a row's whole amount is its share.
+    expect(before.shareCents).toBeNull();
   });
 });

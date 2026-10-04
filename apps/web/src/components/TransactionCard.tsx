@@ -34,6 +34,7 @@ export function TransactionCard({
   readonly menu: ReactNode;
 }): ReactNode {
   const amount = BigInt(transaction.amountCents);
+  const share = transaction.shareCents === null ? null : BigInt(transaction.shareCents);
   const split = transaction.allocations.length > 1;
   // Income and confirmed transfers allocate to nothing by definition, so there
   // is nothing to pick and no control that would imply otherwise.
@@ -47,11 +48,21 @@ export function TransactionCard({
         </span>
         <Chips kinds={chips} />
         <span className="flex-1" />
-        <span
-          className={`money text-hero ${amount > 0n ? 'font-semibold text-positive' : 'text-ink'}`}
-        >
-          {formatCents(amount, { explicitPlus: true })}
-        </span>
+        {/* A split row under a line or grouping filter shows its share (ADR 077). */}
+        {share !== null && share !== amount ? (
+          <span className="money text-hero text-ink">
+            {formatCents(share, { explicitPlus: true })}
+            <span className="ml-1 text-quiet text-muted">
+              of {formatCents(amount, { explicitPlus: true })}
+            </span>
+          </span>
+        ) : (
+          <span
+            className={`money text-hero ${amount > 0n ? 'font-semibold text-positive' : 'text-ink'}`}
+          >
+            {formatCents(amount, { explicitPlus: true })}
+          </span>
+        )}
       </div>
 
       {/*

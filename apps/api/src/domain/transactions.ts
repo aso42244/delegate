@@ -16,7 +16,22 @@ export interface TransactionQuery {
   readonly search?: string | undefined;
   readonly accountId?: string | undefined;
   readonly delegationId?: string | undefined;
+  /**
+   * Allocated to a delegation in this grouping, or `none` for a delegation in
+   * no grouping — the rows behind one bar of Spending by grouping.
+   */
+  readonly groupingId?: string | undefined;
   readonly kind?: TransactionKind | undefined;
+  /** Money in (`in`, above zero) or money out (`out`, below it). */
+  readonly sign?: 'in' | 'out' | undefined;
+  /** What delivered it: the bank feed, or a person typing it in. */
+  readonly source?: 'simplefin' | 'manual' | undefined;
+  /**
+   * Strictly before this instant. The end of a range that is itself the start
+   * of the next — a cycle ends where the next press begins — so `dateTo`'s
+   * inclusive bound would count a row on the boundary twice.
+   */
+  readonly dateBefore?: Date | undefined;
   readonly dateFrom?: Date | undefined;
   readonly dateTo?: Date | undefined;
   readonly uncategorized?: boolean | undefined;
@@ -37,11 +52,15 @@ export function buildTransactionWhere(query: TransactionQuery): Prisma.Transacti
   if (query.accountId) where.accountId = query.accountId;
   if (query.kind) where.kind = query.kind;
   if (query.pending !== undefined) where.pending = query.pending;
+  if (query.sign === 'in') where.amountCents = { gt: 0 };
+  if (query.sign === 'out') where.amountCents = { lt: 0 };
+  if (query.source) where.source = query.source;
 
-  if (query.dateFrom || query.dateTo) {
+  if (query.dateFrom || query.dateTo || query.dateBefore) {
     where.postedAt = {
       ...(query.dateFrom ? { gte: query.dateFrom } : {}),
       ...(query.dateTo ? { lte: query.dateTo } : {}),
+      ...(query.dateBefore ? { lt: query.dateBefore } : {}),
     };
   }
 
@@ -84,8 +103,10 @@ export function buildTransactionWhere(query: TransactionQuery): Prisma.Transacti
   if (query.uncategorized === false) where.allocations = { some: {} };
 
   // A delegation filter means "allocated to this envelope", which for a split
-  // transaction is any one of its allocations.
-  if (query.delegationId) where.allocations = { some: { delegationId: query.delegationId } };
+  // transaction is any one of its allocations. A grouping filter is the same
+  // one level up, and the two together mean both.
+  const allocation = allocationFilter(query);
+  if (allocation !== null) where.allocations = { some: allocation };
 
   if (query.search) {
     const search = query.search.trim();
@@ -116,6 +137,24 @@ export function buildTransactionWhere(query: TransactionQuery): Prisma.Transacti
   }
 
   return where;
+}
+
+/**
+ * Which allocations a delegation or grouping filter selects, or null for none.
+ *
+ * The same predicate picks the rows and sums their shares, so the total under a
+ * filtered register is the sum of exactly the allocations that put each row on
+ * it — a split row counts the part that went to this line, never the whole.
+ */
+export function allocationFilter(
+  query: TransactionQuery,
+): Prisma.TransactionAllocationWhereInput | null {
+  const filter: Prisma.TransactionAllocationWhereInput = {};
+  if (query.delegationId) filter.delegationId = query.delegationId;
+  if (query.groupingId) {
+    filter.delegation = { groupingId: query.groupingId === 'none' ? null : query.groupingId };
+  }
+  return Object.keys(filter).length === 0 ? null : filter;
 }
 
 /** Reads "42.10", "$42.10" or "4210" as a magnitude in cents. Returns null if it is not a number. */
@@ -153,7 +192,7 @@ export const TRANSACTION_LIST_SELECT = {
       delegationId: true,
       // Archived delegations still resolve, so history renders
       // "Grocery (archived)" rather than a dangling id.
-      delegation: { select: { id: true, name: true, archivedAt: true } },
+      delegation: { select: { id: true, name: true, archivedAt: true, groupingId: true } },
     },
   },
 } as const;
@@ -164,11 +203,20 @@ export async function listTransactions(
 ): Promise<{
   transactions: Prisma.TransactionGetPayload<{ select: typeof TRANSACTION_LIST_SELECT }>[];
   total: number;
+  /** Every matching row's amount, summed — not just this page's. */
+  totalCents: Cents;
+  /**
+   * Under a delegation or grouping filter, the sum of the allocations that
+   * matched — what the figure the register was opened from adds up. Null with
+   * no such filter, where a row's whole amount is its share.
+   */
+  shareCents: Cents | null;
 }> {
   const where = buildTransactionWhere(query);
   const take = Math.min(query.limit ?? DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE);
+  const allocation = allocationFilter(query);
 
-  const [transactions, total] = await Promise.all([
+  const [transactions, total, sum, share] = await Promise.all([
     db.transaction.findMany({
       where,
       select: TRANSACTION_LIST_SELECT,
@@ -179,9 +227,21 @@ export async function listTransactions(
       skip: query.offset ?? 0,
     }),
     db.transaction.count({ where }),
+    db.transaction.aggregate({ where, _sum: { amountCents: true } }),
+    allocation === null
+      ? null
+      : db.transactionAllocation.aggregate({
+          where: { ...allocation, transaction: where },
+          _sum: { amountCents: true },
+        }),
   ]);
 
-  return { transactions, total };
+  return {
+    transactions,
+    total,
+    totalCents: sum._sum.amountCents ?? 0n,
+    shareCents: share === null ? null : (share._sum.amountCents ?? 0n),
+  };
 }
 
 export interface CreateTransactionInput {

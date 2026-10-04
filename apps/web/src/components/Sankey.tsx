@@ -1,5 +1,6 @@
 import { formatCents } from '@budget/shared';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { Link } from 'react-router-dom';
 
 /**
  * Where the money came from and where it went.
@@ -32,6 +33,11 @@ export interface FlowNode {
   readonly tone: 'income' | 'uncategorized' | 'surplus' | 'spending';
   /** What was rolled up into this node, for the hover. */
   readonly detail?: string;
+  /**
+   * The register on exactly this node's rows (ADR 077). Its label becomes the
+   * link. A node rolled up into "Other" has none: it is several things.
+   */
+  readonly href?: string;
 }
 
 const TONE: Record<FlowNode['tone'], string> = {
@@ -465,47 +471,63 @@ export function Sankey({
 
         {/* One line each — name then figure. The reference chart put them on two
             lines and they collided; this cannot, whatever the node's height. */}
-        {leftStack.laid.map((node) => (
-          <text
-            key={`lt-${node.key}`}
-            x={leftX + BAR_W + 10}
-            y={leftTop + node.y + node.h / 2}
-            dominantBaseline="middle"
-            fontSize={labelSize}
-            fontWeight="600"
-            style={{ fill: 'var(--color-ink)' }}
-          >
-            {truncate(node.name)}{' '}
-            <tspan fontWeight="400" style={{ fill: 'var(--color-muted)' }}>
-              {formatCents(node.amountCents)}
-            </tspan>{' '}
-            <tspan fontWeight="400" style={{ fill: 'var(--color-axis)' }}>
-              {share(node.amountCents, total)}
-            </tspan>
-            <title>{`${node.name} — ${formatCents(node.amountCents)} · ${share(node.amountCents, total)} of the flow`}</title>
-          </text>
-        ))}
-        {rightStack.laid.map((node) => (
-          <text
-            key={`rt-${node.key}`}
-            x={rightX - 10}
-            y={rightTop + node.y + node.h / 2}
-            textAnchor="end"
-            dominantBaseline="middle"
-            fontSize={labelSize}
-            fontWeight="600"
-            style={{ fill: 'var(--color-ink)' }}
-          >
-            {truncate(node.name)}{' '}
-            <tspan fontWeight="400" style={{ fill: 'var(--color-muted)' }}>
-              {formatCents(node.amountCents)}
-            </tspan>{' '}
-            <tspan fontWeight="400" style={{ fill: 'var(--color-axis)' }}>
-              {share(node.amountCents, total)}
-            </tspan>
-            <title>{`${node.name} — ${formatCents(node.amountCents)} · ${share(node.amountCents, total)} of the flow`}</title>
-          </text>
-        ))}
+        {leftStack.laid.map((node) => {
+          const label = (
+            <text
+              x={leftX + BAR_W + 10}
+              y={leftTop + node.y + node.h / 2}
+              dominantBaseline="middle"
+              fontSize={labelSize}
+              fontWeight="600"
+              style={{ fill: 'var(--color-ink)' }}
+            >
+              {truncate(node.name)}{' '}
+              <tspan fontWeight="400" style={{ fill: 'var(--color-muted)' }}>
+                {formatCents(node.amountCents)}
+              </tspan>{' '}
+              <tspan fontWeight="400" style={{ fill: 'var(--color-axis)' }}>
+                {share(node.amountCents, total)}
+              </tspan>
+              <title>{`${node.name} — ${formatCents(node.amountCents)} · ${share(node.amountCents, total)} of the flow`}</title>
+            </text>
+          );
+          return node.href === undefined ? (
+            <g key={`lt-${node.key}`}>{label}</g>
+          ) : (
+            <Link key={`lt-${node.key}`} to={node.href} className="cursor-pointer hover:underline">
+              {label}
+            </Link>
+          );
+        })}
+        {rightStack.laid.map((node) => {
+          const label = (
+            <text
+              x={rightX - 10}
+              y={rightTop + node.y + node.h / 2}
+              textAnchor="end"
+              dominantBaseline="middle"
+              fontSize={labelSize}
+              fontWeight="600"
+              style={{ fill: 'var(--color-ink)' }}
+            >
+              {truncate(node.name)}{' '}
+              <tspan fontWeight="400" style={{ fill: 'var(--color-muted)' }}>
+                {formatCents(node.amountCents)}
+              </tspan>{' '}
+              <tspan fontWeight="400" style={{ fill: 'var(--color-axis)' }}>
+                {share(node.amountCents, total)}
+              </tspan>
+              <title>{`${node.name} — ${formatCents(node.amountCents)} · ${share(node.amountCents, total)} of the flow`}</title>
+            </text>
+          );
+          return node.href === undefined ? (
+            <g key={`rt-${node.key}`}>{label}</g>
+          ) : (
+            <Link key={`rt-${node.key}`} to={node.href} className="cursor-pointer hover:underline">
+              {label}
+            </Link>
+          );
+        })}
         <text
           x={midX + BAR_W / 2}
           y={midTop - 4 * fit - totalSize / 2}

@@ -4,6 +4,7 @@ import { bearerFrom, readerFor } from '../domain/api-tokens.js';
 import { buildBudgetView, type BudgetRow, type BudgetSection } from '../domain/budget.js';
 import { buildFigures, buildOverview, buildPanel, FIGURE_KEYS } from '../domain/overview.js';
 import { payCycleAt } from '../domain/pay-cycle.js';
+import { startOfLocalDay } from '../domain/calendar.js';
 import { getBudgetSettings, householdTimezone } from '../domain/settings.js';
 import { centsOut, dateOut, dayOut } from '../http/serialize.js';
 
@@ -195,12 +196,14 @@ export const readDoorRoutes: FastifyPluginCallback = (fastify, _options, done) =
     const timeZone = await householdTimezone(prisma, fastify.config.SCHEDULE_TIMEZONE);
     const settings = await getBudgetSettings(prisma);
     const cycle = payCycleAt(settings.nextPaydayOn, settings.payCadence, now, timeZone);
+    // The payday's midnight in the household's zone, as Overview counts from.
+    const cycleSince = cycle === null ? null : startOfLocalDay(cycle.start, timeZone);
 
     const [figures, data, panel] = await Promise.all([
       buildFigures(prisma, {
         keys: FIGURE_KEYS,
         timeZone,
-        cycleStart: cycle?.start ?? null,
+        cycleStart: cycleSince,
         daysLeftInCycle: cycle === null ? null : cycle.lengthDays - cycle.elapsedDays,
       }),
       buildOverview(
@@ -217,7 +220,7 @@ export const readDoorRoutes: FastifyPluginCallback = (fastify, _options, done) =
        * call the Overview page makes for its panel, and every active line
        * always: the selection decides what is shown, never what is computed.
        */
-      buildPanel(prisma, { since: cycle?.start ?? null, timeZone }, now),
+      buildPanel(prisma, { since: cycleSince, timeZone }, now),
     ]);
 
     return {

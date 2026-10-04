@@ -556,6 +556,17 @@ state that rule was written to fix once already.
 content below it. Not `<details>`, which Settings → Tor used and which draws its
 own triangle in its own font at its own size.
 
+### A figure opens its rows
+
+**Every figure that sums transactions is a link** to Transactions filtered to
+exactly those rows ([ADR 077](decisions/077-every-figure-opens-its-rows.md)),
+built by `registerHref` in `components/drill.ts` and nowhere else. A ranked row
+is the whole row; a figure in the band is the label and the number together; a
+pace bar is the bar; a cashflow node is its label. Hover is `bg-surface`, never
+`-2`, which is the bar's own track. The register shows each filter as a pressed
+`primary` button ending `✕`, and its footer carries the total and a
+`StatusLine` saying whether it matches the figure.
+
 ## 8. Tables
 
 Unchanged from `design.md`, restated because it is part of the system:

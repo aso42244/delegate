@@ -37,6 +37,9 @@ export const utilityRoutes: FastifyPluginCallback = (fastify, _options, done) =>
           month: dateOut(month.month),
           spendCents: centsOut(month.spendCents),
           complete: month.complete,
+          // So a month's bar can open exactly its rows (ADR 077).
+          from: dateOut(month.from),
+          before: dateOut(month.before),
         })),
       })),
     };

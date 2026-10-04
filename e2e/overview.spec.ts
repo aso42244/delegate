@@ -1471,14 +1471,20 @@ test('the percentages and the figures in a tile each share one right edge', asyn
       const tile = row.closest('section[data-tile]')?.querySelector('h2')?.textContent?.trim();
       if (tile === undefined) continue;
 
-      for (const cell of Array.from(row.querySelectorAll(':scope > span.money'))) {
+      // Through the link where the row is one: a row that opens its
+      // transactions wraps its cells in it (ADR 077), and the edges are the same.
+      for (const cell of Array.from(
+        row.querySelectorAll(':scope > span.money, :scope > a > span.money'),
+      )) {
         if (!/^\d{1,3}%$/.test((cell.textContent ?? '').trim())) continue;
         shares[tile] = [...(shares[tile] ?? []), Math.round(cell.getBoundingClientRect().right)];
       }
 
       // The figure is the last cell in the row, and it is the one that used to
       // sit against the left of a column sized for a longer number.
-      const figure = row.querySelector(':scope > span:last-child .money');
+      const figure = row.querySelector(
+        ':scope > span:last-child .money, :scope > a > span:last-child .money',
+      );
       if (figure !== null) {
         figures[tile] = [
           ...(figures[tile] ?? []),

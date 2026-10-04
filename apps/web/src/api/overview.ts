@@ -200,6 +200,8 @@ export interface FlowNodeDto {
 
 export interface CashflowDto {
   readonly cycleMissing: boolean;
+  /** The instant the window starts. Null is ever. */
+  readonly since: string | null;
   readonly inflows: readonly FlowNodeDto[];
   readonly outflows: readonly FlowNodeDto[];
   readonly uncategorizedInCents: string;
@@ -327,6 +329,10 @@ export interface OverviewDataDto {
     readonly delegations: readonly PickableDto[];
   };
   readonly figures?: readonly FigureDto[];
+  /** The instant the band's money is counted from. Null is ever. */
+  readonly figuresSince?: string | null;
+  /** The instant the panel's pace bars count spending from. Null is ever. */
+  readonly panelSince?: string | null;
   readonly daily_outflow?: readonly OutflowMonthDto[];
   readonly income_vs_spending_pace?: readonly PacePointDto[];
   /**

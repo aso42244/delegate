@@ -25,7 +25,8 @@ import { TransactionCard } from '../components/TransactionCard.jsx';
 import { Alert, Button, Modal } from '../components/ui.jsx';
 import { NARROW, useMediaQuery } from '../useMediaQuery.js';
 import { useRowKeyboard } from '../useRowKeyboard.js';
-import { PageHeader, SearchField } from '../components/layout.jsx';
+import { PageHeader, SearchField, StatusLine } from '../components/layout.jsx';
+import { reconciles } from '../components/drill.js';
 import { Tile, TileGrid } from '../components/Tile.jsx';
 
 /**
@@ -148,6 +149,40 @@ function dayLabel(day: string): string {
   });
 }
 
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function uuidParam(value: string | null): string | null {
+  return value !== null && UUID.test(value) ? value : null;
+}
+
+function instantParam(value: string | null): string | null {
+  return value !== null && !Number.isNaN(Date.parse(value)) ? value : null;
+}
+
+function oneOf<T extends string>(value: string | null, options: readonly T[]): T | null {
+  return options.find((option) => option === value) ?? null;
+}
+
+/** "Since Sep 25", or "Sep 25 – Oct 8" when the range has an end. */
+function rangeLabel(from: string | null, before: string | null): string {
+  const format = (instant: Date): string =>
+    instant.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  if (from !== null && before !== null) {
+    // The end is exclusive, so the last day shown is the one before it.
+    return `${format(new Date(from))} – ${format(new Date(Date.parse(before) - 1))}`;
+  }
+  if (from !== null) return `Since ${format(new Date(from))}`;
+  return `Before ${format(new Date(before!))}`;
+}
+
+/** The register's total: the matched shares under a line or grouping, else the amounts. */
+function registerTotal(list: {
+  readonly totalCents: string;
+  readonly shareCents: string | null;
+}): bigint {
+  return BigInt(list.shareCents ?? list.totalCents);
+}
+
 export function Transactions(): ReactNode {
   const queryClient = useQueryClient();
   /*
@@ -189,9 +224,45 @@ export function Transactions(): ReactNode {
     : null;
 
   function clearDay(): void {
+    clearParams(['day']);
+  }
+
+  /*
+   * The rest of what a figure on Overview can open the register with (ADR 077).
+   *
+   * Read from the URL for the reason the queue and the day are: they are a way
+   * of arriving rather than controls on the page. Each is shown as a pressed
+   * button naming what it is doing, and pressing it takes it off — a list that
+   * is silently short is the failure this exists to prevent.
+   */
+  const drill = {
+    delegationId: uuidParam(searchParams.get('delegationId')),
+    groupingId:
+      searchParams.get('groupingId') === 'none'
+        ? 'none'
+        : uuidParam(searchParams.get('groupingId')),
+    kind: oneOf(searchParams.get('kind'), ['normal', 'income'] as const),
+    sign: oneOf(searchParams.get('sign'), ['in', 'out'] as const),
+    source: oneOf(searchParams.get('source'), ['simplefin', 'manual'] as const),
+    dateFrom: instantParam(searchParams.get('dateFrom')),
+    dateBefore: instantParam(searchParams.get('dateBefore')),
+  };
+  /** The figure the register was opened from, when it was opened from one. */
+  const figure = (() => {
+    const label = searchParams.get('figure');
+    const expect = searchParams.get('expect');
+    if (label === null || expect === null || !/^-?\d+$/.test(expect)) return null;
+    return { label, cents: BigInt(expect) };
+  })();
+
+  function clearParams(keys: readonly string[]): void {
     setOffset(0);
     const next = new URLSearchParams(searchParams);
-    next.delete('day');
+    for (const key of keys) next.delete(key);
+    // A filter taken off means the register no longer shows the figure's rows,
+    // so it no longer claims to.
+    next.delete('figure');
+    next.delete('expect');
     setSearchParams(next, { replace: true });
   }
 
@@ -225,6 +296,7 @@ export function Transactions(): ReactNode {
 
   const query = {
     ...filters,
+    ...Object.fromEntries(Object.entries(drill).filter(([, value]) => value !== null)),
     ...(uncategorized ? { uncategorized: true } : {}),
     ...(day === null ? {} : { day }),
     search,
@@ -293,6 +365,43 @@ export function Transactions(): ReactNode {
     // is spent on. They are settled by matching, which is a different action.
     .filter((row) => row.kind !== 'check')
     .map((row) => ({ id: row.id, name: row.name }));
+
+  /** What each drill filter is called on its button. */
+  const drillButtons: { readonly keys: readonly string[]; readonly label: string }[] = [];
+  if (drill.groupingId !== null) {
+    const name =
+      drill.groupingId === 'none'
+        ? 'No grouping'
+        : (budget.data?.delegations.groupings.find((grouping) => grouping.id === drill.groupingId)
+            ?.name ?? 'A grouping');
+    drillButtons.push({ keys: ['groupingId'], label: name });
+  }
+  if (drill.delegationId !== null) {
+    const row = [
+      ...(budget.data?.delegations.groupings.flatMap((grouping) => grouping.rows) ?? []),
+      ...(budget.data?.delegations.ungrouped ?? []),
+    ].find((candidate) => candidate.id === drill.delegationId);
+    drillButtons.push({ keys: ['delegationId'], label: row?.name ?? 'A delegation' });
+  }
+  if (drill.dateFrom !== null || drill.dateBefore !== null) {
+    drillButtons.push({
+      keys: ['dateFrom', 'dateBefore'],
+      label: rangeLabel(drill.dateFrom, drill.dateBefore),
+    });
+  }
+  if (drill.kind !== null) {
+    drillButtons.push({ keys: ['kind'], label: drill.kind === 'income' ? 'Income' : 'Spending' });
+  }
+  if (drill.sign !== null) {
+    drillButtons.push({ keys: ['sign'], label: drill.sign === 'in' ? 'Money in' : 'Money out' });
+  }
+  if (drill.source !== null) {
+    drillButtons.push({
+      keys: ['source'],
+      label: drill.source === 'manual' ? 'Typed in' : 'From the bank',
+    });
+  }
+  const drilled = drillButtons.length > 0 || day !== null || uncategorized;
 
   const refresh = async (): Promise<void> => {
     await queryClient.invalidateQueries({ queryKey: ['transactions'] });
@@ -373,6 +482,20 @@ export function Transactions(): ReactNode {
 
   const total = list.data?.total ?? 0;
 
+  const pager = (
+    <div className="flex items-center justify-between">
+      <Button onClick={() => setOffset(Math.max(0, offset - PAGE_SIZE))} disabled={offset === 0}>
+        Previous
+      </Button>
+      <span className="text-quiet text-muted">
+        {offset + 1}–{Math.min(offset + PAGE_SIZE, total)} of {total}
+      </span>
+      <Button onClick={() => setOffset(offset + PAGE_SIZE)} disabled={offset + PAGE_SIZE >= total}>
+        Next
+      </Button>
+    </div>
+  );
+
   return (
     <div>
       {/*
@@ -443,6 +566,15 @@ export function Transactions(): ReactNode {
                   {dayLabel(day)} ✕
                 </Button>
               )}
+              {drillButtons.map((button) => (
+                <Button
+                  key={button.keys.join()}
+                  variant="primary"
+                  onClick={() => clearParams(button.keys)}
+                >
+                  {button.label} ✕
+                </Button>
+              ))}
               <Button variant={uncategorized ? 'primary' : 'default'} onClick={toggleUncategorized}>
                 Uncategorized
               </Button>
@@ -455,24 +587,41 @@ export function Transactions(): ReactNode {
             </>
           }
           footer={
-            total > PAGE_SIZE ? (
-              <div className="flex items-center justify-between">
-                <Button
-                  onClick={() => setOffset(Math.max(0, offset - PAGE_SIZE))}
-                  disabled={offset === 0}
-                >
-                  Previous
-                </Button>
-                <span className="text-quiet text-muted">
-                  {offset + 1}–{Math.min(offset + PAGE_SIZE, total)} of {total}
-                </span>
-                <Button
-                  onClick={() => setOffset(offset + PAGE_SIZE)}
-                  disabled={offset + PAGE_SIZE >= total}
-                >
-                  Next
-                </Button>
+            drilled || figure !== null ? (
+              <div className="flex flex-col gap-3">
+                {/*
+                  What the rows on screen and every page after them add up to.
+                  Under a delegation or grouping it is their shares, which is
+                  what the figure that opened this counted — a split row
+                  contributes its part, never the whole (ADR 077).
+                */}
+                {list.data && (
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    {figure !== null ? (
+                      reconciles(registerTotal(list.data), figure.cents) ? (
+                        <StatusLine tone="positive">Matches {figure.label}</StatusLine>
+                      ) : (
+                        <StatusLine tone="warning">
+                          {figure.label} showed {formatCents(figure.cents)} — it has changed since
+                        </StatusLine>
+                      )
+                    ) : (
+                      <span />
+                    )}
+                    <span className="flex items-baseline gap-3">
+                      <span className="text-quiet text-muted">
+                        {total === 1 ? '1 row' : `${total} rows`}
+                      </span>
+                      <span className="money text-section font-bold text-ink">
+                        {formatCents(registerTotal(list.data))}
+                      </span>
+                    </span>
+                  </div>
+                )}
+                {total > PAGE_SIZE && pager}
               </div>
+            ) : total > PAGE_SIZE ? (
+              pager
             ) : undefined
           }
         >
@@ -655,9 +804,28 @@ export function Transactions(): ReactNode {
                       "+$3,527.63" after the sign, putting the amount on a second
                       line. A figure is one thing and wraps nowhere. */}
                       <td className="money row-cell w-32 pr-3 whitespace-nowrap">
-                        <span className={amount > 0n ? 'font-semibold text-positive' : 'text-ink'}>
-                          {formatCents(amount, { explicitPlus: true })}
-                        </span>
+                        {/*
+                          Under a line or grouping, a split row shows the part
+                          that filter counts, with the whole charge beneath —
+                          so the rows add up to the total under them (ADR 077).
+                        */}
+                        {transaction.shareCents !== null &&
+                        BigInt(transaction.shareCents) !== amount ? (
+                          <span className="flex flex-col items-end">
+                            <span className="text-ink">
+                              {formatCents(BigInt(transaction.shareCents), { explicitPlus: true })}
+                            </span>
+                            <span className="text-quiet text-muted">
+                              of {formatCents(amount, { explicitPlus: true })}
+                            </span>
+                          </span>
+                        ) : (
+                          <span
+                            className={amount > 0n ? 'font-semibold text-positive' : 'text-ink'}
+                          >
+                            {formatCents(amount, { explicitPlus: true })}
+                          </span>
+                        )}
                       </td>
 
                       <td className="row-cell pr-3">

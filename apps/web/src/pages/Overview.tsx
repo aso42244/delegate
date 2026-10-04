@@ -39,6 +39,7 @@ import { OverviewPanel, type PanelScope, type PanelTab } from '../components/Ove
 import { Tile, TileGrid, type TileSpan } from '../components/Tile.jsx';
 import { Sankey, type FlowNode } from '../components/Sankey.jsx';
 import { CompositionBars, RankedBars, type RankedRow } from '../components/RankedBars.jsx';
+import { registerHref, type DrillFilters } from '../components/drill.js';
 import { TimeSeriesChart, type TimePoint } from '../components/TimeSeries.jsx';
 import { Alert, Button, Modal, SelectField, Toggle } from '../components/ui.jsx';
 
@@ -550,8 +551,17 @@ function DayDialog({
             <span className="money">{formatCents(spent)}</span> out
           </span>
           {/* The register, filtered to this day — the same calendar day, cut in
-              the household's zone by the server, so the two lists agree. */}
-          <Link to={`/transactions?day=${day}`} className="linkish">
+              the household's zone by the server — and to what the cell
+              counted: ordinary money out. Without those two it brought the
+              day's income and refunds along, and the rows did not add up to
+              the cell they were opened from (ADR 077). */}
+          <Link
+            to={registerHref(
+              { day, kind: 'normal', sign: 'out' },
+              { label: `${title} on Daily outflow`, cents: spent },
+            )}
+            className="linkish"
+          >
             Open in the register →
           </Link>
         </div>
@@ -649,8 +659,10 @@ function shortDate(iso: string): string {
  */
 function SpendingTile({
   spending,
+  by,
 }: {
   readonly spending: NonNullable<OverviewDataDto['spending_by_grouping']>;
+  readonly by: 'grouping' | 'delegation';
 }): ReactNode {
   if (spending.cycleMissing) {
     return <EmptyState>No cycle has been run yet.</EmptyState>;
@@ -669,6 +681,21 @@ function SpendingTile({
       color: entry.color,
       valueCents: amount,
       ...(total > 0n ? { aside: share(amount, total) } : {}),
+      // Exactly the allocations this row summed: ordinary spending filed to it
+      // since the window began (ADR 077).
+      href: registerHref(
+        {
+          ...(by === 'grouping'
+            ? { groupingId: entry.key === 'ungrouped' ? 'none' : entry.key }
+            : { delegationId: entry.key }),
+          kind: 'normal',
+          dateFrom: spending.since,
+        },
+        {
+          label: `${entry.name} on Spending by ${by}`,
+          cents: amount,
+        },
+      ),
     };
   });
 
@@ -1059,6 +1086,12 @@ function CycleTile({
           valueCents: BigInt(cycle.incomeCents),
           compare: { label: 'spent', valueCents: BigInt(cycle.spendingCents) },
           ...(cycle.partial ? { note: `${formatCents(BigInt(cycle.incomeCents))} so far` } : {}),
+          // The row's ranked figure is what came in, from one press to the next
+          // — the end exclusive, as the cycle counts it (ADR 077).
+          href: registerHref(
+            { kind: 'income', dateFrom: cycle.startedAt, dateBefore: cycle.endedAt },
+            { label: 'Income that cycle', cents: BigInt(cycle.incomeCents) },
+          ),
         }))}
       emptyMessage="No cycle has been run yet."
     />
@@ -1243,6 +1276,15 @@ function CashflowTile({
       name: node.name,
       amountCents: BigInt(node.amountCents),
       tone: 'income' as const,
+      // Income, from the feed or typed in — the node's own split (ADR 077).
+      href: registerHref(
+        {
+          kind: 'income',
+          source: node.key === 'manual' ? 'manual' : 'simplefin',
+          dateFrom: cashflow.since,
+        },
+        { label: `${node.name} on Cashflow`, cents: BigInt(node.amountCents) },
+      ),
     })),
     ...(uncategorizedIn > 0n
       ? [
@@ -1251,6 +1293,10 @@ function CashflowTile({
             name: 'Uncategorized',
             amountCents: uncategorizedIn,
             tone: 'uncategorized' as const,
+            href: registerHref(
+              { uncategorized: true, sign: 'in', dateFrom: cashflow.since },
+              { label: 'Uncategorized money in on Cashflow', cents: uncategorizedIn },
+            ),
           },
         ]
       : []),
@@ -1262,6 +1308,15 @@ function CashflowTile({
       name: node.name,
       amountCents: BigInt(node.amountCents),
       tone: 'spending' as const,
+      // The same rows as that grouping's bar on Spending by grouping.
+      href: registerHref(
+        {
+          groupingId: node.key === 'ungrouped' ? 'none' : node.key,
+          kind: 'normal',
+          dateFrom: cashflow.since,
+        },
+        { label: `${node.name} on Cashflow`, cents: BigInt(node.amountCents) },
+      ),
     })),
     ...(uncategorizedOut > 0n
       ? [
@@ -1270,6 +1325,10 @@ function CashflowTile({
             name: 'Uncategorized',
             amountCents: uncategorizedOut,
             tone: 'uncategorized' as const,
+            href: registerHref(
+              { uncategorized: true, sign: 'out', dateFrom: cashflow.since },
+              { label: 'Uncategorized money out on Cashflow', cents: uncategorizedOut },
+            ),
           },
         ]
       : []),
@@ -1644,12 +1703,34 @@ const FIGURE_COPY: Record<string, { readonly label: string; readonly note?: stri
  * has none until a payday anchor is set, and a confident $0.00 would be a
  * different and wrong claim.
  */
+/**
+ * Which figures open the register, and on what (ADR 077).
+ *
+ * The three that are a sum or a count of rows. Left to spend and safe per day
+ * are differences of two sums — no list of transactions adds up to them — and
+ * net worth is balances, not transactions.
+ */
+function figureDrill(key: string, since: string | null): DrillFilters | null {
+  switch (key) {
+    case 'inflow':
+      return { kind: 'income', dateFrom: since };
+    case 'spent':
+      return { kind: 'normal', dateFrom: since };
+    case 'uncategorized':
+      return { uncategorized: true };
+    default:
+      return null;
+  }
+}
+
 function FiguresTile({
   figures,
+  since,
   onChoose,
   preview = false,
 }: {
   readonly figures: NonNullable<OverviewDataDto['figures']>;
+  readonly since: string | null;
   readonly onChoose: () => void;
   readonly preview?: boolean;
 }): ReactNode {
@@ -1668,8 +1749,8 @@ function FiguresTile({
                 : formatCents(BigInt(figure.valueCents));
           const negative = figure.valueCents !== null && BigInt(figure.valueCents) < 0n;
 
-          return (
-            <div key={figure.key} className="flex flex-col gap-1">
+          const body = (
+            <>
               <span className="text-micro font-semibold tracking-[0.07em] text-muted uppercase">
                 {copy.label}
               </span>
@@ -1678,7 +1759,29 @@ function FiguresTile({
               >
                 {value}
               </span>
+            </>
+          );
+          const drill = preview ? null : figureDrill(figure.key, since);
+          // The uncategorized count opens the queue, which carries no total to
+          // reconcile; the two money figures say what they should add up to.
+          const reconcile =
+            figure.valueCents === null
+              ? undefined
+              : { label: copy.label, cents: BigInt(figure.valueCents) };
+
+          return drill === null ? (
+            <div key={figure.key} className="flex flex-col gap-1">
+              {body}
             </div>
+          ) : (
+            <Link
+              key={figure.key}
+              to={registerHref(drill, reconcile)}
+              className="-m-1 flex flex-col gap-1 rounded p-1 hover:bg-surface"
+              title={`Open the transactions behind ${copy.label}`}
+            >
+              {body}
+            </Link>
           );
         })}
       </div>
@@ -1758,11 +1861,11 @@ function TileBody({
   switch (tileKey) {
     case 'spending_by_grouping':
       return data.spending_by_grouping ? (
-        <SpendingTile spending={data.spending_by_grouping} />
+        <SpendingTile spending={data.spending_by_grouping} by="grouping" />
       ) : null;
     case 'spending_by_delegation':
       return data.spending_by_delegation ? (
-        <SpendingTile spending={data.spending_by_delegation} />
+        <SpendingTile spending={data.spending_by_delegation} by="delegation" />
       ) : null;
     case 'asset_debt_composition':
       return data.asset_debt_composition ? (
@@ -1812,6 +1915,7 @@ function TileBody({
       return data.figures ? (
         <FiguresTile
           figures={data.figures}
+          since={data.figuresSince ?? null}
           onChoose={onChooseFigures ?? (() => undefined)}
           preview={preview}
         />
