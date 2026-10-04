@@ -6,6 +6,10 @@ phase (`v0.1.0-phase1`, and so on).
 
 ## [Unreleased]
 
+Nothing yet.
+
+## [0.86.0] — 2026-10-04
+
 ### Added
 
 - **Each account says when its balance was last confirmed.** A small `2d ago`
