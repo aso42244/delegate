@@ -6,6 +6,10 @@ phase (`v0.1.0-phase1`, and so on).
 
 ## [Unreleased]
 
+Nothing yet.
+
+## [0.88.0] — 2026-10-04
+
 ### Added
 
 - **Month in review.** A new page beside Overview that reads a finished month
