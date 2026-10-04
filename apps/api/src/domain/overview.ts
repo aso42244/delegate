@@ -451,6 +451,8 @@ export interface Cashflow {
   readonly surplusCents: Cents;
   readonly totalInCents: Cents;
   readonly cycleMissing: boolean;
+  /** The instant the window starts, for a node that opens its rows. Null is ever. */
+  readonly since: Date | null;
 }
 
 /**
@@ -497,7 +499,7 @@ export async function buildCashflow(
   };
 
   const start = await windowStart(db, options.window, options.timeZone, now);
-  if (start.kind === 'no_cycle') return { ...empty, cycleMissing: true };
+  if (start.kind === 'no_cycle') return { ...empty, cycleMissing: true, since: null };
 
   const since = start.kind === 'since' ? { postedAt: { gte: start.date } } : {};
 
@@ -511,8 +513,20 @@ export async function buildCashflow(
     }),
     // Ordinary rows nobody has filed. Positive is a deposit not yet marked as
     // income; negative is spending not yet categorized.
+    /*
+     * In-budget accounts only — the uncategorized queue's own predicate, so the
+     * node opens exactly the rows it counts. A row on an account the budget
+     * does not sum cannot be filed at all, so it was never waiting for anybody;
+     * counting it here drew a decision nobody could make.
+     */
     db.transaction.findMany({
-      where: { archivedAt: null, kind: 'normal', allocations: { none: {} }, ...since },
+      where: {
+        archivedAt: null,
+        kind: 'normal',
+        allocations: { none: {} },
+        account: { inBudget: true },
+        ...since,
+      },
       select: { amountCents: true },
     }),
     buildSpending(db, { by: 'grouping', window: options.window, timeZone: options.timeZone }, now),
@@ -583,6 +597,7 @@ export async function buildCashflow(
     surplusCents: totalInCents - spentCents - uncategorizedOutCents,
     totalInCents,
     cycleMissing: false,
+    since: start.kind === 'since' ? start.date : null,
   };
 }
 
@@ -827,6 +842,24 @@ export interface PanelLine {
  * press boundary — which is what this application has always meant by "cycle",
  * and it keeps every figure on the page working before the anchor is entered.
  */
+/**
+ * The instant the panel's spending is counted from: the payday's local
+ * midnight when an anchor is set, else the last Delegate press, else ever.
+ *
+ * Exported so the page can send it beside the figures — a pace bar that opens
+ * the register has to open it from exactly here.
+ */
+export async function panelSince(
+  db: Db,
+  since: Date | null,
+  timeZone: string,
+  now: Date = new Date(),
+): Promise<Date | null> {
+  if (since !== null) return since;
+  const start = await windowStart(db, 'cycle', timeZone, now);
+  return start.kind === 'since' ? start.date : null;
+}
+
 export async function buildPanel(
   db: Db,
   options: {
@@ -835,11 +868,7 @@ export async function buildPanel(
   },
   now: Date = new Date(),
 ): Promise<PanelLine[]> {
-  const since =
-    options.since ??
-    (await windowStart(db, 'cycle', options.timeZone, now).then((start) =>
-      start.kind === 'since' ? start.date : null,
-    ));
+  const since = await panelSince(db, options.since, options.timeZone, now);
 
   const [lines, allocations] = await Promise.all([
     db.delegation.findMany({

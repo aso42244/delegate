@@ -1,5 +1,6 @@
 import { formatCents } from '@budget/shared';
-import type { ReactNode } from 'react';
+import { Fragment, type ReactNode } from 'react';
+import { Link } from 'react-router-dom';
 
 /**
  * The ranked bar: Batch A's one drawing primitive.
@@ -44,6 +45,11 @@ export interface RankedRow {
    * since bars here are scaled to the largest row rather than to the total.
    */
   readonly aside?: string;
+  /**
+   * Where the row opens: the register on exactly the rows its figure adds up
+   * (ADR 077). A row without one is a reading with nothing behind it to open.
+   */
+  readonly href?: string;
   readonly compare?: {
     readonly label: string;
     readonly valueCents: bigint | null;
@@ -166,30 +172,8 @@ export function RankedBars({
               : 'var(--color-positive)'
             : 'var(--color-accent)');
 
-        return (
-          /*
-           * Name, bar, figure — on one line.
-           *
-           * It was a name and a figure with the bar on a second line beneath
-           * them, which is two rows of chrome per reading and about 44px a line.
-           * The budget panel has always drawn the same thing at 28px on one
-           * line, and it is the densest, most-read list in the application — so
-           * this is that shape, and a tile now shows nine lines where it showed
-           * five.
-           *
-           * A grid rather than flex: the bars have to start at the same x down
-           * the column, which is what makes them comparable at a glance, and
-           * that is a column definition rather than whatever each name happens
-           * to be wide.
-           */
-          <li
-            key={row.key}
-            /* `subgrid` rather than `display: contents`, which drops the list
-               semantics a screen reader needs. The row takes the list's tracks
-               instead of computing its own. */
-            className="row-cell col-span-full grid grid-cols-subgrid items-center gap-x-2"
-            {...(row.title === undefined ? {} : { title: row.title })}
-          >
+        const cells = (
+          <Fragment>
             <span className="truncate text-quiet text-ink" title={row.name}>
               {row.name}
             </span>
@@ -267,6 +251,46 @@ export function RankedBars({
                   formatCents(row.valueCents, signed ? { explicitPlus: true } : undefined)}
               </span>
             </span>
+          </Fragment>
+        );
+
+        return (
+          /*
+           * Name, bar, figure — on one line.
+           *
+           * It was a name and a figure with the bar on a second line beneath
+           * them, which is two rows of chrome per reading and about 44px a line.
+           * The budget panel has always drawn the same thing at 28px on one
+           * line, and it is the densest, most-read list in the application — so
+           * this is that shape, and a tile now shows nine lines where it showed
+           * five.
+           *
+           * A grid rather than flex: the bars have to start at the same x down
+           * the column, which is what makes them comparable at a glance, and
+           * that is a column definition rather than whatever each name happens
+           * to be wide.
+           */
+          <li
+            key={row.key}
+            /* `subgrid` rather than `display: contents`, which drops the list
+               semantics a screen reader needs. The row takes the list's tracks
+               instead of computing its own. */
+            className="row-cell col-span-full grid grid-cols-subgrid items-center gap-x-2"
+            {...(row.title === undefined ? {} : { title: row.title })}
+          >
+            {row.href === undefined ? (
+              cells
+            ) : (
+              <Link
+                to={row.href}
+                // `bg-surface`, not `-2`: the track is `-2`, and hovering would
+                // erase the bar's own groove.
+                className="col-span-full grid grid-cols-subgrid items-center gap-x-2 rounded hover:bg-surface"
+                title={`Open the transactions behind ${row.name}`}
+              >
+                {cells}
+              </Link>
+            )}
           </li>
         );
       })}

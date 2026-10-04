@@ -2,9 +2,11 @@ import { visibleMonths } from './utility-months.js';
 import { formatCents } from '@budget/shared';
 import { useQuery } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
+import { Link } from 'react-router-dom';
 import { api } from '../api/client.js';
 import { EmptyState } from '../components/layout.jsx';
 import { RankedBars, type RankedRow } from '../components/RankedBars.jsx';
+import { registerHref } from '../components/drill.js';
 import { Tile } from '../components/Tile.jsx';
 import { Alert } from '../components/ui.jsx';
 
@@ -31,6 +33,9 @@ interface MonthDto {
   readonly month: string;
   readonly spendCents: string;
   readonly complete: boolean;
+  /** The instants the month spans in the household's zone, `before` exclusive. */
+  readonly from: string;
+  readonly before: string;
 }
 
 interface UtilityDto {
@@ -60,9 +65,13 @@ function monthLabel(month: string): string {
  * a list, beside a name and a figure, rather than the middle of a card.
  */
 function MiniChart({
+  delegationId,
+  name,
   months,
   color,
 }: {
+  readonly delegationId: string;
+  readonly name: string;
   readonly months: readonly MonthDto[];
   /** The grouping's colour, so the bars and the dot beside the name agree. */
   readonly color: string | null;
@@ -92,8 +101,14 @@ function MiniChart({
         // The column is the whole height so there is something to point at
         // even in a month that spent nothing; the bar sits inside it.
         return (
-          <div
+          // A link: the month's bar opens exactly the charges filed to this
+          // utility in it (ADR 077).
+          <Link
             key={month.month}
+            to={registerHref(
+              { delegationId, kind: 'normal', dateFrom: month.from, dateBefore: month.before },
+              { label: `${name} in ${monthLabel(month.month)}`, cents: value },
+            )}
             className="group/bar relative flex h-full flex-1 items-end"
             title={`${monthLabel(month.month)}: ${formatCents(value)}${
               month.complete ? '' : ' so far'
@@ -117,7 +132,7 @@ function MiniChart({
               {monthLabel(month.month)} · {formatCents(value)}
               {month.complete ? '' : ' so far'}
             </span>
-          </div>
+          </Link>
         );
       })}
     </div>
@@ -238,7 +253,12 @@ function HistoryTile({ utilities }: { readonly utilities: readonly UtilityDto[] 
               title={`${utility.name} · ${formatCents(average)} average per month`}
             >
               <span className="truncate text-quiet text-ink">{utility.name}</span>
-              <MiniChart months={utility.months} color={utility.groupingColor} />
+              <MiniChart
+                delegationId={utility.delegationId}
+                name={utility.name}
+                months={utility.months}
+                color={utility.groupingColor}
+              />
               <span className="money shrink-0 text-quiet font-semibold text-ink">
                 {formatCents(average)}
               </span>

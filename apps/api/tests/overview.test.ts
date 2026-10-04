@@ -143,6 +143,8 @@ interface DataBody {
     readonly valueCents: string | null;
     readonly count: number | null;
   }[];
+  readonly figuresSince?: string | null;
+  readonly panelSince?: string | null;
   readonly payCycle?: {
     readonly start: string;
     readonly end: string;
@@ -629,7 +631,13 @@ describe("a tile's own configuration", () => {
      * docked beside them and carries its own lines, so a chart key here would
      * mean the same list was being drawn twice on one screen.
      */
-    expect(Object.keys(body).sort()).toEqual(['panel', 'panelSelected', 'payCycle', 'windows']);
+    expect(Object.keys(body).sort()).toEqual([
+      'panel',
+      'panelSelected',
+      'panelSince',
+      'payCycle',
+      'windows',
+    ]);
   });
 });
 
@@ -1077,6 +1085,44 @@ describe('cashflow', () => {
 });
 
 describe('the pay cycle', () => {
+  it("counts this cycle's money from the payday's midnight in the household's zone", async () => {
+    await prisma.budgetSettings.updateMany({ data: { scheduleTimezone: 'America/Chicago' } });
+    await app.inject({
+      method: 'PATCH',
+      url: '/api/settings',
+      headers: { cookie },
+      payload: { payCadence: 'biweekly', nextPaydayOn: '2099-01-09' },
+    });
+    await putLayout(rowed(['figures']));
+
+    const first = (await get('/api/overview')).json<DataBody>();
+    const payday = new Date(first.payCycle!.start); // the date, as UTC midnight
+    const account = await makeAccount({ name: 'Everyday', type: 'asset', balanceCents: 900_000n });
+
+    /*
+     * Half past seven the evening before payday, in Chicago — which is already
+     * payday in UTC. The figures counted from UTC midnight and put it in this
+     * cycle's Spent. ADR 077.
+     */
+    await makeTransaction({
+      accountId: account.id,
+      amountCents: -1_000n,
+      postedAt: new Date(payday.getTime() + 30 * 60_000),
+    });
+    // Nine on payday morning, in Chicago. This one is the cycle's.
+    await makeTransaction({
+      accountId: account.id,
+      amountCents: -2_500n,
+      postedAt: new Date(payday.getTime() + 14 * 60 * 60_000),
+    });
+
+    const body = (await get('/api/overview')).json<DataBody>();
+    expect(body.figures?.find((figure) => figure.key === 'spent')?.valueCents).toBe('2500');
+    // And it says where it counted from, so the figure opens exactly those rows.
+    expect(body.figuresSince).toBe(new Date(payday.getTime() + 5 * 60 * 60_000).toISOString());
+    expect(body.panelSince).toBe(body.figuresSince);
+  });
+
   it('is null until an anchor is set, rather than guessed', async () => {
     const body = (await get('/api/overview')).json<DataBody>();
     // A tick drawn from a guessed schedule is a confident marker in the wrong

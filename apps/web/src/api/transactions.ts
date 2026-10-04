@@ -19,6 +19,11 @@ export interface TransactionDto {
   readonly accountId: string;
   readonly postedAt: string;
   readonly amountCents: string;
+  /**
+   * Under a delegation or grouping filter, the part of this row that filter
+   * counts — a split row's share. Null with no such filter.
+   */
+  readonly shareCents: string | null;
   readonly description: string;
   readonly descriptionRaw: string;
   readonly pending: boolean;
@@ -41,6 +46,10 @@ export interface TransactionDto {
 export interface TransactionListDto {
   readonly transactions: readonly TransactionDto[];
   readonly total: number;
+  /** Every matching row's amount, summed across all pages. */
+  readonly totalCents: string;
+  /** Under a delegation or grouping filter, the matched shares summed. */
+  readonly shareCents: string | null;
   readonly limit: number;
   readonly offset: number;
 }
@@ -54,7 +63,14 @@ export interface TransactionFilters {
   readonly search?: string | undefined;
   readonly accountId?: string | undefined;
   readonly delegationId?: string | undefined;
+  /** A grouping's id, or `none`. */
+  readonly groupingId?: string | undefined;
   readonly kind?: string | undefined;
+  readonly sign?: 'in' | 'out' | undefined;
+  readonly source?: 'simplefin' | 'manual' | undefined;
+  /** Instants, as the server sent them. `dateBefore` is exclusive. */
+  readonly dateFrom?: string | undefined;
+  readonly dateBefore?: string | undefined;
   /**
    * One calendar day, `YYYY-MM-DD`, resolved in the household's zone by the
    * server. Not a pair of instants: the browser's zone is not necessarily the

@@ -39,9 +39,15 @@ const listQuerySchema = z.object({
   search: z.string().max(200).optional(),
   accountId: z.string().uuid().optional(),
   delegationId: z.string().uuid().optional(),
+  /** A grouping's id, or `none` for the delegations in no grouping. */
+  groupingId: z.union([z.string().uuid(), z.literal('none')]).optional(),
   kind: z.enum(TRANSACTION_KINDS).optional(),
+  sign: z.enum(['in', 'out']).optional(),
+  source: z.enum(['simplefin', 'manual']).optional(),
   dateFrom: z.coerce.date().optional(),
   dateTo: z.coerce.date().optional(),
+  /** Exclusive, for a range whose end is the next one's start. */
+  dateBefore: z.coerce.date().optional(),
   /**
    * One calendar day, `YYYY-MM-DD`, resolved in the **household's** zone.
    *
@@ -105,12 +111,40 @@ const bulkArchiveBodySchema = z.object({
 
 type TransactionRow = Awaited<ReturnType<typeof listTransactions>>['transactions'][number];
 
-function present(transaction: TransactionRow): Record<string, unknown> {
+/**
+ * How much of a row a delegation or grouping filter counts: the allocations it
+ * matched. A split row on the Groceries register is its Groceries part.
+ */
+function shareOf(
+  transaction: TransactionRow,
+  filter: { readonly delegationId?: string | undefined; readonly groupingId?: string | undefined },
+): bigint | null {
+  if (!filter.delegationId && !filter.groupingId) return null;
+  const grouping = filter.groupingId === 'none' ? null : filter.groupingId;
+  return transaction.allocations
+    .filter(
+      (allocation) =>
+        (!filter.delegationId || allocation.delegationId === filter.delegationId) &&
+        (filter.groupingId === undefined || allocation.delegation.groupingId === grouping),
+    )
+    .reduce((sum, allocation) => sum + allocation.amountCents, 0n);
+}
+
+function present(
+  transaction: TransactionRow,
+  filter: {
+    readonly delegationId?: string | undefined;
+    readonly groupingId?: string | undefined;
+  } = {},
+): Record<string, unknown> {
+  const share = shareOf(transaction, filter);
   return {
     id: transaction.id,
     accountId: transaction.accountId,
     postedAt: dateOut(transaction.postedAt),
     amountCents: centsOut(transaction.amountCents),
+    // Null unless the list is filtered to a delegation or grouping.
+    shareCents: share === null ? null : centsOut(share),
     description: transaction.description,
     descriptionRaw: transaction.descriptionRaw,
     pending: transaction.pending,
@@ -168,11 +202,13 @@ export const transactionRoutes: FastifyPluginCallback = (fastify, _options, done
         })()
       : query;
 
-    const { transactions, total } = await listTransactions(prisma, bounded);
+    const { transactions, total, totalCents, shareCents } = await listTransactions(prisma, bounded);
 
     return {
-      transactions: transactions.map(present),
+      transactions: transactions.map((transaction) => present(transaction, query)),
       total,
+      totalCents: centsOut(totalCents),
+      shareCents: shareCents === null ? null : centsOut(shareCents),
       limit: query.limit,
       offset: query.offset,
     };

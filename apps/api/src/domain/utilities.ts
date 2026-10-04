@@ -26,6 +26,9 @@ export interface MonthlySpend {
   readonly spendCents: Cents;
   /** False for the month still in progress, which is not a full month of bills. */
   readonly complete: boolean;
+  /** The instants the month spans in the household's zone, `before` exclusive. */
+  readonly from: Date;
+  readonly before: Date;
 }
 
 export interface UtilitySummary {
@@ -202,6 +205,8 @@ export async function buildUtilitySummaries(
         month,
         spendCents: -net,
         complete: month.getTime() !== currentMonth.getTime(),
+        from,
+        before: to,
       };
     });
 

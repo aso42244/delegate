@@ -1,10 +1,12 @@
 import { useState, type ReactNode } from 'react';
+import { Link } from 'react-router-dom';
 import type { BudgetRowDto, BudgetViewDto } from '../api/budget.js';
 import type { OverviewDataDto } from '../api/overview.js';
 import { EmptyState, SegmentedControl } from './layout.jsx';
 import { AccountsTable } from './AccountsTable.jsx';
 import { DelegationsTable } from './DelegationsTable.jsx';
 import { PaceBar, paceSummary } from './PaceBar.jsx';
+import { registerHref } from './drill.js';
 import { Tile } from './Tile.jsx';
 
 /**
@@ -236,8 +238,23 @@ function DelegationsBand({
       balanceCents: balance,
     });
 
+    /*
+     * The bar opens the rows its fill was measured from: this line's spending
+     * since the panel's own start (ADR 077). The figure to reconcile is sent
+     * only when something was spent — the bar floors a refunded line at zero,
+     * and a net refund is not a zero the register could be asked to match.
+     */
+    const href = registerHref(
+      { delegationId: row.id, kind: 'normal', dateFrom: data?.panelSince ?? null },
+      spent > 0n ? { label: `${row.name}'s pace bar`, cents: spent } : undefined,
+    );
+
     return (
-      <span className="block min-w-0" title={summary}>
+      <Link
+        to={href}
+        className="block min-w-0 rounded"
+        title={`${summary} · open its transactions`}
+      >
         <PaceBar
           spentCents={spent}
           plannedCents={planned}
@@ -246,7 +263,7 @@ function DelegationsBand({
           cycleProgressBasisPoints={tick}
           label={`${row.name}: ${summary}`}
         />
-      </span>
+      </Link>
     );
   };
 

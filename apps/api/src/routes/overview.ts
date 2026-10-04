@@ -23,6 +23,7 @@ import {
   pickableSeries,
   buildOverview,
   buildPanel,
+  panelSince,
   isFigureKey,
   isOverviewTile,
   isTileWindow,
@@ -33,6 +34,7 @@ import {
   type TileWindow,
 } from '../domain/overview.js';
 import { payCycleAt } from '../domain/pay-cycle.js';
+import { startOfLocalDay } from '../domain/calendar.js';
 import { findRecurringBills, type RecurringBill } from '../domain/recurring.js';
 import { listOutstandingChecks } from '../domain/checks.js';
 import { accountSeries } from '../domain/snapshot-series.js';
@@ -525,6 +527,14 @@ export const overviewRoutes: FastifyPluginCallback = (fastify, _options, done) =
      */
     const settings = await getBudgetSettings(prisma);
     const cycle = payCycleAt(settings.nextPaydayOn, settings.payCadence, new Date(), timeZone);
+    /*
+     * The instant this cycle's money is counted from: the payday's midnight in
+     * the household's zone. `cycle.start` is a calendar date stored as UTC
+     * midnight, which in Chicago is 7pm the evening before — so counting from it
+     * put the last hours of the previous cycle into this one's Spent, Inflow and
+     * every pace bar.
+     */
+    const cycleSince = cycle === null ? null : startOfLocalDay(cycle.start, timeZone);
 
     /*
      * The panel's own lines. Sent with the page rather than fetched separately
@@ -541,7 +551,7 @@ export const overviewRoutes: FastifyPluginCallback = (fastify, _options, done) =
       ? await buildFigures(prisma, {
           keys: readFigureKeys(figuresTile.config),
           timeZone,
-          cycleStart: cycle?.start ?? null,
+          cycleStart: cycleSince,
           daysLeftInCycle: cycle === null ? null : cycle.lengthDays - cycle.elapsedDays,
         })
       : [];
@@ -614,10 +624,11 @@ export const overviewRoutes: FastifyPluginCallback = (fastify, _options, done) =
      * travels beside the figures rather than deciding them.
      */
     const panelTile = stored.find((tile) => tile.widgetKey === 'delegations');
-    const panel = await buildPanel(prisma, {
-      since: cycle?.start ?? null,
-      timeZone,
-    });
+    const [panel, panelFrom] = await Promise.all([
+      buildPanel(prisma, { since: cycleSince, timeZone }),
+      // Where its spending is counted from, so a pace bar opens exactly its rows.
+      panelSince(prisma, cycleSince, timeZone),
+    ]);
 
     return {
       windows,
@@ -628,6 +639,8 @@ export const overviewRoutes: FastifyPluginCallback = (fastify, _options, done) =
               valueCents: centsOut(figure.valueCents),
               count: figure.count,
             })),
+            // The instant the band's money is counted from. Null is ever.
+            figuresSince: dateOut(cycleSince),
           }
         : {}),
       ...(outflow
@@ -734,7 +747,12 @@ export const overviewRoutes: FastifyPluginCallback = (fastify, _options, done) =
           }
         : {}),
       ...(bills && keys.has('bills_this_cycle') && cycle
-        ? { bills_this_cycle: billsThisCycle(bills, cycle) }
+        ? {
+            bills_this_cycle: billsThisCycle(bills, {
+              start: startOfLocalDay(cycle.start, timeZone),
+              end: startOfLocalDay(cycle.end, timeZone),
+            }),
+          }
         : {}),
       ...(bills && keys.has('upcoming_bills')
         ? {
@@ -762,6 +780,7 @@ export const overviewRoutes: FastifyPluginCallback = (fastify, _options, done) =
         : {}),
       /** Which of them the household chose to watch. Empty until somebody picks. */
       panelSelected: readDelegationIds(panelTile?.config),
+      panelSince: dateOut(panelFrom),
       panel: panel.map((line) => ({
         id: line.id,
         name: line.name,
@@ -1151,6 +1170,7 @@ function serializeOverview(data: OverviewData): Record<string, unknown> {
       ? {
           cashflow: {
             cycleMissing: data.cashflow.cycleMissing,
+            since: dateOut(data.cashflow.since),
             inflows: data.cashflow.inflows.map((node) => ({
               key: node.key,
               name: node.name,

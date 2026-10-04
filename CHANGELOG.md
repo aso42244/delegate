@@ -6,7 +6,25 @@ phase (`v0.1.0-phase1`, and so on).
 
 ## [Unreleased]
 
-Nothing yet.
+### Added
+
+- **Every figure opens its rows.** Spending by grouping and by delegation, the
+  figures band's Inflow, Spent and Uncategorized, each pace bar, the cashflow
+  chart's labels, income per cycle and a utility's month all open Transactions
+  filtered to exactly the rows they add up. The register shows what it is
+  filtered by, each filter removable, a split row at the share the figure
+  counted ("−$70.00 of −$100.00"), and a total that says it matches the figure
+  to the cent. ADR 077.
+
+### Fixed
+
+- **This cycle's figures start at the payday's midnight in your time zone.**
+  Spent, Inflow, the pace bars and Bills this cycle counted from midnight UTC,
+  which is the evening before payday in the Americas.
+- **The day dialog's "Open in the register"** brought the day's income and
+  refunds along; it opens only the money out the cell counted.
+- **Cashflow's Uncategorized** no longer counts accounts outside the budget,
+  which cannot be filed and are not in the uncategorized queue.
 
 ## [0.86.0] — 2026-10-04
 
