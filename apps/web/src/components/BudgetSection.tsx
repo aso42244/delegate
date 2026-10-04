@@ -19,6 +19,8 @@ import { NARROW, useMediaQuery } from '../useMediaQuery.js';
 import { Chips } from './Chip.jsx';
 import type { ChipKind } from './chips.js';
 import { MoneyCell } from './MoneyCell.jsx';
+import { agoLabel } from './sync-status.js';
+import { Tag } from './Tag.jsx';
 import { Tile } from './Tile.jsx';
 import { describeMaximum } from './max-text.js';
 import { describeTarget } from './target-text.js';
@@ -114,6 +116,15 @@ export interface BudgetSectionProps {
    * column, and losing the heading must not lose that too.
    */
   readonly tintFor?: (row: BudgetRowDto) => string | null;
+  /**
+   * A column, just left of the balance, saying how long ago each balance was
+   * last confirmed — the feed's report or somebody's hand.
+   *
+   * Supplied only by `AccountsTable`: a delegation's balance is the ledger's own
+   * sum and is never out of date, so there is nothing for the column to say.
+   * A fixed width, so the figures beside it hold one column down the table.
+   */
+  readonly showUpdated?: boolean;
 }
 
 function parseCents(value: string | null): bigint | null {
@@ -204,6 +215,7 @@ export function BudgetSection({
   rowAffordance,
   pace,
   tintFor,
+  showUpdated = false,
 }: BudgetSectionProps): ReactNode {
   const [newName, setNewName] = useState('');
 
@@ -225,6 +237,9 @@ export function BudgetSection({
    * survived is the third thing competing for 390px.
    */
   const showPace = pace !== undefined && !narrow;
+  // Off on a phone for the same reason: one name and one figure is what fits.
+  const showAsOf = showUpdated && !narrow;
+  const now = new Date();
   const showRemaining = !splitColumns || mobileColumn === 'remaining';
   const showToDelegate = showAmountToDelegate && (!splitColumns || mobileColumn === 'toDelegate');
 
@@ -509,6 +524,16 @@ export function BudgetSection({
 
         {showPace && <td className="w-56 row-cell pr-2">{pace?.(row)}</td>}
 
+        {showAsOf && (
+          <td className="w-20 row-cell pr-2 text-right">
+            {row.balanceAsOf !== null && (
+              <Tag title={`Balance as of ${new Date(row.balanceAsOf).toLocaleString()}`}>
+                {agoLabel(new Date(row.balanceAsOf), now)}
+              </Tag>
+            )}
+          </td>
+        )}
+
         {showRemaining && (
           // `relative`, with the button below hung off the left of the cell: it
           // belongs beside the figure it is about, and that figure lives in a
@@ -584,7 +609,12 @@ export function BudgetSection({
   }
 
   const columnCount =
-    1 + (showPace ? 1 : 0) + (showRemaining ? 1 : 0) + (showToDelegate ? 1 : 0) + (rowMenu ? 1 : 0);
+    1 +
+    (showPace ? 1 : 0) +
+    (showAsOf ? 1 : 0) +
+    (showRemaining ? 1 : 0) +
+    (showToDelegate ? 1 : 0) +
+    (rowMenu ? 1 : 0);
 
   return (
     /*
@@ -621,6 +651,7 @@ export function BudgetSection({
               <h2 className="text-section font-bold text-ink">{title}</h2>
             </td>
             {showPace && <td className="w-56 pb-1" />}
+            {showAsOf && <td className="w-20 pb-1" />}
             {showRemaining && (
               <td className="w-40 pb-1">
                 <span className="money block pr-3 pl-2 text-section font-bold text-ink">
@@ -681,6 +712,7 @@ export function BudgetSection({
           >
             <th className="row-cell pl-3 text-left font-normal">Name</th>
             {showPace && <th className="row-cell text-left font-normal">Pace</th>}
+            {showAsOf && <th className="row-cell pr-2 text-right font-normal">Updated</th>}
             {showRemaining && (
               <th className="row-cell pr-2 text-right font-normal">
                 {showAmountToDelegate ? 'Remaining' : 'Balance'}
@@ -776,6 +808,9 @@ export function BudgetSection({
                     different carry-in. Summing them draws a bar that is true of
                     nothing. */}
                 {showPace && <td className="row-cell" />}
+
+                {/* A grouping is not confirmed; its accounts are. */}
+                {showAsOf && <td className="row-cell" />}
 
                 {/* Amounts appear on the grouping row only when collapsed. Shown
                     while expanded they would double every figure below them. */}

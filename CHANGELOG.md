@@ -6,7 +6,11 @@ phase (`v0.1.0-phase1`, and so on).
 
 ## [Unreleased]
 
-Nothing yet.
+### Added
+
+- **Each account says when its balance was last confirmed.** A small `2d ago`
+  mark in its own column, just left of the balance, on the Accounts & Debts tab,
+  with the exact time on hover — the same reading Eventide shows.
 
 ## [0.85.0] — 2026-10-04
 

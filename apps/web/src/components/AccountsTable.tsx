@@ -191,6 +191,7 @@ export function AccountsTable({
         title={title}
         section={shown}
         showAmountToDelegate={false}
+        showUpdated
         /* Debts render in normal text, never red, despite being liabilities. */
         redNegatives={false}
         onToggleGrouping={(id, collapsed) => toggleGrouping.mutate({ id, collapsed })}

@@ -37,6 +37,27 @@ test('a manual account is added and appears on the budget', async ({ signedIn })
   );
 });
 
+test('each account says how long ago its balance was confirmed, beside the figure', async ({
+  signedIn,
+}) => {
+  const twoDaysAgo = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000 - 60_000);
+  await makeAccount('Everyday', 'asset', 100_000n, 'manual', null, { balanceAsOf: twoDaysAgo });
+  await makeAccount('Card', 'debt', 2_000n);
+
+  await signedIn.goto('/overview?lines=all');
+  await showAccounts(signedIn);
+
+  // Its own column, just left of the balance, so the ages read down one line.
+  const everyday = signedIn.getByRole('row').filter({ hasText: 'Everyday' });
+  await expect(everyday.getByTitle(/^Balance as of /)).toHaveText('2d ago');
+  const card = signedIn.getByRole('row').filter({ hasText: 'Card' });
+  await expect(card.getByTitle(/^Balance as of /)).toHaveText('just now');
+
+  const age = await everyday.getByTitle(/^Balance as of /).boundingBox();
+  const figure = await everyday.getByRole('button', { name: 'Everyday balance' }).boundingBox();
+  expect(age!.x + age!.width).toBeLessThanOrEqual(figure!.x + 1);
+});
+
 test('taking an account out of the budget removes it from the identity', async ({ signedIn }) => {
   await makeAccount('The house', 'asset', 45_000_000n);
 
