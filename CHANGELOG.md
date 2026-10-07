@@ -6,6 +6,10 @@ phase (`v0.1.0-phase1`, and so on).
 
 ## [Unreleased]
 
+Nothing yet.
+
+## [0.90.0] — 2026-10-07
+
 ### Fixed
 
 - **Month in review reads each line from start to end.** It counted only what
