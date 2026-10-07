@@ -6,6 +6,10 @@ phase (`v0.1.0-phase1`, and so on).
 
 ## [Unreleased]
 
+Nothing yet.
+
+## [0.91.0] — 2026-10-07
+
 ### Added
 
 - **Eventide can read the register.** Two more reads on the read door,
