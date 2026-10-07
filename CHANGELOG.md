@@ -6,7 +6,18 @@ phase (`v0.1.0-phase1`, and so on).
 
 ## [Unreleased]
 
-Nothing yet.
+### Fixed
+
+- **Month in review reads each line from start to end.** It counted only what
+  Delegate presses gave a line, so a line funded by last month's balance or a
+  transfer looked overspent. Each line now shows what it started with, what was
+  delegated, what was moved in or out, what was spent, and where it ended —
+  which is the ledger's own balance. ADR 078.
+
+### Changed
+
+- **Month in review groups its lines.** Each grouping starts closed with its
+  totals; open it to see its lines.
 
 ## [0.89.0] — 2026-10-04
 

@@ -27,12 +27,18 @@ a collapse.
 - **Came in and Went out count in-budget accounts only**, the accounts the
   identity sums. An off-budget account's purchases are net worth, and they
   show there.
-- **Each line against what it was given**: what Delegate presses put into the
-  line during the month, what was spent from it, and the difference. Transfers
-  and adjustments are not "given". The lines that went further than they were
-  given lead, in ink rather than red — overspending a month's delegation is
-  ordinary in an envelope budget, and the only red is a line below zero.
-  The lines and a "Not categorized yet" row add up to Went out to the cent.
+- **Each line from start to end** (amended 2026-10-07): what the line held as
+  the month began, what Delegate presses gave it, what transfers and
+  adjustments moved in or out, what was spent from it, and where it ended.
+  Start + delegated + moved − spent = end, and end is the ledger's own balance
+  at the month's close. The first version counted presses alone, so a line
+  funded by a carried balance or a transfer read as overspent when it was not.
+  Spending is dated by when the transaction posted, as the register's filters
+  are, so every Spent figure opens the rows that make it.
+- **Lines are shown by grouping, each grouping closed** with its totals; open
+  one to see its lines. A line that did nothing all month is left out. The only
+  red is an end below zero. The lines and a "Not categorized yet" row add up to
+  Went out to the cent.
 - **Bills that moved**: a recurring bill charged at least $1 and 10% away from
   its typical amount, a bill whose first charge landed this month, and a
   monthly bill that was due and did not come. Read from the bills Recurring

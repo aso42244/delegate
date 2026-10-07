@@ -20,6 +20,23 @@ const querySchema = z.object({
     .optional(),
 });
 
+/** A line's or a grouping's month, as strings of cents. */
+function figuresOut(figures: {
+  readonly startCents: bigint;
+  readonly delegatedCents: bigint;
+  readonly movedCents: bigint;
+  readonly spentCents: bigint;
+  readonly endCents: bigint;
+}): Record<string, string> {
+  return {
+    startCents: centsOut(figures.startCents),
+    delegatedCents: centsOut(figures.delegatedCents),
+    movedCents: centsOut(figures.movedCents),
+    spentCents: centsOut(figures.spentCents),
+    endCents: centsOut(figures.endCents),
+  };
+}
+
 export const monthReviewRoutes: FastifyPluginCallback = (fastify, _options, done) => {
   for (const guard of AUTHENTICATED) {
     fastify.addHook('preHandler', guard);
@@ -65,14 +82,17 @@ export const monthReviewRoutes: FastifyPluginCallback = (fastify, _options, done
               cameInCents: centsOut(review.previous.cameInCents),
               wentOutCents: centsOut(review.previous.wentOutCents),
             },
-      lines: review.lines.map((line) => ({
-        delegationId: line.delegationId,
-        name: line.name,
-        color: line.color,
-        archived: line.archived,
-        delegatedCents: centsOut(line.delegatedCents),
-        spentCents: centsOut(line.spentCents),
-        leftCents: centsOut(line.leftCents),
+      groupings: review.groupings.map((grouping) => ({
+        id: grouping.id,
+        name: grouping.name,
+        color: grouping.color,
+        ...figuresOut(grouping),
+        lines: grouping.lines.map((line) => ({
+          delegationId: line.delegationId,
+          name: line.name,
+          archived: line.archived,
+          ...figuresOut(line),
+        })),
       })),
       uncategorizedCents: centsOut(review.uncategorizedCents),
       bills: review.bills.map((bill) => ({

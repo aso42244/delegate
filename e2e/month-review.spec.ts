@@ -47,7 +47,15 @@ test('last month adds up, and a line opens exactly what it spent', async ({ sign
   await expect(signedIn.getByText('$94.11', { exact: true }).first()).toBeVisible();
   await expect(signedIn.getByText('Not categorized yet')).toBeVisible();
 
-  await signedIn.getByRole('link', { name: '$84.12' }).click();
+  // Groupings open closed, each on its totals; a line is one press away.
+  const grouping = signedIn.getByRole('button', { name: 'No grouping' });
+  await expect(grouping).toHaveAttribute('aria-expanded', 'false');
+  await expect(signedIn.getByRole('cell', { name: 'Groceries' })).toHaveCount(0);
+  await grouping.click();
+  const line = signedIn.getByRole('row').filter({ hasText: 'Groceries' });
+  await expect(line).toBeVisible();
+
+  await line.getByRole('link', { name: '$84.12' }).click();
   await expect(signedIn).toHaveURL(/\/transactions\?/);
   await expect(signedIn.getByText(/^Matches Groceries in /)).toBeVisible();
   await expect(signedIn.getByText('1 row')).toBeVisible();

@@ -1,8 +1,13 @@
-import { formatCents } from '@budget/shared';
+import { formatCents, groupingTint } from '@budget/shared';
 import { useQuery } from '@tanstack/react-query';
-import { useState, type ReactNode } from 'react';
+import { Fragment, useState, type ReactNode } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { monthReviewApi, type MonthBillDto, type MonthReviewDto } from '../api/month-review.js';
+import {
+  monthReviewApi,
+  type MonthBillDto,
+  type MonthFiguresDto,
+  type MonthReviewDto,
+} from '../api/month-review.js';
 import { registerHref } from '../components/drill.js';
 import { EmptyState, PageHeader } from '../components/layout.jsx';
 import { Tag } from '../components/Tag.jsx';
@@ -20,9 +25,6 @@ import { Alert, Button } from '../components/ui.jsx';
  * The month lives in the URL, as Overview's links do, so a month can be linked
  * to and Back returns to it.
  */
-
-/** Lines shown before the rest fold away. A month touches thirty; eight is the story. */
-const LINES_SHOWN = 8;
 
 /** "2026-09" as "September 2026". */
 function monthName(month: string, style: 'long' | 'short' = 'long'): string {
@@ -91,18 +93,73 @@ function FigureCell({
   );
 }
 
-function LinesTable({ review }: { readonly review: MonthReviewDto }): ReactNode {
-  const [showAll, setShowAll] = useState(false);
-  const label = monthName(review.month);
-  const lines = showAll ? review.lines : review.lines.slice(0, LINES_SHOWN);
-  const hidden = review.lines.length - lines.length;
+/** The five figures of a line or a grouping, as cells. Start and Moved are a laptop's. */
+function FigureCells({
+  figures,
+  spentHref,
+  emphasis = 'normal',
+}: {
+  readonly figures: MonthFiguresDto;
+  readonly spentHref: string;
+  readonly emphasis?: 'normal' | 'total';
+}): ReactNode {
+  const ink = emphasis === 'total' ? 'text-ink' : 'text-muted';
+  return (
+    <>
+      <td className={`money hidden row-cell pr-3 sm:table-cell ${ink}`}>
+        {formatCents(BigInt(figures.startCents))}
+      </td>
+      <td className={`money row-cell pr-3 ${ink}`}>
+        {formatCents(BigInt(figures.delegatedCents))}
+      </td>
+      <td className={`money hidden row-cell pr-3 sm:table-cell ${ink}`}>
+        {formatCents(BigInt(figures.movedCents), { explicitPlus: true })}
+      </td>
+      <td className="money row-cell pr-3">
+        <Link className="linkish" to={spentHref}>
+          {formatCents(BigInt(figures.spentCents))}
+        </Link>
+      </td>
+      <td
+        className={`money row-cell pr-3 ${BigInt(figures.endCents) < 0n ? 'text-negative' : 'text-ink'}`}
+      >
+        {formatCents(BigInt(figures.endCents))}
+      </td>
+    </>
+  );
+}
 
-  const delegated = review.lines.reduce((sum, line) => sum + BigInt(line.delegatedCents), 0n);
+/**
+ * Each line from where it started to where it ended, by grouping (ADR 078).
+ *
+ * Start, plus what Delegate gave, plus what was moved in or out, less what was
+ * spent, is where it ended — so a line funded by a transfer, or carrying last
+ * month's balance, reads as what it was rather than as overspent.
+ *
+ * Groupings start closed, each showing its lines' totals, the way the budget is
+ * read: by grouping first, a line only when the grouping asks a question.
+ */
+function LinesTable({ review }: { readonly review: MonthReviewDto }): ReactNode {
+  const [open, setOpen] = useState<ReadonlySet<string>>(new Set());
+  const label = monthName(review.month);
   const uncategorized = BigInt(review.uncategorizedCents);
   const wentOut = BigInt(review.wentOutCents);
+  const range = { kind: 'normal' as const, dateFrom: review.from, dateBefore: review.before };
 
-  if (review.lines.length === 0 && uncategorized === 0n) {
-    return <EmptyState>Nothing was delegated or spent in {label}.</EmptyState>;
+  if (review.groupings.length === 0 && uncategorized === 0n) {
+    return <EmptyState>Nothing was held, delegated or spent in {label}.</EmptyState>;
+  }
+
+  const sum = (pick: (figures: MonthFiguresDto) => string): bigint =>
+    review.groupings.reduce((total, grouping) => total + BigInt(pick(grouping)), 0n);
+
+  function toggle(key: string): void {
+    setOpen((was) => {
+      const next = new Set(was);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
   }
 
   return (
@@ -110,61 +167,96 @@ function LinesTable({ review }: { readonly review: MonthReviewDto }): ReactNode 
       <thead>
         <tr className="text-label uppercase tracking-label text-muted">
           <th className="row-cell pl-3 text-left font-normal">Line</th>
+          <th className="hidden w-28 row-cell pr-3 text-right font-normal sm:table-cell">Start</th>
           <th className="w-28 row-cell pr-3 text-right font-normal">Delegated</th>
+          <th className="hidden w-28 row-cell pr-3 text-right font-normal sm:table-cell">Moved</th>
           <th className="w-28 row-cell pr-3 text-right font-normal">Spent</th>
-          <th className="w-28 row-cell pr-3 text-right font-normal">Left</th>
+          <th className="w-28 row-cell pr-3 text-right font-normal">End</th>
         </tr>
       </thead>
       <tbody>
-        {lines.map((line) => (
-          <tr key={line.delegationId} className="border-b border-line">
-            {/* `max-w-0` and `w-full`: the name takes what the figures leave and
-                truncates there, never wrapping a row onto a second line. */}
-            <td className="row-cell w-full max-w-0 pl-3 text-ink">
-              <span
-                className="block truncate"
-                title={line.archived ? `${line.name} (archived)` : line.name}
+        {review.groupings.map((grouping) => {
+          const key = grouping.id ?? 'none';
+          const expanded = open.has(key);
+          return (
+            <Fragment key={key}>
+              <tr
+                className="border-b border-line"
+                style={{ background: groupingTint(grouping.color, 'header') ?? undefined }}
               >
-                {line.name}
-                {line.archived && <span className="text-muted"> (archived)</span>}
-              </span>
-            </td>
-            <td className="money row-cell pr-3 text-muted">
-              {formatCents(BigInt(line.delegatedCents))}
-            </td>
-            <td className="money row-cell pr-3">
-              <Link
-                className="linkish"
-                to={registerHref(
-                  {
-                    delegationId: line.delegationId,
-                    kind: 'normal',
-                    dateFrom: review.from,
-                    dateBefore: review.before,
-                  },
-                  { label: `${line.name} in ${label}`, cents: BigInt(line.spentCents) },
-                )}
-              >
-                {formatCents(BigInt(line.spentCents))}
-              </Link>
-            </td>
-            <td className="money row-cell pr-3 text-ink">{formatCents(BigInt(line.leftCents))}</td>
-          </tr>
-        ))}
-        {hidden > 0 && (
-          <tr className="border-b border-line">
-            <td className="row-cell pl-3" colSpan={4}>
-              <Button variant="ghost" aria-expanded={false} onClick={() => setShowAll(true)}>
-                {hidden === 1 ? '1 more line' : `${hidden} more lines`}
-              </Button>
-            </td>
-          </tr>
-        )}
-        {/* Part of what went out and in no line, so the table adds up to it. */}
+                {/* `max-w-0` and `w-full`: the name takes what the figures leave
+                    and truncates there, never wrapping a row onto a second line. */}
+                <td className="row-cell w-full max-w-0 pl-3">
+                  <button
+                    type="button"
+                    onClick={() => toggle(key)}
+                    aria-expanded={expanded}
+                    className="group/toggle -ml-1 flex max-w-full items-center gap-1 rounded font-semibold text-ink"
+                  >
+                    <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded text-muted group-hover/toggle:bg-surface-2 group-hover/toggle:text-ink">
+                      <svg
+                        viewBox="0 0 20 20"
+                        className="h-[18px] w-[18px]"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        aria-hidden
+                      >
+                        <path d={expanded ? 'M5 8l5 5 5-5' : 'M8 5l5 5-5 5'} />
+                      </svg>
+                    </span>
+                    <span className="truncate">{grouping.name}</span>
+                  </button>
+                </td>
+                <FigureCells
+                  figures={grouping}
+                  emphasis="total"
+                  spentHref={registerHref(
+                    { groupingId: key, ...range },
+                    { label: `${grouping.name} in ${label}`, cents: BigInt(grouping.spentCents) },
+                  )}
+                />
+              </tr>
+              {expanded &&
+                grouping.lines.map((line) => (
+                  <tr
+                    key={line.delegationId}
+                    className="border-b border-line"
+                    style={{ background: groupingTint(grouping.color, 'row') ?? undefined }}
+                  >
+                    <td className="row-cell w-full max-w-0 pl-8 text-ink">
+                      <span
+                        className="block truncate"
+                        title={line.archived ? `${line.name} (archived)` : line.name}
+                      >
+                        {line.name}
+                        {line.archived && <span className="text-muted"> (archived)</span>}
+                      </span>
+                    </td>
+                    <FigureCells
+                      figures={line}
+                      spentHref={registerHref(
+                        { delegationId: line.delegationId, ...range },
+                        { label: `${line.name} in ${label}`, cents: BigInt(line.spentCents) },
+                      )}
+                    />
+                  </tr>
+                ))}
+            </Fragment>
+          );
+        })}
+
+        {/* Part of what went out and in no line yet, so Spent adds up to it. */}
         {uncategorized !== 0n && (
           <tr className="border-b border-line">
-            <td className="row-cell pl-3 text-muted">Not categorized yet</td>
+            <td className="row-cell w-full max-w-0 pl-3 text-muted">
+              <span className="block truncate">Not categorized yet</span>
+            </td>
+            <td className="money hidden row-cell pr-3 text-muted sm:table-cell">—</td>
             <td className="money row-cell pr-3 text-muted">—</td>
+            <td className="money hidden row-cell pr-3 text-muted sm:table-cell">—</td>
             <td className="money row-cell pr-3">
               <Link
                 className="linkish"
@@ -176,14 +268,28 @@ function LinesTable({ review }: { readonly review: MonthReviewDto }): ReactNode 
                 {formatCents(uncategorized)}
               </Link>
             </td>
-            <td className="money row-cell pr-3 text-ink">{formatCents(-uncategorized)}</td>
+            <td className="money row-cell pr-3 text-muted">—</td>
           </tr>
         )}
+
         <tr className="border-t-2 border-ink font-bold">
           <td className="row-cell pl-3 text-ink">All of it</td>
-          <td className="money row-cell pr-3 text-ink">{formatCents(delegated)}</td>
+          <td className="money hidden row-cell pr-3 text-ink sm:table-cell">
+            {formatCents(sum((figures) => figures.startCents))}
+          </td>
+          <td className="money row-cell pr-3 text-ink">
+            {formatCents(sum((figures) => figures.delegatedCents))}
+          </td>
+          <td className="money hidden row-cell pr-3 text-ink sm:table-cell">
+            {formatCents(
+              sum((figures) => figures.movedCents),
+              { explicitPlus: true },
+            )}
+          </td>
           <td className="money row-cell pr-3 text-ink">{formatCents(wentOut)}</td>
-          <td className="money row-cell pr-3 text-ink">{formatCents(delegated - wentOut)}</td>
+          <td className="money row-cell pr-3 text-ink">
+            {formatCents(sum((figures) => figures.endCents))}
+          </td>
         </tr>
       </tbody>
     </table>
@@ -409,7 +515,7 @@ export function MonthReview(): ReactNode {
           </div>
         </Tile>
 
-        <Tile span="two-thirds" title="Each line against what it was given">
+        <Tile span="two-thirds" title="Each line, start to end">
           <LinesTable review={review} />
         </Tile>
 

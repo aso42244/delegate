@@ -2,14 +2,32 @@ import { api } from './client.js';
 
 /** Month in review (ADR 078). Cents are decimal strings — ADR 002. */
 
-export interface MonthLineDto {
+/** A line's or a grouping's month. */
+export interface MonthFiguresDto {
+  /** What it held when the month began. */
+  readonly startCents: string;
+  /** What Delegate presses put in. */
+  readonly delegatedCents: string;
+  /** Transfers in and out and adjustments, net. */
+  readonly movedCents: string;
+  /** Ordinary spending filed to it, net of refunds. A magnitude. */
+  readonly spentCents: string;
+  /** What it held when the month ended. */
+  readonly endCents: string;
+}
+
+export interface MonthLineDto extends MonthFiguresDto {
   readonly delegationId: string;
   readonly name: string;
-  readonly color: string | null;
   readonly archived: boolean;
-  readonly delegatedCents: string;
-  readonly spentCents: string;
-  readonly leftCents: string;
+}
+
+export interface MonthGroupingDto extends MonthFiguresDto {
+  /** Null is the lines in no grouping. */
+  readonly id: string | null;
+  readonly name: string;
+  readonly color: string | null;
+  readonly lines: readonly MonthLineDto[];
 }
 
 export type BillMoveDto =
@@ -41,7 +59,8 @@ export interface MonthReviewDto {
   readonly cameInCents: string;
   readonly wentOutCents: string;
   readonly previous: { readonly cameInCents: string; readonly wentOutCents: string } | null;
-  readonly lines: readonly MonthLineDto[];
+  /** Every line, by grouping, in the budget's order. */
+  readonly groupings: readonly MonthGroupingDto[];
   readonly uncategorizedCents: string;
   readonly bills: readonly MonthBillDto[];
   readonly netWorth: {
