@@ -1,6 +1,6 @@
 # 070 — The read door is its own surface
 
-**Status:** accepted
+**Status:** accepted, amended by [081](081-the-read-door-reads-the-register.md)
 **Date:** 2026-09-21
 
 The door half of Eventide's ADR 268: _one route surface in Delegate, read-only,

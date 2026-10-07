@@ -6,7 +6,15 @@ phase (`v0.1.0-phase1`, and so on).
 
 ## [Unreleased]
 
-Nothing yet.
+### Added
+
+- **Eventide can read the register.** Two more reads on the read door,
+  `GET /api/read/transactions` and `GET /api/read/transactions/:id`, so
+  "Start a record" in Possessions can pick a purchase and log it whole: when,
+  how much, the merchant by the household's own name, the card it was on and
+  the lines it was filed to. Search, an account, a window and a direction find
+  it; an archived purchase still answers by its id. Read-only, like the rest of
+  the door. ADR 081; the contract is `docs/api-for-eventide.md`.
 
 ## [0.90.0] — 2026-10-07
 

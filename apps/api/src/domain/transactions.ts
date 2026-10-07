@@ -1,4 +1,4 @@
-import type { Cents, TransactionKind } from '@budget/shared';
+import { suggestedMatchValue, type Cents, type TransactionKind } from '@budget/shared';
 import type { Prisma } from '@prisma/client';
 import type { Db } from '../db/client.js';
 import { applyTransactionToAccountBalance } from './accounts.js';
@@ -179,6 +179,41 @@ function parseSearchAmount(search: string): Cents | null {
   const whole = BigInt(match[1] ?? '0');
   const fraction = BigInt((match[2] ?? '').padEnd(2, '0'));
   return whole * 100n + fraction;
+}
+
+/** The household's own name for a merchant, and the feed's label it was given on. */
+export interface MerchantName {
+  readonly name: string;
+  readonly label: string;
+}
+
+/**
+ * The household's own name for each merchant that has one (ADR 079).
+ *
+ * Kept on the merchant rather than the row, and applied as the register is read:
+ * the bank's description stays exactly as it arrived, and naming a merchant once
+ * names every charge from it, past and future.
+ */
+export async function merchantNames(db: Db): Promise<Map<string, MerchantName>> {
+  const rows = await db.billOverride.findMany({
+    where: { displayName: { not: null } },
+    select: { merchantKey: true, displayName: true, label: true },
+  });
+  return new Map(
+    rows.map((row) => [row.merchantKey, { name: row.displayName ?? '', label: row.label }]),
+  );
+}
+
+/** A search for a merchant's own name finds it by the bank's words for it. */
+export function searchFeedNamesFor(
+  names: ReadonlyMap<string, MerchantName>,
+  search: string | undefined,
+): string[] {
+  const needle = search?.trim().toLowerCase() ?? '';
+  if (needle === '') return [];
+  return [...names.values()]
+    .filter((entry) => entry.name.toLowerCase().includes(needle))
+    .map((entry) => suggestedMatchValue(entry.label));
 }
 
 export const TRANSACTION_LIST_SELECT = {

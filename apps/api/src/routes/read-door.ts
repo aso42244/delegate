@@ -1,11 +1,21 @@
+import { merchantKey } from '@budget/shared';
 import type { FastifyPluginCallback, FastifyReply, FastifyRequest } from 'fastify';
+import { z } from 'zod';
 import { prisma } from '../db/client.js';
 import { bearerFrom, readerFor } from '../domain/api-tokens.js';
 import { buildBudgetView, type BudgetRow, type BudgetSection } from '../domain/budget.js';
 import { buildFigures, buildOverview, buildPanel, FIGURE_KEYS } from '../domain/overview.js';
 import { payCycleAt } from '../domain/pay-cycle.js';
 import { startOfLocalDay } from '../domain/calendar.js';
+import { NotFoundError } from '../domain/errors.js';
 import { getBudgetSettings, householdTimezone } from '../domain/settings.js';
+import {
+  listTransactions,
+  merchantNames,
+  searchFeedNamesFor,
+  TRANSACTION_LIST_SELECT,
+  type MerchantName,
+} from '../domain/transactions.js';
 import { centsOut, dateOut, dayOut } from '../http/serialize.js';
 
 /**
@@ -24,9 +34,9 @@ import { centsOut, dateOut, dayOut } from '../http/serialize.js';
  * token cannot reach anything guarded by a session. The two credentials open
  * two different doors and neither fits the other's lock.
  *
- * **No new arithmetic.** Both routes are projections of what the Budget page and
+ * **No new arithmetic.** Every route is a projection of what the Budget page and
  * Overview already read — `buildBudgetView`, `buildFigures`, `buildOverview`,
- * `payCycleAt`. If a number appears here that appears nowhere on a screen, it
+ * `payCycleAt` — or of the register's own query, `listTransactions`. If a number appears here that appears nowhere on a screen, it
  * is a bug in this file. Money crosses as strings of whole cents (ADR 002),
  * which is the one thing a client reading this must not get wrong: `41287` is
  * $412.87.
@@ -155,6 +165,55 @@ function presentAccount(
   };
 }
 
+/**
+ * What a client may ask of the register (ADR 081). A narrower set than the page
+ * takes: enough to find one purchase — words, an account, a window, a direction
+ * — and nothing that reads like the page's working filters. Archived rows are
+ * never listed; one is still answered by its id, because a record that points
+ * at it must keep resolving.
+ */
+const transactionsQuerySchema = z.object({
+  search: z.string().max(200).optional(),
+  accountId: z.string().uuid().optional(),
+  sign: z.enum(['in', 'out']).optional(),
+  dateFrom: z.coerce.date().optional(),
+  dateBefore: z.coerce.date().optional(),
+  limit: z.coerce.number().int().positive().max(100).default(50),
+  offset: z.coerce.number().int().nonnegative().default(0),
+});
+
+const transactionParamsSchema = z.object({ id: z.string().uuid() });
+
+type RegisterRow = Awaited<ReturnType<typeof listTransactions>>['transactions'][number];
+
+function presentTransaction(
+  row: RegisterRow,
+  names: ReadonlyMap<string, MerchantName>,
+): Record<string, unknown> {
+  return {
+    id: row.id,
+    postedAt: dateOut(row.postedAt),
+    amountCents: centsOut(row.amountCents),
+    description: row.description,
+    // The household's own name for the merchant, or null for the bank's words.
+    merchantName: names.get(merchantKey(row.descriptionRaw || row.description))?.name ?? null,
+    pending: row.pending,
+    kind: row.kind,
+    archivedAt: dateOut(row.archivedAt),
+    account: {
+      id: row.account.id,
+      // The short name where one exists, as the register shows it.
+      name: row.account.nickname ?? row.account.name,
+      type: row.account.type,
+    },
+    allocations: row.allocations.map((allocation) => ({
+      delegationId: allocation.delegationId,
+      name: allocation.delegation.name,
+      amountCents: centsOut(allocation.amountCents),
+    })),
+  };
+}
+
 export const readDoorRoutes: FastifyPluginCallback = (fastify, _options, done) => {
   fastify.addHook('preHandler', requireBearer);
 
@@ -263,6 +322,36 @@ export const readDoorRoutes: FastifyPluginCallback = (fastify, _options, done) =
       },
       spending: panel.map((line) => ({ id: line.id, spentCents: centsOut(line.spentCents) })),
     };
+  });
+
+  /** The register, newest first: enough to find one purchase and read it whole. */
+  fastify.get('/api/read/transactions', async (request) => {
+    const query = transactionsQuerySchema.parse(request.query ?? {});
+    const names = await merchantNames(prisma);
+    const { transactions, total } = await listTransactions(prisma, {
+      ...query,
+      searchFeedNames: searchFeedNamesFor(names, query.search),
+    });
+
+    return {
+      asOf: dateOut(new Date()),
+      transactions: transactions.map((row) => presentTransaction(row, names)),
+      total,
+      limit: query.limit,
+      offset: query.offset,
+    };
+  });
+
+  /** One transaction by its id, archived or not: a record that points here keeps resolving. */
+  fastify.get('/api/read/transactions/:id', async (request) => {
+    const { id } = transactionParamsSchema.parse(request.params);
+    const row = await prisma.transaction.findUnique({
+      where: { id },
+      select: TRANSACTION_LIST_SELECT,
+    });
+    if (row === null) throw new NotFoundError('transaction', id);
+
+    return { transaction: presentTransaction(row, await merchantNames(prisma)) };
   });
 
   done();

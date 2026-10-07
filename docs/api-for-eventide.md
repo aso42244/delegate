@@ -1,13 +1,14 @@
 # The read door: Delegate's API for Eventide
 
-The whole of what another application can read from this budget, and how. Two
+The whole of what another application can read from this budget, and how. Four
 routes, one credential, no writes. This is the contract Eventide's Finances view
 is built against; a field that changes here changes here first.
 
 Decisions: [ADR 069](decisions/069-a-token-reads-as-a-person.md) (the
 credential), [ADR 070](decisions/070-the-read-door-is-its-own-surface.md) (the
 door), [ADR 071](decisions/071-tokens-are-managed-on-access.md) (where they are
-managed). On the Eventide side, its ADR 268 is what this implements.
+managed), [ADR 081](decisions/081-the-read-door-reads-the-register.md) (the
+register). On the Eventide side, its ADR 268 is what this implements.
 
 ## The credential
 
@@ -22,7 +23,7 @@ Authorization: Bearer dlg_…
 ```
 
 Nothing else authenticates here. A session cookie is refused whether or not a
-token rides beside it, and the token opens nothing but the two routes below — not
+token rides beside it, and the token opens nothing but the four routes below — not
 the budget's own API, not the token routes, nothing that writes.
 
 **It reads as the person who made it.** Whatever that account can see, the token
@@ -38,7 +39,9 @@ Revoking signs nobody out and touches no other token.
 | A **revoked** token                                        | 401    | identical to the line above                                                         |
 | A token whose account has been archived                    | 401    | identical to the line above                                                         |
 | Anything over the onion address while remote access is off | 404    | empty                                                                               |
-| A `POST` (or anything but `GET`) to either route           | 404    | `{"error":{"code":"route_not_found",…}}`                                            |
+| A `POST` (or anything but `GET`) to any route              | 404    | `{"error":{"code":"route_not_found",…}}`                                            |
+| A query the transactions route cannot read                 | 400    | `{"error":{"code":"invalid_request",…}}`, naming the field in `details.fields`      |
+| A transaction id that is no transaction                    | 404    | `{"error":{"code":"not_found",…}}`                                                  |
 | Too many requests from one address                         | 429    | `{"error":{"code":"too_many_requests",…}}`                                          |
 
 Unknown, revoked and archived are deliberately one answer. Both 401s carry a
@@ -54,7 +57,8 @@ no-store`.
   not `"0"`.
 - **Debts are positive magnitudes.** A $500 card balance is `"50000"`.
 - **An instant** (`asOf`, `cycleStartedAt`, `balanceAsOf`, `checkIssuedAt`,
-  `oldestPostedAt`, `start`, `end`, `since`) is an ISO 8601 timestamp in UTC.
+  `oldestPostedAt`, `start`, `end`, `since`, `postedAt`, `archivedAt`) is an
+  ISO 8601 timestamp in UTC.
 - **A day** (`targetDate`) is `YYYY-MM-DD` and has no zone: a decided day.
 - `progressBasisPoints` is an integer 0–10000.
 
@@ -229,9 +233,72 @@ readings a glance needs.
 | `spending[].id`                      | string                                      | The delegation's id, as in `/api/read/budget`'s `delegations[].id`.                               |
 | `spending[].spentCents`              | cents                                       | Spent from the line since the payday (the last press without one). A magnitude, never negative.   |
 
+## `GET /api/read/transactions`
+
+The register, newest first, a page at a time. Built for finding one purchase —
+"Start a record" in Possessions — and reading it whole.
+
+| Parameter    | Type          | Meaning                                                                                                                          |
+| ------------ | ------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| `search`     | string, ≤ 200 | Words in the description, the account, a line's name, or the household's own name for the merchant. A bare `42.10` is an amount. |
+| `accountId`  | id            | One account, as in `/api/read/budget`'s `accounts[].id` — or any account, in or off the budget.                                  |
+| `sign`       | `in` \| `out` | Money in (refunds, income) or money out (purchases).                                                                             |
+| `dateFrom`   | instant       | Posted at or after this.                                                                                                         |
+| `dateBefore` | instant       | Posted strictly before this.                                                                                                     |
+| `limit`      | integer 1–100 | Rows per page. 50 when absent.                                                                                                   |
+| `offset`     | integer ≥ 0   | Rows to skip. 0 when absent.                                                                                                     |
+
+Archived rows are never listed.
+
+```json
+{
+  "asOf": "2026-10-07T14:00:00.000Z",
+  "transactions": [
+    {
+      "id": "b81e…",
+      "postedAt": "2026-09-14T15:00:00.000Z",
+      "amountCents": "-64999",
+      "description": "BESTBUY 00012 ONLINE",
+      "merchantName": "Best Buy",
+      "pending": false,
+      "kind": "normal",
+      "archivedAt": null,
+      "account": { "id": "7a90…", "name": "Rewards Visa", "type": "debt" },
+      "allocations": [{ "delegationId": "5d7a…", "name": "Household", "amountCents": "-64999" }]
+    }
+  ],
+  "total": 1,
+  "limit": 50,
+  "offset": 0
+}
+```
+
+| Field                                | Type                               | Meaning                                                                                                                     |
+| ------------------------------------ | ---------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| `transactions[]`                     | list                               | Newest first. Rows posted at the same instant keep one order from page to page.                                             |
+| `transactions[].postedAt`            | instant                            | When it posted.                                                                                                             |
+| `transactions[].amountCents`         | cents                              | **Signed from the household's side.** A purchase is negative on a card and on checking alike; a refund is positive.         |
+| `transactions[].description`         | string                             | What the bank called it, or what was typed for a manual row.                                                                |
+| `transactions[].merchantName`        | string \| null                     | The household's own name for the merchant. Null keeps the bank's — show `description`.                                      |
+| `transactions[].pending`             | boolean                            | Not yet posted by the bank. Its amount and date may still change.                                                           |
+| `transactions[].kind`                | `normal` \| `income` \| `transfer` | A purchase or refund is `normal`. A transfer — a card payment among them — moves money between accounts and is no purchase. |
+| `transactions[].archivedAt`          | instant \| null                    | Always null in the list. Set only when a row is read by its id after it was withdrawn.                                      |
+| `transactions[].account`             | `{id, name, type}`                 | `name` is the short name where the household gave one. `type` is `asset` or `debt`.                                         |
+| `transactions[].allocations[]`       | list                               | The lines it was filed to. Empty while uncategorized; more than one when split.                                             |
+| `allocations[].delegationId`, `name` | string                             | As in `/api/read/budget`'s `delegations[]`. The name resolves even for a line since archived.                               |
+| `allocations[].amountCents`          | cents                              | Its share of the row, signed as the row is. The shares sum to `amountCents`.                                                |
+| `total`                              | integer                            | Every matching row, not just this page.                                                                                     |
+
+## `GET /api/read/transactions/:id`
+
+One row, in the same shape, as `{"transaction": {…}}`. **Archived rows are
+answered here too**, with `archivedAt` set: a record that points at a purchase
+keeps resolving after the purchase is withdrawn from the register. An id that
+is no transaction is a 404 `not_found`; one that is not a uuid is a 400.
+
 ## What this is not
 
-There is no write route and no route that takes a body. There is no filtering,
-no pagination and no transaction register: those are the pages, and this is a
-reading of them. Anything Eventide needs that is not here is a change to this
-document first.
+There is no write route and no route that takes a body. The register is here to
+find and read a purchase, not to work it: categorizing, splitting and the page's
+other filters stay on the page. Anything Eventide needs that is not here is a
+change to this document first.
