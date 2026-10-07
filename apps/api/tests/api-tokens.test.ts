@@ -1,3 +1,4 @@
+import { merchantKey } from '@budget/shared';
 import type { FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { buildApp } from '../src/app.js';
@@ -365,7 +366,12 @@ describe('the read door', () => {
 
   it('has no write path: nothing here answers a POST', async () => {
     const { secret } = await issue();
-    for (const url of ['/api/read/budget', '/api/read/overview']) {
+    for (const url of [
+      '/api/read/budget',
+      '/api/read/overview',
+      '/api/read/transactions',
+      '/api/read/transactions/00000000-0000-4000-8000-000000000000',
+    ]) {
       const response = await app.inject({
         method: 'POST',
         url,
@@ -386,6 +392,181 @@ describe('the read door', () => {
     });
     expect(response.statusCode).toBe(404);
     expect(response.body).toBe('');
+  });
+});
+
+describe('reading the register', () => {
+  interface ReadTransaction {
+    readonly id: string;
+    readonly postedAt: string;
+    readonly amountCents: string;
+    readonly description: string;
+    readonly merchantName: string | null;
+    readonly pending: boolean;
+    readonly kind: string;
+    readonly archivedAt: string | null;
+    readonly account: { id: string; name: string; type: string };
+    readonly allocations: { delegationId: string; name: string; amountCents: string }[];
+  }
+  interface ReadList {
+    readonly transactions: ReadTransaction[];
+    readonly total: number;
+    readonly limit: number;
+    readonly offset: number;
+  }
+
+  it('lists newest first, whole: the account, the lines, and the merchant by its own name', async () => {
+    const { secret } = await issue();
+    const card = await makeAccount({ name: 'Rewards Visa', type: 'debt', balanceCents: 0n });
+    const home = await makeDelegation({ name: 'Household' });
+    const older = await makeTransaction({
+      accountId: card.id,
+      amountCents: -1_299n,
+      description: 'ACE HARDWARE #4411',
+      postedAt: new Date('2026-09-01T15:00:00Z'),
+    });
+    const tv = await makeTransaction({
+      accountId: card.id,
+      amountCents: -64_999n,
+      description: 'BESTBUY 00012 ONLINE',
+      postedAt: new Date('2026-09-14T15:00:00Z'),
+    });
+    await categorizeTransaction(prisma, tv.id, home.id);
+    await prisma.billOverride.create({
+      data: {
+        merchantKey: merchantKey('BESTBUY 00012 ONLINE'),
+        label: 'BESTBUY 00012 ONLINE',
+        displayName: 'Best Buy',
+      },
+    });
+
+    const response = await app.inject({
+      method: 'GET',
+      url: '/api/read/transactions',
+      headers: bearer(secret),
+    });
+    expect(response.statusCode).toBe(200);
+    const body = response.json<ReadList>();
+    expect(body).toMatchObject({ total: 2, limit: 50, offset: 0 });
+    expect(body.transactions.map((row) => row.id)).toEqual([tv.id, older.id]);
+    expect(body.transactions[0]).toEqual({
+      id: tv.id,
+      postedAt: '2026-09-14T15:00:00.000Z',
+      amountCents: '-64999',
+      description: 'BESTBUY 00012 ONLINE',
+      merchantName: 'Best Buy',
+      pending: false,
+      kind: 'normal',
+      archivedAt: null,
+      account: { id: card.id, name: 'Rewards Visa', type: 'debt' },
+      allocations: [{ delegationId: home.id, name: 'Household', amountCents: '-64999' }],
+    });
+  });
+
+  it('finds one purchase by words, the household name, a window and a direction', async () => {
+    const { secret } = await issue();
+    const card = await makeAccount({ name: 'Rewards Visa', type: 'debt', balanceCents: 0n });
+    const checking = await makeAccount({ name: 'Checking', type: 'asset', balanceCents: 0n });
+    const tv = await makeTransaction({
+      accountId: card.id,
+      amountCents: -64_999n,
+      description: 'BESTBUY 00012 ONLINE',
+      postedAt: new Date('2026-09-14T15:00:00Z'),
+    });
+    await makeTransaction({
+      accountId: card.id,
+      amountCents: 64_999n,
+      description: 'BESTBUY 00012 RETURN',
+      postedAt: new Date('2026-09-20T15:00:00Z'),
+    });
+    await makeTransaction({
+      accountId: checking.id,
+      amountCents: -2_500n,
+      description: 'BESTBUY 00012 ONLINE',
+      postedAt: new Date('2026-08-02T15:00:00Z'),
+    });
+    await prisma.billOverride.create({
+      data: {
+        merchantKey: merchantKey('BESTBUY 00012 ONLINE'),
+        label: 'BESTBUY 00012 ONLINE',
+        displayName: 'Best Buy',
+      },
+    });
+
+    const ids = async (query: string): Promise<string[]> => {
+      const response = await app.inject({
+        method: 'GET',
+        url: `/api/read/transactions?${query}`,
+        headers: bearer(secret),
+      });
+      expect(response.statusCode, query).toBe(200);
+      return response.json<ReadList>().transactions.map((row) => row.id);
+    };
+
+    // The household's name finds what the bank calls something else.
+    expect(await ids('search=best%20buy')).toHaveLength(3);
+    expect(
+      await ids(`search=best%20buy&sign=out&accountId=${card.id}&dateFrom=2026-09-01T00:00:00Z`),
+    ).toEqual([tv.id]);
+    // The end of a window is exclusive.
+    expect(await ids('dateBefore=2026-09-14T15:00:00Z')).toHaveLength(1);
+    expect(await ids('limit=1&offset=1')).toHaveLength(1);
+  });
+
+  it('lists no archived row, and still answers one by its id', async () => {
+    const { secret } = await issue();
+    const account = await makeAccount({ name: 'Checking', type: 'asset', balanceCents: 0n });
+    const gone = await makeTransaction({ accountId: account.id, amountCents: -500n });
+    await prisma.transaction.update({ where: { id: gone.id }, data: { archivedAt: new Date() } });
+
+    const list = await app.inject({
+      method: 'GET',
+      url: '/api/read/transactions',
+      headers: bearer(secret),
+    });
+    expect(list.json<ReadList>().total).toBe(0);
+
+    const one = await app.inject({
+      method: 'GET',
+      url: `/api/read/transactions/${gone.id}`,
+      headers: bearer(secret),
+    });
+    expect(one.statusCode).toBe(200);
+    const { transaction } = one.json<{ transaction: ReadTransaction }>();
+    expect(transaction.id).toBe(gone.id);
+    expect(transaction.archivedAt).not.toBeNull();
+  });
+
+  it('answers 404 for an id that is no transaction, and 400 for a query it cannot read', async () => {
+    const { secret } = await issue();
+    const missing = await app.inject({
+      method: 'GET',
+      url: '/api/read/transactions/00000000-0000-4000-8000-000000000000',
+      headers: bearer(secret),
+    });
+    expect(missing.statusCode).toBe(404);
+    expect(errorOf(missing).code).toBe('not_found');
+
+    for (const query of ['limit=101', 'sign=sideways', 'accountId=nope']) {
+      const response = await app.inject({
+        method: 'GET',
+        url: `/api/read/transactions?${query}`,
+        headers: bearer(secret),
+      });
+      expect(response.statusCode, query).toBe(400);
+      expect(errorOf(response).code).toBe('invalid_request');
+    }
+  });
+
+  it('refuses a session cookie here too', async () => {
+    for (const url of [
+      '/api/read/transactions',
+      '/api/read/transactions/00000000-0000-4000-8000-000000000000',
+    ]) {
+      const response = await app.inject({ method: 'GET', url, headers: { cookie } });
+      expect(response.statusCode, url).toBe(401);
+      expect(errorOf(response).code).toBe('bearer_required');
+    }
   });
 });
 

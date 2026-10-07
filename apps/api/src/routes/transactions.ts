@@ -1,4 +1,4 @@
-import { merchantKey, suggestedMatchValue, TRANSACTION_KINDS } from '@budget/shared';
+import { merchantKey, TRANSACTION_KINDS } from '@budget/shared';
 import type { FastifyPluginCallback } from 'fastify';
 import { z } from 'zod';
 import { prisma } from '../db/client.js';
@@ -14,6 +14,9 @@ import {
   createManualTransaction,
   listTransactions,
   MAX_PAGE_SIZE,
+  merchantNames,
+  searchFeedNamesFor,
+  type MerchantName,
   updateTransaction,
   DEFAULT_PAGE_SIZE,
 } from '../domain/transactions.js';
@@ -131,30 +134,13 @@ function shareOf(
     .reduce((sum, allocation) => sum + allocation.amountCents, 0n);
 }
 
-/**
- * The household's own name for each merchant that has one (ADR 079).
- *
- * Kept on the merchant rather than the row, and applied as the register is read:
- * the bank's description stays exactly as it arrived, and naming a merchant once
- * names every charge from it, past and future.
- */
-async function merchantNames(): Promise<Map<string, { name: string; label: string }>> {
-  const rows = await prisma.billOverride.findMany({
-    where: { displayName: { not: null } },
-    select: { merchantKey: true, displayName: true, label: true },
-  });
-  return new Map(
-    rows.map((row) => [row.merchantKey, { name: row.displayName ?? '', label: row.label }]),
-  );
-}
-
 function present(
   transaction: TransactionRow,
   filter: {
     readonly delegationId?: string | undefined;
     readonly groupingId?: string | undefined;
   } = {},
-  names: ReadonlyMap<string, { name: string; label: string }> = new Map(),
+  names: ReadonlyMap<string, MerchantName> = new Map(),
 ): Record<string, unknown> {
   const share = shareOf(transaction, filter);
   const key = merchantKey(transaction.descriptionRaw || transaction.description);
@@ -226,15 +212,8 @@ export const transactionRoutes: FastifyPluginCallback = (fastify, _options, done
         })()
       : query;
 
-    const names = await merchantNames();
-    // A search for a merchant's own name finds it by the bank's words for it.
-    const search = query.search?.trim().toLowerCase() ?? '';
-    const searchFeedNames =
-      search === ''
-        ? []
-        : [...names.values()]
-            .filter((entry) => entry.name.toLowerCase().includes(search))
-            .map((entry) => suggestedMatchValue(entry.label));
+    const names = await merchantNames(prisma);
+    const searchFeedNames = searchFeedNamesFor(names, query.search);
 
     const { transactions, total, totalCents, shareCents } = await listTransactions(prisma, {
       ...bounded,

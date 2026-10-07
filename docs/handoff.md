@@ -1452,7 +1452,7 @@ leave `migrate deploy` reporting drift.
 **`api_tokens` exists again, for a different reason** — Eventide reads this
 budget through a read-only door and needs something to knock with. ADRs 069–071
 and `docs/api-for-eventide.md` are the whole of it: a token reads as the person
-who made it, opens the two routes in `routes/read-door.ts` and nothing else, and
+who made it, opens the routes in `routes/read-door.ts` and nothing else, and
 is managed on Settings → Access. That is not the MCP work returning; there is no
 write path and none is to be added.
 
