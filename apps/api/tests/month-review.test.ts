@@ -110,13 +110,31 @@ describe('a month in review', () => {
       postedAt: on('2026-09-02'),
     });
 
-    // What a press gave Groceries this month. A transfer would not count.
+    // What Groceries already held: a press in July, carried into August.
+    await prisma.delegationEvent.create({
+      data: {
+        delegationId: groceries.id,
+        deltaCents: 5_000n,
+        eventType: 'delegate',
+        occurredAt: on('2026-07-15'),
+      },
+    });
+    // What a press gave it in August.
     await prisma.delegationEvent.create({
       data: {
         delegationId: groceries.id,
         deltaCents: 20_000n,
         eventType: 'delegate',
         occurredAt: on('2026-08-01'),
+      },
+    });
+    // And Household was funded by a transfer, not a press.
+    await prisma.delegationEvent.create({
+      data: {
+        delegationId: household.id,
+        deltaCents: 3_000n,
+        eventType: 'transfer',
+        occurredAt: on('2026-08-07'),
       },
     });
 
@@ -126,21 +144,78 @@ describe('a month in review', () => {
     expect(review.wentOutCents).toBe(19_411n);
     expect(review.uncategorizedCents).toBe(999n);
 
-    const linesSpent = review.lines.reduce((sum, line) => sum + line.spentCents, 0n);
+    const lines = review.groupings.flatMap((grouping) => grouping.lines);
+    const linesSpent = lines.reduce((sum, line) => sum + line.spentCents, 0n);
     expect(linesSpent + review.uncategorizedCents).toBe(review.wentOutCents);
 
-    const grocery = review.lines.find((line) => line.name === 'Groceries');
+    // Start, plus what was given and moved, less what was spent, is the end.
+    const grocery = lines.find((line) => line.name === 'Groceries');
     expect(grocery).toMatchObject({
+      startCents: 5_000n,
       delegatedCents: 20_000n,
+      movedCents: 0n,
       spentCents: 15_412n,
-      leftCents: 4_588n,
+      endCents: 9_588n,
     });
-    // Household spent and was given nothing, so it went further than planned
-    // and leads the list.
-    expect(review.lines[0]?.name).toBe('Household');
-    expect(review.lines[0]?.leftCents).toBe(-3_000n);
+    // Funded by a transfer, so it ends at zero rather than reading overspent.
+    const home = lines.find((line) => line.name === 'Household');
+    expect(home).toMatchObject({
+      startCents: 0n,
+      delegatedCents: 0n,
+      movedCents: 3_000n,
+      spentCents: 3_000n,
+      endCents: 0n,
+    });
+    for (const line of lines) {
+      expect(line.endCents).toBe(
+        line.startCents + line.delegatedCents + line.movedCents - line.spentCents,
+      );
+    }
+
+    // Both lines are in no grouping, so they are one grouping with their totals.
+    expect(review.groupings).toHaveLength(1);
+    expect(review.groupings[0]).toMatchObject({
+      id: null,
+      name: 'No grouping',
+      startCents: 5_000n,
+      spentCents: 18_412n,
+      endCents: 9_588n,
+    });
     // Nothing in July, so there is no month before to compare with.
     expect(review.previous).toBeNull();
+  });
+
+  it('ends each line where the ledger says it stands, when nothing has happened since', async () => {
+    const account = await makeAccount({ name: 'Everyday', type: 'asset', balanceCents: 900_000n });
+    const essentials = await prisma.grouping.create({
+      data: { name: 'Essentials', section: 'delegations', position: 1 },
+      select: { id: true },
+    });
+    const rent = await makeDelegation({ name: 'Rent', groupingId: essentials.id });
+    await prisma.delegationEvent.create({
+      data: {
+        delegationId: rent.id,
+        deltaCents: 145_000n,
+        eventType: 'delegate',
+        occurredAt: on('2026-08-01'),
+      },
+    });
+    const charge = await makeTransaction({
+      accountId: account.id,
+      amountCents: -140_000n,
+      postedAt: on('2026-08-03'),
+    });
+    await categorizeTransaction(prisma, charge.id, rent.id);
+
+    const review = await buildMonthReview(prisma, { month: AUGUST, timeZone: ZONE }, NOW);
+    const [grouping] = review.groupings;
+    expect(grouping?.name).toBe('Essentials');
+    // The ledger's own balance for the line, read back the other way.
+    const balance = await prisma.delegationEvent.aggregate({
+      where: { delegationId: rent.id, reversedAt: null },
+      _sum: { deltaCents: true },
+    });
+    expect(grouping?.lines[0]?.endCents).toBe(balance._sum.deltaCents);
   });
 
   it('names a bill that cost more than usual, and one that did not come', async () => {

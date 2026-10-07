@@ -22,12 +22,35 @@ export interface MonthLine {
   readonly name: string;
   readonly color: string | null;
   readonly archived: boolean;
+  /** Null for a line in no grouping. */
+  readonly groupingId: string | null;
+  /** What the line held when the month began. */
+  readonly startCents: Cents;
   /** What Delegate presses put into the line during the month. */
   readonly delegatedCents: Cents;
+  /** Transfers in and out, and adjustments, net: money moved rather than given. */
+  readonly movedCents: Cents;
   /** Ordinary spending filed to it in the month, net of refunds. A magnitude. */
   readonly spentCents: Cents;
-  /** Delegated less spent. Negative is a line that spent more than it was given. */
-  readonly leftCents: Cents;
+  /**
+   * What it held when the month ended: start, plus what it was given and moved
+   * in, less what it spent. Negative is a line that ran out.
+   */
+  readonly endCents: Cents;
+}
+
+/** A grouping of lines, in the budget's own order, with its lines' totals. */
+export interface MonthGrouping {
+  /** Null is the lines in no grouping. */
+  readonly id: string | null;
+  readonly name: string;
+  readonly color: string | null;
+  readonly startCents: Cents;
+  readonly delegatedCents: Cents;
+  readonly movedCents: Cents;
+  readonly spentCents: Cents;
+  readonly endCents: Cents;
+  readonly lines: readonly MonthLine[];
 }
 
 export type BillMove =
@@ -74,7 +97,8 @@ export interface MonthReview {
   readonly cameInCents: Cents;
   readonly wentOutCents: Cents;
   readonly previous: { readonly cameInCents: Cents; readonly wentOutCents: Cents } | null;
-  readonly lines: readonly MonthLine[];
+  /** Every line, by grouping, in the budget's order. */
+  readonly groupings: readonly MonthGrouping[];
   /** Ordinary spending nobody has filed yet, net. Part of Went out, in no line. */
   readonly uncategorizedCents: Cents;
   readonly bills: readonly MonthBill[];
@@ -172,96 +196,199 @@ export async function buildMonthReview(
   const before = startOfLocalDay(addMonthsToKey(month, 1), timeZone);
   const previousFrom = startOfLocalDay(addMonthsToKey(month, -1), timeZone);
 
-  const [current, previous, hasPrevious, delegated, allocations, loose, bills, start, end] =
-    await Promise.all([
-      flow(db, from, before),
-      flow(db, previousFrom, from),
-      db.transaction.count({
-        where: { archivedAt: null, postedAt: { gte: previousFrom, lt: from } },
-      }),
-      // Delegate presses only. A transfer between lines is the household moving
-      // money it already gave, and an adjustment is a correction — neither is
-      // what the line was given this month.
+  const [
+    current,
+    previous,
+    hasPrevious,
+    [eventsBefore, eventsInMonth],
+    [allocations, allocationsBefore],
+    loose,
+    bills,
+    start,
+    end,
+  ] = await Promise.all([
+    flow(db, from, before),
+    flow(db, previousFrom, from),
+    db.transaction.count({
+      where: { archivedAt: null, postedAt: { gte: previousFrom, lt: from } },
+    }),
+    /*
+     * Every ledger movement that is not spending, by line and type: before
+     * the month, for where it started, and inside it, split into what Delegate
+     * gave and what was moved or corrected.
+     *
+     * Spending is read from the allocations instead, dated by when the charge
+     * posted rather than when it was filed — the same date the Spent figure
+     * and its register link use. A live `categorize` event is exactly one
+     * allocation (`setAllocations` reverses the old events as it replaces the
+     * rows), so the two together are the line's balance at any date.
+     */
+    Promise.all([
       db.delegationEvent.groupBy({
         by: ['delegationId'],
+        where: { eventType: { not: 'categorize' }, reversedAt: null, occurredAt: { lt: from } },
+        _sum: { deltaCents: true },
+      }),
+      db.delegationEvent.groupBy({
+        by: ['delegationId', 'eventType'],
         where: {
-          eventType: 'delegate',
+          eventType: { not: 'categorize' },
           reversedAt: null,
           occurredAt: { gte: from, lt: before },
         },
         _sum: { deltaCents: true },
       }),
+    ]),
+    Promise.all([
       db.transactionAllocation.groupBy({
         by: ['delegationId'],
         where: {
-          transaction: {
-            archivedAt: null,
-            kind: 'normal',
-            postedAt: { gte: from, lt: before },
-          },
+          transaction: { archivedAt: null, kind: 'normal', postedAt: { gte: from, lt: before } },
         },
         _sum: { amountCents: true },
       }),
-      // The uncategorized queue's own predicate, over the month.
-      db.transaction.aggregate({
-        where: {
-          archivedAt: null,
-          kind: 'normal',
-          allocations: { none: {} },
-          account: { inBudget: true },
-          postedAt: { gte: from, lt: before },
-        },
+      db.transactionAllocation.groupBy({
+        by: ['delegationId'],
+        where: { transaction: { archivedAt: null, kind: 'normal', postedAt: { lt: from } } },
         _sum: { amountCents: true },
       }),
-      findRecurringBills(db, timeZone, now),
-      // Snapshots are filed under the day they describe the end of: the last
-      // day before the month, and the month's own last day.
-      worthOn(db, new Date(month.getTime() - 24 * 60 * 60 * 1000)),
-      worthOn(db, new Date(addMonthsToKey(month, 1).getTime() - 24 * 60 * 60 * 1000)),
-    ]);
+    ]),
+    // The uncategorized queue's own predicate, over the month.
+    db.transaction.aggregate({
+      where: {
+        archivedAt: null,
+        kind: 'normal',
+        allocations: { none: {} },
+        account: { inBudget: true },
+        postedAt: { gte: from, lt: before },
+      },
+      _sum: { amountCents: true },
+    }),
+    findRecurringBills(db, timeZone, now),
+    // Snapshots are filed under the day they describe the end of: the last
+    // day before the month, and the month's own last day.
+    worthOn(db, new Date(month.getTime() - 24 * 60 * 60 * 1000)),
+    worthOn(db, new Date(addMonthsToKey(month, 1).getTime() - 24 * 60 * 60 * 1000)),
+  ]);
 
-  const delegatedById = new Map(
-    delegated.map((row) => [row.delegationId, row._sum.deltaCents ?? 0n]),
-  );
-  const spentById = new Map(
-    allocations.map((row) => [row.delegationId, -(row._sum.amountCents ?? 0n)]),
-  );
-  const ids = [...new Set([...delegatedById.keys(), ...spentById.keys()])];
+  const add = (map: Map<string, Cents>, id: string, cents: Cents): void => {
+    map.set(id, (map.get(id) ?? 0n) + cents);
+  };
+  const startById = new Map<string, Cents>();
+  const delegatedById = new Map<string, Cents>();
+  const movedById = new Map<string, Cents>();
+  const spentById = new Map<string, Cents>();
+
+  for (const row of eventsBefore) add(startById, row.delegationId, row._sum.deltaCents ?? 0n);
+  for (const row of allocationsBefore) {
+    add(startById, row.delegationId, row._sum.amountCents ?? 0n);
+  }
+  // Inside the month: what Delegate gave, and what was moved or corrected.
+  for (const row of eventsInMonth) {
+    add(
+      row.eventType === 'delegate' ? delegatedById : movedById,
+      row.delegationId,
+      row._sum.deltaCents ?? 0n,
+    );
+  }
+  for (const row of allocations) add(spentById, row.delegationId, -(row._sum.amountCents ?? 0n));
+
+  const ids = new Set<string>([
+    ...startById.keys(),
+    ...spentById.keys(),
+    ...delegatedById.keys(),
+    ...movedById.keys(),
+  ]);
   const delegations = await db.delegation.findMany({
-    // Every line that moved, archived and checks included: the lines have to
-    // add up to Went out with the uncategorized row, and a cashed check is
-    // spending like any other.
-    where: { id: { in: ids } },
-    select: { id: true, name: true, archivedAt: true, grouping: { select: { color: true } } },
+    // Every line that held or moved money, archived and checks included: the
+    // lines have to add up to Went out with the uncategorized row, and a cashed
+    // check is spending like any other.
+    where: { id: { in: [...ids] } },
+    select: {
+      id: true,
+      name: true,
+      archivedAt: true,
+      position: true,
+      grouping: { select: { id: true, name: true, color: true, position: true } },
+    },
   });
 
-  const lines: MonthLine[] = delegations
+  const lines: (MonthLine & {
+    readonly position: number;
+    readonly groupingName: string | null;
+    readonly groupingPosition: number;
+  })[] = delegations
     .map((delegation) => {
+      const startCents = startById.get(delegation.id) ?? 0n;
       const delegatedCents = delegatedById.get(delegation.id) ?? 0n;
+      const movedCents = movedById.get(delegation.id) ?? 0n;
       const spentCents = spentById.get(delegation.id) ?? 0n;
       return {
         delegationId: delegation.id,
         name: delegation.name,
         color: delegation.grouping?.color ?? null,
         archived: delegation.archivedAt !== null,
+        groupingId: delegation.grouping?.id ?? null,
+        groupingName: delegation.grouping?.name ?? null,
+        groupingPosition: delegation.grouping?.position ?? Number.MAX_SAFE_INTEGER,
+        position: delegation.position,
+        startCents,
         delegatedCents,
+        movedCents,
         spentCents,
-        leftCents: delegatedCents - spentCents,
+        endCents: startCents + delegatedCents + movedCents - spentCents,
       };
     })
-    .filter((line) => line.delegatedCents !== 0n || line.spentCents !== 0n)
-    /*
-     * The lines that spent more than they were given first, worst first; then
-     * the rest by what they spent. The question a month answers is "where did
-     * it go further than planned", and that answer belongs at the top.
-     */
-    .sort((a, b) => {
-      const overA = a.leftCents < 0n;
-      const overB = b.leftCents < 0n;
-      if (overA !== overB) return overA ? -1 : 1;
-      if (overA) return a.leftCents < b.leftCents ? -1 : a.leftCents > b.leftCents ? 1 : 0;
-      return b.spentCents > a.spentCents ? 1 : b.spentCents < a.spentCents ? -1 : 0;
-    });
+    // A line with nothing in it and nothing through it is not part of the month.
+    .filter(
+      (line) =>
+        line.startCents !== 0n ||
+        line.delegatedCents !== 0n ||
+        line.movedCents !== 0n ||
+        line.spentCents !== 0n,
+    )
+    // The budget's own order: grouping, then the line's place in it, then name.
+    .sort(
+      (a, b) =>
+        a.groupingPosition - b.groupingPosition ||
+        (a.groupingName ?? '').localeCompare(b.groupingName ?? '') ||
+        a.position - b.position ||
+        a.name.localeCompare(b.name),
+    );
+
+  const groupings: MonthGrouping[] = [];
+  for (const line of lines) {
+    let grouping = groupings[groupings.length - 1];
+    if (grouping === undefined || grouping.id !== line.groupingId) {
+      grouping = {
+        id: line.groupingId,
+        name: line.groupingName ?? 'No grouping',
+        color: line.color,
+        startCents: 0n,
+        delegatedCents: 0n,
+        movedCents: 0n,
+        spentCents: 0n,
+        endCents: 0n,
+        lines: [],
+      };
+      groupings.push(grouping);
+    }
+    const {
+      position: _position,
+      groupingName: _name,
+      groupingPosition: _groupingPosition,
+      ...plain
+    } = line;
+    groupings[groupings.length - 1] = {
+      ...grouping,
+      startCents: grouping.startCents + line.startCents,
+      delegatedCents: grouping.delegatedCents + line.delegatedCents,
+      movedCents: grouping.movedCents + line.movedCents,
+      spentCents: grouping.spentCents + line.spentCents,
+      endCents: grouping.endCents + line.endCents,
+      lines: [...grouping.lines, plain],
+    };
+  }
 
   const inMonth = (at: Date): boolean => at >= from && at < before;
   const moved: MonthBill[] = [];
@@ -358,7 +485,7 @@ export async function buildMonthReview(
     cameInCents: current.cameInCents,
     wentOutCents: current.wentOutCents,
     previous: hasPrevious > 0 ? previous : null,
-    lines,
+    groupings,
     uncategorizedCents: -(loose._sum.amountCents ?? 0n),
     bills: moved,
     netWorth,
