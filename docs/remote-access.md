@@ -1,5 +1,12 @@
 # Reaching Delegate from outside the house
 
+> **Not in use since 2026-10-07.** Delegate has no public address now. The
+> household reaches it over Tailscale or on the home LAN, through DSM's reverse
+> proxy ([ADR 082](decisions/082-delegate-is-reached-privately.md)). What follows
+> describes the Cloudflare Tunnel that was the way in until then. It is kept
+> because its reasoning (what TLS covers, `TRUST_PROXY`, the confined port)
+> applies to any future public door.
+
 Through a **Cloudflare Tunnel**. No port forwarding, no inbound port, no public
 IP: `cloudflared` runs on the NAS and dials out to Cloudflare's edge.
 

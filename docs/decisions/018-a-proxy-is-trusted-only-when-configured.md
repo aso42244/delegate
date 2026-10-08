@@ -1,6 +1,6 @@
 # 018 — A forwarded client address is believed only when configured
 
-**Status:** accepted
+**Status:** accepted, amended by [082](082-delegate-is-reached-privately.md)
 **Date:** 2026-08-10
 
 ## Context
