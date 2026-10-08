@@ -273,14 +273,18 @@ These are non-negotiable. Violating one is a build failure.
    resolvable so old transactions render `Grocery (archived)`.
 4. **No personal data or secrets in the repository.** `.env` is git-ignored;
    `APP_NAME` exists so a family name never lands in committed UI copy.
-5. **Reachable from outside only through a Cloudflare Tunnel**, never a port
-   forward, a DSM reverse proxy or QuickConnect. The transport to the origin is
-   plain http by decision
-   ([ADR 017](decisions/017-plain-http-is-the-default-and-tls-is-optional.md));
-   the tunnel encrypts everything that crosses the internet
-   ([ADR 018](decisions/018-a-proxy-is-trusted-only-when-configured.md),
-   [docs/remote-access.md](remote-access.md)). `TRUST_PROXY` must never be set
-   while the port is also reachable directly.
+5. **Not reachable from the public internet** (since 2026-10-07,
+   [ADR 082](decisions/082-delegate-is-reached-privately.md), by the
+   maintainer's decision). The household reaches it over Tailscale or on the home
+   LAN: the LAN's DNS answers its hostname with the NAS's private address, and
+   DSM's reverse proxy serves HTTPS and forwards to the published port. No
+   tunnel, no port forward, no public DNS record, no QuickConnect. This replaces
+   "only through a Cloudflare Tunnel, never … a DSM reverse proxy". The DSM proxy
+   is allowed now because it faces only the private network. The transport to the
+   origin is still plain http by decision
+   ([ADR 017](decisions/017-plain-http-is-the-default-and-tls-is-optional.md)).
+   `TRUST_PROXY` must never be set while the port is also reachable directly
+   ([ADR 018](decisions/018-a-proxy-is-trusted-only-when-configured.md)).
 6. **USD only.** No multi-currency, no selector.
 
 ---
@@ -419,10 +423,11 @@ recorded in the ADRs, and the short version is:
   account. The login form has two fields, and a password in the top one used to
   reach the logs verbatim
 
-**This is no longer a LAN-only application.** Any claim to the contrary is stale
-and should be deleted on sight. What remains narrowly true is that the origin
-speaks plain http by default, which is correct behind a tunnel or inside an onion
-service; ADR 017 carries the amendment.
+**Reachable from away, but not from the public internet** (ADR 082, since
+2026-10-07). Away from home the household reaches it over Tailscale, not over a
+public door. The origin still speaks plain http by default, which is correct
+behind the DSM reverse proxy, a tunnel or an onion service; ADR 017 carries the
+amendment.
 
 **Since v0.24.1**, in the order it shipped:
 
@@ -856,7 +861,7 @@ and sending screenshots. None of it was visible from a test fixture.
   cannot replace itself with a different image, so the only two routes are a
   root-owned watcher script on the NAS or mounting `/var/run/docker.sock` into
   this container. The second hands root on the NAS to the process that holds the
-  bank credential and faces the tunnel, and is not on the table. The maintainer chose
+  bank credential and faces the network, and is not on the table. The maintainer chose
   to keep the one-line deploy as the only way in. **Do not build this without
   asking again**
 
@@ -1437,7 +1442,7 @@ GitHub runs a test, and nothing is watching a branch.
 `secure_path`, which does not include `/usr/local/bin`. Use `sudo -i sh -c '…'`,
 which runs root's login shell and gets a full `PATH`.
 
-A Tor onion service is the alternative to a tunnel and is off until switched on
+A Tor onion service is a possible public door and is off until switched on
 from the LAN — see ADR 027, and note that running both means the weaker door sets
 the security level.
 
